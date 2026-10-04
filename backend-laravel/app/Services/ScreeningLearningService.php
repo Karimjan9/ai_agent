@@ -16,8 +16,12 @@ class ScreeningLearningService
     public function record(LabAgent $agent, ModelVersion $model, array $result, float $forwardScore): bool
     {
         $evidenceRunId = (string) data_get($result, 'evidence_run_id', '');
-        $evidence = app(LabImmutableEvidenceService::class)->learningEligibility($evidenceRunId);
-        if (! $evidence['complete']) {
+        $ledger = app(LabImmutableEvidenceService::class);
+        $run = $ledger->findRun(is_string($evidenceRunId) ? $evidenceRunId : null);
+        $evidence = $ledger->learningEligibility($run);
+        if (! $evidence['complete'] || (int) $run?->lab_agent_id !== (int) $agent->id
+            || (int) $run?->model_version_id !== (int) $model->id
+            || (int) $run?->lab_generation_id !== (int) $agent->lab_generation_id) {
             // A screen may still be visible as a diagnostic projection, but
             // it cannot create mutation memory or harmful/beneficial credit
             // without a terminal request/response/trace/ledger chain.

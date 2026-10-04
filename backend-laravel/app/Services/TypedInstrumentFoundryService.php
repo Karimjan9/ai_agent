@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AgentLearningCausalExperiment;
 use App\Models\CausalFoldReceipt;
+use App\Models\LabAgent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -126,6 +127,8 @@ class TypedInstrumentFoundryService
         }
         if (count(array_unique($ids)) !== 3 || $budgets[0] !== $budgets[1] || $budgets[0] !== $budgets[2]
             || min($budgets[0]) < 1) return $this->blocked('THREE_ARM_EQUAL_COMPUTE_CONTRACT_REQUIRED');
+        $search = $this->verifiedSelectorObservation($experiment);
+        if (($search['status'] ?? null) === 'invalid') return $this->blocked($search['reason_code']);
         $key = $this->hash(['causal_equal_budget_observation_v1', $experiment->id, $release['release_hash'] ?? null]);
         $contract = ['protocol' => 'causal_equal_budget_observation_v1', 'experiment_id' => $experiment->id,
             'release_hash' => $release['release_hash'], 'dataset_hash' => $request['replay_dataset_hash'] ?? null,
@@ -134,6 +137,7 @@ class TypedInstrumentFoundryService
             'fold_count' => $budgets[0][0], 'per_arm_fold_seconds_limit' => $budgets[0][1],
             'max_rows_per_fold' => $budgets[0][2],
             'arm_program_hash' => $this->hash((array) ($request['strategies'] ?? [])),
+            'selector_observation' => $search,
             'compute_limit_is_not_equal_observed_cpu' => true, 'promotion_evidence' => false];
         return DB::transaction(function () use ($key, $contract, $experiment): array {
             $existing = DB::table('research_compounding_benchmarks')->where('benchmark_key', $key)->lockForUpdate()->first();
@@ -227,12 +231,112 @@ class TypedInstrumentFoundryService
                 'compounding_proven' => false,
                 'confirmation_and_descendant_proofs_still_required' => true,
                 'frozen_control_result' => $results['frozen_control'], 'promotion_evidence' => false];
+            $assessment['selector_search_comparison'] = $this->selectorSearchComparison($contract, $folds, $resources, $experiment);
             DB::table('research_compounding_benchmarks')->where('id', $row->id)->update([
                 'status' => 'executed_diagnostic', 'memory_enabled_result' => json_encode($results['memory_enabled']),
                 'memory_blinded_result' => json_encode($results['memory_blinded']),
                 'assessment' => json_encode($assessment), 'updated_at' => now()]);
             return ['status' => 'executed_diagnostic', 'benchmark_key' => $key, 'assessment' => $assessment, 'promotion_evidence' => false];
         });
+    }
+
+    /** Only the prospectively sealed constructor can supply selector timing and exposure. */
+    private function verifiedSelectorObservation(AgentLearningCausalExperiment $experiment): array
+    {
+        $agents = LabAgent::whereIn('id', [$experiment->guided_agent_id, $experiment->blinded_agent_id,
+            $experiment->control_agent_id])->with('modelVersion')->get()->keyBy('id');
+        $observations = $agents->map(fn ($agent): array => (array) data_get($agent->modelVersion?->metadata,
+            'portfolio_council_lane.causal_learning_cohort.memory_search_receipt', []));
+        if ($observations->every(fn ($receipt): bool => $receipt === [])) {
+            return ['status' => 'not_measured', 'reason_code' => 'NO_PREREGISTERED_SELECTOR_OBSERVATION'];
+        }
+        $invalid = ['status' => 'invalid', 'reason_code' => 'BENCHMARK_SELECTOR_OBSERVATION_INVALID'];
+        if ($agents->count() !== 3 || $observations->contains(fn ($receipt): bool => $receipt === [])) return $invalid;
+        $receipt = $observations->get($experiment->guided_agent_id);
+        $core = array_diff_key($receipt, ['receipt_hash' => true]);
+        $hashes = app(ExecutionContractService::class);
+        if (($receipt['protocol'] ?? null) !== 'causal_selector_observation_v1'
+            || ! filled($receipt['receipt_hash'] ?? null) || ! hash_equals($receipt['receipt_hash'], $hashes->hashParameters($core))
+            || ! $observations->every(fn ($other): bool => $hashes->hashParameters($other) === $hashes->hashParameters($receipt))
+            || ($receipt['blinded_guided_treatment_exclusion'] ?? true) !== false
+            || (int) ($receipt['minimum_distinct_questions'] ?? 0) < 5
+            || ! filled($receipt['question_key'] ?? null) || ! filled($receipt['timing_scope'] ?? null)
+            || (float) ($receipt['per_selector_admission_seconds_limit'] ?? 0) <= 0
+            || (array) data_get($receipt, 'arms.memory_blinded.memory_input_ids', []) !== []) return $invalid;
+        $baseline = (array) $agents->get($experiment->control_agent_id)?->modelVersion?->parameters;
+        $schema = app(StrategyParameterSchemaService::class)->schema($experiment->strategy_family);
+        if (! hash_equals((string) ($receipt['baseline_parameter_hash'] ?? ''), $hashes->hashParameters($baseline))
+            || ! hash_equals((string) ($receipt['legal_mutation_space_hash'] ?? ''), $hashes->hashParameters([
+                'schema' => $schema, 'baseline' => $baseline, 'target' => $experiment->target]))) return $invalid;
+        foreach (['memory_enabled' => $experiment->guided_agent_id, 'memory_blinded' => $experiment->blinded_agent_id] as $role => $id) {
+            $choice = (array) data_get($receipt, 'arms.'.$role, []);
+            $gene = (string) ($choice['selected_gene'] ?? '');
+            $seconds = $choice['wall_seconds'] ?? null;
+            if (! is_numeric($seconds) || ! is_finite((float) $seconds) || (float) $seconds < 0
+                || ! array_key_exists($gene, $schema) || ! array_key_exists($gene, $baseline)
+                || ! array_key_exists('value', $choice) || ! array_key_exists('old_value', $choice)
+                || $hashes->hashParameters(['value' => $choice['old_value']]) !== $hashes->hashParameters(['value' => $baseline[$gene]])
+                || $hashes->hashParameters(['value' => $choice['value']]) === $hashes->hashParameters(['value' => $baseline[$gene]])) return $invalid;
+            $expected = $baseline;
+            $expected[$gene] = $choice['value'];
+            if ($hashes->hashParameters($expected) !== $hashes->hashParameters((array) $agents->get($id)?->modelVersion?->parameters)) return $invalid;
+            try {
+                app(StrategyParameterSchemaService::class)->validate($experiment->strategy_family, $expected);
+            } catch (\InvalidArgumentException) {
+                return $invalid;
+            }
+            if (($choice['within_admission_budget'] ?? null)
+                !== ((float) $seconds <= (float) $receipt['per_selector_admission_seconds_limit'])) return $invalid;
+        }
+        return ['status' => 'measured_constructor_observation', 'receipt' => $receipt,
+            'baseline_and_legal_space_verified' => true, 'three_arm_receipt_identity_verified' => true,
+            'promotion_evidence' => false];
+    }
+
+    private function selectorSearchComparison(array $contract, $folds, array $resources, AgentLearningCausalExperiment $experiment): array
+    {
+        $observation = (array) ($contract['selector_observation'] ?? []);
+        if (($observation['status'] ?? null) !== 'measured_constructor_observation') {
+            return ['status' => 'not_measured', 'reason_code' => 'NO_PREREGISTERED_SELECTOR_OBSERVATION',
+                'repeated_known_error' => null, 'independent_window_retention' => null,
+                'memory_superiority_proven' => false, 'promotion_evidence' => false];
+        }
+        $receipt = $observation['receipt'];
+        $arms = [];
+        $minimumTrades = max(1, (int) config('services.learning_lane.causal_minimum_trades_per_window', 8));
+        foreach (['memory_enabled', 'memory_blinded'] as $role) {
+            $id = (int) $contract['arm_ids'][$role];
+            $cpu = 0.0; $wall = 0.0; $first = null; $measured = true;
+            foreach ($folds as $fold) {
+                $items = collect((array) data_get($fold->response_payload, 'leaderboard', []))->keyBy('lab_agent_id');
+                $result = (array) data_get($items->get($id), 'result', []);
+                $control = (array) data_get($items->get($contract['arm_ids']['frozen_control']), 'result', []);
+                $measurement = (array) data_get($result, 'benchmark.arm_replay_resources', []);
+                if ($resources[$role] === null) $measured = false;
+                $cpu += (float) ($measurement['cpu_seconds'] ?? 0); $wall += (float) ($measurement['wall_seconds'] ?? 0);
+                $comparison = app(GateMarginService::class)->compare($result, $control, $experiment->target);
+                if ((int) ($result['total_trades'] ?? 0) >= $minimumTrades && (int) ($control['total_trades'] ?? 0) >= $minimumTrades
+                    && data_get($comparison, 'candidate_better') === true) {
+                    $first = ['status' => 'local_powered_target_candidate', 'fold_index' => (int) $fold->fold_index,
+                        'selector_wall_seconds' => data_get($receipt, 'arms.'.$role.'.wall_seconds'),
+                        'cumulative_replay_cpu_seconds' => $measured ? $cpu : null,
+                        'cumulative_replay_wall_seconds' => $measured ? $wall : null,
+                        'independent_benefit_proven' => false];
+                    break;
+                }
+            }
+            $arms[$role] = ['selector_wall_seconds' => data_get($receipt, 'arms.'.$role.'.wall_seconds'),
+                'within_selector_admission_budget' => data_get($receipt, 'arms.'.$role.'.within_admission_budget'),
+                'first_local_powered_target_candidate' => $first,
+                'repeated_known_error' => null, 'repeated_error_reason' => 'ORIGINAL_MATCHING_NEGATIVE_EXPOSURE_NOT_ATTESTED',
+                'independent_window_retention' => null];
+        }
+        return ['status' => 'measured_selector_and_replay_diagnostic', 'question_key' => $receipt['question_key'],
+            'selector_receipt_hash' => $receipt['receipt_hash'], 'minimum_distinct_questions' => $receipt['minimum_distinct_questions'],
+            'legal_mutation_space_hash' => $receipt['legal_mutation_space_hash'], 'selector_wall_timing_scope' => $receipt['timing_scope'],
+            'equal_selector_admission_caps' => true, 'selector_cpu_measured' => false,
+            'arms' => $arms, 'independent_window_retention' => null,
+            'memory_superiority_proven' => false, 'promotion_evidence' => false];
     }
 
     private function infer(array $node): array

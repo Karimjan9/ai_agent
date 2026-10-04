@@ -96,6 +96,23 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
         $this->assertSame(1, data_get($closure, 'work.blocked_with_explicit_retry'));
     }
 
+    public function test_unadmitted_instrument_transfer_cannot_be_made_executable_by_the_caller(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $result = $kernel->record($this->contract(), ['hypothesis_only' => true], 'INCONCLUSIVE', [
+            'type' => 'instrument_exact_delta_transfer', 'identity' => 'unadmitted-transfer', 'executable' => true,
+            'retry_condition' => ['code' => 'CALLER_ADMITTED', 'max_experiments' => 99, 'same_evidence_replay_forbidden' => false],
+        ]);
+        $work = ResearchExperimentWorkItem::findOrFail($result['work_id']);
+
+        $this->assertSame('blocked', $work->status);
+        $this->assertFalse(data_get($work->payload, 'executable'));
+        $this->assertSame('CANONICAL_TRANSFER_ADMISSION_AND_AUTHORIZED_UNUSED_WINDOW_REQUIRED', data_get($work->payload, 'retry_condition.code'));
+        $this->assertSame(1, data_get($work->payload, 'retry_condition.max_experiments'));
+        $this->assertTrue(data_get($work->payload, 'retry_condition.same_evidence_replay_forbidden'));
+        $this->assertSame([], $kernel->claimForOwner(ResearchLoopArbiterService::class));
+    }
+
     public function test_owner_claim_cannot_be_starved_by_another_owners_priority_rows(): void
     {
         $kernel = app(ResearchExperimentConversionKernelService::class);

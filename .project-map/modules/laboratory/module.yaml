@@ -17,6 +17,8 @@ paths:
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
   - backend-laravel/app/Services/ExperimentQualityProgressService.php
+  - backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php
+  - backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php
   - backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php
   - backend-laravel/app/Services/TradeManagementLibraryService.php
   - backend-laravel/app/Services/LabLifecycleOrchestrator.php
@@ -113,6 +115,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php
+  - backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php
   - backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php

@@ -717,6 +717,12 @@ class ImmutableLabEvidenceTest extends TestCase
             '*' => Http::response([
                 'active_requests' => 0,
                 'protocol' => 'replay_liveness_v2_bounded_worker',
+                // A test environment without an internal token reads the
+                // official nested /health liveness projection instead.
+                'replay_liveness' => [
+                    'active_requests' => 0,
+                    'protocol' => 'replay_liveness_v2_bounded_worker',
+                ],
             ], 200),
         ]);
 
@@ -893,7 +899,7 @@ class ImmutableLabEvidenceTest extends TestCase
         $evidence->attachRequest($run, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
-            'candles' => [['time' => '2026-01-01T00:00:00Z', 'close' => 2000]],
+            'candles' => array_fill(0, 201, ['time' => '2026-01-01T00:00:00Z', 'close' => 2000]),
         ], ['request_id' => $requestId]);
         $evidence->finishRun($run, 'completed', [
             'total_trades' => 0,
@@ -902,6 +908,7 @@ class ImmutableLabEvidenceTest extends TestCase
             'trades' => [],
             'displayed_trade_count' => 0,
             'decision_trace' => [[
+                'candle_index' => 200,
                 'candle_time' => '2026-01-01T00:00:00Z',
                 'event_type' => 'signal_evaluation',
                 'action' => 'WAIT',
@@ -909,8 +916,10 @@ class ImmutableLabEvidenceTest extends TestCase
             ]],
             'data_quality' => [
                 'decision_trace' => [
+                    'protocol' => 'candle_decision_trace_v1',
                     'requested' => true,
                     'complete' => true,
+                    'event_count' => 1,
                     'evaluated_candle_count' => 1,
                 ],
             ],

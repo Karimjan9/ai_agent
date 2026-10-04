@@ -9,6 +9,7 @@ use App\Models\CapabilityCausalAttribution;
 use App\Models\EvolutionLearningReceipt;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabEvidenceArtifact;
 use App\Models\LabGeneration;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
@@ -21,15 +22,51 @@ use App\Services\ControlRelativeRewardService;
 use App\Services\EvolvingTraderFitnessService;
 use App\Services\FailureSignatureCompilerService;
 use App\Services\LearningCompilerService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\LearningRewardService;
 use App\Services\ResearchClosureInvariantService;
 use App\Services\TradingOperatingSystemScorecardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class LearningTruthProtocolTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_terminal_incomplete_outbox_is_a_dependency_not_repeated_settlement_failure(): void
+    {
+        [$agent, $pair] = $this->pair(true);
+        LabEvidenceArtifact::where('run_id', 'truth-valid')->where('artifact_type', 'decision_trace_manifest')->delete();
+        $service = app(CanonicalLearningOutboxService::class);
+        $result = $service->record($agent, $pair, ['evidence_run_id' => 'truth-valid', 'total_trades' => 0], false, ['improved' => false]);
+        $this->assertSame('blocked_dependency', $result['status']);
+        $this->assertContains('MISSING_COMPLETE_DECISION_TRACE', $result['dependency']['reason_codes']);
+        $outbox = CanonicalLearningOutbox::firstOrFail();
+        $this->assertSame(1, (int) $outbox->attempts);
+        $this->assertSame('blocked_dependency', $service->process($outbox)['status']);
+        $this->assertSame('blocked_dependency', $service->record($agent, $pair->fresh(),
+            ['evidence_run_id' => 'truth-valid', 'total_trades' => 0], false, ['improved' => false])['status']);
+        $this->assertSame(1, (int) $outbox->fresh()->attempts);
+        $this->assertDatabaseCount('agent_learning_settlements', 0);
+        $this->assertSame('diagnostic_only', $pair->fresh()->status);
+        $this->assertFalse($result['promotion_evidence']);
+    }
+
+    public function test_post_settlement_optional_projection_failure_cannot_reopen_canonical_truth(): void
+    {
+        [$agent, $pair] = $this->pair(true);
+        $this->mock(\App\Services\InstrumentPolicyConsumptionService::class, function ($mock): void {
+            $mock->shouldReceive('recordTransferNextWork')->once()->andThrow(new \RuntimeException('TEST_OPTIONAL_PROJECTION_UNAVAILABLE'));
+        });
+        $result = app(CanonicalLearningOutboxService::class)->record($agent, $pair,
+            ['evidence_run_id' => 'truth-valid', 'total_trades' => 0], false, ['improved' => false]);
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame('POST_SETTLEMENT_PROJECTION_FAILED', $result['projection_dependency']);
+        $this->assertSame('completed', CanonicalLearningOutbox::firstOrFail()->status);
+        $this->assertDatabaseCount('agent_learning_settlements', 1);
+        $this->assertSame('canonical_episode_settled', $pair->fresh()->status);
+    }
 
     public function test_partial_screening_reward_is_informative_but_never_absolute_positive(): void
     {
@@ -436,20 +473,33 @@ class LearningTruthProtocolTest extends TestCase
     /** @return array{LabAgent,LabLearningLanePair} */
     private function pair(bool $valid): array
     {
+        Queue::fake();
         $lab = AiLaboratory::create(['name' => 'Truth protocol XAUUSD H1', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_families' => ['hybrid'], 'lifecycle_mode' => 'lighthouse']);
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'trigger_type' => 'test', 'status' => 'screened']);
         $candidateModel = ModelVersion::create(['name' => 'truth-candidate-'.$valid, 'strategy' => 'hybrid', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => ['minimum_confidence' => 1.1], 'metadata' => []]);
         $controlModel = ModelVersion::create(['name' => 'truth-control-'.$valid, 'strategy' => 'hybrid', 'version' => 'v1', 'generation' => 1, 'status' => 'testing', 'parameters' => ['minimum_confidence' => 1.0], 'metadata' => []]);
         $candidate = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $candidateModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => ['minimum_confidence' => ['old' => 1.0, 'new' => 1.1]]]);
         $control = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $controlModel->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test', 'lifecycle_status' => 'screened', 'parameter_diff' => []]);
-        $data = str_repeat('a', 64);
+        $candles = array_fill(0, 201, ['time' => '2025-10-01T00:00:00Z', 'close' => 2000]);
+        $data = app(LabImmutableEvidenceService::class)->hash($candles);
         $execution = str_repeat('b', 64);
         $candidateMap = LabMutationResponseMap::create(['response_key' => 'truth-candidate-'.$valid, 'stage' => 'screening', 'status' => 'screen_observed', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lab_agent_id' => $candidate->id, 'parameter_key' => 'minimum_confidence', 'direction' => 'increase', 'old_value' => ['value' => 1.0], 'new_value' => ['value' => 1.1], 'observed_metrics' => [], 'metadata' => ['data_manifest_hash' => $data, 'execution_hash' => $execution]]);
         $controlMap = LabMutationResponseMap::create(['response_key' => 'truth-control-'.$valid, 'stage' => 'screening', 'status' => 'control', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'lab_agent_id' => $control->id, 'observed_metrics' => ['profit_factor' => 1], 'metadata' => ['control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true, 'role' => 'control', 'generation_id' => $generation->id, 'data_hash' => $data, 'execution_hash' => $execution]]]);
         $pair = LabLearningLanePair::create(['pair_key' => 'truth-pair-'.$valid, 'lab_generation_id' => $generation->id, 'candidate_agent_id' => $candidate->id, 'control_agent_id' => $control->id, 'candidate_response_map_id' => $candidateMap->id, 'control_response_map_id' => $controlMap->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'baseline_source' => 'control', 'status' => 'learning_observed', 'pair_integrity_status' => $valid ? 'verified' : 'diagnostic_only', 'same_generation' => $valid, 'candidate_data_hash' => $data, 'control_data_hash' => $data, 'candidate_execution_hash' => $execution, 'control_execution_hash' => $execution, 'candidate_metrics' => ['profit_factor' => 1], 'control_metrics' => ['profit_factor' => 1], 'metadata' => ['promotion_evidence' => false]]);
         if ($valid) {
-            LabEvaluationRun::create(['run_id' => 'truth-valid', 'lab_generation_id' => $generation->id, 'lab_agent_id' => $candidate->id, 'model_version_id' => $candidate->model_version_id, 'phase' => 'full_validation', 'status' => 'completed', 'metrics' => ['total_trades' => 0]]);
-            LabEvaluationRun::create(['run_id' => 'truth-control', 'lab_generation_id' => $generation->id, 'lab_agent_id' => $control->id, 'model_version_id' => $control->model_version_id, 'phase' => 'screening', 'status' => 'completed', 'metrics' => ['total_trades' => 1]]);
+            $evidence = app(LabImmutableEvidenceService::class);
+            foreach (['truth-valid' => $candidate, 'truth-control' => $control] as $runId => $owner) {
+                $run = LabEvaluationRun::create(['run_id' => $runId, 'lab_generation_id' => $generation->id,
+                    'lab_agent_id' => $owner->id, 'model_version_id' => $owner->model_version_id,
+                    'phase' => $owner->id === $candidate->id ? 'full_validation' : 'screening', 'status' => 'started', 'started_at' => now()]);
+                $evidence->attachRequest($run, ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'candles' => $candles]);
+                $evidence->finishRun($run, 'completed', ['total_trades' => 0, 'trade_ledger' => [], 'trades' => [],
+                    'displayed_trade_count' => 0, 'trade_ledger_hash' => hash('sha256', '[]'),
+                    'decision_trace' => [['candle_index' => 200, 'candle_time' => '2025-10-01T00:00:00Z',
+                        'event_type' => 'signal_evaluation', 'action' => 'WAIT', 'accepted' => false]],
+                    'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1',
+                        'requested' => true, 'complete' => true, 'event_count' => 1, 'evaluated_candle_count' => 1]]]);
+            }
             $pair->update(['candidate_evidence_run_id' => 'truth-valid', 'control_evidence_run_id' => 'truth-control']);
         }
 

@@ -290,6 +290,15 @@ thread CPU and wall seconds for the economic replay only, excluding shared
 features/audit. Python aggregates all measured segments; missing or invalid
 legacy telemetry stays null. Laravel verifies immutable fold identities before
 settling diagnostic memory/blinded resource comparisons. This is not authority.
+The ordinary PHP causal planner adds a hash-bound selector observation: actual
+memory exposure, same baseline/legal space, independent blind treatment and
+scoped selection wall time. This is not Python replay CPU. Benchmark admission
+rechecks all three actual arm vectors before sealing search measurements.
+Replay trace completion is also distinct from process completion: Laravel seals
+producer counts and actual decision coverage before publishing the terminal run
+and dispatching post-commit learning. Walk-forward audit segments preserve the
+producer's evaluated-candle count rather than equating it to warmup-inclusive
+transport rows.
 
 Laravel commands, jobs and queue lanes drive long-running laboratory and
 operations work. Queue dispatch and event listeners are dynamic discovery

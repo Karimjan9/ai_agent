@@ -3,17 +3,27 @@
 namespace Tests\Feature;
 
 use App\Models\InstrumentValuePosterior;
+use App\Models\AgentLearningEpisode;
+use App\Models\AgentLearningSettlement;
+use App\Models\CanonicalLearningOutbox;
+use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabLearningLanePair;
 use App\Models\PlaybookComposition;
+use App\Models\ResearchExperimentReceipt;
+use App\Models\ResearchExperimentWorkItem;
 use App\Services\InstrumentPolicyConsumptionService;
 use App\Services\InstrumentPosteriorAuthorityService;
 use App\Services\InstrumentResearchWindowService;
 use App\Services\InstrumentValidationEvidenceService;
 use App\Services\LabInstrumentResearchService;
+use App\Services\ResearchExperimentConversionKernelService;
+use App\Services\ResearchPaperEpochContractService;
 use App\Services\StrategyParameterSchemaService;
 use App\Services\TradingInstrumentOperatingSystemService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Support\InstrumentValidationFixture;
 use Tests\TestCase;
 
@@ -57,6 +67,10 @@ class InstrumentValidationEpochTest extends TestCase
         $this->assertSame(4, $receipt['tested_interventions'][0]['old']);
         $this->assertSame(5, $receipt['tested_interventions'][0]['new']);
         $this->assertCount(3, $receipt['isolated_sources'][0]['source_receipts']);
+        $this->assertSame($receipt['isolated_sources'][0]['source_receipts'], $receipt['source_to_parameter_lineage'][0]['source_receipts']);
+        $this->assertSame(['transition_wait_candles' => ['old' => 4, 'new' => 5]], $receipt['source_to_parameter_lineage'][0]['actual_parameter_change']);
+        $this->assertSame($receipt['resulting_parameter_hash'], $receipt['source_to_parameter_lineage'][0]['resulting_parameter_hash']);
+        $this->assertTrue($receipt['source_to_parameter_lineage'][0]['comparison_and_ablation_still_required']);
         $this->assertFalse($receipt['paper_execution_authority']);
         $this->assertFalse($receipt['promotion_evidence']);
         $this->assertSame(4, $operating->recordEvidence('transition_protection', 'XAUUSD', 'M15', $context, $outcome)->observations);
@@ -188,6 +202,112 @@ class InstrumentValidationEpochTest extends TestCase
             [...$baseline, 'transition_wait_candles' => 6]));
         $posterior->update(['value_vector' => [...$posterior->value_vector, 'temporal_decay' => .8]]);
         $this->assertSame([], app(LabInstrumentResearchService::class)->mutationPolicy('XAUUSD', 'hybrid', $this->requested($context))['blocked_deltas']);
+    }
+
+    public function test_changed_baseline_creates_only_a_verified_bounded_transfer_hypothesis(): void
+    {
+        [$operating, $bundle, $context, $baseline, $windows] = $this->setupProof();
+        $this->recordProof($operating, $bundle, $context, $baseline, $windows);
+        $policy = app(LabInstrumentResearchService::class)->mutationPolicy('XAUUSD', 'hybrid', $this->requested($context));
+        $consumer = app(InstrumentPolicyConsumptionService::class);
+        $this->assertSame([], $consumer->transferHypotheses($policy, $baseline));
+        $this->assertSame([], $consumer->transferHypotheses($policy, [...$baseline, 'transition_wait_candles' => 5]));
+        $changed = [...$baseline, 'atr_stop_multiplier' => $baseline['atr_stop_multiplier'] + .1];
+        $candidate = [...$changed, 'transition_wait_candles' => 5];
+        $this->assertSame('not_applied', $consumer->receipt($policy,
+            ['transition_wait_candles' => ['old' => 4, 'new' => 5]], $candidate)['status']);
+        $independentChoice = [...$changed, 'transition_wait_candles' => 6];
+        $this->assertSame($independentChoice, $consumer->applyPreferredDelta($policy, $changed, $independentChoice, array_keys($baseline)));
+        $hypotheses = $consumer->transferHypotheses($policy, $candidate);
+        $this->assertCount(1, $hypotheses);
+        $hypothesis = $hypotheses[0];
+        $hashes = app(ResearchPaperEpochContractService::class);
+        $this->assertSame('untested_changed_baseline', $hypothesis['status']);
+        $this->assertSame($hashes->parameterHash($changed), $hypothesis['proposed_control_parameter_hash']);
+        $this->assertSame($hashes->parameterHash($candidate), $hypothesis['proposed_candidate_parameter_hash']);
+        $this->assertSame($candidate, $hypothesis['recipient_parameter_snapshot']);
+        $this->assertSame($changed, $hypothesis['proposed_control_parameters']);
+        $this->assertSame($candidate, $hypothesis['proposed_candidate_parameters']);
+        $this->assertSame(['transition_wait_candles' => ['old' => 4, 'new' => 5]], $hypothesis['proposed_parameter_diff']);
+        $this->assertSame($policy['preferred_deltas'][0]['source']['source_receipts'], $hypothesis['source']['source_receipts']);
+        $this->assertTrue($hypothesis['trait_already_present']);
+        $this->assertTrue($hypothesis['equal_compute_budget_required']);
+        $this->assertTrue($hypothesis['authorized_unused_validation_window_required']);
+        $this->assertContains('matched_trait_ablation', $hypothesis['required_comparisons']);
+        $this->assertFalse($hypothesis['retained_benefit']);
+        $this->assertFalse($hypothesis['independent_evidence']);
+        $this->assertFalse($hypothesis['paper_execution_authority']);
+        $this->assertSame('requires_canonical_transfer_admission', $hypothesis['canonical_transfer_admission']['status']);
+        $this->assertSame(\App\Services\CanonicalSkillCartridgeService::class, $hypothesis['canonical_transfer_admission']['owner']);
+        $this->assertFalse($hypothesis['canonical_transfer_admission']['admitted']);
+        $this->assertSame($hypotheses, $consumer->transferHypotheses($policy, $candidate));
+        $poison = $policy;
+        $poison['preferred_deltas'][0]['source']['context']['venue_phase'] = 'london_interfix';
+        $poison['context']['venue_phase'] = 'london_interfix';
+        $this->assertSame([], $consumer->transferHypotheses($poison, $candidate));
+        $poison = $policy;
+        $poison['preferred_deltas'][0]['bundle_sources'] = [];
+        $this->assertSame([], $consumer->transferHypotheses($poison, $candidate));
+        config()->set('services.instrument_policy.authorized_research_windows', []);
+        $this->assertSame([], $consumer->transferHypotheses($policy, $candidate));
+    }
+
+    public function test_committed_actual_recipient_projects_one_blocked_transfer_work_without_credit(): void
+    {
+        [$operating, $bundle, $context, $baseline, $windows] = $this->setupProof();
+        $this->recordProof($operating, $bundle, $context, $baseline, $windows);
+        $policy = app(LabInstrumentResearchService::class)->mutationPolicy('XAUUSD', 'hybrid', $this->requested($context));
+        $changed = [...$baseline, 'atr_stop_multiplier' => $baseline['atr_stop_multiplier'] + .1];
+        // Synthetic canonical facts exercise the handoff; not 2026 market/independence proof.
+        $facts = $this->exactValidationFacts($context, $windows[0], 'transfer-recipient', 'transition_wait_candles', 4, 5, $changed);
+        $pair = LabLearningLanePair::where('pair_key', $facts['source_receipt']['pair_key'])->firstOrFail();
+        $agent = LabAgent::findOrFail($pair->candidate_agent_id);
+        $agent->modelVersion->update(['metadata' => [...$agent->modelVersion->metadata, 'instrument_learning_policy' => $policy]]);
+        $pair->update(['failure_signature' => ['state' => $this->requested($context)]]);
+        $run = LabEvaluationRun::where('run_id', $pair->candidate_evidence_run_id)->firstOrFail();
+        $run->update(['request_meta' => ['payload' => ['timeframe' => 'M15']]]);
+        $episode = AgentLearningEpisode::create(['episode_id' => (string) Str::uuid(), 'decision_key' => 'transfer-recipient',
+            'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'status' => 'settled',
+            'context_hash' => hash('sha256', 'synthetic-context'), 'decision_context' => [], 'opened_at' => now()]);
+        AgentLearningSettlement::create(['settlement_id' => (string) Str::uuid(), 'episode_id' => $episode->id,
+            'source_key' => 'transfer-recipient-settlement', 'source_type' => LabLearningLanePair::class, 'source_id' => $pair->id,
+            'outcome_status' => 'settled', 'evidence_state' => 'uncertain', 'outcome' => [], 'settled_at' => now()]);
+        $outbox = CanonicalLearningOutbox::create(['idempotency_key' => hash('sha256', 'transfer-outbox'),
+            'kind' => 'canonical_episode', 'status' => 'pending', 'pair_id' => $pair->id, 'evidence_run_id' => $run->run_id,
+            'data_hash' => $pair->candidate_data_hash, 'execution_hash' => $pair->candidate_execution_hash,
+            'payload' => ['result' => ['timeframe' => 'M15']]]);
+        $consumer = app(InstrumentPolicyConsumptionService::class);
+        $this->assertSame('blocked', $consumer->recordTransferNextWork($agent, $outbox)['status']);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $outbox->update(['status' => 'completed']);
+        $pair->update(['failure_signature' => ['state' => [...$this->requested($context), 'venue_phase' => 'london_interfix']]]);
+        $this->assertSame('not_proposed', $consumer->recordTransferNextWork($agent, $outbox)['status']);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $pair->update(['failure_signature' => ['state' => $this->requested($context)]]);
+        $before = [$agent->fresh()->toArray(), $agent->modelVersion->fresh()->toArray(), $run->fresh()->toArray(), $outbox->fresh()->toArray()];
+        $projected = $consumer->recordTransferNextWork($agent, $outbox);
+        $this->assertSame('recorded', $projected['status']);
+        $this->assertSame('blocked', $projected['work_status']);
+        $work = ResearchExperimentWorkItem::findOrFail($projected['work_id']);
+        $receipt = ResearchExperimentReceipt::findOrFail($projected['receipt_id']);
+        $this->assertSame('instrument_exact_delta_transfer', $work->work_type);
+        $this->assertFalse($work->payload['executable']);
+        $this->assertSame(1, data_get($work->payload, 'retry_condition.max_experiments'));
+        $this->assertSame('requires_canonical_transfer_admission', data_get($work->payload, 'canonical_transfer_admission.status'));
+        $this->assertSame($agent->model_version_id, data_get($receipt->payload, 'evidence.recipient_model_version_id'));
+        $this->assertSame($run->parameter_hash, data_get($receipt->payload, 'evidence.recipient_parameter_hash'));
+        $this->assertTrue(data_get($receipt->payload, 'evidence.hypothesis_only'));
+        $this->assertFalse(data_get($receipt->payload, 'evidence.answered_comparison'));
+        $this->assertFalse(data_get($receipt->payload, 'evidence.retained_benefit'));
+        $this->assertSame('M15', $receipt->execution_timeframe);
+        $this->assertSame($projected, $consumer->recordTransferNextWork($agent, $outbox));
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
+        $this->assertSame($before, [$agent->fresh()->toArray(), $agent->modelVersion->fresh()->toArray(), $run->fresh()->toArray(), $outbox->fresh()->toArray()]);
+        $this->assertSame([], app(ResearchExperimentConversionKernelService::class)->claimForOwner(\App\Services\ResearchLoopArbiterService::class));
+        $agent->modelVersion->update(['parameters' => [...$agent->modelVersion->parameters, 'transition_wait_candles' => 6]]);
+        $this->assertSame('blocked', $consumer->recordTransferNextWork($agent, $outbox)['status']);
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
     }
 
     private function setupProof(): array

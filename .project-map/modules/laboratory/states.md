@@ -81,6 +81,11 @@ An autonomous recovery whose prior immutable run used a different foundation
 hash cannot replay as the same experiment. It seals a terminal technical
 disposition and consumes the one bounded repair allowance; the agent stays
 quarantined while a fresh generation can be selected.
+The same bounded terminal disposition applies when the sealed evaluator is no
+longer the deployed release. Recovery checks release identity before dataset
+restoration and again on queued admission; an old cohort cannot be resealed or
+silently replayed under new source. A merely stale loaded worker is still a
+reload dependency, not terminal frozen-evaluator evidence.
 `AUTONOMOUS_MTF_BUNDLE_MISSING` is an immutable admission/construction failure,
 not recoverable replay transport debt. The affected generation remains failed
 history while the next generation must pass snapshot admission before queueing.

@@ -171,6 +171,7 @@ class CausalLearningCohortPlannerService
         })->filter(fn ($indexes, string $family): bool => $family !== '' && $indexes->count() >= 3);
 
         foreach ($familyGroups as $family => $indexes) {
+            $guidedSelectionStarted = hrtime(true);
             $requestedLessonId = collect($indexes)->map(
                 fn (int $index): int => (int) data_get($plan[$index], 'niche.causal_confirmation_source_lesson_id', 0),
             )->filter(fn (int $id): bool => $id > 0)->unique()->first();
@@ -194,6 +195,7 @@ class CausalLearningCohortPlannerService
             if (data_get($skillCartridge, 'status') !== 'compatible_cartridge_found') {
                 continue;
             }
+            $guidedSelectionSeconds = (hrtime(true) - $guidedSelectionStarted) / 1_000_000_000;
             $pair = LabLearningLanePair::query()
                 ->with(['candidateAgent.modelVersion', 'controlAgent.modelVersion', 'controlResponseMap'])
                 ->find((int) data_get($lesson->evidence, 'pair_id', 0));
@@ -266,17 +268,59 @@ class CausalLearningCohortPlannerService
             $experimentKey = hash('sha512', json_encode([
                 self::PROTOCOL, $generationId, $lesson->id, $family, $gene, $value,
             ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            $blindedSelectionStarted = hrtime(true);
             $blindedMutation = app(CausalBlindedMutationSelectorService::class)->select(
                 $family,
                 $target,
                 (array) $pair->controlAgent->modelVersion->parameters,
                 'lesson:'.$lesson->id,
-                $gene,
-                $value,
+                // A search comparator must not exclude the guided treatment:
+                // that conditions the blind choice on memory. Independent
+                // selection of the same treatment is an honest null comparison.
+                null,
+                null,
             );
+            $blindedSelectionSeconds = (hrtime(true) - $blindedSelectionStarted) / 1_000_000_000;
             if ($blindedMutation === null) {
                 continue;
             }
+            $baseline = (array) $sourceModel->parameters;
+            $hashes = app(ExecutionContractService::class);
+            $searchReceipt = [
+                'protocol' => 'causal_selector_observation_v1',
+                'registered_at' => now()->utc()->toIso8601String(),
+                'question_key' => $hashes->hashParameters([$pair->id, $family, $target, $sourceContext, $baseline]),
+                'baseline_parameter_hash' => $hashes->hashParameters($baseline),
+                'legal_mutation_space_hash' => $hashes->hashParameters([
+                    'schema' => app(StrategyParameterSchemaService::class)->schema($family),
+                    'baseline' => $baseline, 'target' => $target,
+                ]),
+                'seed' => 'lesson:'.$lesson->id,
+                'minimum_distinct_questions' => 5,
+                'per_selector_admission_seconds_limit' => 30,
+                'timing_scope' => 'eligible_lesson_and_cartridge_lookup_vs_cold_start_mutation_selection',
+                'shared_source_and_cohort_preparation_excluded' => true,
+                'blinded_guided_treatment_exclusion' => false,
+                'arms' => [
+                    'memory_enabled' => ['wall_seconds' => $guidedSelectionSeconds,
+                        'within_admission_budget' => $guidedSelectionSeconds <= 30,
+                        'selected_gene' => $gene, 'old_value' => $baseline[$gene] ?? null, 'value' => $value,
+                        'memory_input_ids' => ['lesson_id' => (int) $lesson->id,
+                            'cartridge_id' => (int) data_get($skillCartridge, 'cartridge_id'),
+                            'source_pair_id' => (int) $pair->id],
+                        'memory_exposure_hash' => $hashes->hashParameters([
+                            'lesson_id' => (int) $lesson->id, 'lesson_evidence' => (array) $lesson->evidence,
+                            'source_pair_id' => (int) $pair->id, 'pair_evidence' => (array) $pair->metadata,
+                        ])],
+                    'memory_blinded' => ['wall_seconds' => $blindedSelectionSeconds,
+                        'within_admission_budget' => $blindedSelectionSeconds <= 30,
+                        'selected_gene' => $blindedMutation['gene'], 'old_value' => $blindedMutation['old_value'],
+                        'value' => $blindedMutation['value'], 'memory_input_ids' => []],
+                ],
+                'independent_validation_proven' => false,
+                'memory_superiority_proven' => false, 'promotion_evidence' => false,
+            ];
+            $searchReceipt['receipt_hash'] = $hashes->hashParameters($searchReceipt);
             foreach ([$guidedRole, 'blinded', 'frozen_control'] as $offset => $role) {
                 $index = (int) $chosen[$offset];
                 $slot = (array) $plan[$index];
@@ -324,6 +368,7 @@ class CausalLearningCohortPlannerService
                         'baseline_old_value' => $this->lessonOldValue($lesson),
                         'construction_protocol' => CausalRepairFrontierService::CONSTRUCTION_PROTOCOL,
                         'blinded_selector' => $blindedMutation,
+                        'memory_search_receipt' => $searchReceipt,
                         'same_parent_required' => true,
                         'same_dataset_required' => true,
                         'same_execution_contract_required' => true,
@@ -402,6 +447,7 @@ class CausalLearningCohortPlannerService
                 'blinded_policy' => 'cold_start_memory_blinded_selector',
                 'construction_protocol' => CausalRepairFrontierService::CONSTRUCTION_PROTOCOL,
                 'blinded_selector' => $blindedMutation,
+                'memory_search_receipt' => $searchReceipt,
                 'slots' => $chosen->map(fn (int $index): int => $index + 1)->all(),
             ]];
         }

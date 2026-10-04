@@ -22,11 +22,13 @@ use App\Services\TradingInstrumentOperatingSystemService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\InstrumentValidationFixture;
 use Tests\TestCase;
 
 class LearningEvolutionChainAcceptanceTest extends TestCase
 {
     use RefreshDatabase;
+    use InstrumentValidationFixture;
 
     public function test_later_parent_artifacts_cannot_hide_a_missing_bundle_and_complete_chain_is_observable(): void
     {
@@ -60,9 +62,9 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
         ]);
         InstrumentValuePosterior::create([
             'trading_instrument_id' => $instrument->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
-            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid', 'observations' => 5,
+            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 'observations' => 5,
             'net_value' => .2, 'uncertainty' => .1, 'decay_state' => 'confirmed',
-            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid'),
+            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix'),
         ]);
 
         DB::table('evolutionary_authority_ledgers')->insert([
@@ -107,9 +109,9 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
         ]);
         PlaybookValuePosterior::create([
             'playbook_composition_id' => $playbook->id, 'symbol' => 'XAUUSD', 'timeframe' => 'M15',
-            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid', 'observations' => 5,
+            'state_key' => 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix', 'observations' => 5,
             'net_value' => .18, 'uncertainty' => .1, 'decay_state' => 'confirmed',
-            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid'),
+            'value_vector' => $this->posteriorVector('trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix'),
         ]);
 
         $complete = app(LearningIntelligenceAuditService::class)->snapshot('XAUUSD', 'H1');
@@ -123,7 +125,9 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
     private function verifiedPair(): array
     {
         $lab = AiLaboratory::create([
-            'symbol' => 'XAUUSD', 'name' => 'Golden chain', 'timeframe' => 'H1',
+            // Reuse the shared proof fixture's laboratory; symbol/timeframe is
+            // unique even when the learning-chain and proof generations differ.
+            'symbol' => 'XAUUSD', 'name' => 'Synthetic instrument validation fixture', 'timeframe' => 'H1',
             'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse',
         ]);
         $generation = LabGeneration::create([
@@ -202,20 +206,10 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
             ->seal($manifest['authorization_id'], $manifest['dataset_sha256']), $manifests);
         $evidenceKeys = ['evidence-1', 'evidence-2', 'evidence-3', 'evidence-4', 'evidence-5'];
 
-        return [
-            'context' => [
-                'regime' => 'trend_up', 'session' => 'london', 'volatility' => 'normal',
-                'spread_state' => 'normal', 'transition' => 'stable', 'loss_streak' => 0,
-                'direction' => 'buy', 'strategy_family' => 'hybrid', 'state_key' => $stateKey,
-            ],
-            'strategy_family' => 'hybrid',
-            'independent_window_keys' => array_column($windows, 'window_key'),
-            'window_evidence' => array_map(fn (string $key, int $index): array => [
+        // The chain must consume current exact-delta proof from original completed
+        // candidate/control runs, not trust legacy posterior aggregate labels.
+        return $this->exactValidationVector($stateKey, array_map(fn (string $key, int $index): array => [
                 'window' => $windows[$index % 3], 'evidence_key' => $key, 'outcome' => 'positive',
-            ], $evidenceKeys, array_keys($evidenceKeys)),
-            'evidence_keys' => $evidenceKeys,
-            'positive_observations' => 5, 'negative_observations' => 0,
-            'non_target_regression_count' => 0,
-        ];
+            ], $evidenceKeys, array_keys($evidenceKeys)));
     }
 }

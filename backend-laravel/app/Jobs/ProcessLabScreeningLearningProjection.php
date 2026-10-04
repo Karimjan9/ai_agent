@@ -22,6 +22,7 @@ use App\Services\ParentAwareCreditService;
 use App\Services\ProvisionalSkillCartridgeService;
 use App\Services\SkillMentorService;
 use App\Services\SkillZooService;
+use App\Services\ScreeningLearningOutboxService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -108,6 +109,23 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         if (! $run || (string) $run->status !== 'completed') {
             // A technical/incomplete run is not allowed to teach the
             // mutation/compiler lane. It remains recoverable evidence only.
+            return;
+        }
+        $eligibility = $evidence->learningEligibility($run);
+        if ((int) $run->lab_agent_id !== (int) $agent->id
+            || (int) $run->model_version_id !== (int) $agent->model_version_id
+            || (int) $run->lab_generation_id !== (int) $agent->lab_generation_id) {
+            $eligibility['complete'] = false;
+            $eligibility['reason_codes'][] = 'SCREENING_EVIDENCE_OWNER_MISMATCH';
+        }
+        if (! $eligibility['complete']) {
+            // Preflight before *any* derived learning write. Terminal
+            // immutable omissions cannot be healed by retrying this job;
+            // retain one typed dependency and leave all original facts alone.
+            app(ScreeningLearningOutboxService::class)->recordEvidenceDependency(
+                $agent, [...$this->screenProjection, 'evidence_run_id' => $this->runId], $eligibility,
+            );
+
             return;
         }
 

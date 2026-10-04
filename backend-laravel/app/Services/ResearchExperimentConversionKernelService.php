@@ -264,22 +264,28 @@ class ResearchExperimentConversionKernelService
             'academy_adversarial_ablation' => [false, 'VERSIONED_ABLATION_CONTRACT_REQUIRED', 1],
             'activation_independent_validation' => [false, 'AUTHORIZED_RESEARCH_WINDOW_REQUIRED', 1],
             'activation_new_opportunity_window' => [false, 'AUTHORIZED_RESEARCH_WINDOW_REQUIRED', 1],
+            'instrument_exact_delta_transfer' => [false, 'CANONICAL_TRANSFER_ADMISSION_AND_AUTHORIZED_UNUSED_WINDOW_REQUIRED', 1],
         ];
         [$executable, $retryCode, $maxExperiments] = $profiles[$type] ?? [true, 'OWNER_RETRY_ADMISSION', 1];
         $activationRequiresWindow = in_array($type, [
             'activation_independent_validation', 'activation_new_opportunity_window',
+            'instrument_exact_delta_transfer',
         ], true);
+        $retryCondition = (array) ($nextWork['retry_condition'] ?? [
+            'code' => $retryCode, 'max_experiments' => $maxExperiments, 'same_evidence_replay_forbidden' => true,
+        ]);
+        if ($type === 'instrument_exact_delta_transfer') {
+            // A proposal is not canonical admission, even when a caller supplies
+            // a runnable flag or a larger retry budget.
+            $retryCondition = ['code' => $retryCode, 'max_experiments' => 1, 'same_evidence_replay_forbidden' => true];
+        }
 
         return [
             ...$nextWork,
             'owner' => (string) ($nextWork['owner'] ?? ResearchLoopArbiterService::class),
             'executor' => (string) ($nextWork['executor'] ?? ResearchExperimentWorkConsumerService::class),
             'executable' => $activationRequiresWindow ? false : (bool) ($nextWork['executable'] ?? $executable),
-            'retry_condition' => (array) ($nextWork['retry_condition'] ?? [
-                'code' => $retryCode,
-                'max_experiments' => $maxExperiments,
-                'same_evidence_replay_forbidden' => true,
-            ]),
+            'retry_condition' => $retryCondition,
         ];
     }
 

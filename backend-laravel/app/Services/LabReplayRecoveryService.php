@@ -33,6 +33,10 @@ class LabReplayRecoveryService
             throw new RuntimeException('Recovery generation/laboratory topilmadi.');
         }
 
+        // Recovery is the original experiment, not permission to run yesterday's
+        // frozen cohort with today's evaluator. Check before costly data restore.
+        app(ResearchReleaseSealService::class)->assertCurrent($generation);
+
         $includeVolume = $this->volumeEnabled($agent);
         $context = (array) $generation->trigger_context;
         $priceKey = $includeVolume ? 'volume' : 'price';
@@ -58,6 +62,7 @@ class LabReplayRecoveryService
             'symbol' => (string) $generation->laboratory->symbol,
             'timeframe' => (string) $generation->laboratory->timeframe,
             'include_volume' => $includeVolume,
+            'research_release_hash' => data_get($context, 'research_release.release_hash'),
             'dataset_hashes' => [
                 'price' => (string) ($price['sha256'] ?? ''),
                 'foundation' => (string) ($foundation['sha256'] ?? ''),
@@ -110,6 +115,12 @@ class LabReplayRecoveryService
             || strtoupper((string) data_get($contract, 'timeframe')) !== strtoupper((string) $agent->timeframe)) {
             throw new RuntimeException('RECOVERY_AGENT_SCOPE_MISMATCH');
         }
+
+        $releaseHash = data_get($generation->trigger_context, 'research_release.release_hash');
+        if ($releaseHash !== data_get($contract, 'research_release_hash')) {
+            throw new RuntimeException('RECOVERY_RESEARCH_RELEASE_IDENTITY_MISMATCH');
+        }
+        app(ResearchReleaseSealService::class)->assertCurrent($generation);
 
         $this->assertContractSnapshots($generation, $contract);
     }

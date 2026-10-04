@@ -153,6 +153,8 @@ class EvolutionAuditRegressionTest extends TestCase
     public function test_missing_or_stale_python_receipt_is_not_accepted_as_release_proof(): void
     {
         $row = $this->settlement(1);
+        // This exercises release identity, not the separate physical authorized-window transport contract.
+        config()->set('services.instrument_policy.authorized_research_windows', []);
         $agent = $row->episode->labAgent;
         $service = app(ResearchReleaseSealService::class);
         $generation = $service->seal($agent->generation);
@@ -165,7 +167,7 @@ class EvolutionAuditRegressionTest extends TestCase
         $this->assertFalse($service->responseValid($seal, [...$receipt, 'boot_source_hash' => str_repeat('a', 64)]));
         $evidence = app(LabImmutableEvidenceService::class);
         $run = $evidence->beginRun($agent->fresh(), 'screening', 'incremental');
-        $evidence->attachRequest($run, $service->bindRequest($run, ['replay_dataset_hash' => $seal['dataset_hash'],
+        $evidence->attachRequest($run, $service->bindRequest($run, ['evaluation_mode' => 'full', 'replay_dataset_hash' => $seal['dataset_hash'],
             'execution_contract' => (array) data_get($agent->modelVersion->metadata, 'execution_contract')]));
         $this->assertContains('RESEARCH_WORKER_RELEASE_RECEIPT_INVALID',
             $evidence->replayEvidenceCompleteness($run->fresh(), [])['reason_codes']);
@@ -176,22 +178,23 @@ class EvolutionAuditRegressionTest extends TestCase
     public function test_release_cost_identity_survives_json_key_order_and_integer_projection(): void
     {
         $agent = $this->settlement(1)->episode->labAgent;
+        config()->set('services.instrument_policy.authorized_research_windows', []);
         $agent->modelVersion->update(['metadata' => ['execution_contract' => [
             'timeframe' => 'H1', 'parameters' => ['spread_points' => 20.0, 'max_leverage' => 5.0]]]]);
         $service = app(ResearchReleaseSealService::class);
         $generation = $service->seal($agent->generation);
-        $request = $service->bindGenerationRequest($generation, ['replay_dataset_hash' => $generation->trigger_context['research_release']['dataset_hash'], 'execution_contract' => [
+        $request = $service->bindGenerationRequest($generation, ['evaluation_mode' => 'full', 'replay_dataset_hash' => $generation->trigger_context['research_release']['dataset_hash'], 'execution_contract' => [
             'timeframe' => 'M5', 'parameters' => ['max_leverage' => 5, 'spread_points' => 20]]], [$agent->id]);
         $this->assertSame($generation->trigger_context['research_release']['release_hash'], $request['research_release']['release_hash']);
         try {
-            $service->bindGenerationRequest($generation, ['replay_dataset_hash' => str_repeat('f', 64),
+            $service->bindGenerationRequest($generation, ['evaluation_mode' => 'full', 'replay_dataset_hash' => str_repeat('f', 64),
                 'execution_contract' => ['parameters' => ['max_leverage' => 5, 'spread_points' => 20]]], [$agent->id]);
             $this->fail('Drifted request dataset was accepted.');
         } catch (\RuntimeException $error) {
             $this->assertSame('RESEARCH_RELEASE_REQUEST_DATASET_DRIFT', $error->getMessage());
         }
         $this->expectExceptionMessage('RESEARCH_RELEASE_REQUEST_EXECUTION_DRIFT');
-        $service->bindGenerationRequest($generation, ['replay_dataset_hash' => $generation->trigger_context['research_release']['dataset_hash'], 'execution_contract' => [
+        $service->bindGenerationRequest($generation, ['evaluation_mode' => 'full', 'replay_dataset_hash' => $generation->trigger_context['research_release']['dataset_hash'], 'execution_contract' => [
             'parameters' => ['max_leverage' => 6, 'spread_points' => 20]]], [$agent->id]);
     }
 

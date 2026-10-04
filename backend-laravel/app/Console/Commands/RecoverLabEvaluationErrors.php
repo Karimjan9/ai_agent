@@ -644,12 +644,15 @@ class RecoverLabEvaluationErrors extends Command
             // A prior immutable run already used a different dataset. An
             // autonomous timeout retry cannot turn that into the same
             // experiment by silently accepting today's frozen hash.
-            || str_starts_with($message, 'RECOVERY_PRIOR_DATASET_HASH_MISMATCH:');
+            || str_starts_with($message, 'RECOVERY_PRIOR_DATASET_HASH_MISMATCH:')
+            // The original evaluator cannot be silently replaced after a
+            // release. Preserve the attempt as terminal technical history.
+            || $message === 'RESEARCH_RELEASE_SOURCE_DRIFT';
     }
 
     /**
      * A missing/tampered generation snapshot cannot be repaired without
-     * changing the experiment's data. Consume the single operational repair
+     * changing the experiment's data or evaluator. Consume the operational repair
      * allowance as a terminal technical disposition so autonomous admission
      * can move to a fresh generation without inventing strategy evidence.
      */
@@ -683,7 +686,7 @@ class RecoverLabEvaluationErrors extends Command
             $model->update(['metadata' => $metadata]);
             $agent->update([
                 'lifecycle_status' => 'technical_quarantine',
-                'decision_reason' => 'Frozen same-generation recovery contract is unavailable; replay is impossible without changing data. Strategy verdict withheld; terminal technical history.',
+                'decision_reason' => 'Frozen same-generation recovery contract is unavailable; replay is impossible without changing data or evaluator. Strategy verdict withheld; terminal technical history.',
             ]);
 
             SystemEvent::create([

@@ -532,11 +532,12 @@ class WalkForwardService:
             **(representative.get("data_quality", {}) or {}),
             "decision_trace": {
                 **((trace_result.get("data_quality", {}) or {}).get("decision_trace", {}) or {}),
-                "requested": True,
-                "complete": True,
                 "audit_slice": True,
                 "economic_score_input": False,
-                "evaluated_candle_count": len(trace_segment),
+                # Preserve the backtester's actual post-warmup coverage and
+                # completeness. Input rows are not evaluated decision rows;
+                # a bounded audit slice is not the aggregate economic trace.
+                "input_candle_count": len(trace_segment),
                 "promotion_evidence": False,
             },
         }

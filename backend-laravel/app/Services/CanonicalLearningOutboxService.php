@@ -7,6 +7,7 @@ use App\Models\AgentLearningSettlement;
 use App\Models\CanonicalLearningOutbox;
 use App\Models\CapabilityCausalAttribution;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabLearningLaneDispatch;
 use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
@@ -57,6 +58,7 @@ class CanonicalLearningOutboxService
 
             return ['status' => 'completed', 'outbox_id' => $row->id, 'promotion_evidence' => false];
         }
+        if ((string) $row->status === 'blocked_dependency') return $this->process($row);
         $pair->update(['status' => 'canonical_pending', 'metadata' => [...((array) $pair->metadata), 'canonical_outbox_id' => $row->id, 'promotion_evidence' => false]]);
 
         return $this->process($row);
@@ -68,8 +70,16 @@ class CanonicalLearningOutboxService
         if ((string) $row->status === 'completed') {
             return ['status' => 'completed', 'outbox_id' => $row->id, 'promotion_evidence' => false];
         }
+        if ((string) $row->status === 'blocked_dependency') {
+            return ['status' => 'blocked_dependency', 'outbox_id' => $row->id,
+                'reason' => 'IMMUTABLE_LEARNING_EVIDENCE_INCOMPLETE', 'promotion_evidence' => false];
+        }
         $pair = $row->pair_id ? LabLearningLanePair::query()->with(['candidateResponseMap', 'controlResponseMap'])->find($row->pair_id) : null;
         $agent = $pair?->candidateAgent?->fresh(['modelVersion']);
+        if ($pair && $agent) {
+            $dependency = $this->immutableEvidenceDependency($pair, $row);
+            if ($dependency !== null) return $dependency;
+        }
         $gate = app(LearningEvidenceGate::class)->allow($pair, $row->evidence_run_id, 'replay_completed');
         if (! $pair || ! $agent || ! $gate['allowed']) {
             return $this->fail($pair, $row, implode(',', $gate['reasons'] ?: ['CONTROL_PAIR_INVALID_AT_SETTLEMENT']));
@@ -124,10 +134,25 @@ class CanonicalLearningOutboxService
             $conversion = app(ResearchExperimentConversionKernelService::class)->recordCanonicalSettlement(
                 $pair, $row->fresh(), $settlement, $map, $result, $insufficient, $cartridge,
             );
+            $transferWork = app(InstrumentPolicyConsumptionService::class)->recordTransferNextWork(
+                $agent->fresh(['modelVersion', 'generation']), $row->fresh(),
+            );
 
             return ['status' => 'completed', 'outbox_id' => $row->id, 'settlement_id' => $settled['settlement']->id,
-                'skill_cartridge' => $cartridge, 'conversion_receipt' => $conversion, 'promotion_evidence' => false];
+                'skill_cartridge' => $cartridge, 'conversion_receipt' => $conversion,
+                'instrument_transfer_work' => $transferWork, 'promotion_evidence' => false];
         } catch (\Throwable $exception) {
+            if ((string) $row->fresh()->status === 'completed') {
+                // Optional derived work cannot revoke an already persisted
+                // canonical settlement or turn a delivery fault into a new
+                // replay/circuit-breaker failure.
+                $pair->update(['metadata' => [...((array) $pair->fresh()->metadata),
+                    'canonical_projection_dependency' => ['status' => 'blocked_dependency',
+                        'reason_code' => 'POST_SETTLEMENT_PROJECTION_FAILED', 'promotion_evidence' => false]]]);
+
+                return ['status' => 'completed', 'outbox_id' => $row->id,
+                    'projection_dependency' => 'POST_SETTLEMENT_PROJECTION_FAILED', 'promotion_evidence' => false];
+            }
             return $this->fail($pair, $row, 'CANONICAL_SETTLEMENT_FAILED', $exception);
         }
     }
@@ -179,8 +204,13 @@ class CanonicalLearningOutboxService
             ]]]);
         }
 
+        $transferWork = $pair->candidateAgent
+            ? app(InstrumentPolicyConsumptionService::class)->recordTransferNextWork(
+                $pair->candidateAgent->fresh(['modelVersion', 'generation']), $row,
+            ) : null;
+
         return ['status' => 'reprojected', 'outbox_id' => $row->id, 'settlement_id' => $settlement->id,
-            'skill_cartridge' => $cartridge, 'promotion_evidence' => false];
+            'skill_cartridge' => $cartridge, 'instrument_transfer_work' => $transferWork, 'promotion_evidence' => false];
     }
 
     /**
@@ -432,6 +462,55 @@ class CanonicalLearningOutboxService
         }
 
         return ['status' => 'canonical_failed', 'reason' => $reason, 'outbox_id' => $row?->id, 'promotion_evidence' => false];
+    }
+
+    /** Missing terminal facts require a new authorized evidence dependency,
+     * not repeated settlement of the same immutable run or circuit strikes. */
+    private function immutableEvidenceDependency(LabLearningLanePair $pair, CanonicalLearningOutbox $row): ?array
+    {
+        $receipts = [];
+        $waiting = false;
+        $terminalBlocked = false;
+        foreach (['candidate' => $row->evidence_run_id, 'control' => $pair->control_evidence_run_id] as $role => $runId) {
+            $run = is_string($runId) ? LabEvaluationRun::query()->where('run_id', $runId)->first() : null;
+            $receipt = app(LabImmutableEvidenceService::class)->learningEligibility($run);
+            if ($role === 'candidate' && $pair->candidate_evidence_run_id !== $row->evidence_run_id) {
+                $receipt['complete'] = false;
+                $receipt['reason_codes'][] = 'CANDIDATE_EVIDENCE_RUN_ID_MISMATCH';
+            }
+            if ($run && ((int) $run->lab_agent_id !== (int) $pair->{$role.'_agent_id'}
+                || (int) $run->lab_generation_id !== (int) $pair->lab_generation_id)) {
+                $receipt['complete'] = false;
+                $receipt['reason_codes'][] = 'CANONICAL_EVIDENCE_OWNER_MISMATCH';
+            }
+            if (! $receipt['complete']) {
+                $identityMismatch = array_intersect($receipt['reason_codes'], ['CANDIDATE_EVIDENCE_RUN_ID_MISMATCH', 'CANONICAL_EVIDENCE_OWNER_MISMATCH']) !== [];
+                $nonterminal = ! $identityMismatch && $run !== null && ! app(LabImmutableEvidenceService::class)->isTerminalRun($run);
+                $waiting = $waiting || $nonterminal;
+                $terminalBlocked = $terminalBlocked || ! $nonterminal;
+                $receipts[$role] = $receipt;
+            }
+        }
+        if ($receipts === []) return null;
+        $waiting = $waiting && ! $terminalBlocked;
+        $dependency = ['protocol' => 'immutable_learning_evidence_dependency_v1',
+            'kind' => 'immutable_evidence_dependency', 'status' => $waiting ? 'awaiting_terminal_evidence' : 'blocked_dependency',
+            'reason_codes' => array_values(array_unique(array_merge(...array_column($receipts, 'reason_codes')))),
+            'receipts' => $receipts, 'same_run_settlement_retry' => $waiting, 'promotion_evidence' => false];
+        $row->update(['status' => $waiting ? 'retry_ready' : 'blocked_dependency',
+            'attempts' => (int) $row->attempts + ($waiting ? 0 : 1),
+            'last_error' => json_encode($dependency, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+            'processed_at' => $waiting ? null : now()]);
+        $pair->update(['status' => $waiting ? 'canonical_pending' : 'diagnostic_only',
+            'metadata' => [...((array) $pair->metadata), 'canonical_evidence_dependency' => $dependency, 'promotion_evidence' => false]]);
+        if (! $waiting) {
+            LabLearningLaneDispatch::query()->where('pair_id', $pair->id)
+                ->whereIn('status', ['selected', 'queued', 'running', 'canonical_pending', 'canonical_failed'])
+                ->update(['status' => 'diagnostic_only', 'completed_at' => null]);
+        }
+
+        return ['status' => $dependency['status'], 'reason' => 'IMMUTABLE_LEARNING_EVIDENCE_INCOMPLETE',
+            'dependency' => $dependency, 'outbox_id' => $row->id, 'promotion_evidence' => false];
     }
 
     private function markDiagnosticOnly(LabLearningLanePair $pair, string $reason): void

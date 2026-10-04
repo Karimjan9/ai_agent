@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T14:48:45.247Z",
-  "source_digest": "7a5c38f76f4a693f1ccb664ead63d99675542757b45195b54221e83d98d6f932",
-  "source_file_count": 1478,
-  "git_head": "353e614fb31841b7a3c3abb9004853fdc1ddc0d3",
+  "generated_at": "2026-10-04T17:51:35.623Z",
+  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
+  "source_file_count": 1480,
+  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -38,6 +38,10 @@
         "backend-laravel/app/Services/ResearchIdeaInboxService.php",
         "backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php",
         "backend-laravel/app/Services/CanonicalLearningOutboxService.php",
+        "backend-laravel/app/Services/ScreeningLearningOutboxService.php",
+        "backend-laravel/app/Services/ScreeningLearningService.php",
+        "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
+        "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
         "backend-laravel/app/Services/CausalArmParityService.php",
         "backend-laravel/app/Services/CausalCapabilityLatticeService.php",
         "backend-laravel/app/Services/CausalGoldenWorldHarnessService.php",
@@ -70,6 +74,8 @@
         "backend-laravel/app/Services/AgentKnowledgeService.php",
         "backend-laravel/app/Services/AgentProfessionalExamService.php",
         "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+        "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+        "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
         "backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabInstrumentResearchService.php",
@@ -133,6 +139,11 @@
         "CausalFoldExecutionService",
         "CausalSkillCreditBridgeService",
         "CanonicalLearningOutboxService",
+        "TypedInstrumentFoundryService::registerCausalBenchmark",
+        "TypedInstrumentFoundryService::settleCausalBenchmark",
+        "EvolutionaryAuthorityFoundryService::settleDescendantOutcome",
+        "CanonicalSkillCartridgeService::planTransplant",
+        "CanonicalSkillCartridgeService::settleTransplantOutcome",
         "ResearchPaperEpochContractService",
         "trading:causal-golden-worlds",
         "trading:reconcile-instrument-pairs"
@@ -197,6 +208,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
         "backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php",
         "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
         "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
@@ -243,7 +255,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 91,
+      "source_file_count": 97,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -320,6 +332,8 @@
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php",
         "backend-laravel/app/Services/ExperimentQualityProgressService.php",
+        "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
+        "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
         "backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php",
         "backend-laravel/app/Services/TradeManagementLibraryService.php",
         "backend-laravel/app/Services/LabLifecycleOrchestrator.php",
@@ -415,6 +429,8 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
+        "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
         "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
         "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
         "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
@@ -441,7 +457,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 47,
+      "source_file_count": 49,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T14:48:45.247Z",
-  "source_digest": "7a5c38f76f4a693f1ccb664ead63d99675542757b45195b54221e83d98d6f932",
-  "source_file_count": 1478,
-  "git_head": "353e614fb31841b7a3c3abb9004853fdc1ddc0d3",
+  "generated_at": "2026-10-04T17:51:35.623Z",
+  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
+  "source_file_count": 1480,
+  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -271,13 +271,13 @@
       "symbol": "OverfitDetectionTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 402
+      "line": 419
     },
     {
       "symbol": "RobustnessScoreTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_walk_forward.py",
-      "line": 407
+      "line": 424
     },
     {
       "symbol": "ActivateMarketAdaptiveReplay",
@@ -1747,7 +1747,7 @@
       "symbol": "ProcessLabScreeningLearningProjection",
       "kind": "php_type",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 41
+      "line": 42
     },
     {
       "symbol": "ProjectLabCandleDecisionEvents",
@@ -3709,7 +3709,7 @@
       "symbol": "CanonicalLearningOutboxService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CanonicalLearningOutboxService.php",
-      "line": 21
+      "line": 22
     },
     {
       "symbol": "CanonicalManualBacktestService",
@@ -4459,7 +4459,7 @@
       "symbol": "ExperimentQualityProgressService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ExperimentQualityProgressService.php",
-      "line": 12
+      "line": 16
     },
     {
       "symbol": "FailureCurriculumService",
@@ -4675,7 +4675,19 @@
       "symbol": "InstrumentPolicyConsumptionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/InstrumentPolicyConsumptionService.php",
-      "line": 9
+      "line": 12
+    },
+    {
+      "symbol": "may",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentPolicyConsumptionService.php",
+      "line": 183
+    },
+    {
+      "symbol": "is",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentPolicyConsumptionService.php",
+      "line": 97
     },
     {
       "symbol": "InstrumentPolicyRouterService",
@@ -5647,13 +5659,13 @@
       "symbol": "ScreeningLearningOutboxService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ScreeningLearningOutboxService.php",
-      "line": 9
+      "line": 10
     },
     {
       "symbol": "improves",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 114
+      "line": 118
     },
     {
       "symbol": "ScreeningLearningService",
@@ -6025,7 +6037,7 @@
       "symbol": "TypedInstrumentFoundryService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 14
+      "line": 15
     },
     {
       "symbol": "UncertaintyAbstentionSettlementService",
@@ -7297,7 +7309,7 @@
       "symbol": "CausalLearningLoopContractTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/CausalLearningLoopContractTest.php",
-      "line": 63
+      "line": 66
     },
     {
       "symbol": "CausalProgressRatchetGovernorServiceTest",
@@ -7376,6 +7388,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/DecisionLearningServiceTest.php",
       "line": 12
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
+      "line": 135
+    },
+    {
+      "symbol": "DecisionTraceLearningContractTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
+      "line": 23
     },
     {
       "symbol": "DependencyAwareEdgeGenesisFoundryTest",
@@ -7490,6 +7514,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php",
       "line": 11
+    },
+    {
+      "symbol": "ExperimentQualityProgressServiceTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
+      "line": 24
     },
     {
       "symbol": "FailureRepairAnchorTest",
@@ -7645,7 +7675,7 @@
       "symbol": "InstrumentValidationEpochTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentValidationEpochTest.php",
-      "line": 20
+      "line": 30
     },
     {
       "symbol": "IntradayTrainingMaintenanceIsolationTest",
@@ -7687,7 +7717,7 @@
       "symbol": "LabReplayRecoveryHashDomainTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php",
-      "line": 18
+      "line": 22
     },
     {
       "symbol": "LabTrialLedgerTest",
@@ -7711,7 +7741,7 @@
       "symbol": "LearningEvolutionChainAcceptanceTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/LearningEvolutionChainAcceptanceTest.php",
-      "line": 27
+      "line": 28
     },
     {
       "symbol": "LearningEvolutionTest",
@@ -7765,7 +7795,7 @@
       "symbol": "LearningTruthProtocolTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
-      "line": 30
+      "line": 33
     },
     {
       "symbol": "LighthouseVerticalLoopMonitoringTest",

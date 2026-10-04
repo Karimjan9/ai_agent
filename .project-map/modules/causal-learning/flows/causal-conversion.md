@@ -344,3 +344,24 @@ settlement needs an explicit scientific classification and a next action.
   v2-sealed transport repair is possible only after the two earlier constructor
   repairs and only while no arm has a scientific receipt; a fourth failed
   attempt exhausts the source.
+
+## Terminal publication and measured learning
+
+Replay completion is published only after request/response, trade ledger and
+decision trace artifacts have been sealed. Post-commit learning delivery cannot
+observe a completed run with unfinished artifacts. New trace manifests retain
+the producer's requested/complete/count proof and actual decision coverage;
+legacy artifacts are not backfilled as new producer-attested evidence.
+
+The ordinary causal planner preregisters `causal_selector_observation_v1` before
+fold execution: exact baseline/legal space, source-memory exposure, independent
+blinded choice and scoped selection wall time. Blind selection does not exclude
+the guided treatment; equal independently selected treatments are a null
+comparison. `TypedInstrumentFoundryService` binds the three actual arm vectors
+and immutable folds to that receipt. Selection wall time and economic replay
+CPU remain separate; raw positive outcomes are not memory superiority.
+
+Progress separates technical completion, answer-producing comparisons and
+actual descendant/trait-ablation witnesses. Historical Academy/causal research
+is not the authorized post-paper instrument route. Missing independent data
+remains a dependency, not a provisional result silently promoted to authority.

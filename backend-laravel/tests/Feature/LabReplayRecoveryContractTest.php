@@ -90,15 +90,21 @@ class LabReplayRecoveryContractTest extends TestCase
         $path = storage_path('app/recovery-contract-'.uniqid('', true).'.csv');
         File::put($path, "time,open,high,low,close,volume\n2026-01-01T00:00:00Z,1,1,1,1,0\n");
         $hash = hash_file('sha256', $path);
+        // This test owns recovery hash admission, not the provider archive's
+        // twenty-year continuity. Freeze separate deterministic foundation
+        // bytes rather than reading mutable developer data during a unit test.
+        $foundationPath = $path.'.foundation.csv';
+        File::put($foundationPath, "time,open,high,low,close,volume\n2025-12-31T00:00:00Z,1,1,1,1,0\n");
+        $foundation = ['path' => $foundationPath, 'sha256' => hash_file('sha256', $foundationPath),
+            'generation_id' => $generation->id];
         $context = (array) $generation->trigger_context;
         data_set($context, 'canonical_dataset_snapshots.price', [
             'path' => $path,
             'sha256' => $hash,
             'generation_id' => $generation->id,
         ]);
+        data_set($context, 'canonical_dataset_snapshots.foundation', $foundation);
         $generation->update(['trigger_context' => $context]);
-        $foundation = app(\App\Services\LabDatasetExportService::class)
-            ->ensureGenerationFoundationSnapshot($generation->fresh(['laboratory']));
 
         $contract = [
             'protocol' => LabReplayRecoveryService::PROTOCOL,
@@ -121,6 +127,7 @@ class LabReplayRecoveryContractTest extends TestCase
             $this->assertStringContainsString('RECOVERY_DATASET_SNAPSHOT_HASH_MISMATCH', $exception->getMessage());
         } finally {
             File::delete($path);
+            File::delete($foundationPath);
         }
 
     }

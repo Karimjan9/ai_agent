@@ -9,6 +9,10 @@ use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Services\LabDatasetExportService;
 use App\Services\LabReplayRecoveryService;
+use App\Services\LabImmutableEvidenceService;
+use App\Services\ResearchReleaseSealService;
+use App\Services\ExecutionContractService;
+use App\Console\Commands\RecoverLabEvaluationErrors;
 use App\Services\MultiTimeframeSnapshotService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -142,6 +146,73 @@ class LabReplayRecoveryHashDomainTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('RECOVERY_PRIOR_DATASET_HASH_MISMATCH:foundation');
         app(LabReplayRecoveryService::class)->prepare($agent, 'full');
+    }
+
+    public function test_recovery_binds_the_original_release_and_refuses_a_missing_queued_seal(): void
+    {
+        [$agent, $run] = $this->fixture('screen');
+        $seal = $this->sealFixture($agent);
+        $before = $run->fresh()->getAttributes();
+        $contract = app(LabReplayRecoveryService::class)->prepare($agent, 'screen');
+        $this->assertSame($seal['release_hash'], $contract['research_release_hash']);
+        app(LabReplayRecoveryService::class)->assertContract($agent, $contract);
+        $this->assertSame($before, $run->fresh()->getAttributes());
+        unset($contract['research_release_hash']);
+        $this->expectExceptionMessage('RECOVERY_RESEARCH_RELEASE_IDENTITY_MISMATCH');
+        app(LabReplayRecoveryService::class)->assertContract($agent, $contract);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('sourceDomains')]
+    public function test_release_drift_is_terminal_before_dataset_restore_and_keeps_history(string $domain): void
+    {
+        [$agent, $run] = $this->fixture('screen');
+        $this->sealFixture($agent, [$domain => str_repeat('e', 64)]);
+        $this->mock(LabDatasetExportService::class, function ($mock): void {
+            $mock->shouldNotReceive('ensureGenerationSnapshot');
+            $mock->shouldNotReceive('ensureGenerationFoundationSnapshot');
+        });
+        $before = $run->fresh()->getAttributes();
+        try {
+            app(LabReplayRecoveryService::class)->prepare($agent, 'screen');
+            $this->fail('Old sealed evaluator was accepted by current recovery.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('RESEARCH_RELEASE_SOURCE_DRIFT', $exception->getMessage());
+            $classify = new \ReflectionMethod(RecoverLabEvaluationErrors::class, 'isUnrecoverableFrozenContractFailure');
+            $this->assertTrue($classify->invoke(new RecoverLabEvaluationErrors, $exception));
+        }
+        $this->assertSame($before, $run->fresh()->getAttributes());
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+    }
+
+    public static function sourceDomains(): array
+    {
+        return ['PHP evaluator' => ['source_hash'], 'Python evaluator' => ['python_source_hash']];
+    }
+
+    public function test_loaded_worker_drift_is_not_misclassified_as_unrecoverable_frozen_source(): void
+    {
+        $classify = new \ReflectionMethod(RecoverLabEvaluationErrors::class, 'isUnrecoverableFrozenContractFailure');
+        $this->assertFalse($classify->invoke(new RecoverLabEvaluationErrors,
+            new RuntimeException('RESEARCH_WORKER_LOADED_RELEASE_MISMATCH')));
+    }
+
+    private function sealFixture(LabAgent $agent, array $overrides = []): array
+    {
+        $generation = $agent->generation->fresh();
+        $identity = array_replace([
+            'protocol' => ResearchReleaseSealService::PROTOCOL,
+            'source_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
+            'python_source_hash' => app(ResearchReleaseSealService::class)->pythonHash(),
+            'php_version' => PHP_VERSION,
+            'dataset_hash' => data_get($generation->trigger_context, 'mtf_bundle_hash'),
+            'agent_execution_hashes' => [(string) $agent->id => app(ExecutionContractService::class)->hashParameters([])],
+        ], $overrides);
+        $seal = [...$identity, 'release_hash' => app(ExecutionContractService::class)->hashParameters($identity),
+            'sealed_at' => now()->utc()->toIso8601String(), 'promotion_evidence' => false];
+        $context = $generation->trigger_context;
+        $context['research_release'] = $seal;
+        $generation->update(['trigger_context' => $context]);
+        return $seal;
     }
 
     private function fixture(string $mode): array

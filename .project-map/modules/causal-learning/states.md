@@ -147,6 +147,20 @@ entire model. Before changing a transition, identify its dimension.
 | Evidence | valid, incomplete, invalid, selection_contaminated | Evidence/receipt owner; whether a result may be interpreted. |
 | Behavioral claim | untested, unreachable, no_effect_on_probe, stage_controllable | Conversion policy; what the intervention established. |
 | Economic claim | underpowered, harmful, inconclusive, positive_candidate, independently_replicated | Statistical/settlement policy; not a promotion shortcut. |
+
+A nonterminal replay's learning delivery may wait/retry for its terminal
+evidence. Terminal immutable evidence missing a complete trace or ledger closes
+the canonical/screening outbox as `blocked_dependency`, not a scientific loss
+or an endless same-run settlement retry. Optional post-settlement projections
+cannot revoke an already committed canonical settlement.
+
+Exact instrument consumption carries source-validation and actual parameter
+lineage. A verified trait facing a changed baseline may produce one
+`instrument_transfer_hypothesis` work item after committed canonical settlement.
+It is `requires_canonical_transfer_admission`, non-executable and replay-forbidden
+until the existing cartridge owner has a bound source cartridge, persisted
+matching baseline, frozen datasets and applicable validation admission. It
+answers no scientific comparison and grants no application, parent or credit.
 | Reuse authority | research_only, confirmed_component, mentor, descendant_proven, eligible_parent | Authority/skill owner; earned separately from claims. |
 | Deployment eligibility | blocked, paper_observing, eligible | Paper/admission owner; never inferred from a single score. |
 | Freshness | active, drift_suspected, hibernating, revoked | Runtime/evidence policy. |

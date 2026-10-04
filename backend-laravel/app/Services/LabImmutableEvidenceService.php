@@ -250,7 +250,33 @@ class LabImmutableEvidenceService
         array $metadata = [],
         ?Throwable $error = null,
     ): void {
-        $run->refresh();
+        // A terminal status is a publication boundary, not the beginning of
+        // artifact sealing. Hide it from concurrent learning/reconciliation
+        // readers until every immutable artifact row is durable. The lock
+        // also prevents two late callbacks from sealing different responses.
+        try {
+            DB::transaction(function () use ($run, $status, $response, $metrics, $metadata, $error): void {
+                $locked = LabEvaluationRun::query()->whereKey($run->id)->lockForUpdate()->firstOrFail();
+                $run->setRawAttributes($locked->getAttributes(), true);
+                $this->sealTerminalRun($run, $status, $response, $metrics, $metadata, $error);
+            });
+        } catch (Throwable $exception) {
+            // A rolled-back close must not leave the caller's in-memory run
+            // looking completed. Immutable files may be orphaned, but no
+            // consumer can see them as a sealed run or overwrite old facts.
+            $run->refresh();
+            throw $exception;
+        }
+    }
+
+    private function sealTerminalRun(
+        LabEvaluationRun $run,
+        string $status,
+        ?array $response,
+        array $metrics,
+        array $metadata,
+        ?Throwable $error,
+    ): void {
         // A terminal attempt is immutable. A late worker/failure callback may
         // still arrive, but it must never rewrite the original verdict or
         // response hash. The lifecycle plane can show that a duplicate close
@@ -297,7 +323,7 @@ class LabImmutableEvidenceService
             'duration_ms' => $run->started_at ? max(0, $run->started_at->diffInMilliseconds($finished)) : null,
             'response_hash' => $responseHash,
             'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
-            'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash),
+            'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash, $run),
             // The complete response remains immutable in the compressed
             // artifact plane. Run metrics are a mutable selector projection;
             // keep them bounded so retries do not rewrite trade/event arrays.
@@ -362,13 +388,8 @@ class LabImmutableEvidenceService
                 ->exists();
         $datasetHash = $this->isSha256((string) $run->data_hash)
             && $this->requestHasDatasetHash($run);
-        $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
-        $traceContract = (array) data_get($response, 'data_quality.decision_trace', []);
-        $traceComplete = is_array($trace)
-            && array_is_list($trace)
-            && data_get($traceContract, 'complete', true) === true
-            && data_get($traceContract, 'requested', true) === true
-            && ($trace !== [] || (int) data_get($traceContract, 'evaluated_candle_count', 0) === 0);
+        $traceProof = $this->decisionTraceCompleteness($response, $run);
+        $traceComplete = $traceProof['complete'];
         $ledgerComplete = $this->tradeLedgerComplete($response)
             && filled(data_get($response, 'trade_ledger_hash'));
         $seal = (array) data_get($run->request_meta, 'payload.research_release',
@@ -388,10 +409,77 @@ class LabImmutableEvidenceService
             'request_artifact' => $requestArtifact,
             'dataset_hash' => $datasetHash,
             'decision_trace' => $traceComplete,
+            'decision_trace_reason_codes' => $traceProof['reason_codes'],
             'trade_ledger' => $ledgerComplete,
             'research_release' => $releaseComplete,
             'promotion_evidence' => false,
         ];
+    }
+
+    /**
+     * Exact producer/consumer trace contract. Counts of trades or compact
+     * projection rows are never candle coverage. A zero-trade WAIT history
+     * is complete; a sparse signal-only trace is not. An empty trace needs
+     * an explicit zero-evaluated producer declaration, never a default zero.
+     *
+     * @return array<string,mixed>
+     */
+    public function decisionTraceCompleteness(array $response, ?LabEvaluationRun $run = null): array
+    {
+        $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
+        $producer = (array) data_get($response, 'data_quality.decision_trace', []);
+        $events = is_array($trace) && array_is_list($trace) ? count($trace) : null;
+        $evaluated = $producer['evaluated_candle_count'] ?? null;
+        $input = $producer['input_candle_count'] ?? null;
+        // Inline requests expose exact primary rows. Regime/context rows are
+        // not execution candles; audit slices have their own producer-bound
+        // input count and may not inherit the full economic dataset length.
+        if (($producer['audit_slice'] ?? false) !== true && $run !== null) {
+            $requestRows = data_get($run->request_meta, 'payload.candles.row_count');
+            if (is_int($requestRows)) $input = $requestRows;
+        }
+        $expected = is_int($input) && $input >= 0 ? max(0, $input - 200) : null;
+        $reasons = [];
+        if ($events === null) $reasons[] = 'DECISION_TRACE_NOT_A_LIST';
+        if (($producer['protocol'] ?? null) !== 'candle_decision_trace_v1') $reasons[] = 'DECISION_TRACE_PROTOCOL_MISSING_OR_UNSUPPORTED';
+        if (($producer['requested'] ?? null) !== true || ($producer['complete'] ?? null) !== true) $reasons[] = 'DECISION_TRACE_PRODUCER_INCOMPLETE';
+        if (! is_int($producer['event_count'] ?? null) || $producer['event_count'] < 0 || $producer['event_count'] !== $events) {
+            $reasons[] = 'DECISION_TRACE_EVENT_COUNT_MISMATCH';
+        }
+        if (! is_int($evaluated) || $evaluated < 0) $reasons[] = 'DECISION_TRACE_EVALUATED_COUNT_MISSING';
+        if ($expected !== null && $evaluated !== $expected) $reasons[] = 'DECISION_TRACE_EXPECTED_CANDLE_COUNT_MISMATCH';
+        $covered = [];
+        if ($events !== null) {
+            foreach ($trace as $event) {
+                if (! is_array($event)) {
+                    $reasons[] = 'DECISION_TRACE_EVENT_INVALID';
+                    continue;
+                }
+                if (! in_array($event['event_type'] ?? null, ['signal_evaluation', 'position_management'], true)) continue;
+                if (! is_int($event['candle_index'] ?? null) || $event['candle_index'] < 200
+                    || ! is_string($event['candle_time'] ?? null) || $event['candle_time'] === '') {
+                    $reasons[] = 'DECISION_TRACE_CANDLE_IDENTITY_MISSING';
+                    continue;
+                }
+                $covered[$event['candle_index']] = true;
+            }
+        }
+        $coverage = count($covered);
+        if (is_int($evaluated) && $evaluated >= 0) {
+            if ($coverage !== $evaluated || ($coverage > 0 && (min(array_keys($covered)) !== 200
+                || max(array_keys($covered)) !== 199 + $evaluated))) {
+                $reasons[] = 'DECISION_TRACE_CANDLE_COVERAGE_MISMATCH';
+            }
+            if ($evaluated === 0 && $events !== 0) $reasons[] = 'DECISION_TRACE_ZERO_COVERAGE_HAS_EVENTS';
+        }
+        $reasons = array_values(array_unique($reasons));
+
+        return ['protocol' => 'decision_trace_producer_verified_v1', 'complete' => $reasons === [],
+            'reason_codes' => $reasons, 'event_count' => $events, 'evaluated_candle_count' => $evaluated,
+            'covered_candle_count' => $coverage, 'producer_protocol' => $producer['protocol'] ?? null,
+            'expected_evaluated_candle_count' => $expected,
+            'requested' => $producer['requested'] ?? null, 'producer_complete' => $producer['complete'] ?? null,
+            'audit_slice' => ($producer['audit_slice'] ?? false) === true, 'promotion_evidence' => false];
     }
 
     /**
@@ -417,6 +505,7 @@ class LabImmutableEvidenceService
         $hasArtifact = fn (string $type): bool => $artifacts->contains(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === $type);
         $traceArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === 'decision_trace');
         $traceManifest = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === 'decision_trace_manifest');
+        $responseArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => $artifact->artifact_type === 'evaluation_response');
         $ledgerArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => in_array($artifact->artifact_type, ['trade_ledger', 'trade_ledger_manifest'], true));
         $responseMeta = (array) $run->response_meta;
         $reasons = [];
@@ -424,10 +513,39 @@ class LabImmutableEvidenceService
         if (! $hasArtifact('evaluation_request') || ! filled($run->request_hash)) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
         if (! $this->isSha256((string) $run->data_hash) || ! $this->requestHasDatasetHash($run)) $reasons[] = 'MISSING_DATASET_HASH';
         if (! $hasArtifact('evaluation_response') || ! filled($run->response_hash)) $reasons[] = 'MISSING_EVALUATION_RESPONSE_ARTIFACT';
-        if (! $traceArtifact
-            || data_get($traceArtifact->metadata, 'complete') !== true
-            || (int) data_get($traceArtifact->metadata, 'event_count', 0) < 1
-            || data_get($traceManifest?->metadata, 'complete') !== true) {
+        $traceComplete = $traceArtifact
+            && data_get($traceArtifact->metadata, 'complete') === true
+            && data_get($traceManifest?->metadata, 'complete') === true;
+        $traceProof = (array) data_get($responseMeta, 'decision_trace_completeness', []);
+        if ($traceProof !== []) {
+            // New receipts bind the producer's coverage, response bytes and
+            // exact trace artifact. Zero trades do not imply zero decisions.
+            $traceComplete = $traceComplete && data_get($traceProof, 'complete') === true
+                && ($traceProof['protocol'] ?? null) === 'decision_trace_producer_verified_v1'
+                && ($traceProof['requested'] ?? null) === true
+                && ($traceProof['producer_complete'] ?? null) === true
+                && is_int($traceProof['event_count'] ?? null)
+                && $traceProof['event_count'] >= 0
+                && is_int($traceProof['evaluated_candle_count'] ?? null)
+                && $traceProof['evaluated_candle_count'] >= 0
+                && ($traceProof['covered_candle_count'] ?? null) === $traceProof['evaluated_candle_count']
+                && $traceProof['event_count'] >= $traceProof['covered_candle_count']
+                && data_get($traceArtifact?->metadata, 'producer_proof') === $traceProof
+                && data_get($traceManifest?->metadata, 'producer_proof') === $traceProof
+                && $responseArtifact?->sha256 === $run->response_hash
+                && data_get($responseMeta, 'decision_trace_count') === $traceProof['event_count']
+                && data_get($traceArtifact?->metadata, 'event_count') === $traceProof['event_count']
+                && data_get($traceManifest?->metadata, 'event_count') === $traceProof['event_count']
+                && data_get($traceManifest?->metadata, 'result_hash') === $run->response_hash
+                && data_get($traceManifest?->metadata, 'artifact_sha256') === $traceArtifact?->sha256
+                && data_get($responseMeta, 'decision_trace_hash') === $traceArtifact?->sha256;
+        } else {
+            // Historical immutable receipts are not rewritten/backfilled.
+            // Retain their existing nonempty-trace contract; an old empty
+            // list has no attested coverage and must remain incomplete.
+            $traceComplete = $traceComplete && (int) data_get($traceArtifact?->metadata, 'event_count', 0) > 0;
+        }
+        if (! $traceComplete) {
             $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
         }
         if (! $ledgerArtifact || data_get($ledgerArtifact->metadata, 'complete') !== true) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
@@ -445,6 +563,7 @@ class LabImmutableEvidenceService
             'complete' => $reasons === [],
             'reason_codes' => array_values(array_unique($reasons)),
             'run_id' => $run->run_id,
+            'decision_trace_proof' => $traceProof === [] ? 'legacy_persisted_nonempty_trace' : ($traceProof['protocol'] ?? 'unknown'),
             'promotion_evidence' => false,
         ];
     }
@@ -949,10 +1068,12 @@ class LabImmutableEvidenceService
     public function recordDecisionTrace(LabEvaluationRun $run, array $response): array
     {
         $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
+        $proof = $this->decisionTraceCompleteness($response, $run);
         if (! is_array($trace) || ! array_is_list($trace)) {
             $manifest = [
                 'protocol' => 'candle_decision_trace_v1', 'complete' => false,
                 'reason' => 'evaluator_response_did_not_supply_decision_trace',
+                'producer_proof' => $proof,
                 'result_hash' => $this->hash($response), 'promotion_evidence' => false,
             ];
             $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => false]);
@@ -961,12 +1082,14 @@ class LabImmutableEvidenceService
         }
 
         $traceArtifact = $this->recordArtifact($run, 'decision_trace', $trace, [
-            'complete' => true,
+            'complete' => $proof['complete'],
             'event_count' => count($trace),
+            'producer_proof' => $proof,
             'promotion_evidence' => false,
         ]);
         $manifest = [
-            'protocol' => 'candle_decision_trace_v1', 'complete' => true,
+            'protocol' => 'candle_decision_trace_v1', 'complete' => $proof['complete'],
+            'producer_proof' => $proof,
             'event_count' => count($trace), 'result_hash' => $this->hash($response),
             'artifact_id' => $traceArtifact->artifact_id,
             'artifact_path' => $traceArtifact->storage_path,
@@ -977,8 +1100,21 @@ class LabImmutableEvidenceService
             'projection_status' => 'queued',
             'promotion_evidence' => false,
         ];
-        $this->recordArtifact($run, 'decision_trace_manifest', $manifest, ['complete' => true, 'event_count' => count($trace), 'projection_status' => 'queued']);
-        ProjectLabCandleDecisionEvents::dispatch($run->run_id);
+        $this->recordArtifact($run, 'decision_trace_manifest', $manifest, [
+            'complete' => $proof['complete'], 'event_count' => count($trace), 'producer_proof' => $proof,
+            'result_hash' => $manifest['result_hash'], 'artifact_sha256' => $traceArtifact->sha256,
+            'projection_status' => 'queued',
+        ]);
+        $runId = $run->run_id;
+        DB::afterCommit(function () use ($runId): void {
+            try {
+                ProjectLabCandleDecisionEvents::dispatch($runId);
+            } catch (Throwable $exception) {
+                // A queue outage cannot reopen a durably sealed replay.
+                // Existing projection reconciliation can redeliver by run ID.
+                report($exception);
+            }
+        });
 
         return $manifest;
     }
@@ -1282,7 +1418,7 @@ class LabImmutableEvidenceService
         return $manifest;
     }
 
-    private function responseManifest(array $response, ?string $dataHash = null): array
+    private function responseManifest(array $response, ?string $dataHash = null, ?LabEvaluationRun $run = null): array
     {
         $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
         $ledger = data_get($response, 'trade_ledger');
@@ -1302,6 +1438,7 @@ class LabImmutableEvidenceService
             'decision_trace_present' => is_array($trace),
             'decision_trace_count' => is_array($trace) ? count($trace) : null,
             'decision_trace_hash' => is_array($trace) ? $this->hash($trace) : null,
+            'decision_trace_completeness' => $this->decisionTraceCompleteness($response, $run),
         ];
     }
 

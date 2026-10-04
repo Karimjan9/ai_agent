@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T14:48:45.247Z",
-  "source_digest": "7a5c38f76f4a693f1ccb664ead63d99675542757b45195b54221e83d98d6f932",
-  "source_file_count": 1478,
-  "git_head": "353e614fb31841b7a3c3abb9004853fdc1ddc0d3",
+  "generated_at": "2026-10-04T17:51:35.623Z",
+  "source_digest": "ab27d80f95d2f8d1af597545a6645e2bdc46afb52e8ec013d03054473d0b3ee7",
+  "source_file_count": 1480,
+  "git_head": "993e0823a898a483da4dc883c07deda6bd564b72",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1095,6 +1095,7 @@
         "test_family_prior_cannot_be_upgraded_post_hoc_into_memory_guided_mutation",
         "test_receipt_gene_mismatch_is_invalid_and_cannot_settle_provisional",
         "test_planner_materializes_guided_blinded_and_frozen_control_triplet",
+        "test_materialized_selector_receipt_survives_actual_constructor_and_preregistered_benchmark",
         "test_legacy_attempts_cannot_exhaust_target_aligned_confirmation_budget",
         "test_legacy_positive_signal_opens_a_credit_free_post_v2_hypothesis_triplet",
         "test_salvage_and_planner_share_the_same_fail_closed_source_admission",
@@ -1303,6 +1304,26 @@
       "path": "backend-laravel/tests/Feature/DecisionLearningServiceTest.php",
       "tests": [
         "test_failed_entry_and_stop_decisions_become_next_generation_advice"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
+      "tests": [
+        "test_zero_trade_wait_history_is_complete_but_sparse_or_duplicate_candle_coverage_is_not",
+        "test_missing_flags_truncated_counts_and_non_integer_counts_are_incomplete",
+        "test_empty_trace_needs_explicit_requested_complete_zero_evaluated_contract",
+        "test_sealed_new_proof_binds_response_trace_and_manifest_without_requiring_trades",
+        "test_attested_empty_trace_is_durable_but_unattested_legacy_empty_trace_is_not",
+        "test_empty_declared_zero_trace_cannot_override_known_nonzero_request_coverage",
+        "test_terminal_publication_and_projection_wait_for_the_outer_transaction_commit",
+        "test_artifact_failure_rolls_back_terminal_visibility_and_retry_seals_once",
+        "recordArtifact",
+        "test_terminal_incomplete_screening_outbox_is_typed_dependency_and_duplicate_is_noop",
+        "test_complete_zero_trade_screening_outbox_records_inconclusive_memory_not_technical_dependency",
+        "test_complete_trace_from_a_different_agent_cannot_settle_screening_memory",
+        "test_terminal_incomplete_projection_records_one_dependency_before_any_learning_side_effect",
+        "response",
+        "evidenceRun"
       ]
     },
     {
@@ -1522,6 +1543,26 @@
         "test_sentinel_uses_capped_fractional_sizing_and_never_martingale",
         "test_sentinel_has_final_veto_for_risk_of_ruin",
         "test_in_trade_and_portfolio_layers_never_expand_exposure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
+      "tests": [
+        "test_atomic_progress_separates_answered_questions_from_low_power_and_incomplete_replay",
+        "test_missing_or_corrupted_original_fold_evidence_cannot_become_technical_progress",
+        "test_a_receipt_label_and_orphaned_closure_do_not_answer_a_question",
+        "test_forged_confirmed_labels_do_not_count_as_reliable_improvements",
+        "test_original_replay_cannot_be_credited_to_coherently_edited_sibling_models",
+        "test_equal_caps_and_measured_replay_cpu_do_not_invent_search_efficiency",
+        "test_descendant_flags_without_an_executed_ablation_do_not_count_as_retention",
+        "test_preregistered_native_benchmark_settles_measured_fold_resources_into_generation_report",
+        "test_search_registration_rejects_changed_arm_or_blinded_memory_exposure",
+        "test_confirmation_routes_do_not_treat_a_future_plan_as_completed_data",
+        "generation",
+        "arms",
+        "experiment",
+        "hash",
+        "selectorReceipt"
       ]
     },
     {
@@ -1843,6 +1884,8 @@
         "test_legacy_complete_window_aggregate_is_not_retroactively_given_delta_authority",
         "test_rehashed_sources_still_need_the_actual_verified_pair_and_completed_run",
         "test_harmful_exact_delta_is_blocked_without_banning_other_values_or_genes",
+        "test_changed_baseline_creates_only_a_verified_bounded_transfer_hypothesis",
+        "test_committed_actual_recipient_projects_one_blocked_transfer_work_without_credit",
         "setupProof",
         "outcome",
         "recordProof",
@@ -1932,6 +1975,11 @@
         "test_missing_mtf_identity_in_a_queued_contract_is_rejected",
         "test_missing_reopened_stream_cannot_pass_even_with_the_same_bundle_label",
         "test_full_replay_foundation_drift_is_not_hidden_by_a_matching_mtf_bundle",
+        "test_recovery_binds_the_original_release_and_refuses_a_missing_queued_seal",
+        "test_release_drift_is_terminal_before_dataset_restore_and_keeps_history",
+        "sourceDomains",
+        "test_loaded_worker_drift_is_not_misclassified_as_unrecoverable_frozen_source",
+        "sealFixture",
         "fixture"
       ]
     },
@@ -2072,6 +2120,8 @@
     {
       "path": "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
       "tests": [
+        "test_terminal_incomplete_outbox_is_a_dependency_not_repeated_settlement_failure",
+        "test_post_settlement_optional_projection_failure_cannot_reopen_canonical_truth",
         "test_partial_screening_reward_is_informative_but_never_absolute_positive",
         "test_invalid_pair_is_diagnostic_only_and_cannot_create_a_canonical_outbox_item",
         "test_canonical_settlement_completes_dispatch_and_zero_trades_remain_insufficient_evidence",
@@ -2618,6 +2668,7 @@
         "test_terminal_closure_requires_exactly_one_next_work_or_reason",
         "test_activation_continuation_requires_the_preregistered_plan_hash",
         "test_next_work_is_owned_retry_bounded_and_visible_to_closure_truth",
+        "test_unadmitted_instrument_transfer_cannot_be_made_executable_by_the_caller",
         "test_owner_claim_cannot_be_starved_by_another_owners_priority_rows"
       ]
     },

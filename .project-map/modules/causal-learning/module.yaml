@@ -26,6 +26,10 @@ paths:
   - backend-laravel/app/Services/ResearchIdeaInboxService.php
   - backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php
   - backend-laravel/app/Services/CanonicalLearningOutboxService.php
+  - backend-laravel/app/Services/ScreeningLearningOutboxService.php
+  - backend-laravel/app/Services/ScreeningLearningService.php
+  - backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php
+  - backend-laravel/tests/Feature/LearningTruthProtocolTest.php
   - backend-laravel/app/Services/CausalArmParityService.php
   - backend-laravel/app/Services/CausalCapabilityLatticeService.php
   - backend-laravel/app/Services/CausalGoldenWorldHarnessService.php
@@ -58,6 +62,8 @@ paths:
   - backend-laravel/app/Services/AgentKnowledgeService.php
   - backend-laravel/app/Services/AgentProfessionalExamService.php
   - backend-laravel/app/Services/TypedInstrumentFoundryService.php
+  - backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php
+  - backend-laravel/app/Services/CanonicalSkillCartridgeService.php
   - backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabInstrumentResearchService.php
@@ -120,6 +126,11 @@ entry_points:
   - CausalFoldExecutionService
   - CausalSkillCreditBridgeService
   - CanonicalLearningOutboxService
+  - TypedInstrumentFoundryService::registerCausalBenchmark
+  - TypedInstrumentFoundryService::settleCausalBenchmark
+  - EvolutionaryAuthorityFoundryService::settleDescendantOutcome
+  - CanonicalSkillCartridgeService::planTransplant
+  - CanonicalSkillCartridgeService::settleTransplantOutcome
   - ResearchPaperEpochContractService
   - trading:causal-golden-worlds
   - trading:reconcile-instrument-pairs
@@ -186,6 +197,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/LearningTruthProtocolTest.php
   - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
   - backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php
   - backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php

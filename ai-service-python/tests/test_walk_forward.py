@@ -224,6 +224,17 @@ class WalkForwardSplitTest(unittest.TestCase):
                 },
                 "trades": [],
                 "trade_ledger": trade_ledger,
+                "decision_trace": [
+                    {"candle_index": index, "candle_time": str(segment.iloc[index]["time"]),
+                     "event_type": "signal_evaluation", "action": "WAIT"}
+                    for index in range(200, len(segment))
+                ] if effective_payload.emit_decision_trace else [],
+                "data_quality": {"decision_trace": {
+                    "protocol": "candle_decision_trace_v1", "requested": effective_payload.emit_decision_trace,
+                    "complete": effective_payload.emit_decision_trace,
+                    "event_count": max(0, len(segment) - 200) if effective_payload.emit_decision_trace else 0,
+                    "evaluated_candle_count": max(0, len(segment) - 200),
+                }},
                 "equity_curve": list(range(1000)),
                 "segment": name,
                 "rows": len(segment),
@@ -294,6 +305,12 @@ class WalkForwardSplitTest(unittest.TestCase):
         self.assertEqual("deferred_research_lane", replay_budget["promotion_diagnostics"])
         self.assertEqual(0, replay_budget["differential_pair_replays"])
         self.assertLessEqual(replay_budget["audit_trace_rows"], 512)
+        trace_contract = outcome["result"]["data_quality"]["decision_trace"]
+        self.assertEqual(max(0, replay_budget["audit_trace_rows"] - 200), trace_contract["evaluated_candle_count"])
+        self.assertEqual(len(outcome["result"]["decision_trace"]), trace_contract["event_count"])
+        self.assertEqual(replay_budget["audit_trace_rows"], trace_contract["input_candle_count"])
+        self.assertTrue(trace_contract["audit_slice"])
+        self.assertFalse(trace_contract["economic_score_input"])
         activation = outcome["result"]["parameter_activation_manifest"]
         self.assertEqual("causal_parameter_activation_manifest_v1", activation["protocol"])
         self.assertEqual(9, activation["observed_folds"])
