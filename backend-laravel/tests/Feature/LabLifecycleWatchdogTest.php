@@ -38,6 +38,8 @@ class LabLifecycleWatchdogTest extends TestCase
 
     public function test_watchdog_finalizes_a_terminal_full_boundary_without_waiting_an_hour(): void
     {
+        config(['services.internal_api.token' => 'watchdog-test-only-token',
+            'services.ai_service.url' => 'http://test-evaluator']);
         Http::fake([
             '*' => Http::response([
                 'active_requests' => 0,

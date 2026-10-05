@@ -11,6 +11,7 @@ paths:
   - backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php
   - backend-laravel/app/Domains/Laboratory
   - backend-laravel/app/Console/Commands/BuildLabGeneration.php
+  - backend-laravel/app/Console/Commands/ContinueInterruptedLabConstruction.php
   - backend-laravel/app/Console/Commands/DispatchLabGeneration.php
   - backend-laravel/app/Console/Commands/DispatchFullLabValidation.php
   - backend-laravel/app/Http/Controllers/EvolutionLabController.php
@@ -73,6 +74,7 @@ entry_points:
   - SpecialistCouncilLifecycleService::sealEvaluationPlan
   - SpecialistCouncilLifecycleService::evaluateOriginalRuns
   - SpecialistCouncilPreparationService::prepare
+  - LabPopulationService::build nativeCouncilIntent
   - SpecialistCouncilPreparationService::isResearchGeneration
   - SpecialistCouncilPreparationService::inspectDiscoveryOwner
   - SpecialistCouncilResearchFeedbackService::recordAssessment
@@ -86,6 +88,7 @@ entry_points:
   - ProspectiveRepairProbeWindowService::requiresSingleCandidateScreening
   - EvolutionGovernorService
   - trading:build-lab-generation
+  - trading:continue-lab-construction
   - trading:dispatch-lab
   - trading:run-lifecycle-cycle
   - trading:audit-autonomy-streak
@@ -109,6 +112,7 @@ dependencies:
   - market-data
   - laravel-python-contract
 invariants:
+  - An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Four prospective source horizons and two unused carriers are not qualified specialists. This intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; its creator/question/hash are bound to all six model markers. Without original atomic council preparation, dispatcher and snapshot admission refuse the declared roots, including deleted context with retained markers/origin. Ordinary population paths are unchanged.
   - Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.
   - Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.
   - Council comparison plans preregister equal capital, costs, risk, original windows and champion/solo/ablation/retention identities before evidence. The creator cannot self-certify; research comparison never grants independent, paper or live authority.
@@ -150,6 +154,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php
   - backend-laravel/tests/Feature/FrozenReleaseLookbackRecoveryTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php

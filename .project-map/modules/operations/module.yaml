@@ -18,6 +18,8 @@ paths:
   - backend-laravel/app/Services/MarketHealthService.php
   - backend-laravel/app/Services/ResearchLoopArbiterService.php
   - backend-laravel/app/Services/AutonomousModeService.php
+  - backend-laravel/app/Services/LabLifecycleWatchdogService.php
+  - backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php
   - backend-laravel/app/Console/Commands/PauseAutonomousMode.php
   - backend-laravel/app/Console/Commands/ResumeAutonomousMode.php
   - backend-laravel/app/Console/Commands/AutonomousRuntimeGate.php
@@ -56,6 +58,8 @@ paths:
   - scripts/restart_mt5.sh
   - docs/operations
 entry_points:
+  - "trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID"
+  - LabLifecycleWatchdogService::reconcileSupersededRuns
   - TechnicalFailureClassifierService::forAgents
   - TechnicalFailureClassifierService::historicalGapDependency
   - "trading:admit-academy-experiment --contain-preparation / --finalize-preparation"
@@ -77,6 +81,7 @@ data_tables:
 dependencies:
   - laboratory
 invariants:
+  - Targeted superseded-run recovery is explicit, backend-neutral and bounded to twenty original IDs. Disabled admission, idle authenticated replay/known-empty laboratory queues, terminal agent/generation, absent same-host PID and a later same-phase completed original response artifact are required. It closes only response-less open attempts as operational retry_released, preserving old source/data/parameter/start facts and every later verdict; it grants no replay, learning or promotion evidence.
   - The already-locked non-dry arbiter drains bounded native council evaluation deliveries after immutable run publication. Pause fences recovery; STOP may drain admitted deliveries. Retry never replays an arm, rewrites original evidence, self-qualifies a version or creates another scheduler.
   - A native immutable unexpected-candle-gap envelope closes evaluator retry debt as a data dependency, not a strategy result. The same actual M5 source bytes remain blocked before fresh discovery and queue admission despite source or bundle-label changes; only verified prospective provider data may select new input, without changing old receipts or resetting the original question cap.
   - Approved Academy preparation containment records its original request/checkpoint/source and zero-scientific-output disposition before canceling only generation-owned batches. Active replay is never killed; canceled deliveries consume normally, then untouched agents finalize after drain. Shared recovery readiness requires the immutable attestation, not a reason label.
@@ -103,6 +108,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php
+  - backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php
   - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/scripts/pm2-summary.test.cjs

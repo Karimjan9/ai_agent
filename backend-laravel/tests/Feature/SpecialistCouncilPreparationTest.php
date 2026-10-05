@@ -10,6 +10,11 @@ use App\Models\ModelVersion;
 use App\Models\SpecialistCouncilVersion;
 use App\Services\ExecutionContractService;
 use App\Services\CandidateGateDecisionService;
+use App\Services\AutonomousModeService;
+use App\Services\GenerationSnapshotAdmissionService;
+use App\Services\LabDatasetExportService;
+use App\Services\LabPopulationService;
+use App\Services\LearningVelocityGateService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\MultiTimeframeSnapshotService;
 use App\Services\ProspectiveRepairProbeWindowService;
@@ -414,9 +419,9 @@ class SpecialistCouncilPreparationTest extends TestCase
         $owner->isResearchGeneration($generation->fresh());
     }
 
-    private function discoveryFixture(): array
+    private function discoveryFixture(bool $nativeConstructor = false): array
     {
-        [$generation, $request, $models] = $this->fixture();
+        [$generation, $request, $models] = $this->fixture($nativeConstructor);
         $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
         $rows = [];
         $start = CarbonImmutable::parse('2025-01-06T02:00:00Z');
@@ -496,8 +501,133 @@ class SpecialistCouncilPreparationTest extends TestCase
         }
     }
 
-    private function fixture(): array
+    public function test_real_six_root_constructor_prepares_original_four_horizon_council_without_other_scientific_owner(): void
     {
+        Queue::fake();
+        [$generation, $request, $models, , $bundle] = $this->discoveryFixture(true);
+        $before = $models->mapWithKeys(fn (ModelVersion $model): array => [$model->id => $model->parameters])->all();
+        $owner = app(SpecialistCouncilPreparationService::class);
+        $this->assertTrue($owner->hasNativeConstructorIntent($generation));
+        $this->assertSame(['CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED'],
+            app(GenerationSnapshotAdmissionService::class)->inspect($generation)['reasons']);
+        $receipt = $owner->prepare($generation, $request);
+        $this->assertSame(data_get($generation->trigger_context, 'native_specialist_council_intent.intent_hash'), $receipt['native_intent_hash']);
+        $this->assertCount(6, $receipt['generation_model_hashes']);
+        $this->assertSame(['scalp', 'hour', 'day', 'swing'], array_column($request['manifest']['members'], 'role'));
+        $this->assertTrue($owner->isResearchGeneration($generation->fresh()));
+        $this->assertTrue($owner->inspectDiscoveryOwner($generation->fresh(), $bundle['manifest'])['allowed']);
+        $this->assertSame($receipt, $owner->prepare($generation->fresh(), $request));
+        foreach ($models as $model) {
+            $this->assertSame($before[$model->id], $model->fresh()->parameters);
+            $this->assertFalse(data_get($model->fresh()->metadata, 'native_specialist_council_seed.qualified_specialist'));
+        }
+        $this->assertDatabaseCount('lab_generations', 2); // Original terminal reference plus canonical draft.
+        $this->assertDatabaseCount('lab_agents', 6);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('paper_authority_admissions', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_native_constructor_question_creator_and_slot_ownership_cannot_be_changed_at_preparation(): void
+    {
+        [$generation, $request, $models] = $this->fixture(true);
+        foreach (['creator_id', 'research_question'] as $field) {
+            $changed = [...$request, $field => 'changed'];
+            try { app(SpecialistCouncilPreparationService::class)->prepare($generation, $changed); $this->fail('Changed sealed intent accepted'); }
+            catch (\LogicException $error) { $this->assertSame('CANONICAL_COUNCIL_NATIVE_INTENT_REQUEST_MISMATCH', $error->getMessage()); }
+        }
+        $changed = $request;
+        $changed['manifest']['members'][0]['model_version_id'] = $models[1]->id;
+        try { app(SpecialistCouncilPreparationService::class)->prepare($generation, $changed); $this->fail('Wrong source role accepted'); }
+        catch (\LogicException $error) { $this->assertSame('CANONICAL_COUNCIL_NATIVE_INTENT_SOURCE_ROLE_MISMATCH', $error->getMessage()); }
+        $changed = $request;
+        $changed['evaluation_plan']['arms'][2]['model_version_id'] = $models[2]->id;
+        try { app(SpecialistCouncilPreparationService::class)->prepare($generation, $changed); $this->fail('Source stolen as ablation carrier'); }
+        catch (\LogicException $error) { $this->assertSame('CANONICAL_COUNCIL_NATIVE_INTENT_ARM_ROLE_MISMATCH', $error->getMessage()); }
+        $this->assertRolledBack($generation, $models);
+    }
+
+    public function test_unprepared_native_constructor_and_removed_intent_cannot_fall_back_to_ordinary_dispatch(): void
+    {
+        Queue::fake();
+        [$generation] = $this->fixture(true);
+        // The constructor used its foundation proof; dispatch must not seal any
+        // snapshot or release while the original atomic preparation is missing.
+        $this->mock(LabDatasetExportService::class, fn ($mock) => $mock->shouldReceive('ensureFoundationDataset')->never());
+        $this->artisan('trading:dispatch-lab', ['symbol' => 'XAUUSD', '--resume-draft-agents' => true])->assertExitCode(0);
+        $context = (array) $generation->fresh()->trigger_context;
+        foreach (['research_release', 'canonical_dataset_snapshots', 'queue_batches'] as $key) $this->assertEmpty($context[$key] ?? null);
+        unset($context['native_specialist_council_intent']);
+        $generation->forceFill(['trigger_context' => $context])->save();
+        $this->assertTrue(app(SpecialistCouncilPreparationService::class)->hasNativeConstructorIntent($generation->fresh()));
+        $this->assertSame(['CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED'],
+            app(GenerationSnapshotAdmissionService::class)->inspect($generation->fresh())['reasons']);
+        try { app(SpecialistCouncilPreparationService::class)->isResearchGeneration($generation->fresh()); $this->fail('Ordinary authority fallback accepted'); }
+        catch (\LogicException $error) { $this->assertSame('CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED', $error->getMessage()); }
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_prepared_native_constructor_seed_drift_is_not_a_new_or_ordinary_authority(): void
+    {
+        [$generation, $request, $models] = $this->fixture(true);
+        app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $metadata = $models[3]->fresh()->metadata;
+        $metadata['native_specialist_council_seed']['slot_role'] = 'source_day';
+        $models[3]->forceFill(['metadata' => $metadata])->save();
+        try { app(SpecialistCouncilPreparationService::class)->isResearchGeneration($generation->fresh()); $this->fail('Resealed source role accepted'); }
+        catch (\LogicException $error) { $this->assertSame('CANONICAL_COUNCIL_NATIVE_CONSTRUCTOR_SEED_DRIFT', $error->getMessage()); }
+    }
+
+    public function test_actual_prepared_native_constructor_uses_original_comparison_in_normal_dispatch_not_legacy_pair_flags(): void
+    {
+        [$generation, $request] = $this->fixture(true);
+        $inspect = new \ReflectionMethod(\App\Console\Commands\DispatchLabGeneration::class, 'normalCausalAdmission');
+        $dispatcher = app(\App\Console\Commands\DispatchLabGeneration::class);
+        $this->assertSame('normal_research', data_get($generation->trigger_context, 'research_allocation_budget.mode'));
+        $this->assertEmpty(data_get($generation->trigger_context, 'control_pairing_contract'));
+        $unprepared = $inspect->invoke($dispatcher, $generation);
+        $this->assertFalse($unprepared['allowed']);
+        $this->assertSame(['CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED'], $unprepared['reasons']);
+        app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $admitted = $inspect->invoke($dispatcher, $generation->fresh());
+        $this->assertTrue($admitted['allowed']);
+        $this->assertSame('original_native_council_research_plan', $admitted['owner']);
+        // A label or rehashed intake projection is not the original sealed comparison.
+        $context = (array) $generation->fresh()->trigger_context;
+        $context['specialist_council_preparation']['plan_hash'] = str_repeat('0', 64);
+        $generation->forceFill(['trigger_context' => $context])->save();
+        $this->assertFalse($inspect->invoke($dispatcher, $generation->fresh())['allowed']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('paper_authority_admissions', 0);
+    }
+
+    private function fixture(bool $nativeConstructor = false): array
+    {
+        if ($nativeConstructor) {
+            config()->set('services.xauusd_organism.historical_research_until_champion', true);
+            config()->set('services.market_data.provider', 'csv');
+            config()->set('services.lab_selection.constructor_initial_seat_budget', 6);
+            app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'native original references');
+            $lab = AiLaboratory::create(['name' => 'native-original-intake', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+                'strategy_families' => ['hybrid'], 'is_active' => true, 'lifecycle_mode' => 'lighthouse']);
+            $lab->generations()->create(['generation' => 1, 'trigger_type' => 'historical_research', 'status' => 'completed',
+                'population_size' => 0, 'trigger_context' => ['data_count' => 0], 'completed_at' => now()]);
+            $this->mock(LearningVelocityGateService::class, fn ($mock) => $mock->shouldReceive('inspect')->andReturn(['status' => 'healthy', 'allowed' => true]));
+            $this->mock(LabDatasetExportService::class, fn ($mock) => $mock->shouldReceive('ensureFoundationDataset')->andReturn([
+                'sha256' => str_repeat('a', 64), 'path' => 'verified-fixture-archive.csv', 'manifest' => ['row_count' => 123000,
+                    'first_candle_at' => '2005-01-03T00:00:00Z', 'last_candle_at' => '2025-12-31T23:00:00Z']]));
+            $intent = ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'purpose' => 'research',
+                'symbol' => 'XAUUSD', 'storage_timeframe' => 'H1', 'population_size' => 6,
+                'creator_id' => 'native-creator', 'research_question' => 'Does this original four-horizon council change outcomes relative to its exact solo and member ablation at equal capital and risk?'];
+            $population = app(LabPopulationService::class);
+            $generation = $population->build('XAUUSD', 'historical_research', false, 'H1', [], false, false,
+                null, null, false, null, $intent);
+            $this->assertNotNull($generation, json_encode($population->lastBuildOutcome()));
+            $generation->refresh();
+            $models = $generation->agents()->with('modelVersion')->orderBy('id')->get()->map(fn ($agent) => $agent->modelVersion);
+            $this->assertCount(6, $models, json_encode($generation->trigger_context));
+        } else {
         $models = collect(['hour', 'day', 'carrier', 'ablation'])->map(fn (string $name): ModelVersion => $this->model($name));
         $lab = AiLaboratory::create(['name' => 'Prospective native council fixture', 'symbol' => 'XAUUSD',
             'timeframe' => 'H1', 'strategy_families' => ['ema_rsi'], 'is_active' => false]);
@@ -506,15 +636,26 @@ class SpecialistCouncilPreparationTest extends TestCase
         foreach ($models as $model) LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
             'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'ema_rsi', 'origin' => 'test',
             'lifecycle_status' => 'draft', 'parameter_diff' => []]);
+        }
+        $carrierIndex = $nativeConstructor ? 4 : 2;
+        $ablationIndex = $nativeConstructor ? 5 : 3;
         $account = ['id' => 'canonical-execution', 'version' => '1', 'broker_position_mode' => 'hedging', 'opposite_position_policy' => 'hedge',
             'max_open_positions' => 8, 'max_reserved_capital_percent' => 100, 'max_gross_exposure_percent' => 100,
             'max_total_risk_percent' => 2, 'max_drawdown_percent' => 10, 'max_daily_loss_percent' => 3, 'max_expected_cost_percent' => 1];
         $manifest = ['council_id' => 'prospective-native-council', 'version' => '1',
-            'members' => [$this->passport('hour', $models[0]), $this->passport('day', $models[1])], 'components' => [],
+            'members' => $nativeConstructor ? array_map(fn ($role, $index) => $this->passport($role, $models[$index]),
+                ['scalp', 'hour', 'day', 'swing'], [0, 1, 2, 3]) : [$this->passport('hour', $models[0]), $this->passport('day', $models[1])], 'components' => [],
             'routing' => ['id' => 'scope-router', 'version' => '1'], 'allocation' => ['id' => 'shared-capital', 'version' => '1'],
             'risk' => ['id' => 'external-hard-risk', 'version' => '1'], 'execution' => $account,
             'evaluation_policy' => ['objective' => 'net_return_at_equal_risk', 'champion_model_version_id' => $models[0]->id,
                 'solo_model_version_id' => $models[0]->id]];
+        if ($nativeConstructor) foreach ($manifest['members'] as &$member) {
+            $member['capital_weight'] = .25;
+            $member['horizon']['max_holding_seconds'] = match ($member['role']) {
+                'scalp' => 3600, 'hour' => 10800, 'day' => 43200, 'swing' => 259200,
+            };
+        }
+        unset($member);
         $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
         $rows = [];
         for ($i = 0; $i < 8; $i++) $rows[] = ['time' => CarbonImmutable::parse('2025-01-06T02:00:00Z')->addMinutes(5 * $i)->toIso8601String()];
@@ -526,12 +667,12 @@ class SpecialistCouncilPreparationTest extends TestCase
                 'end_exclusive' => '2025-01-06T02:40:00Z', 'dataset_sha256' => str_repeat('d', 64), 'prospective_probe_window' => $probe,
                 'evaluation_scope' => ['start_inclusive' => $probe['evaluated_start'], 'end_exclusive' => '2025-01-06T02:40:00Z',
                     'rows' => 6, 'decision_rows' => 5, 'warmup_rows' => 2, 'policy_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($probe)]]],
-            'arms' => [['arm_key' => 'candidate', 'kind' => 'candidate', 'window_key' => 'original-window', 'model_version_id' => $models[2]->id],
+            'arms' => [['arm_key' => 'candidate', 'kind' => 'candidate', 'window_key' => 'original-window', 'model_version_id' => $models[$carrierIndex]->id],
                 ['arm_key' => 'solo', 'kind' => 'solo', 'window_key' => 'original-window', 'model_version_id' => $models[0]->id],
-                ['arm_key' => 'without-hour', 'kind' => 'ablation', 'removed_id' => 'hour', 'window_key' => 'original-window', 'model_version_id' => $models[3]->id]]];
+                ['arm_key' => 'without-hour', 'kind' => 'ablation', 'removed_id' => 'hour', 'window_key' => 'original-window', 'model_version_id' => $models[$ablationIndex]->id]]];
         return [$generation, ['protocol' => SpecialistCouncilPreparationService::PROTOCOL, 'creator_id' => 'native-creator',
-            'research_question' => 'Does this two-horizon council change native outcomes relative to the exact solo and one member ablation at equal capital and risk?',
-            'evaluator_id' => 'native-evaluator', 'carrier_model_version_id' => $models[2]->id, 'manifest' => $manifest,
+            'research_question' => $nativeConstructor ? $intent['research_question'] : 'Does this two-horizon council change native outcomes relative to the exact solo and one member ablation at equal capital and risk?',
+            'evaluator_id' => 'native-evaluator', 'carrier_model_version_id' => $models[$carrierIndex]->id, 'manifest' => $manifest,
             'evaluation_plan' => $plan], $models];
     }
 
@@ -547,7 +688,12 @@ class SpecialistCouncilPreparationTest extends TestCase
             'inputs' => ['as_of_closed_candles'], 'scope' => ['symbols' => ['XAUUSD'], 'contexts' => ['trend']],
             'known_limits' => ['research_unqualified'], 'resources' => ['max_compute_ms' => 100, 'max_memory_mb' => 32, 'max_lookback_bars' => 512],
             'horizon' => ['kind' => $role, 'decision_interval_seconds' => 300, 'reevaluation_interval_seconds' => 300,
-                'max_holding_seconds' => 3600, 'execution_precision' => 'candle'], 'data_requirements' => ['sessions', 'costs'],
+                'max_holding_seconds' => 3600, 'execution_precision' => 'candle'],
+            'data_requirements' => match ($role) {
+                'scalp' => ['bid_ask', 'spread', 'slippage', 'quote_age', 'intrabar_ambiguity'],
+                'swing' => ['gap', 'carry', 'rollover', 'mature_holding_outcomes'],
+                default => ['sessions', 'costs'],
+            },
             'model_version_id' => $model->id, 'strategy_version' => 'strategy-v1', 'tactic_version' => 'tactic-v1',
             'management_version' => 'management-v1', 'capital_weight' => .5, 'risk_per_trade_percent' => .5,
             'sensor_timeframes' => ['H4', 'H1', 'M15', 'M5']];

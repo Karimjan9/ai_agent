@@ -77,6 +77,8 @@ class SpecialistCouncilPreparationService
                 }
                 $models = ModelVersion::whereIn('id', $generationModelIds)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
                 if ($models->count() !== count($generationModelIds)) throw new LogicException('CANONICAL_COUNCIL_NATIVE_MODEL_MISSING');
+                $nativeIntent = $this->nativeConstructorIntent($draft, $models, $agents);
+                if ($nativeIntent !== null) $this->assertNativeIntentRequest($nativeIntent, $request, $models);
                 foreach (['academy_trial_id', 'prospective_repair', 'causal_learning_cohort', 'cooperative_experiment_blocks'] as $owner) {
                     if (! empty($context[$owner])) throw new LogicException('CANONICAL_COUNCIL_GENERATION_RESERVED_FOR_ANOTHER_EXPERIMENT');
                 }
@@ -165,6 +167,7 @@ class SpecialistCouncilPreparationService
                     'carrier_model_version_id' => (int) $request['carrier_model_version_id'],
                     'arm_keys' => array_keys($plan['arms']), 'bound_model_hashes' => $modelHashes,
                     'generation_agent_ids' => $agents->pluck('id')->all(), 'generation_model_hashes' => $allModelHashes,
+                    'native_intent_hash' => $nativeIntent['intent_hash'] ?? null,
                     'discovery_bundle_hash' => $discoveryManifest['bundle_hash'] ?? null,
                     'discovery_manifest_hash' => $discoveryManifest === null ? null : $this->epochs->parameterHash($discoveryManifest),
                     'prepared_at' => now()->utc()->toIso8601String(), 'next_owner' => 'canonical_lab_dispatcher',
@@ -184,9 +187,21 @@ class SpecialistCouncilPreparationService
     /** Absent intake is ordinary; a declared but broken intake must never fall through to promotion. */
     public function isResearchGeneration(LabGeneration $generation): bool
     {
-        if (data_get($generation->trigger_context, 'specialist_council_preparation') === null) return false;
+        if (data_get($generation->trigger_context, 'specialist_council_preparation') === null) {
+            if ($this->hasNativeConstructorIntent($generation)) {
+                throw new LogicException('CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED');
+            }
+            return false;
+        }
         $this->verifiedGeneration($generation);
         return true;
+    }
+
+    /** Canonical seed origin is retained even if a declared intent projection is lost. */
+    public function hasNativeConstructorIntent(LabGeneration $generation): bool
+    {
+        return data_get($generation->trigger_context, 'native_specialist_council_intent') !== null
+            || $generation->agents()->where('origin', 'native_council_root')->exists();
     }
 
     /** Read-only typed discovery owner shared by dispatcher, snapshot admission and evaluator. */
@@ -229,6 +244,12 @@ class SpecialistCouncilPreparationService
             || count((array) ($receipt['generation_model_hashes'] ?? [])) !== count($ids)) {
             throw new LogicException('CANONICAL_COUNCIL_PREPARATION_GENERATION_OWNERSHIP_DRIFT');
         }
+        $nativeIntent = $this->nativeConstructorIntent($generation, $models, $agents);
+        if (($receipt['native_intent_hash'] ?? null) !== ($nativeIntent['intent_hash'] ?? null)
+            || ($nativeIntent !== null && (($receipt['creator_id'] ?? null) !== $nativeIntent['creator_id']
+                || ($receipt['research_question'] ?? null) !== $nativeIntent['research_question']))) {
+            throw new LogicException('CANONICAL_COUNCIL_PREPARATION_NATIVE_INTENT_DRIFT');
+        }
         foreach ($receipt['generation_model_hashes'] as $id => $hash) {
             if (! isset($models[(int) $id]) || ! hash_equals((string) $hash, $this->contracts->modelHash($models[(int) $id]))) {
                 throw new LogicException('CANONICAL_COUNCIL_PREPARATION_ORIGINAL_MODEL_DRIFT');
@@ -249,6 +270,75 @@ class SpecialistCouncilPreparationService
             throw new LogicException('CANONICAL_COUNCIL_PREPARATION_ORIGINAL_SOURCE_DRIFT');
         }
         return [$receipt, $plan];
+    }
+
+    private function nativeConstructorIntent(LabGeneration $generation, $models, $agents): ?array
+    {
+        $intent = data_get($generation->trigger_context, 'native_specialist_council_intent');
+        if ($intent === null && ! $agents->contains(fn (LabAgent $agent): bool => $agent->origin === 'native_council_root')) return null;
+        if (! is_array($intent) || ($intent['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+            || ($intent['purpose'] ?? null) !== 'research' || ($intent['symbol'] ?? null) !== 'XAUUSD'
+            || ($intent['storage_timeframe'] ?? null) !== 'H1' || ($intent['population_size'] ?? null) !== 6
+            || ($intent['authority'] ?? null) !== 'research_only' || ($intent['requires_atomic_preparation'] ?? null) !== true
+            || ($intent['independent_evidence_claimed'] ?? null) !== false || ($intent['promotion_evidence'] ?? null) !== false
+            || $generation->trigger_type !== GenerationAdmissionDecisionService::HISTORICAL_TRIGGER
+            || (int) $generation->population_size !== 6 || $agents->count() !== 6
+            || ! is_string($intent['creator_id'] ?? null) || trim($intent['creator_id']) === ''
+            || ! is_string($intent['research_question'] ?? null) || trim($intent['research_question']) === ''
+            || ($intent['intent_hash'] ?? null) !== $this->epochs->parameterHash(array_diff_key($intent, ['intent_hash' => true]))) {
+            throw new LogicException('CANONICAL_COUNCIL_NATIVE_CONSTRUCTOR_INTENT_INVALID');
+        }
+        $roles = [];
+        foreach ($agents as $agent) {
+            $seed = (array) data_get($models[(int) $agent->model_version_id]?->metadata, 'native_specialist_council_seed', []);
+            if ($agent->origin !== 'native_council_root' || $agent->symbol !== 'XAUUSD' || $agent->timeframe !== 'H1'
+                || $agent->parent_a_model_version_id !== null || $agent->parent_b_model_version_id !== null
+                || ($seed['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+                || ($seed['intent_hash'] ?? null) !== $intent['intent_hash']
+                || ($seed['lab_generation_id'] ?? null) !== $generation->id
+                || ($seed['authority'] ?? null) !== 'research_only' || ($seed['qualified_specialist'] ?? null) !== false) {
+                throw new LogicException('CANONICAL_COUNCIL_NATIVE_CONSTRUCTOR_SEED_DRIFT');
+            }
+            $roles[] = $seed['slot_role'] ?? '';
+        }
+        sort($roles);
+        if ($roles !== ['ablation_carrier', 'candidate_carrier', 'source_day', 'source_hour', 'source_scalp', 'source_swing']) {
+            throw new LogicException('CANONICAL_COUNCIL_NATIVE_CONSTRUCTOR_SEED_DRIFT');
+        }
+        return $intent;
+    }
+
+    private function assertNativeIntentRequest(array $intent, array $request, $models): void
+    {
+        $carrier = $models[(int) $request['carrier_model_version_id']] ?? null;
+        if ($request['creator_id'] !== $intent['creator_id'] || $request['research_question'] !== $intent['research_question']
+            || data_get($carrier?->metadata, 'native_specialist_council_seed.slot_role') !== 'candidate_carrier') {
+            throw new LogicException('CANONICAL_COUNCIL_NATIVE_INTENT_REQUEST_MISMATCH');
+        }
+        $sourceIds = [];
+        foreach ((array) ($request['manifest']['members'] ?? []) as $member) {
+            if (! in_array($member['role'] ?? null, SpecialistCouncilContractService::TRADING_ROLES, true)) continue;
+            $model = $models[(int) ($member['model_version_id'] ?? 0)] ?? null;
+            if (! $model || data_get($model->metadata, 'native_specialist_council_seed.slot_role') !== 'source_'.($member['role'] ?? '')) {
+                throw new LogicException('CANONICAL_COUNCIL_NATIVE_INTENT_SOURCE_ROLE_MISMATCH');
+            }
+            $sourceIds[] = (int) $model->id;
+        }
+        if (count(array_unique($sourceIds)) !== 4) throw new LogicException('CANONICAL_COUNCIL_NATIVE_INTENT_SOURCE_ROLE_MISMATCH');
+        foreach (['champion_model_version_id', 'solo_model_version_id'] as $key) {
+            if (! in_array((int) data_get($request, 'manifest.evaluation_policy.'.$key), $sourceIds, true)) {
+                throw new LogicException('CANONICAL_COUNCIL_NATIVE_INTENT_COMPARATOR_MISMATCH');
+            }
+        }
+        foreach ($request['evaluation_plan']['arms'] as $arm) {
+            $armModel = $models[(int) ($arm['model_version_id'] ?? 0)] ?? null;
+            $slot = data_get($armModel?->metadata, 'native_specialist_council_seed.slot_role');
+            $allowed = match ($arm['kind'] ?? '') {
+                'candidate' => $slot === 'candidate_carrier', 'ablation' => $slot === 'ablation_carrier',
+                'solo' => in_array((int) $arm['model_version_id'], $sourceIds, true), default => false,
+            };
+            if (! $allowed) throw new LogicException('CANONICAL_COUNCIL_NATIVE_INTENT_ARM_ROLE_MISMATCH');
+        }
     }
 
     private function assertDiscoveryPlan(array $plan, array $manifest): void

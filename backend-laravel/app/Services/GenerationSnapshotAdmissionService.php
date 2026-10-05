@@ -13,6 +13,13 @@ class GenerationSnapshotAdmissionService
     public function inspect(LabGeneration $generation): array
     {
         $generation->loadMissing('agents.modelVersion', 'laboratory');
+        $nativePreparation = app(SpecialistCouncilPreparationService::class);
+        if ($nativePreparation->hasNativeConstructorIntent($generation)) {
+            try { $nativePreparation->isResearchGeneration($generation); }
+            catch (\LogicException $error) {
+                return ['allowed' => false, 'reasons' => [$error->getMessage()], 'promotion_evidence' => false];
+            }
+        }
         $releaseReasons = [];
         try {
             app(ResearchReleaseSealService::class)->assertCurrent($generation);

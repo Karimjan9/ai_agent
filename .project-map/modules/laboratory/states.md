@@ -15,6 +15,16 @@ Changed actionable IDs enter the arbiter state watermark, not a minute clock.
 
 ## Native council version boundary
 
+`native_constructor_intent -> six unused draft references -> prepared_for_canonical_dispatch`
+uses the existing canonical constructor/preparation owners. The first step is
+fixed-six, research-only and unforced; it does not qualify its prospective
+horizons. A malformed intent fails before leases or data access. Shared
+technical debt, active construction, STOP, protocol pause and missing archive
+still block it. Incomplete construction follows existing continuation rules;
+unprepared or tampered declared references cannot queue as ordinary candidates.
+Preparation must preserve the original creator/question/hash and all six
+source/carrier markers before normal release and snapshot admission.
+
 `draft -> evaluating -> evaluated -> approved -> scheduled -> active -> retired`
 is separate from generation state. Draft/evaluation can be research-only;
 approval requires original authorized independent comparisons by a different
@@ -142,6 +152,15 @@ An autonomous recovery whose prior immutable run used a different foundation
 hash cannot replay as the same experiment. It seals a terminal technical
 disposition and consumes the one bounded repair allowance; the agent stays
 quarantined while a fresh generation can be selected.
+An old response-less open attempt may instead be operationally superseded
+when a later completed same-agent/model/generation/phase response artifact is
+verified and all ownership proofs are idle. The explicitly scoped existing
+mutex recovery calls the watchdog/immutable owner to close only that unfinished
+attempt as `retry_released`; its original source/data/parameters and start time
+are retained. A later source may differ, but its result is never copied or
+combined with the unfinished attempt as exact comparative evidence. Original
+agent verdicts, completed rows, historical technical failures and scientific
+credit/qualification gates remain unchanged.
 The same bounded terminal disposition applies when the sealed evaluator is no
 longer the deployed release. Recovery checks release identity before dataset
 restoration and again on queued admission; an old cohort cannot be resealed or

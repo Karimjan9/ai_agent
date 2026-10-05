@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\LabEvaluationRun;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabLifecycleWatchdogService;
 use App\Services\LabQueueStateService;
 use App\Services\OperatorApprovalService;
 use App\Services\ReplayLivenessProbeService;
@@ -29,6 +30,8 @@ class RecoverLabReplayMutex extends Command
         {--stale-after=120 : Minimum reservation age in seconds for the explicit stale recovery}
         {--dry-run : Report the proven stale owner without requeueing or deleting a lock}
         {--scheduled-sweep : Treat a healthy fail-closed no-op as success for unattended monitoring}
+        {--reconcile-superseded : Only close explicitly scoped response-less original runs; never mutate a mutex or queue}
+        {--superseded-run-id=* : Original database run ID; repeat for at most twenty targeted runs}
         {--apply : Requeue/remove only after explicit operator approval}
         {--approved-by=}
         {--approval-reason=}';
@@ -37,6 +40,13 @@ class RecoverLabReplayMutex extends Command
 
     public function handle(OperatorApprovalService $approvals, LabQueueStateService $queueState, ReplayLivenessProbeService $liveness): int
     {
+        if ((bool) $this->option('reconcile-superseded')) {
+            return $this->reconcileSuperseded($approvals);
+        }
+        if ((array) $this->option('superseded-run-id') !== []) {
+            $this->error('SUPERSEDED_RUN_SCOPE_REQUIRES_RECONCILE_FLAG');
+            return self::FAILURE;
+        }
         if ((string) config('queue.default', 'database') === 'redis') {
             return $this->handleRedis($approvals, $queueState, $liveness);
         }
@@ -110,52 +120,9 @@ class RecoverLabReplayMutex extends Command
                 return self::FAILURE;
             }
 
-            // A worker can finish a recovery replay and lose the queue row
-            // before the old middleware attempt is closed. If a newer
-            // terminal run for the same agent exists, the old open row is
-            // provably superseded and must not remain an apparent active
-            // replay or become a second evidence boundary. Close only this
-            // exact, idempotent case; an orphan without a newer terminal run
-            // remains fail-closed for operator investigation.
-            $supersededOpenRuns = LabEvaluationRun::query()
-                ->where('status', 'started')
-                ->get()
-                ->filter(function (LabEvaluationRun $run): bool {
-                    return LabEvaluationRun::query()
-                        ->where('lab_agent_id', $run->lab_agent_id)
-                        ->where('id', '>', $run->id)
-                        ->whereIn('status', ['completed', 'technical_error', 'retry_released', 'skipped', 'legacy_snapshot'])
-                        ->exists();
-                })
-                ->values();
-
-            if ($supersededOpenRuns->isNotEmpty()) {
-                if ($dryRun) {
-                    $this->line('Would close '.$supersededOpenRuns->count().' superseded open evaluator run(s); newer terminal evidence is preserved.');
-                } elseif (! $this->approve($approvals, [
-                    'mode' => 'superseded_open_runs',
-                    'run_ids' => $supersededOpenRuns->pluck('id')->values()->all(),
-                    'agent_ids' => $supersededOpenRuns->pluck('lab_agent_id')->unique()->values()->all(),
-                ])) {
-                    return self::FAILURE;
-                } else {
-                    $evidence = app(LabImmutableEvidenceService::class);
-                    $supersededOpenRuns->each(function (LabEvaluationRun $run) use ($evidence): void {
-                        $evidence->finishIfOpen(
-                            $run,
-                            'retry_released',
-                            null,
-                            [],
-                            [
-                                'reason_code' => 'SUPERSEDED_BY_NEWER_TERMINAL_REPLAY',
-                                'recovery_protocol' => 'orphaned_replay_mutex_v1',
-                                'promotion_evidence' => false,
-                            ],
-                        );
-                    });
-                    $this->warn('Closed '.$supersededOpenRuns->count().' superseded open evaluator run(s); no evidence was deleted.');
-                }
-            }
+            // Response-less historical runs have their own backend-neutral,
+            // explicitly scoped proof path above. A newer technical/other-phase
+            // row is not enough to terminalize an old immutable attempt.
 
             if ($reservedJobs->isEmpty()) {
                 // A worker can die after the queue reservation expires (or
@@ -305,6 +272,34 @@ class RecoverLabReplayMutex extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function reconcileSuperseded(OperatorApprovalService $approvals): int
+    {
+        try {
+            $owner = app(LabLifecycleWatchdogService::class);
+            $ids = (array) $this->option('superseded-run-id');
+            $preview = $owner->reconcileSupersededRuns($ids);
+            if ($preview['status'] === 'blocked') {
+                $this->line(json_encode($preview, JSON_UNESCAPED_SLASHES));
+                return self::FAILURE;
+            }
+            if (! (bool) $this->option('apply') || (bool) $this->option('dry-run')) {
+                $this->line(json_encode($preview, JSON_UNESCAPED_SLASHES));
+                return self::SUCCESS;
+            }
+            if (! $this->approve($approvals, [
+                'mode' => 'targeted_superseded_open_runs_v2',
+                'run_ids' => $preview['run_ids'], 'proofs' => $preview['items'],
+                'promotion_evidence' => false,
+            ])) return self::FAILURE;
+            $result = $owner->reconcileSupersededRuns($ids, true);
+            $this->line(json_encode($result, JSON_UNESCAPED_SLASHES));
+            return $result['status'] === 'completed' ? self::SUCCESS : self::FAILURE;
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage());
+            return self::FAILURE;
+        }
     }
 
     private function handleRedis(OperatorApprovalService $approvals, LabQueueStateService $queueState, ReplayLivenessProbeService $liveness): int

@@ -354,6 +354,8 @@ class LabPopulationService
 
     public const SPECIALIST_COUNCIL_PROTOCOL = 'specialist_council_v1';
 
+    public const NATIVE_COUNCIL_INTENT_PROTOCOL = 'native_specialist_council_intent_v1';
+
     public const POPULATION_GROUP_SEATS = 4;
 
     public const ANCHOR_SIBLING_PROTOCOL = 'failure_repair_anchor_siblings_v1';
@@ -552,12 +554,13 @@ class LabPopulationService
         }
     }
 
-    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false, ?array $prospectiveExpectation = null): ?LabGeneration
+    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false, ?array $prospectiveExpectation = null, ?array $nativeCouncilIntent = null): ?LabGeneration
     {
         $this->parentPerformanceSnapshots = [];
         $this->archiveFrontierSnapshots = [];
         $this->archiveMigrationSnapshots = [];
         $symbol = strtoupper($symbol);
+        $requestedTimeframe = strtoupper($timeframe);
         if ($symbol === strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'))) {
             $timeframe = (string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1');
         }
@@ -568,6 +571,17 @@ class LabPopulationService
             'retryable' => false,
             'context' => ['symbol' => $symbol, 'timeframe' => $timeframe, 'trigger' => $trigger],
         ];
+        if ($nativeCouncilIntent !== null) {
+            try {
+                $nativeCouncilIntent = $this->sealNativeCouncilIntent($nativeCouncilIntent, $symbol, $requestedTimeframe,
+                    $trigger, $force, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile,
+                    $allowControlledRescue, $prospectiveExpectation);
+                $populationLimit = 6;
+            } catch (\InvalidArgumentException $error) {
+                return $this->blocked('NATIVE_COUNCIL_CONSTRUCTOR_INTENT_INVALID', false,
+                    ['dependency' => $error->getMessage()]);
+            }
+        }
         // STOP is checked before taking the long-lived constructor lock or
         // compiling historical/parent state. The canonical admission service
         // repeats this check at commit time, but a fail-fast boundary prevents
@@ -782,6 +796,10 @@ class LabPopulationService
                 && $this->dataEdgeAudits->opensSuccessor($latest)) {
                 $trigger = 'data_edge_audit';
             }
+            if ($nativeCouncilIntent !== null && $trigger !== GenerationAdmissionDecisionService::HISTORICAL_TRIGGER) {
+                return $this->blocked('NATIVE_COUNCIL_CONSTRUCTOR_INTENT_SUPERSEDED', true,
+                    ['selected_trigger' => $trigger]);
+            }
             if ($trigger === 'new_data' && ModelMarketPerformance::where('symbol', $lab->symbol)
                 ->where('timeframe', $lab->timeframe)->where('status', 'champion')->where('evidence_status', 'valid')
                 ->where('consecutive_no_improvement', '>=', 3)->exists()) {
@@ -899,7 +917,7 @@ class LabPopulationService
                 static fn (mixed $target): string => (string) $target,
                 (array) data_get($targetedFailureProfile, 'targets', []),
             ))));
-            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission): ?array {
+            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission, $nativeCouncilIntent): ?array {
                 // Scheduler and manual/operator requests may arrive together. Lock
                 // the laboratory row before assigning the next generation number;
                 // otherwise two workers can build the same G and one can leave a
@@ -1005,6 +1023,7 @@ class LabPopulationService
                         'generation_protocol' => self::GENERATION_PROTOCOL,
                         'council_protocol' => $roleComplete ? self::ROLE_COMPLETE_COUNCIL_PROTOCOL : null,
                         'role_complete_council' => $roleComplete,
+                        'native_specialist_council_intent' => $nativeCouncilIntent,
                         'canonical_data_contract' => $roleComplete
                             ? app(MarketDriftDetectionService::class)->canonicalDataContract($lockedLab->symbol, $lockedLab->timeframe)
                             : null,
@@ -1036,7 +1055,9 @@ class LabPopulationService
                 // Fixed, auditable experiment budget.  A slot is assigned for the
                 // gate it is meant to move; it is not an undifferentiated "more
                 // agents" budget.
-                $plan = $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile);
+                $plan = $nativeCouncilIntent !== null
+                    ? $this->nativeCouncilSeedPlan($lockedLab, $nativeCouncilIntent)
+                    : $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile);
                 if ($learningConfirmation && $causalRepairFrontier) {
                     $lockedFrontier = app(CausalRepairFrontierService::class)->eligible(
                         $lockedLab->symbol,
@@ -1264,6 +1285,7 @@ class LabPopulationService
                     && ! $controlledRescue
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
+                    && $nativeCouncilIntent === null
                     && count($plan) >= 3) {
                     $causalLearningCohort = app(CausalLearningCohortPlannerService::class)->materialize(
                         $plan,
@@ -1333,6 +1355,7 @@ class LabPopulationService
                     && (! $controlledRescue || $cooperativeExperimentPlan)
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
+                    && $nativeCouncilIntent === null
                     && count($plan) >= 2) {
                     $normalControlPairing = $this->researchAllocation->materializeNormalControlPairing(
                         $plan,
@@ -5266,11 +5289,68 @@ class LabPopulationService
         return $failedKeys[0] ?? array_key_first($schema);
     }
 
-    /**
-     * Fast, explainable recovery cohort used only after a lineage quarantine.
-     * It avoids rebuilding the full historical council curriculum while a
-     * small clean root cohort proves the new constructor.
-     */
+    /** Validate an explicit prospective council intent before taking any constructor lease. */
+    private function sealNativeCouncilIntent(array $intent, string $symbol, string $timeframe, string $trigger,
+        bool $force, array $coverageRescue, bool $roleComplete, ?int $populationLimit, ?array $targetedFailureProfile,
+        bool $allowControlledRescue, ?array $prospectiveExpectation): array
+    {
+        $keys = ['protocol', 'purpose', 'symbol', 'storage_timeframe', 'population_size', 'research_question', 'creator_id'];
+        if (array_diff(array_keys($intent), $keys) !== [] || array_diff($keys, array_keys($intent)) !== []
+            || ($intent['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
+            || ($intent['purpose'] ?? null) !== 'research'
+            || ($intent['symbol'] ?? null) !== 'XAUUSD' || $symbol !== 'XAUUSD'
+            || ($intent['storage_timeframe'] ?? null) !== 'H1' || $timeframe !== 'H1'
+            || ($intent['population_size'] ?? null) !== 6
+            || $trigger !== GenerationAdmissionDecisionService::HISTORICAL_TRIGGER
+            || $force || $coverageRescue !== [] || $roleComplete || $targetedFailureProfile !== null
+            || $allowControlledRescue || $prospectiveExpectation !== null
+            || ($populationLimit !== null && $populationLimit !== 6)) {
+            throw new \InvalidArgumentException('NATIVE_COUNCIL_REQUIRES_EXACT_UNFORCED_SIX_SEAT_RESEARCH_INTENT');
+        }
+        foreach (['research_question' => 500, 'creator_id' => 120] as $key => $limit) {
+            if (! is_string($intent[$key]) || trim($intent[$key]) === ''
+                || strlen($intent[$key]) > $limit || trim($intent[$key]) !== $intent[$key]) {
+                throw new \InvalidArgumentException('NATIVE_COUNCIL_INTENT_IDENTITY_INVALID:'.$key);
+            }
+        }
+        $sealed = [
+            ...$intent, 'authority' => 'research_only', 'requires_atomic_preparation' => true,
+            'independent_evidence_claimed' => false, 'promotion_evidence' => false,
+        ];
+
+        return [...$sealed, 'intent_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($sealed)];
+    }
+
+    /** Six unused references for one future atomic council question, not six qualified specialists. */
+    private function nativeCouncilSeedPlan(AiLaboratory $lab, array $intent): array
+    {
+        $definitions = array_values($this->councilRoleDefinitions($lab));
+        if (count($definitions) !== 4) {
+            throw new \RuntimeException('NATIVE_COUNCIL_SOURCE_ROLE_DEFINITIONS_CHANGED');
+        }
+        $definitions = [...$definitions, $definitions[2], $definitions[2]];
+        $roles = ['source_scalp', 'source_hour', 'source_day', 'source_swing', 'candidate_carrier', 'ablation_carrier'];
+
+        return array_map(fn (array $definition, int $index): array => [
+            'family' => $definition['family'], 'origin' => 'native_council_root', 'target' => 'portfolio_router',
+            'niche' => [
+                'protocol' => self::NATIVE_COUNCIL_INTENT_PROTOCOL,
+                'role' => 'native_council_'.$roles[$index],
+                // These are pristine schema references. Their future council/solo/ablation contrast
+                // is assembled atomically by the preparation owner, not the old pair planner.
+                'control_only' => true, 'parent_lane' => 'autonomous',
+                'native_specialist_council_seed' => [
+                    'protocol' => self::NATIVE_COUNCIL_INTENT_PROTOCOL,
+                    'intent_hash' => $intent['intent_hash'], 'slot_role' => $roles[$index],
+                    'prospective_horizon' => $index < 4 ? substr($roles[$index], 7) : null,
+                    'qualified_specialist' => false, 'authority' => 'research_only',
+                ],
+                'promotion_evidence' => false,
+            ],
+        ], $definitions, array_keys($roles));
+    }
+
+    /** Existing lineage recovery remains a separate bounded semantic-root plan. */
     private function boundedRootRecoveryPlan(AiLaboratory $lab, int $limit): array
     {
         // A root is not a generic hybrid control. It is the first member of
@@ -6575,6 +6655,29 @@ class LabPopulationService
         $failureReason = null;
         $lab = $generation->laboratory;
         $niche ??= [];
+        $nativeSeed = (array) data_get($niche, 'native_specialist_council_seed', []);
+        $nativeIntent = (array) data_get($generation->trigger_context, 'native_specialist_council_intent', []);
+        $nativeCouncilRoot = $nativeSeed !== [] || $nativeIntent !== [];
+        if ($nativeCouncilRoot) {
+            $nativeSeal = $nativeIntent;
+            unset($nativeSeal['intent_hash']);
+            $expectedRole = ['source_scalp', 'source_hour', 'source_day', 'source_swing', 'candidate_carrier', 'ablation_carrier'][$slot - 1] ?? null;
+            if ($origin !== 'native_council_root' || $expectedRole === null
+                || ($nativeIntent['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
+                || ($nativeIntent['purpose'] ?? null) !== 'research' || ($nativeIntent['population_size'] ?? null) !== 6
+                || ($nativeIntent['requires_atomic_preparation'] ?? null) !== true
+                || ($nativeIntent['authority'] ?? null) !== 'research_only'
+                || ($nativeIntent['independent_evidence_claimed'] ?? null) !== false
+                || ($nativeIntent['promotion_evidence'] ?? null) !== false
+                || ($nativeSeed['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
+                || ($nativeSeed['slot_role'] ?? null) !== $expectedRole
+                || ($nativeSeed['intent_hash'] ?? null) !== ($nativeIntent['intent_hash'] ?? null)
+                || ($nativeIntent['intent_hash'] ?? null) !== app(ResearchPaperEpochContractService::class)->parameterHash($nativeSeal)) {
+                $failureReason = 'NATIVE_COUNCIL_CONSTRUCTOR_SEED_SEAL_INVALID';
+
+                return false;
+            }
+        }
         $compositionPassport = (array) data_get($niche, 'composition_passport', []);
         if ($compositionPassport !== []) {
             $strategyId = (string) data_get($compositionPassport, 'components.strategy_id', '');
@@ -6636,7 +6739,12 @@ class LabPopulationService
         // budget, but no memory packet. Its ordinary cold-start selector may
         // choose a different single gene; the treatment is selector policy,
         // not a duplicated mutation.
-        $decisionPacket = match ($causalCohortRole) {
+        $decisionPacket = $nativeCouncilRoot ? [
+            'packet_id' => (string) Str::uuid(), 'status' => 'prospective_native_council_schema_root',
+            'positive_lessons' => [], 'harmful_lessons' => [], 'uncertainty_lessons' => [],
+            'blocked_mutations' => [], 'recommended_genes' => [], 'retrieval_count' => 0,
+            'promotion_evidence' => false,
+        ] : match ($causalCohortRole) {
             'blinded', 'repair_guided' => [
                 'packet_id' => (string) Str::uuid(),
                 'status' => $causalCohortRole === 'repair_guided'
@@ -6696,7 +6804,7 @@ class LabPopulationService
         // confirmed genes become bounded preferences and forbidden genes join
         // the existing harmful-mutation firewall. Blinded/causal cohort arms
         // remain uncontaminated by global learned policy.
-        $instrumentMutationPolicy = $causalCohortRole === ''
+        $instrumentMutationPolicy = $causalCohortRole === '' && ! $nativeCouncilRoot
             ? app(LabInstrumentResearchService::class)->mutationPolicy($lab->symbol, $family, (array) $niche)
             : [
                 'protocol' => 'instrument_posterior_mutation_policy_v2',
@@ -6789,7 +6897,7 @@ class LabPopulationService
         // attached as a genetic parent and cannot bypass the normal gates.
         $skillMentorInput = null;
         $skillMentorApplied = false;
-        if ($declaredGene === '' && $causalCohortRole === '' && ! $repairResearchOnly) {
+        if ($declaredGene === '' && $causalCohortRole === '' && ! $repairResearchOnly && ! $nativeCouncilRoot) {
             // One mentor probe per research group is enough to test a
             // confirmed capability without collapsing the whole cohort onto
             // one gene. Group seats 2-4 remain independent challengers.
@@ -7004,7 +7112,7 @@ class LabPopulationService
         // ControlRootInheritanceService before it is allowed into $parents.
         // Coverage rescue remains sealed to its audited parent and may not
         // silently substitute a root.
-        if ($parents->isEmpty() && ! $frozenParent) {
+        if ($parents->isEmpty() && ! $frozenParent && ! $nativeCouncilRoot) {
             $controlRootSeedAgent = $this->controlRootInheritance->findSeed($generation, $family, $niche);
             if ($controlRootSeedAgent) {
                 $parents = collect([$controlRootSeedAgent->modelVersion]);
@@ -7039,7 +7147,7 @@ class LabPopulationService
             // Do not label that empty result as a validated frontier and do
             // not let it block a legal canonical control-root handoff.
             $parentTier = 'no_parent';
-            if ($controlRootSeedAgent === null && ! $frozenParent) {
+            if ($controlRootSeedAgent === null && ! $frozenParent && ! $nativeCouncilRoot) {
                 $controlRootSeedAgent = $this->controlRootInheritance->findSeed($generation, $family, $niche);
                 if ($controlRootSeedAgent) {
                     $parents = collect([$controlRootSeedAgent->modelVersion]);
@@ -7083,6 +7191,21 @@ class LabPopulationService
         // archive projection either. The failed vector is a baseline, while
         // the new child must be represented as parentless until confirmation.
         // Keep diagnostic candidates visible, but mark no selected parent.
+        if ($nativeCouncilRoot) {
+            // These models are new prospective references, not descendants or saved
+            // control vectors. Ordinary parent/frontier observations grant them no material.
+            $parents = collect();
+            $controlRootSeedAgent = null;
+            $frozenParent = null;
+            $parentTier = 'no_parent';
+            $parentSelection = 'prospective_native_council_schema_root';
+            $adaptiveParentSelection = [
+                'parents' => collect(), 'selected_parent_ids' => [], 'capability_genome' => [],
+                'contract' => ['status' => 'prospective_native_council_schema_root',
+                    'selected_parent_model_version_ids' => [], 'genetic_parent_forbidden' => true,
+                    'promotion_evidence' => false],
+            ];
+        }
         $archiveSelectedParents = $repairAnchor !== null ? collect() : $parents;
         $archiveSelection = $repairAnchor !== null
             ? [
@@ -7273,7 +7396,7 @@ class LabPopulationService
         // parent_a: a 1.22 PF research seed must not masquerade as a 1.30 PF
         // genetic parent or contribute promotion evidence.
         $frozenResearchSeedAgent = null;
-        if ($parentA === null && $repairAnchor === null && ! $frozenParent && $exactPairBaselineModel === null) {
+        if ($parentA === null && $repairAnchor === null && ! $frozenParent && $exactPairBaselineModel === null && ! $nativeCouncilRoot) {
             $frozenResearchSeedAgent = $this->frozenResearchSeed($generation, $family, $niche);
             if ($frozenResearchSeedAgent) {
                 $parentSelection = 'no_genetic_parent; same_cell_frozen_research_seed';
@@ -8653,7 +8776,7 @@ class LabPopulationService
             $roleControl,
         );
         $controlRoot = app(ControlRootCatalogueService::class)->for($family, $architecture);
-        $controlRootSeedDeclaration = $parentA === null
+        $controlRootSeedDeclaration = $parentA === null && ! $nativeCouncilRoot
             ? $this->controlRootInheritance->seedDeclaration(
                 $lab->symbol,
                 $lab->timeframe,
@@ -8834,6 +8957,8 @@ class LabPopulationService
                 ] : null,
                 'lab_symbol' => $lab->symbol, 'origin' => $origin,
                 'lab_timeframe' => $lab->timeframe,
+                'native_specialist_council_seed' => $nativeCouncilRoot
+                    ? [...$nativeSeed, 'lab_generation_id' => (int) $generation->id] : null,
                 'causal_baseline_model_version_id' => $exactPairBaselineModel?->id,
                 'activation_factorial_baseline_model_version_id' => $activationFactorialBaselineModel?->id,
                 'phase_scope_baseline_model_version_id' => $phaseScopeBaselineModel?->id,

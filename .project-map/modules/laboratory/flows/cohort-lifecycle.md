@@ -12,6 +12,18 @@ an already-reconciled lineage head or a completed no-op decision.
 
 ## Declared native specialist council
 
+The canonical population constructor accepts an explicit final
+`nativeCouncilIntent` only for an unforced XAUUSD/H1 historical research build.
+It seals exactly six new schema references: prospective scalp/hour/day/swing
+sources plus candidate and ablation carriers. Existing admission, foundation,
+constructor lease and atomic per-seat persistence are retained. Other causal
+and ordinary pair planners cannot reserve those six references; no genetic,
+mentor or previous control-root vector is inherited. Question, creator and
+intent hash remain pinned in the generation and every model. This is not a
+qualified specialist or independent result. A native intent without original
+atomic preparation cannot enter dispatcher or snapshot admission, even if its
+generation context was deleted but model markers/origin remain.
+
 A stored draft seals horizon passports and native model/component vectors.
 Binding an unused research carrier selects that version, not paper authority.
 The existing dispatcher sends one `specialist_council_runtime_v1` per declared

@@ -8,6 +8,7 @@ use App\Models\Candle;
 use App\Models\EliteAgentPortfolio;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabEvidenceArtifact;
 use App\Models\LabGeneration;
 use App\Models\ModelMarketPerformance;
 use App\Models\PaperOrder;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
+use Symfony\Component\Process\Process;
 
 /**
  * Detects lifecycle/evidence failures without changing any promotion gate.
@@ -71,6 +74,177 @@ class LabLifecycleWatchdogService
         $events = [...$events, ...$this->watchPaperIntegrity()];
 
         return $events;
+    }
+
+    /**
+     * Targeted operational closure, not a replay result or the broad watchdog
+     * repair pass. The existing recovery CLI supplies explicit approved IDs.
+     * Different later source/response facts are never copied to the old run.
+     */
+    public function reconcileSupersededRuns(array $runIds, bool $apply = false): array
+    {
+        if ($runIds === [] || count($runIds) > 20
+            || collect($runIds)->contains(fn ($id): bool => ! ctype_digit((string) $id) || (int) $id <= 0)) {
+            throw new RuntimeException('SUPERSEDED_RUN_SCOPE_INVALID: supply 1 to 20 positive original run IDs.');
+        }
+        $runIds = array_values(array_unique(array_map('intval', $runIds)));
+        sort($runIds);
+
+        return DB::transaction(function () use ($runIds, $apply): array {
+            $runs = LabEvaluationRun::query()->whereIn('id', $runIds)->orderBy('id')
+                ->when($apply, fn ($query) => $query->lockForUpdate())->get()->keyBy('id');
+            $items = [];
+            foreach ($runIds as $id) {
+                $run = $runs->get($id);
+                $items[] = $run ? $this->supersededRunProof($run)
+                    : ['id' => $id, 'status' => 'blocked', 'reason_code' => 'ORIGINAL_RUN_MISSING'];
+            }
+            $result = [
+                'protocol' => 'superseded_open_run_reconciliation_v2',
+                'status' => collect($items)->contains('status', 'blocked') ? 'blocked' : ($apply ? 'completed' : 'ready'),
+                'dry_run' => ! $apply, 'run_ids' => $runIds, 'reconciled' => 0,
+                'items' => $items, 'promotion_evidence' => false,
+            ];
+            // Refuse the entire requested scope before any original close.
+            if (! $apply || $result['status'] === 'blocked') return $result;
+
+            foreach ($items as $index => $proof) {
+                if ($proof['status'] === 'already_reconciled') continue;
+                $run = $runs->get($proof['id']);
+                // Re-read external ownership immediately before the atomic
+                // terminal boundary, even after the caller's dry-run/approval.
+                $reason = $this->supersededRunOperationalBlock($run->agent);
+                if ($reason !== null) throw new RuntimeException($reason);
+                app(LabImmutableEvidenceService::class)->finishIfOpen($run, 'retry_released', null, [], [
+                    'reason_code' => 'SUPERSEDED_OPEN_RUN_WITHOUT_ORIGINAL_RESPONSE',
+                    'recovery_protocol' => 'superseded_open_run_reconciliation_v2',
+                    'original_facts_hash' => $proof['original_facts_hash'],
+                    'superseding_completed_run_id' => $proof['superseding_run_id'],
+                    'superseding_response_artifact_id' => $proof['superseding_response_artifact_id'],
+                    'superseding_response_hash' => $proof['superseding_response_hash'],
+                    'same_phase_completed_artifact_proven' => true,
+                    'terminal_generation_and_agent_proven' => true,
+                    'same_host_worker_absent_proven' => true,
+                    'admission_disabled_proven' => true,
+                    'no_queue_job_proven' => true, 'replay_lane_idle_proven' => true,
+                    'original_response_available' => false, 'promotion_evidence' => false,
+                ]);
+                $result['items'][$index]['status'] = 'reconciled';
+                $result['reconciled']++;
+            }
+            return $result;
+        });
+    }
+
+    private function supersededRunProof(LabEvaluationRun $run): array
+    {
+        $proof = ['id' => (int) $run->id, 'run_id' => $run->run_id, 'phase' => $run->phase,
+            'lab_agent_id' => (int) $run->lab_agent_id, 'generation_id' => (int) $run->lab_generation_id,
+            'status' => 'blocked', 'promotion_evidence' => false];
+        $factsHash = app(LabImmutableEvidenceService::class)->hash($run->only([
+            'id', 'run_id', 'lab_generation_id', 'lab_agent_id', 'model_version_id', 'phase', 'mode',
+            'attempt', 'queue', 'job_uuid', 'request_id', 'started_at', 'created_at',
+            'worker_name', 'worker_pid', 'request_hash', 'parameter_hash', 'data_hash', 'code_hash',
+        ]));
+        if ($run->status === 'retry_released'
+            && data_get($run->metadata, 'recovery_protocol') === 'superseded_open_run_reconciliation_v2'
+            && hash_equals((string) data_get($run->metadata, 'original_facts_hash', ''), $factsHash)) {
+            return [...$proof, 'status' => 'already_reconciled'];
+        }
+        if ($run->status !== 'started' || $run->finished_at !== null || filled($run->response_hash)
+            || filled($run->response_meta)
+            || LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_response')->exists()) {
+            return [...$proof, 'reason_code' => 'ORIGINAL_RUN_NOT_OPEN_WITHOUT_RESPONSE'];
+        }
+        $run->load('agent', 'generation');
+        $agent = $run->agent;
+        $generation = $run->generation;
+        if (! $agent || ! $generation || (int) $agent->lab_generation_id !== (int) $generation->id
+            || (int) $agent->model_version_id !== (int) $run->model_version_id
+            || ! in_array((string) $agent->lifecycle_status, [
+                'screened', 'completed', 'rejected', 'failed', 'quarantined', 'technical_quarantine', 'legacy_quarantine', 'abandoned',
+            ], true)
+            || ! in_array((string) $generation->status, ['screened', 'completed', 'technical_quarantine', 'abandoned'], true)
+            || $generation->agents()->whereIn('lifecycle_status', [
+                'draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation', 'evaluation_error',
+            ])->exists()) {
+            return [...$proof, 'reason_code' => 'ORIGINAL_AGENT_OR_GENERATION_NOT_TERMINAL'];
+        }
+        if (! $run->started_at || $run->started_at->greaterThan(now()->subMinutes(self::STALE_TRAINING_MINUTES))
+            || ! in_array((string) $run->phase, ['screening', 'full_validation'], true)) {
+            return [...$proof, 'reason_code' => 'ORIGINAL_RUN_NOT_STALE_SUPPORTED_PHASE'];
+        }
+        $hostname = (string) (gethostname() ?: php_uname('n'));
+        if (trim((string) $run->worker_name) === '' || strcasecmp((string) $run->worker_name, $hostname) !== 0
+            || ! $this->supersededWorkerIsAbsent((int) $run->worker_pid)) {
+            return [...$proof, 'reason_code' => 'ORIGINAL_WORKER_NOT_PROVEN_ABSENT_ON_THIS_HOST'];
+        }
+        if (($reason = $this->supersededRunOperationalBlock($agent)) !== null) {
+            return [...$proof, 'reason_code' => $reason];
+        }
+        $later = LabEvaluationRun::query()->where('lab_agent_id', $run->lab_agent_id)
+            ->where('lab_generation_id', $run->lab_generation_id)->where('model_version_id', $run->model_version_id)
+            ->where('phase', $run->phase)->where('mode', $run->mode)
+            ->where('id', '>', $run->id)->where('started_at', '>=', $run->started_at)
+            ->where('status', 'completed')->whereNotNull('finished_at')->orderBy('id')->first();
+        if (! $later || ! preg_match('/^[a-f0-9]{64}$/', (string) $later->response_hash)) {
+            return [...$proof, 'reason_code' => 'LATER_SAME_PHASE_COMPLETED_RUN_MISSING'];
+        }
+        $artifacts = LabEvidenceArtifact::query()->where('run_id', $later->run_id)
+            ->where('artifact_type', 'evaluation_response')->limit(2)->get();
+        $artifact = $artifacts->first();
+        try {
+            if ($artifacts->count() !== 1 || (int) $artifact->lab_agent_id !== (int) $later->lab_agent_id
+                || (int) $artifact->lab_generation_id !== (int) $later->lab_generation_id
+                || ! hash_equals((string) $later->response_hash, (string) $artifact->sha256)) {
+                throw new RuntimeException('Invalid superseding artifact identity.');
+            }
+            $evidence = app(LabImmutableEvidenceService::class);
+            $payload = $evidence->readArtifactPayload($artifact);
+            if (! is_array($payload) || $payload === []
+                || data_get($payload, 'terminal_replay_envelope.response_available') === false
+                || (! $artifact->storage_path && ! hash_equals((string) $artifact->sha256, $evidence->hash($payload)))) {
+                throw new RuntimeException('Missing actual superseding evaluator response.');
+            }
+        } catch (\Throwable) {
+            return [...$proof, 'reason_code' => 'LATER_SAME_PHASE_RESPONSE_ARTIFACT_INVALID'];
+        }
+        return [...$proof, 'status' => 'eligible', 'original_facts_hash' => $factsHash,
+            'superseding_run_id' => (int) $later->id,
+            'superseding_response_artifact_id' => (int) $artifact->id,
+            'superseding_response_hash' => $later->response_hash];
+    }
+
+    private function supersededRunOperationalBlock(LabAgent $agent): ?string
+    {
+        if (app(AutonomousModeService::class)->enabled((string) $agent->symbol, (string) $agent->timeframe)) {
+            return 'SUPERSEDED_RUN_RECOVERY_REQUIRES_ADMISSION_STOP';
+        }
+        $backlog = $this->queueJobs->labQueueBacklog();
+        if (($backlog['total'] ?? null) !== 0) return 'SUPERSEDED_RUN_RECOVERY_QUEUE_NOT_PROVEN_IDLE';
+        if (! $this->replayLaneIsIdle()) return 'SUPERSEDED_RUN_RECOVERY_REPLAY_NOT_PROVEN_IDLE';
+        return null;
+    }
+
+    /** Unknown/foreign-host processes never count as absent. */
+    protected function supersededWorkerIsAbsent(int $pid): bool
+    {
+        if ($pid <= 0 || $pid === getmypid()) return false;
+        try {
+            if (PHP_OS_FAMILY === 'Windows') {
+                $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
+                $process->setTimeout(5)->run();
+                return $process->isSuccessful() && trim($process->getOutput()) !== ''
+                    && preg_match('/"'.preg_quote((string) $pid, '/').'"/', $process->getOutput()) !== 1;
+            }
+            if (function_exists('posix_kill') && function_exists('posix_get_last_error')) {
+                if (@posix_kill($pid, 0)) return false;
+                return posix_get_last_error() === 3; // ESRCH only; EPERM is not absence.
+            }
+            return is_dir('/proc') && ! is_dir('/proc/'.$pid);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function schemaPreflight(): ?array
@@ -223,8 +397,8 @@ class LabLifecycleWatchdogService
                 ->withHeaders(['X-Internal-Token' => $token])->get($url);
             if ($response->failed()) return false;
             $body = $response->json();
-            return (string) data_get($body, 'protocol', '') !== ''
-                && (int) data_get($body, 'active_requests', -1) === 0;
+            return is_array($body) && (string) data_get($body, 'protocol', '') !== ''
+                && is_int(data_get($body, 'active_requests')) && data_get($body, 'active_requests') === 0;
         } catch (\Throwable) {
             return false;
         }

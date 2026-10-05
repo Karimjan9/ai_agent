@@ -167,6 +167,14 @@ class DispatchLabGeneration extends Command
                 continue;
             }
             $generation = $lab->generations()->with('agents')->latest('generation')->first();
+            $nativePreparation = app(\App\Services\SpecialistCouncilPreparationService::class);
+            if ($generation && $nativePreparation->hasNativeConstructorIntent($generation)) {
+                try { $nativePreparation->isResearchGeneration($generation); }
+                catch (\LogicException $error) {
+                    $this->warn("{$symbol}: native council draft awaits its original atomic preparation ({$error->getMessage()}); snapshots and dispatch withheld.");
+                    continue;
+                }
+            }
             $resumeExistingGeneration = $resumeDraftAgents
                 && $generation
                 && in_array((string) $generation->status, LabPopulationService::ACTIVE_GENERATION_STATUSES, true);
@@ -749,6 +757,15 @@ class DispatchLabGeneration extends Command
      */
     private function normalCausalAdmission($generation): array
     {
+        $native = app(\App\Services\SpecialistCouncilPreparationService::class);
+        if ($generation instanceof \App\Models\LabGeneration && $native->hasNativeConstructorIntent($generation)) {
+            try {
+                $native->isResearchGeneration($generation);
+                return ['allowed' => true, 'reasons' => [], 'owner' => 'original_native_council_research_plan'];
+            } catch (\LogicException $error) {
+                return ['allowed' => false, 'reasons' => [$error->getMessage()]];
+            }
+        }
         $context = (array) ($generation->trigger_context ?? []);
         $mode = (string) data_get(
             $context,

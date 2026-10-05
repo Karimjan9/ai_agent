@@ -31,6 +31,22 @@ See ADR-021.
 4. Re-run strict verification after remediation.
 5. Mark only the verified condition recovered; retain audit context.
 
+For an old response-less `started` row superseded by a real later completed
+attempt, the existing mutex command has a targeted backend-neutral path:
+`trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID
+--dry-run`. Repeat the ID option for at most twenty exact originals. Apply the
+same scope only with `--apply --approved-by=... --approval-reason=...` after
+STOP has disabled admission and existing work is drained. This branch never
+removes a mutex or queue reservation. `LabLifecycleWatchdogService` verifies
+same host/dead PID, terminal original agent/generation, known-empty queues,
+authenticated idle replay and actual hash-verified later same-phase response.
+It calls immutable `finishIfOpen` once with `retry_released` and no original
+response. Original source/data/parameter/start/created facts and later science
+remain unchanged; no later PnL is copied and no credit is granted. A missing,
+poisoned, live or unknown proof refuses the requested scope. Scheduled broad
+watchdog reporting and ordinary mutex sweeps do not authorize this operator
+action, and a different-phase/technical later row cannot replace these proofs.
+
 For research-release provenance, run
 `php backend-laravel/scripts/audit-research-release.php --generation=N`.
 It reads Git HEAD/worktree state and the generation's immutable
