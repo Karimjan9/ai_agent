@@ -1,5 +1,17 @@
 # Paper order lifecycle
 
+## Optional native specialist account
+
+Active members use the same `PaperTradingExecutionService` intake and their own
+E3/E4 frozen identity. The specialist account helper serializes shared integer
+capital, held reservations, exposure and risk before order/fill publication.
+Signal/intent/fill identity prevents duplicate spending. The common account can
+only narrow existing sentinel/discipline/global limits. Orders pin the original
+member/council/management/request versions; retiring a member or disabling new
+entries leaves mandatory open-position reconciliation running. Unsupported
+netting/cost/partial-fill assumptions are explicit dependencies. A matured
+close records policy-scoped paper feedback, not automatic research permission.
+
 ## Trigger
 
 An eligible research/paper signal arrives with its execution, strategy and (if

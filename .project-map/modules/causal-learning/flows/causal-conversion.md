@@ -1,5 +1,14 @@
 # Causal conversion loop
 
+Typed operator proposals have a separate bounded research admission:
+`compileResearchCandidate -> decisionOperatorContract -> original closed-input
+confirmation/risk-reduction/exit receipt -> exact absence/ablation comparison`.
+This removes a prior-success prerequisite only for research proposals; normal
+Academy admission, independent causal credit, E3/E4 and live guards remain
+unchanged. Interpreter CPU or a successful benchmark task alone cannot become
+economic authority. Native council feedback records event-use/maturity under
+the same epoch policy rather than making paper events research data.
+
 An operator can run `trading:audit-research-window-provenance --json` before
 planning independent evidence, optionally supplying an explicit UTC candidate
 interval and a JSON design with source, exact-control, intervention, context

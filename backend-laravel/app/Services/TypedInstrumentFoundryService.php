@@ -31,6 +31,31 @@ class TypedInstrumentFoundryService
         if ((int) ($gates['confirmed_cartridges'] ?? 0) < 1 || (int) ($gates['successful_transfers'] ?? 0) < 1) {
             return $this->blocked('CONFIRMED_CARTRIDGE_AND_SUCCESSFUL_TRANSFER_REQUIRED');
         }
+        return $this->compileTypedProgram($ast, $context, $gates);
+    }
+
+    /**
+     * A well-typed proposal may be researched before any successful transfer.
+     * This separate admission grants no credit, qualification or paper rights;
+     * the original Academy-qualified entry point above keeps its old gate.
+     */
+    public function compileResearchCandidate(array $ast, array $context, string $proposalId): array
+    {
+        if (! preg_match('/^[A-Za-z0-9_.:-]{1,150}$/', $proposalId)
+            || ! $this->sha($context['data_hash'] ?? null)
+            || ! $this->sha($context['execution_hash'] ?? null)) {
+            return $this->blocked('SEALED_RESEARCH_PROPOSAL_IDENTITY_REQUIRED');
+        }
+        return $this->compileTypedProgram($ast, $context, [
+            'admission' => 'bounded_research_candidate', 'proposal_id' => $proposalId,
+            'confirmed_cartridges' => 0, 'successful_transfers' => 0,
+            'qualification_granted' => false,
+        ]);
+    }
+
+    private function compileTypedProgram(array $ast, array $context, array $gates): array
+    {
+        if (! Schema::hasTable('research_instrument_programs')) return $this->unavailable();
         if (($context['pre_2026_only'] ?? false) !== true || ! filled($context['data_hash'] ?? null) || ! filled($context['execution_hash'] ?? null)) {
             return $this->blocked('PRE2026_DATA_AND_EXECUTION_IDENTITY_REQUIRED');
         }
@@ -278,6 +303,12 @@ class TypedInstrumentFoundryService
         });
     }
 
+    /** Reuse the original selector verifier; a downstream benchmark cannot self-certify. */
+    public function selectorObservationForExperiment(AgentLearningCausalExperiment $experiment): array
+    {
+        return $this->verifiedSelectorObservation($experiment);
+    }
+
     /** Only the prospectively sealed constructor can supply selector timing and exposure. */
     private function verifiedSelectorObservation(AgentLearningCausalExperiment $experiment): array
     {
@@ -405,6 +436,59 @@ class TypedInstrumentFoundryService
                 'ast_json' => $this->encode($ast),
                 'scope_key' => $scope, 'abstractions' => $definitions, 'input_vectors' => $vectors,
                 'expected_outputs' => $expectedOutputs, 'search_budget' => $budget], 'promotion_evidence' => false];
+    }
+
+    /** Export a registered typed program into the real decision path, not benchmark vectors. */
+    public function decisionOperatorContract(string $programKey, string $target, array $inputBindings, array $budget): array
+    {
+        if (! Schema::hasTable('research_instrument_programs')) return $this->unavailable();
+        $program = DB::table('research_instrument_programs')->where('program_key', $programKey)->first();
+        if (! $program) return $this->blocked('INSTRUMENT_PROGRAM_NOT_FOUND');
+        if (! in_array($target, ['confirmation', 'risk_multiplier', 'exit'], true)
+            || ! is_numeric($budget['cpu_seconds'] ?? null) || $budget['cpu_seconds'] <= 0 || $budget['cpu_seconds'] > 1
+            || ! is_int($budget['max_calls'] ?? null) || $budget['max_calls'] < 1 || $budget['max_calls'] > 100000
+            || ! is_int($budget['max_node_evaluations'] ?? null) || $budget['max_node_evaluations'] < 1 || $budget['max_node_evaluations'] > 4800000) {
+            return $this->blocked('DECISION_OPERATOR_TARGET_OR_COMPUTE_BUDGET_INVALID');
+        }
+        $compiled = (array) json_decode($program->compiled_contract, true);
+        $context = (array) data_get(json_decode($program->evidence, true), 'context', []);
+        $scope = $this->programScope($context);
+        $ast = (array) data_get($compiled, 'compression.compressed_ast', $compiled['source_ast'] ?? json_decode($program->ast, true));
+        try { $expanded = $this->expand($ast, $scope); }
+        catch (\RuntimeException $error) { return $this->blocked($error->getMessage()); }
+        $type = $this->infer($expanded);
+        if (! ($type['valid'] ?? false) || $this->hash($expanded) !== $program->ast_hash
+            || $type['type'] !== ($target === 'risk_multiplier' ? 'number' : 'bool')) {
+            return $this->blocked('DECISION_OPERATOR_TYPED_PROGRAM_IDENTITY_INVALID');
+        }
+        $allowed = ['close', '_management_atr', 'signal_confidence', 'volume', 'volume_available', 'risk_veto', 'news_veto'];
+        if (array_diff(array_values($inputBindings), $allowed) !== []) return $this->blocked('DECISION_OPERATOR_INPUT_BINDING_INVALID');
+        $stack = [$expanded];
+        while ($stack !== []) {
+            $node = array_pop($stack); $op = strtoupper((string) ($node['op'] ?? ''));
+            if (in_array($op, ['SEQUENCE', 'WITHIN'], true)) return $this->blocked('DECISION_OPERATOR_TEMPORAL_ADAPTER_REQUIRED');
+            if (in_array($op, ['PRICE_CLOSE', 'ATR', 'NUMBER', 'BOOL', 'DURATION'], true)) {
+                $key = (string) ($node['input_key'] ?? strtolower($op));
+                if (! array_key_exists($key, $inputBindings)) return $this->blocked('DECISION_OPERATOR_UNBOUND_INPUT');
+                if ($this->utcSeconds($node['available_at'] ?? null) === null) return $this->blocked('DECISION_OPERATOR_EXPLICIT_ASOF_REQUIRED');
+            }
+            foreach ((array) ($node['args'] ?? []) as $argument) $stack[] = $argument;
+        }
+        $definitions = [];
+        foreach ($this->callKeys($ast) as $key) {
+            $macro = DB::table('research_instrument_abstractions')->where('macro_key', $key)->first();
+            $definition = $macro ? (array) json_decode($macro->definition, true) : [];
+            if ($this->hash($definition) !== $key || ($definition['scope_key'] ?? null) !== $scope) return $this->blocked('ABSTRACTION_CONTENT_OR_SCOPE_MISMATCH');
+            $definitions[$key] = $definition;
+        }
+        $operator = ['protocol' => 'typed_operator_decision_v1', 'source_task_key' => $programKey,
+            'scope_key' => $scope, 'source_context' => $context, 'target' => $target,
+            'ast' => $ast, 'ast_json' => $this->encode($ast), 'ast_hash' => $program->ast_hash,
+            'abstractions' => $definitions, 'input_bindings' => $inputBindings,
+            'budget' => $budget, 'research_only' => true, 'promotion_evidence' => false];
+        return ['status' => 'native_decision_contract', 'operator' => [...$operator,
+            'contract_hash' => $this->hash($operator), 'contract_json' => $this->encode($operator)],
+            'promotion_evidence' => false, 'qualification_granted' => false];
     }
 
     /** Persist observations only after the original native task has completed. */

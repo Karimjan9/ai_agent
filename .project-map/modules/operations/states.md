@@ -1,5 +1,12 @@
 # Operations states
 
+Native specialist evaluation delivery is separate from original replay state:
+`pending -> completed` after all earliest preregistered original arms settle;
+consumer failure retains a bounded durable dependency without rewriting a
+completed replay. The existing guarded arbiter drains these receipts, not a
+new selector. Scientific comparisons remain research-only until independent
+authorization and original E3/E4 gates pass.
+
 `WAIT_DATASET_CONTINUITY -> bounded Academy preparation` may occur only when
 a ready proposal explicitly names a verified clean discovery bundle. Parent
 full-archive continuity remains blocked. A spent/not-ready slice cannot authorize

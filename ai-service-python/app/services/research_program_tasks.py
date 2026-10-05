@@ -1,4 +1,4 @@
-"""Bounded pure research DSL execution; never strategy, trading or authority code.
+"""Bounded pure research DSL execution and explicit sealed decision bindings.
 
 This intentionally supports only point-in-time boolean/numeric primitives.
 Temporal SEQUENCE/WITHIN semantics are NOT guessed. It measures interpretation,
@@ -19,13 +19,45 @@ MAX_NODES = 48
 MAX_VECTORS = 128
 MAX_CPU_SECONDS = 1.0
 
+DECISION_PROTOCOL = "typed_operator_decision_v1"
+DECISION_INPUTS = {
+    "close", "_management_atr", "signal_confidence", "volume",
+    "volume_available", "risk_veto", "news_veto",
+}
+
+
+def preserved_contract_body(contract: dict, error_prefix: str, maximum_bytes: int = 1048576) -> dict:
+    """Preserve PHP float spelling across transports that erase .0.
+
+    The exact JSON copy is a transport guard, never a different executable
+    declaration. Both copies must have identical structure and exact values.
+    """
+    body = {key: value for key, value in contract.items() if key not in {"contract_hash", "contract_json"}}
+    encoded = contract.get("contract_json")
+    if encoded is None:
+        return body
+    if not isinstance(encoded, str) or len(encoded.encode("utf-8")) > maximum_bytes:
+        raise ValueError(f"{error_prefix}_JSON_COPY_INVALID")
+    try:
+        preserved = json.loads(encoded)
+    except (ValueError, RecursionError) as error:
+        raise ValueError(f"{error_prefix}_JSON_COPY_INVALID") from error
+    if not isinstance(preserved, dict) or not _same_ast_copy(body, preserved):
+        raise ValueError(f"{error_prefix}_JSON_COPY_MISMATCH")
+    return preserved
+
 
 def canonical_hash(value: object) -> str:
     # Foundry uses PHP JSON_PRESERVE_ZERO_FRACTION with ASCII escaping.
     # Like execution_contract._canonical_json, normalize exponent mantissas
     # and exponent zero padding; PHP additionally keeps 1e16 in decimal form.
-    encoded = _foundry_json(value)
+    encoded = canonical_json(value)
     return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def canonical_json(value: object) -> str:
+    """Exact PHP-compatible numeric and object spelling for transported seals."""
+    return _foundry_json(value)
 
 
 def _foundry_json(value: object) -> str:
@@ -55,7 +87,12 @@ def _utc(value: object) -> datetime:
 
 
 def _number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _same_ast_copy(left: object, right: object, depth: int = 0) -> bool:
@@ -217,3 +254,146 @@ def execute_task(task: dict) -> dict:
             "search_resources": {"timing_scope": "bounded_program_interpretation", "cpu_seconds": elapsed,
                                  "expansions": visits, "search_efficiency_measured": False},
             "research_only": True, "promotion_evidence": False}
+
+
+class BoundedDecisionProgram:
+    """Reuse the typed CALL kernel on actual closed observations.
+
+    An ordinary research task remains telemetry only. This separate sealed
+    contract is required before an operator can veto entry, reduce sizing or
+    request an exit. Caller vectors and expected outputs are never consumed.
+    """
+
+    def __init__(self, contract: dict):
+        if not isinstance(contract, dict) or contract.get("protocol") != DECISION_PROTOCOL:
+            raise ValueError("DECISION_OPERATOR_PROTOCOL_REQUIRED")
+        body = preserved_contract_body(contract, "DECISION_OPERATOR", 131072)
+        if canonical_hash(body) != contract.get("contract_hash"):
+            raise ValueError("DECISION_OPERATOR_CONTRACT_HASH_MISMATCH")
+        contract = {**body, "contract_hash": contract["contract_hash"]}
+        if not contract.get("source_task_key") or not contract.get("scope_key"):
+            raise ValueError("DECISION_OPERATOR_SOURCE_AND_SCOPE_REQUIRED")
+        if "input_vectors" in contract or "expected_outputs" in contract:
+            raise ValueError("DECISION_OPERATOR_EXTERNAL_VECTORS_FORBIDDEN")
+        self.contract = contract
+        self.target = contract.get("target")
+        if self.target not in {"confirmation", "risk_multiplier", "exit"}:
+            raise ValueError("DECISION_OPERATOR_TARGET_INVALID")
+        definitions = contract.get("abstractions", {}) or {}
+        if not isinstance(definitions, dict) or len(definitions) > 8:
+            raise ValueError("DECISION_OPERATOR_LIBRARY_BUDGET_INVALID")
+        source_ast = contract.get("ast")
+        if "ast_json" in contract:
+            encoded = contract["ast_json"]
+            if not isinstance(encoded, str) or len(encoded) > 32768:
+                raise ValueError("DECISION_OPERATOR_AST_JSON_COPY_INVALID")
+            try:
+                preserved = json.loads(encoded)
+            except (ValueError, RecursionError) as error:
+                raise ValueError("DECISION_OPERATOR_AST_JSON_COPY_INVALID") from error
+            if not isinstance(preserved, dict) or not _same_ast_copy(source_ast, preserved):
+                raise ValueError("DECISION_OPERATOR_AST_JSON_COPY_MISMATCH")
+            source_ast = preserved
+        self.ast = _expand(source_ast, definitions, contract["scope_key"])
+        self.result_type, self.nodes = _infer(self.ast)
+        if canonical_hash(self.ast) != contract.get("ast_hash"):
+            raise ValueError("DECISION_OPERATOR_AST_HASH_MISMATCH")
+        required = "bool" if self.target in {"confirmation", "exit"} else "number"
+        if self.result_type != required:
+            raise ValueError("DECISION_OPERATOR_RESULT_TYPE_INVALID")
+        self.bindings = contract.get("input_bindings", {}) or {}
+        if not isinstance(self.bindings, dict) or any(value not in DECISION_INPUTS for value in self.bindings.values()):
+            raise ValueError("DECISION_OPERATOR_INPUT_BINDING_INVALID")
+        def validate_bindings(node: dict) -> None:
+            op = node["op"]
+            if op in {"PRICE_CLOSE", "ATR", "NUMBER", "BOOL", "DURATION"}:
+                key = node.get("input_key", op.lower())
+                field = self.bindings.get(key)
+                if field is None:
+                    raise ValueError("DECISION_OPERATOR_UNBOUND_INPUT")
+                if ((op == "BOOL") != (field in {"volume_available", "risk_veto", "news_veto"})
+                    or (op == "PRICE_CLOSE" and field != "close")
+                    or (op == "ATR" and field != "_management_atr")
+                    or op == "DURATION"):
+                    raise ValueError("DECISION_OPERATOR_INPUT_BINDING_TYPE_INVALID")
+            for arg in node.get("args", []):
+                validate_bindings(arg)
+        validate_bindings(self.ast)
+        budget = contract.get("budget", {})
+        self.cpu_limit = budget.get("cpu_seconds")
+        self.call_limit = budget.get("max_calls")
+        self.node_limit = budget.get("max_node_evaluations")
+        if (not _number(self.cpu_limit) or not 0 < self.cpu_limit <= MAX_CPU_SECONDS
+            or not isinstance(self.call_limit, int) or isinstance(self.call_limit, bool)
+            or not 1 <= self.call_limit <= 100000
+            or not isinstance(self.node_limit, int) or isinstance(self.node_limit, bool)
+            or not 1 <= self.node_limit <= 4800000):
+            raise ValueError("DECISION_OPERATOR_COMPUTE_BUDGET_INVALID")
+        self.calls = self.visits = self.changed_decisions = 0
+        self.cpu_used = 0.0
+        self.observation_hasher = hashlib.sha256()
+
+    def evaluate(self, row: dict, *, decision_at: str, observed_at: str) -> object:
+        decision, observed = _utc(decision_at), _utc(observed_at)
+        if observed > decision:
+            raise ValueError("DECISION_OPERATOR_FUTURE_OBSERVATION_FORBIDDEN")
+        self.calls += 1
+        if self.calls > self.call_limit:
+            raise ValueError("DECISION_OPERATOR_COMPUTE_BUDGET_EXCEEDED")
+        started = time.process_time()
+        inputs = {}
+
+        def evaluate(node: dict) -> object:
+            self.visits += 1
+            if self.visits > self.node_limit or self.cpu_used + time.process_time() - started > self.cpu_limit:
+                raise ValueError("DECISION_OPERATOR_COMPUTE_BUDGET_EXCEEDED")
+            op = node["op"]
+            if op == "CONST":
+                return node["value"]
+            if op in {"PRICE_CLOSE", "ATR", "NUMBER", "BOOL", "DURATION"}:
+                if _utc(node["available_at"]) > decision:
+                    raise ValueError("DECISION_OPERATOR_FUTURE_INPUT_FORBIDDEN")
+                key = node.get("input_key", op.lower())
+                field = self.bindings.get(key)
+                if field is None:
+                    raise ValueError("DECISION_OPERATOR_UNBOUND_INPUT")
+                value = row.get(field)
+                # pandas scalar booleans are converted by to_dict before here.
+                if (op == "BOOL" and not isinstance(value, bool)) or (op != "BOOL" and not _number(value)):
+                    raise ValueError("DECISION_OPERATOR_INPUT_TYPE_REQUIRED")
+                inputs[key] = value
+                return value
+            values = [evaluate(arg) for arg in node.get("args", [])]
+            if op == "GREATER_THAN": return values[0] > values[1]
+            if op == "LESS_THAN": return values[0] < values[1]
+            if op in {"AND", "CONFIRMED_BY"}: return all(values)
+            if op == "OR": return any(values)
+            if op == "NOT": return not values[0]
+            raise ValueError("DECISION_OPERATOR_UNSUPPORTED_OPERATOR")
+
+        result = evaluate(self.ast)
+        self.cpu_used += time.process_time() - started
+        if self.cpu_used > self.cpu_limit:
+            raise ValueError("DECISION_OPERATOR_COMPUTE_BUDGET_EXCEEDED")
+        if self.target == "risk_multiplier" and (not _number(result) or not 0 <= result <= 1):
+            raise ValueError("DECISION_OPERATOR_RISK_INCREASE_FORBIDDEN")
+        self.observation_hasher.update(canonical_hash({
+            "decision_at": decision_at, "observed_at": observed_at,
+            "inputs": inputs, "output": result,
+        }).encode())
+        return result
+
+    def receipt(self) -> dict:
+        return {
+            "protocol": DECISION_PROTOCOL,
+            "contract_hash": self.contract["contract_hash"],
+            "ast_hash": self.contract["ast_hash"],
+            "source_task_key": self.contract["source_task_key"],
+            "target": self.target, "calls": self.calls,
+            "node_evaluations": self.visits,
+            "behavior_delta_decisions": self.changed_decisions,
+            "observation_hash": self.observation_hasher.hexdigest(),
+            "cpu_seconds_budget": self.cpu_limit,
+            "cpu_budget_compliant": self.cpu_used <= self.cpu_limit,
+            "research_only": True, "promotion_evidence": False,
+        }

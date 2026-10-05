@@ -22,7 +22,10 @@ class PaperExecutionStateMachineService
             'requested_price' => $data['requested_price'] ?? null, 'filled_price' => $data['filled_price'] ?? null,
             'requested_units' => $data['requested_units'] ?? null, 'filled_units' => $data['filled_units'] ?? null,
             'latency_ms' => $data['latency_ms'] ?? null, 'reason' => $data['reason'] ?? null, 'retry_count' => $data['retry_count'] ?? 0,
-            'payload' => ['protocol' => 'execution_digital_twin_state_machine_v1', ...((array) ($data['payload'] ?? []))],
+            'payload' => ['protocol' => 'execution_digital_twin_state_machine_v1', ...((array) ($data['payload'] ?? [])),
+                ...($order?->paper_capital_reservation_id ? ['specialist_position_pin' => ['owner_id' => $order->owner_id,
+                    'council_id' => $order->council_id, 'council_version' => $order->council_version,
+                    'management_version' => $order->management_version, 'reservation_id' => $order->paper_capital_reservation_id]] : [])],
         ]);
     }
 

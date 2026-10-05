@@ -124,9 +124,11 @@ def _adx(df: pd.DataFrame, window: int) -> pd.Series:
     plus_dm = high_diff.where((high_diff > low_diff) & (high_diff > 0), 0.0)
     minus_dm = low_diff.where((low_diff > high_diff) & (low_diff > 0), 0.0)
 
-    atr = _average_true_range(df, window).replace(0, pd.NA)
+    # Numeric NaN keeps flat-market denominators compatible with ewm. pd.NA
+    # turns an otherwise numeric Series into object on supported pandas.
+    atr = _average_true_range(df, window).replace(0, float("nan"))
     plus_di = 100 * plus_dm.ewm(alpha=1 / window, min_periods=window, adjust=False).mean() / atr
     minus_di = 100 * minus_dm.ewm(alpha=1 / window, min_periods=window, adjust=False).mean() / atr
-    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, pd.NA)) * 100
+    dx = ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, float("nan"))) * 100
 
     return dx.ewm(alpha=1 / window, min_periods=window, adjust=False).mean().fillna(0)

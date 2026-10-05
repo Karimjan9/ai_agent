@@ -89,6 +89,7 @@ class StrategyRuntimeConfig(BaseModel):
     # separately; receiving this contract grants no component credit.
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
     research_release: dict[str, Any] = Field(default_factory=dict)
+    specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionConfig(BaseModel):
@@ -187,6 +188,9 @@ class SimpleBacktestRequest(BaseModel):
     # portfolio_members; this map is an audit contract and never authorizes
     # genetic parent IDs by itself.
     runtime_ensemble_policy: dict[str, Any] = Field(default_factory=dict)
+    # Explicit opt-in to independent specialist positions on a synchronized
+    # account. Undeclared requests retain the original portfolio router.
+    specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
     # Canonical XAUUSD multi-timeframe routing contract. H1 remains a closed
     # regime context and M15 remains the independent entry population.
     mtf_pilot: dict[str, Any] = Field(default_factory=dict)
@@ -301,6 +305,7 @@ class SimpleTrade(BaseModel):
 
 
 class SimpleBacktestResponse(BaseModel):
+    prospective_probe_window_receipt: dict[str, Any] = Field(default_factory=dict)
     strategy: str
     parameters: dict[str, Any] = Field(default_factory=dict)
     instrument: str
@@ -332,6 +337,7 @@ class SimpleBacktestResponse(BaseModel):
     execution_contract: dict[str, Any] = Field(default_factory=dict)
     control_root: dict[str, Any] = Field(default_factory=dict)
     policy_boundary: dict[str, Any] = Field(default_factory=dict)
+    specialist_council_receipt: dict[str, Any] = Field(default_factory=dict)
     core_replay_gate: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
     volume_quality: dict[str, Any] = Field(default_factory=dict)

@@ -5,9 +5,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 class PaperOrder extends Model
 {
-    protected $fillable = ['model_market_performance_id','paper_signal_id','broker','external_order_id','symbol','timeframe','direction','units','entry_price','stop_loss','take_profit','exit_price','profit_percent','status','opened_at','closed_at','signal_context','broker_payload','evidence_status','invalidated_at','invalidation_reason'];
+    protected static function booted(): void
+    {
+        static::updating(function (self $order): void {
+            foreach (['paper_capital_reservation_id', 'owner_id', 'council_id', 'council_version', 'management_version'] as $pin) {
+                if ($order->getOriginal($pin) !== null && $order->isDirty($pin)) throw new \LogicException('PAPER_POSITION_OWNER_PIN_IMMUTABLE');
+            }
+        });
+    }
+    protected $fillable = ['model_market_performance_id','paper_signal_id','broker','external_order_id','symbol','timeframe','direction','units','entry_price','stop_loss','take_profit','exit_price','profit_percent','status','opened_at','closed_at','signal_context','broker_payload','evidence_status','invalidated_at','invalidation_reason','paper_capital_reservation_id','owner_id','council_id','council_version','management_version','filled_units_micros','remaining_units_micros'];
     protected $casts = ['signal_context'=>'array','broker_payload'=>'array','opened_at'=>'datetime','closed_at'=>'datetime','invalidated_at'=>'datetime'];
-    public function marketPerformance(): BelongsTo { return $this->belongsTo(ModelMarketPerformance::class); }
+    public function marketPerformance(): BelongsTo { return $this->belongsTo(ModelMarketPerformance::class, 'model_market_performance_id'); }
     public function fills(): HasMany { return $this->hasMany(PaperFill::class); }
     public function signal(): BelongsTo { return $this->belongsTo(PaperSignal::class, 'paper_signal_id'); }
     public function paperSignal(): BelongsTo { return $this->belongsTo(PaperSignal::class, 'paper_signal_id'); }

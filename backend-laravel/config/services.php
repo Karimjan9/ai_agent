@@ -349,6 +349,14 @@ return [
         'mode' => env('PAPER_MODE', 'shadow'),
         'broker' => 'simulated',
         'units' => (float) env('PAPER_UNITS', 1),
+        // Typed council observation remains opt-in, simulated and subject to
+        // the existing E3/E4, global risk and process gates for every member.
+        'specialist_council_enabled' => env('PAPER_SPECIALIST_COUNCIL_ENABLED', false),
+        'specialist_account_key' => env('PAPER_SPECIALIST_ACCOUNT_KEY', 'specialist-paper'),
+        'specialist_initial_balance_cents' => (int) env('PAPER_SPECIALIST_INITIAL_BALANCE_CENTS', 1000000),
+        'specialist_max_gross_exposure_cents' => (int) env('PAPER_SPECIALIST_MAX_GROSS_EXPOSURE_CENTS', 1000000),
+        'specialist_max_account_risk_cents' => (int) env('PAPER_SPECIALIST_MAX_ACCOUNT_RISK_CENTS', 10000),
+        'specialist_broker_account_mode' => env('PAPER_SPECIALIST_BROKER_ACCOUNT_MODE', 'hedging'),
     ],
 
     // One governed XAUUSD organism consumes a frozen multi-timeframe bundle.

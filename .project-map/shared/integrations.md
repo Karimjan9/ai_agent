@@ -1,5 +1,24 @@
 # Integrations and runtime boundaries
 
+Native specialist councils use the existing `/api/backtest/run-all`, `/run` and
+`/portfolio` boundary. `specialist_council_runtime_v1` belongs to the individual
+candidate, not unrelated batch peers. One native shared account emits
+`specialist_council_receipt_v1` with pinned member/version, data, execution and
+account/position ledger identities. Laravel's original request attestation
+precedes immutable completion or cache/learning acceptance. Optional typed
+operators execute actual closed observations, not benchmark expected outputs.
+Exact numeric JSON copies are compared before canonical hashing. The native
+producer receipt additionally carries exact canonical `receipt_json`;
+Laravel verifies its SHA and structured copy before account/owner checks, so
+PHP empty-object or float encoding cannot silently change the original seal.
+Actual evaluated UTC bounds, warmup and decision-row counts must match the
+preregistered arm; identical source SHA alone is not evaluation parity. Native
+completion publishes its delivery in the original terminal transaction and
+the existing locked arbiter retries only the downstream consumer.
+The additive
+paper account remains opt-in and uses the original E3/E4 intake/execution owner;
+native deployment grants no paper or live authority.
+
 Paper admission depends on original-source and exact-trait causal verification.
 Causal discovery and Research Mentor do not require paper profitability; later
 performance/Economic Parent handling consumes already sealed E4 receipts as

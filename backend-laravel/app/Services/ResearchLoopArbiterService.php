@@ -128,11 +128,17 @@ class ResearchLoopArbiterService
             }
             $recovery = app(StaleAutonomousWorkRecoveryService::class)
                 ->reconcile($symbol, $timeframe);
+            // This is already-admitted immutable evaluation delivery, not a
+            // second scheduler or a new scientific trial. Pause/dry-run guards
+            // above apply; STOP may drain it with the rest of admitted work.
+            $councilDelivery = app(SpecialistCouncilLifecycleService::class)
+                ->reconcilePendingEvaluations(8);
             $result = $this->tickLocked($symbol, $timeframe, $dryRun);
-
-            return ($recovery['status'] ?? null) === 'recovered'
+            $result = ($recovery['status'] ?? null) === 'recovered'
                 ? [...$result, 'stale_work_recovery' => $recovery]
                 : $result;
+            return empty($councilDelivery['deliveries'])
+                ? $result : [...$result, 'specialist_evaluation_delivery' => $councilDelivery];
         } finally {
             try {
                 $lock->release();

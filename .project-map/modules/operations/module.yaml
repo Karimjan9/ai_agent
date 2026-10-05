@@ -77,6 +77,7 @@ data_tables:
 dependencies:
   - laboratory
 invariants:
+  - The already-locked non-dry arbiter drains bounded native council evaluation deliveries after immutable run publication. Pause fences recovery; STOP may drain admitted deliveries. Retry never replays an arm, rewrites original evidence, self-qualifies a version or creates another scheduler.
   - A native immutable unexpected-candle-gap envelope closes evaluator retry debt as a data dependency, not a strategy result. The same actual M5 source bytes remain blocked before fresh discovery and queue admission despite source or bundle-label changes; only verified prospective provider data may select new input, without changing old receipts or resetting the original question cap.
   - Approved Academy preparation containment records its original request/checkpoint/source and zero-scientific-output disposition before canceling only generation-owned batches. Active replay is never killed; canceled deliveries consume normally, then untouched agents finalize after drain. Shared recovery readiness requires the immutable attestation, not a reason label.
   - Academy publication recovery is bounded to two undelivered transport retries. publication_failed fences stale deliveries; a running/completed/deferred/failed command is not silently retried as an undelivered scientific trial.

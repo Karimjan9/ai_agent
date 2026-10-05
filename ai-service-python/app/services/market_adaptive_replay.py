@@ -321,6 +321,24 @@ class MarketAdaptiveReplayService:
         score_calculator,
         foundation_df: pd.DataFrame | None = None,
     ) -> dict[str, object]:
+        if payload.specialist_council_contract:
+            # This first native research contract seals one chronological
+            # account replay. Independent comparators are separate sealed runs;
+            # the legacy single-position stress/selection envelope cannot
+            # certify a different runtime or silently alter its contract.
+            result = run_simple_ema_rsi_backtest_on_dataframe(
+                payload, df, include_differential_pair=False, lightweight=True,
+            ).model_dump()
+            result["evidence_streams"] = {
+                "protocol": "specialist_council_research_evidence_v1",
+                "status": "independent_evaluation_required",
+                "promotion_evidence": False,
+                "required": ["champion", "matched_solo", "member_ablation", "retention", "prospective_paper"],
+            }
+            return {"result": result, "train_score": 0, "validation_score": 0,
+                "forward_score": 0, "forward_window_scores": [],
+                "rolling_windows_count": 0, "robustness_score": 0,
+                "is_overfit": False, "evaluation_status": "research_only"}
         boundary = (payload.policy_context or {}).get("data_boundary", {}) or {}
         paper_only_2026 = boundary.get("protocol", "pre_2026_training_paper_only_v1") == "pre_2026_training_paper_only_v1"
         segments = self.split_dataset(df, foundation_df, payload.timeframe, paper_only_2026=paper_only_2026)

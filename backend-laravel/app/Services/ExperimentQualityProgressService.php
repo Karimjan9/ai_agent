@@ -95,6 +95,7 @@ class ExperimentQualityProgressService
                 'scope' => 'sum_of_evidence_run_durations_includes_retries_and_shared_batch_cost'],
             'discovery_closures' => $experiments->map(fn ($row) => data_get($row->evidence,
                 'prospective_discovery_closure'))->filter()->values()->all(),
+            'specialist_council' => app(SpecialistCouncilLifecycleService::class)->progressForModels($modelIds),
             'confirmation_route_readiness' => $this->confirmationRouteReadiness(), 'promotion_evidence' => false];
     }
 

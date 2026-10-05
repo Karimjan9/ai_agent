@@ -53,6 +53,8 @@ class PaperTradingExecutionService
         private MarketStateEstimatorService $marketStateEstimator,
         private CapabilityCellOrchestrator $capabilityCells,
         private PaperAuthorityAdmissionService $authorityAdmissions,
+        private SpecialistCouncilLifecycleService $specialistCouncils,
+        private SpecialistPaperAccountService $specialistAccounts,
     ) {}
 
     public function run(): array
@@ -77,6 +79,16 @@ class PaperTradingExecutionService
             })->all();
         $stats['portfolio_status'] = $portfolioStatuses;
 
+        // Retired council entries still own their open paper positions. Management
+        // is mandatory even when the active entry version or feature flag changes.
+        $managedQuery = PaperOrder::query()->where('status', 'open');
+        if (! (bool) config('services.paper.specialist_council_enabled', false)) $managedQuery->whereNotNull('paper_capital_reservation_id');
+        $managedOwners = $managedQuery->pluck('model_market_performance_id')->unique();
+        foreach ($managedOwners as $candidateId) {
+            $owner = ModelMarketPerformance::with('modelVersion')->find($candidateId);
+            if ($owner) $stats['closed'] += $this->reconcile($owner);
+        }
+
         // A declared council specialist may prove its individual passport,
         // but it must never start an individual paper track. Paper evidence
         // belongs to the passed combined council proxy; otherwise a strong
@@ -94,7 +106,7 @@ class PaperTradingExecutionService
             }
 
             $stats['candidates']++;
-            $stats['closed'] += $this->reconcile($candidate);
+            if (! $managedOwners->contains($candidate->id)) $stats['closed'] += $this->reconcile($candidate);
             if (! PaperOrder::where('model_market_performance_id', $candidate->id)
                 ->where('evidence_status', 'valid')->where('status', 'open')->exists()) {
                 $stats['opened'] += $this->executePendingSignal($candidate);
@@ -113,9 +125,13 @@ class PaperTradingExecutionService
             return false;
         }
         $metadata = (array) ($model->metadata ?? []);
+        if ((bool) config('services.paper.specialist_council_enabled', false) && empty($metadata['specialist_council_binding'])) return false;
         $isCouncilMember = data_get($metadata, 'council_specialist_contract.protocol') === 'agent_council_v1'
             || data_get($metadata, 'portfolio_council_lane.protocol') === 'portfolio_council_v1';
-        if ($isCouncilMember || ! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
+        $specialistBinding = $this->specialistBinding($candidate);
+        if (($isCouncilMember && ! ($specialistBinding['allowed'] ?? false))
+            || (isset($metadata['specialist_council_binding']) && ! ($specialistBinding['allowed'] ?? false))
+            || ! filled($candidate->symbol) || ! filled($candidate->timeframe)) {
             return false;
         }
         $admission = $this->authorityAdmissions->admit($model, $candidate->symbol, $candidate->timeframe, $this->candidatePassport($candidate, $model));
@@ -185,6 +201,9 @@ class PaperTradingExecutionService
     {
         $paperAdmission = $this->frozenPaperGuard($candidate);
         if (! $paperAdmission['allowed']) return 0;
+        $specialist = $this->specialistBinding($candidate);
+        if ($specialist === [] && (bool) config('services.paper.specialist_council_enabled', false)) return 0;
+        if ($specialist !== [] && ! ($specialist['allowed'] ?? false)) return 0;
         // A stale/invalidated portfolio proxy must stop before the AI
         // transport. Sending an empty portfolio_members payload would make
         // Python interpret the proxy as a normal `portfolio` strategy and
@@ -199,6 +218,22 @@ class PaperTradingExecutionService
             $this->gateDecisions->recordPaperCapture($candidate, 'NO_SIGNAL_OPPORTUNITY', ['available_candles' => count($rows)]);
 
             return 0;
+        }
+        if ($specialist !== []) {
+            $latest = $rows[count($rows) - 1];
+            $time = data_get($latest, 'time', data_get($latest, 'timestamp'));
+            $interval = (int) data_get($specialist, 'member.horizon.decision_interval_seconds', 0);
+            try {
+                if ($time === null) throw new \LogicException('SPECIALIST_OBSERVATION_TIME_MISSING');
+                $observed = is_numeric($time) ? \Carbon\CarbonImmutable::createFromTimestampUTC($time) : \Carbon\CarbonImmutable::parse($time);
+                if ($interval <= 0 || $observed->timestamp % $interval !== 0) {
+                    $this->gateDecisions->recordPaperCapture($candidate, 'SPECIALIST_DECISION_NOT_DUE', ['decision_interval_seconds' => $interval, 'clock' => 'utc_candle_boundary']);
+                    return 0;
+                }
+            } catch (\Throwable) {
+                $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_SPECIALIST_OBSERVATION_CLOCK');
+                return 0;
+            }
         }
         $transition = $this->portfolioTransition($candidate);
         if ($transition !== []) {
@@ -290,7 +325,7 @@ class PaperTradingExecutionService
         } elseif (data_get($sessionContext, 'actionability') !== 'context_observed') {
             $signal['signal'] = 'WAIT';
             $signal['session_reason'] = 'Market-session calendar or observed liquidity is not actionable.';
-        } elseif (! $this->allocator->ownsRegime(
+        } elseif ($specialist === [] && ! $this->allocator->ownsRegime(
             $candidate, $universe,
             (string) ($signal['market_regime'] ?? 'unknown'),
             (string) ($signal['volatility_regime'] ?? 'normal_volatility'),
@@ -446,6 +481,26 @@ class PaperTradingExecutionService
         $verified = $this->frozenPaperGuard($candidate);
         if (! $verified['allowed'] || ! hash_equals($paperAdmission['identity_hash'], $verified['identity_hash'])) return 0;
         $signal['paper_admission'] = $verified;
+        if ($specialist !== []) {
+            $confirmed = $this->specialistBinding($candidate);
+            if (! ($confirmed['allowed'] ?? false) || $this->bindingPin($confirmed) !== $this->bindingPin($specialist)) return 0;
+            $signal['specialist_council_binding'] = $this->bindingPin($confirmed);
+            $costProfile = app(ExecutionContractService::class)->parameters($candidate->symbol);
+            $carryCeiling = (float) $costProfile['swap_per_day_percent'] * (int) data_get($confirmed, 'member.horizon.max_holding_seconds', 0) / 86400;
+            $signal['specialist_trade_intent'] = ['protocol' => 'specialist_paper_trade_intent_v1',
+                'owner_id' => $confirmed['owner_id'], 'symbol' => $candidate->symbol, 'direction' => $signal['signal'] ?? 'WAIT',
+                'council_version' => $confirmed['council_version'], 'management_version' => $confirmed['management_version'],
+                'horizon' => data_get($confirmed, 'member.horizon'),
+                'entry_plan' => ['type' => 'next_candle_sealed_execution_contract', 'observed_price' => $signal['price'] ?? null,
+                    'stop_loss' => $signal['stop_loss'] ?? null, 'take_profit' => $signal['take_profit'] ?? null],
+                'capital_demand' => ['base_units' => (float) config('services.paper.units', 1), 'size_pending_native_risk_authorization' => true,
+                    'allocation_weight_ceiling' => data_get($confirmed, 'member.capital_weight')],
+                'risk_percent_ceiling' => min((float) config('services.risk.max_risk_per_trade_percent', 1), (float) data_get($confirmed, 'member.risk_per_trade_percent', 0)),
+                'estimated_round_trip_cost_percent' => $this->risk->estimatedRoundTripCostPercent($candidate->symbol, (float) ($signal['price'] ?? 0))
+                    + (float) $costProfile['commission_percent'] + $carryCeiling,
+                'expires_at' => \Carbon\CarbonImmutable::parse($candleTime)->utc()->addSeconds(2 * (int) data_get($confirmed, 'member.horizon.decision_interval_seconds'))->toIso8601String(),
+                'invalidation' => 'expired_or_frozen_identity_or_entry_risk_geometry_changed', 'promotion_evidence' => false];
+        }
         $signalSnapshot = $this->foundation->captureSignalMarketSnapshot([
             'signal_type' => 'paper_candidate',
             'signal_key' => "paper:{$candidate->id}:{$candleTime}",
@@ -498,6 +553,9 @@ class PaperTradingExecutionService
         if (! $signal) {
             return 0;
         }
+        $specialist = $this->specialistBinding($candidate, (array) data_get($signal->payload, 'specialist_council_binding', []));
+        if ($specialist === [] && (bool) config('services.paper.specialist_council_enabled', false)) return 0;
+        if ($specialist !== [] && ! ($specialist['allowed'] ?? false)) return 0;
         if (! $this->frozenPaperGuard($candidate, $signal)['allowed']) return 0;
         if (! $this->runtimePortfolioAllowed($candidate)) {
             return 0;
@@ -700,6 +758,11 @@ class PaperTradingExecutionService
         $broker = 'simulated';
         $units = $baseUnits * $sizeMultiple;
 
+        if ($specialist !== []) {
+            return $this->executeSpecialistOrder($candidate, $signal, $this->bindingPin($specialist), $units, $entry,
+                $executionSignal, $entryCandle, $risk, $sentinelPlan, $disciplinePlan, $sizeMultiple, $authorizedContract, $authorization, $rows);
+        }
+
         return DB::transaction(function () use ($candidate, $signal, $broker, $units, $entry, $executionSignal,
             $entryCandle, $risk, $sentinelPlan, $disciplinePlan, $sizeMultiple, $authorizedContract, $authorization): int {
         // Lock the candidate identity through order and fill publication. No stale
@@ -740,6 +803,88 @@ class PaperTradingExecutionService
 
         return 1;
         });
+    }
+
+    private function specialistBinding(ModelMarketPerformance $candidate, ?array $pin = null): array
+    {
+        $declared = (array) data_get($candidate->modelVersion?->metadata, 'specialist_council_binding', []);
+        if ($declared === [] && ($pin === null || $pin === [])) return [];
+        if (! (bool) config('services.paper.specialist_council_enabled', false)) return ['allowed' => false, 'reason_code' => 'SPECIALIST_PAPER_DISABLED'];
+        return $this->specialistCouncils->paperBinding($candidate->modelVersion, $candidate->symbol, $candidate->timeframe, $pin ?: $declared);
+    }
+
+    private function bindingPin(array $binding): array
+    {
+        return ['protocol' => 'specialist_council_binding_v1', 'council_id' => $binding['council_id'],
+            'council_version' => (string) $binding['council_version'], 'specialist_id' => $binding['specialist_id'] ?? data_get($binding, 'member.specialist_id'),
+            'management_version' => $binding['management_version'], ... (isset($binding['version_id']) ? ['version_id' => (int) $binding['version_id']] : [])];
+    }
+
+    private function executeSpecialistOrder(ModelMarketPerformance $candidate, PaperSignal $signal, array $binding,
+        float $units, float $entry, array $executionSignal, Candle $entryCandle, array $risk, array $sentinelPlan,
+        array $disciplinePlan, float $sizeMultiple, array $contract, array $authorization, array $rows): int
+    {
+        return DB::transaction(function () use ($candidate, $signal, $binding, $units, $entry, $executionSignal,
+            $entryCandle, $risk, $sentinelPlan, $disciplinePlan, $sizeMultiple, $contract, $authorization, $rows): int {
+            $quantity = SpecialistPaperAccountService::decimalUnits($units);
+            $entryPrice = SpecialistPaperAccountService::price($entry);
+            $costPolicy = (array) data_get($contract, 'execution_contract.parameters', []);
+            if (! isset($costPolicy['commission_percent'], $costPolicy['swap_per_day_percent'])
+                || ! is_numeric($costPolicy['commission_percent']) || ! is_numeric($costPolicy['swap_per_day_percent'])
+                || $costPolicy['commission_percent'] < 0 || $costPolicy['swap_per_day_percent'] < 0) {
+                $this->executionState->record($candidate, 'rejected', $signal, null, ['provider' => 'specialist_paper_account', 'reason' => 'PAPER_COST_POLICY_UNSEALED']);
+                return 0;
+            }
+            $member = $this->specialistCouncils->paperBinding($candidate->modelVersion, $candidate->symbol, $candidate->timeframe, $binding);
+            $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800, 'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$signal->timeframe] ?? 0;
+            $managementBars = data_get($contract, 'management_contract.parameters.time_stop_candles');
+            if (! ($member['allowed'] ?? false) || ! is_numeric($managementBars) || $managementBars <= 0 || $seconds <= 0
+                || $managementBars * $seconds > (int) data_get($member, 'member.horizon.max_holding_seconds', 0)) {
+                $this->executionState->record($candidate, 'rejected', $signal, null, ['provider' => 'specialist_paper_account', 'reason' => 'SPECIALIST_FROZEN_HOLDING_CONTRACT_UNSUPPORTED']);
+                return 0;
+            }
+            $maxHoldingDays = (float) data_get($member, 'member.horizon.max_holding_seconds', 0) / 86400;
+            $roundTripPercent = (float) $risk['estimated_round_trip_cost_percent'] + (float) $costPolicy['commission_percent']
+                + (float) $costPolicy['swap_per_day_percent'] * $maxHoldingDays;
+            $roundTripCost = SpecialistPaperAccountService::costCents($quantity, $entryPrice, $roundTripPercent);
+            $reservation = $this->specialistAccounts->reserve($candidate, $signal, $binding, $quantity, $entryPrice,
+                SpecialistPaperAccountService::price((float) $executionSignal['stop_loss']), $roundTripCost);
+            if (! $reservation['allowed']) {
+                $this->executionState->record($candidate, 'rejected', $signal, null, ['provider' => 'specialist_paper_account',
+                    'reason' => $reservation['reason_code'], 'payload' => $reservation]);
+                $this->gateDecisions->recordPaperCapture($candidate, 'BLOCKED_BY_SPECIALIST_ACCOUNT', $reservation);
+                return 0;
+            }
+            $reserved = $reservation['reservation'];
+            if ($reserved['paper_order_id'] !== null || $reserved['status'] === 'released') return 0;
+            // The shared account lock is held through candidate/signal checks and
+            // order/fill publication; competing members cannot spend this capital.
+            if (PaperOrder::where('paper_signal_id', $signal->id)->exists() || ! $this->frozenPaperGuard($candidate, $signal)['allowed']) {
+                $this->specialistAccounts->release($reserved['id'], 'rejected');
+                return 0;
+            }
+            $order = PaperOrder::create(['model_market_performance_id' => $candidate->id, 'paper_signal_id' => $signal->id,
+                'broker' => 'simulated', 'symbol' => $candidate->symbol, 'timeframe' => $signal->timeframe,
+                'direction' => $signal->decision, 'units' => $units, 'entry_price' => $entry,
+                'stop_loss' => $executionSignal['stop_loss'], 'take_profit' => $executionSignal['take_profit'],
+                'status' => 'submitted', 'opened_at' => $entryCandle->time,
+                'signal_context' => ['signal' => $executionSignal, 'risk' => $risk, 'risk_sentinel' => $sentinelPlan,
+                    'smart_discipline' => $disciplinePlan, 'position_size_multiple' => $sizeMultiple, 'execution_contract' => $contract,
+                    'specialist_council_binding' => $binding, 'management_request' => $this->aiRequest($candidate, $rows),
+                    'paper_cost_policy' => $costPolicy],
+                'broker_payload' => ['execution_contract' => $contract, 'risk_authorization' => $authorization['authorization']]]);
+            $this->specialistAccounts->attach($reserved['id'], $order);
+            $this->executionState->record($candidate, 'order_submitted', $signal, $order, ['provider' => 'simulated', 'requested_price' => $entry, 'requested_units' => $units]);
+            $costPercent = (float) $costPolicy['commission_percent'] / 2;
+            $commission = SpecialistPaperAccountService::costCents($quantity, $entryPrice, $costPercent);
+            $this->specialistAccounts->fill($order, 'initial-entry', 'entry', $quantity, $entryPrice,
+                $commission, ['cost_percent' => $costPercent, 'filled_at' => $entryCandle->time,
+                    'commission_cents' => $commission, 'carry_cents' => 0, 'spread_slippage_embedded_in_prices' => true]);
+            $this->executionState->transition($candidate, 'open', $signal, $order, 'confirm', ['risk_sentinel' => $sentinelPlan, 'smart_discipline' => $disciplinePlan]);
+            $this->executionState->record($candidate, 'filled', $signal, $order, ['provider' => 'simulated', 'filled_price' => $entry, 'filled_units' => $units]);
+            $candidate->update(['status' => 'paper', 'paper_status' => 'running']);
+            return 1;
+        }, 3);
     }
 
     private function runtimePortfolioAllowed(ModelMarketPerformance $candidate): bool
@@ -817,14 +962,45 @@ class PaperTradingExecutionService
             }
             [$price, $profit, $exitReason, $managementAudit] = $result;
 
-            $order->update(['exit_price' => $price, 'profit_percent' => $profit, 'status' => 'closed', 'closed_at' => now()]);
-            $order->fills()->create([
+            if ($order->paper_capital_reservation_id) {
+                $accounting = (array) ($result[4] ?? []);
+                $closedNow = DB::transaction(function () use ($order, $price, &$profit, $exitReason, $managementAudit, $accounting): bool {
+                    $order->refresh();
+                    $costPercent = (float) data_get($order->signal_context, 'paper_cost_policy.commission_percent') / 2;
+                    $units = (int) $order->remaining_units_micros;
+                    $entryPrice = SpecialistPaperAccountService::price((string) $order->entry_price);
+                    $commission = SpecialistPaperAccountService::costCents($units, $entryPrice, $costPercent);
+                    // Existing sealed candle management charges carry on initial
+                    // notional, including after a partial exit. Preserve and label
+                    // that simulation convention; it is never broker reconciliation.
+                    $carry = SpecialistPaperAccountService::costCents((int) $order->filled_units_micros, $entryPrice, (float) $accounting['carry_percent_total']);
+                    $filled = $this->specialistAccounts->fill($order, 'terminal-exit', 'exit', $units,
+                        SpecialistPaperAccountService::price($price),
+                        $commission + $carry, ['cost_percent' => $costPercent, 'exit_reason' => $exitReason, 'management_audit' => $managementAudit,
+                            'commission_cents' => $commission, 'carry_cents' => $carry, 'paper_accounting' => $accounting,
+                            'spread_slippage_embedded_in_prices' => true, 'filled_at' => $accounting['exit_time']]);
+                    if ($filled) {
+                        $this->specialistAccounts->release((int) $order->paper_capital_reservation_id);
+                        $ledger = DB::table('paper_cost_ledger')->where('paper_order_id', $order->id);
+                        $netCents = (int) $ledger->sum('realized_cents') - (int) $ledger->sum('cost_cents');
+                        $initialCents = (int) DB::table('paper_capital_accounts')->join('paper_capital_reservations', 'paper_capital_accounts.id', '=', 'paper_capital_reservations.paper_capital_account_id')
+                            ->where('paper_capital_reservations.id', $order->paper_capital_reservation_id)->value('paper_capital_accounts.initial_balance_cents');
+                        $profit = round($netCents / max(1, $initialCents) * 100, 4);
+                        $order->update(['exit_price' => $price, 'profit_percent' => $profit, 'status' => 'closed', 'closed_at' => $accounting['exit_time']]);
+                    }
+                    return $filled;
+                }, 3);
+                if (! $closedNow) continue;
+            } else {
+                $order->update(['exit_price' => $price, 'profit_percent' => $profit, 'status' => 'closed', 'closed_at' => now()]);
+                $order->fills()->create([
                 'fill_type' => 'exit',
                 'price' => $price,
                 'cost_percent' => $this->risk->estimatedRoundTripCostPercent($order->symbol, (float) $order->entry_price) / 2,
                 'filled_at' => now(),
                 'payload' => ['exit_reason' => $exitReason, 'management_audit' => $managementAudit],
-            ]);
+                ]);
+            }
             $this->executionState->record($candidate, 'closed', $order->paperSignal, $order, ['provider' => $order->broker, 'filled_price' => $price, 'filled_units' => $order->units, 'reason' => $exitReason]);
             $exitStage = $exitReason === 'invalidated' || str_contains($exitReason, 'stop') ? 'abort' : 'manage';
             $this->executionState->transition($candidate, $exitStage, $order->paperSignal, $order, 'open', ['exit_reason' => $exitReason, 'management_audit' => $managementAudit]);
@@ -857,6 +1033,11 @@ class PaperTradingExecutionService
                     $this->tacticSettlements->settle($order, $outcome);
                     $this->causalAttributions->attribute($order, $outcome);
                     $this->progressScoreboard->measure($order->symbol, $order->timeframe);
+                    if ($order->paper_capital_reservation_id) {
+                        $version = \App\Models\SpecialistCouncilVersion::where('council_id', $order->council_id)->where('version', $order->council_version)->firstOrFail();
+                        app(SpecialistCouncilDataUseService::class)->recordMaturePaperFeedback($order, $version,
+                            'paper:'.$order->owner_id.':'.$order->management_version, now()->toIso8601String());
+                    }
                 }
                 if (! $learningEligible) {
                     $order->update([
@@ -891,24 +1072,115 @@ class PaperTradingExecutionService
         if (! $candidate || $contract === []) {
             return null;
         }
+        try { $request = $this->managementRequest($candidate, $order); }
+        catch (\LogicException $error) {
+            if (! $order->paper_capital_reservation_id) throw $error;
+            $this->executionState->record($candidate, 'management_dependency_blocked', $order->paperSignal, $order,
+                ['provider' => 'simulated', 'reason' => $error->getMessage()]);
+            return null;
+        }
         $response = Http::timeout(120)->acceptJson()
             ->withHeaders(['X-Internal-Token' => (string) config('services.internal_api.token')])->post(
                 rtrim(config('services.ai_service.url'), '/').'/api/paper/advance-contract', [
-                    'request' => $this->aiRequest($candidate, $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000)),
+                    'request' => $request,
                     'contract' => $contract, 'entry_time' => $order->opened_at?->toIso8601String(),
                 ],
             );
-        if ($response->failed() || ! $response->json('closed')) {
+        if ($response->failed()) {
+            if ($order->paper_capital_reservation_id) $this->executionState->record($candidate, 'management_dependency_blocked', $order->paperSignal, $order,
+                ['provider' => 'simulated', 'reason' => 'PINNED_PAPER_MANAGEMENT_PROVIDER_UNAVAILABLE', 'payload' => ['http_status' => $response->status()]]);
             return null;
         }
         $result = $response->json();
+        if ($order->paper_capital_reservation_id) {
+            $accounting = (array) ($result['paper_accounting'] ?? []);
+            if (! $this->specialistAccountingAttested($order, $accounting, (bool) ($result['closed'] ?? false))
+                || (($result['closed'] ?? false) && (! is_numeric($result['exit_price'] ?? null) || abs((float) $result['exit_price'] - (float) ($accounting['exit_price'] ?? 0)) > .000001))) {
+                $this->executionState->record($candidate, 'accounting_dependency_blocked', $order->paperSignal, $order,
+                    ['provider' => 'simulated', 'reason' => 'PAPER_COST_ACCOUNTING_UNATTESTED']);
+                return null;
+            }
+            $partial = $accounting['partial'] ?? null;
+            if (is_array($partial)) {
+                $fraction = SpecialistPaperAccountService::decimalUnits((float) $partial['fraction']);
+                $units = intdiv((int) $order->filled_units_micros * $fraction, SpecialistPaperAccountService::UNIT_SCALE);
+                $costPercent = (float) $accounting['commission_percent_round_trip'] / 2;
+                $commission = SpecialistPaperAccountService::costCents($units, SpecialistPaperAccountService::price((string) $order->entry_price), $costPercent);
+                $this->specialistAccounts->fill($order, 'partial-exit:'.$partial['exit_time'], 'exit', $units,
+                    SpecialistPaperAccountService::price((float) $partial['exit_price']), $commission,
+                    ['filled_at' => $partial['exit_time'], 'cost_percent' => $costPercent, 'commission_cents' => $commission,
+                        'carry_cents' => 0, 'spread_slippage_embedded_in_prices' => true, 'paper_accounting' => $accounting]);
+                $this->executionState->record($candidate, 'partial_fill', $order->paperSignal, $order,
+                    ['provider' => 'simulated', 'filled_units' => $units / SpecialistPaperAccountService::UNIT_SCALE,
+                        'filled_price' => $partial['exit_price'], 'idempotency_suffix' => $partial['exit_time']]);
+            }
+        }
+        if (! ($result['closed'] ?? false)) return null;
 
         return [
             (float) $result['exit_price'],
             (float) $result['profit_percent'],
             (string) $result['exit_reason'],
             (array) ($result['management_audit'] ?? []),
+            (array) ($result['paper_accounting'] ?? []),
         ];
+    }
+
+    private function specialistAccountingAttested(PaperOrder $order, array $accounting, bool $closed): bool
+    {
+        $contract = (array) data_get($order->signal_context, 'execution_contract', []);
+        $policy = (array) data_get($order->signal_context, 'paper_cost_policy', []);
+        if (($accounting['protocol'] ?? null) !== 'specialist_paper_accounting_v1'
+            || ($accounting['execution_attested'] ?? false) !== true || ($accounting['management_attested'] ?? false) !== true
+            || ($accounting['costs_embedded_in_prices']['spread'] ?? false) !== true || ($accounting['costs_embedded_in_prices']['slippage'] ?? false) !== true
+            || ! hash_equals((string) ($contract['execution_hash'] ?? ''), (string) ($accounting['execution_hash'] ?? ''))
+            || ! hash_equals((string) data_get($contract, 'management_contract.management_hash', ''), (string) ($accounting['management_hash'] ?? ''))
+            || ! is_numeric($accounting['entry_price'] ?? null) || abs((float) $accounting['entry_price'] - (float) $order->entry_price) > .000001
+            || ! is_numeric($accounting['commission_percent_round_trip'] ?? null) || abs((float) $accounting['commission_percent_round_trip'] - (float) ($policy['commission_percent'] ?? -1)) > .00000001
+            || ! is_numeric($accounting['holding_days'] ?? null) || (float) $accounting['holding_days'] < 0
+            || ! is_numeric($accounting['carry_percent_total'] ?? null) || (float) $accounting['carry_percent_total'] < 0
+            || abs((float) $accounting['carry_percent_total'] - (float) ($policy['swap_per_day_percent'] ?? -1) * (float) $accounting['holding_days']) > .00000001
+            || ($accounting['carry_scope'] ?? null) !== 'initial_notional_canonical_contract') return false;
+        try {
+            $observed = \Carbon\CarbonImmutable::parse((string) ($accounting['observed_at'] ?? ''));
+            if (! is_string($accounting['observed_at'] ?? null) || $observed->greaterThan(now()) || $observed->lessThan($order->opened_at)) return false;
+            $days = $order->opened_at->diffInSeconds($observed) / 86400;
+            if (abs($days - (float) $accounting['holding_days']) > .00000001) return false;
+            if ($closed && ($accounting['exit_time'] ?? null) !== $accounting['observed_at']) return false;
+        } catch (\Throwable) { return false; }
+        $partial = $accounting['partial'] ?? null;
+        if ($partial !== null && (! is_array($partial) || ! is_numeric($partial['fraction'] ?? null)
+            || $partial['fraction'] <= 0 || $partial['fraction'] >= 1 || ! is_numeric($partial['exit_price'] ?? null)
+            || (float) $partial['exit_price'] <= 0 || ! is_string($partial['exit_time'] ?? null))) return false;
+        if ($partial !== null) {
+            try {
+                $partialTime = \Carbon\CarbonImmutable::parse($partial['exit_time']);
+                if ($partialTime->lessThan($order->opened_at) || $partialTime->greaterThan($observed)) return false;
+            } catch (\Throwable) { return false; }
+        }
+        return ! $closed || (is_numeric($accounting['exit_price'] ?? null) && (float) $accounting['exit_price'] > 0 && is_string($accounting['exit_time'] ?? null));
+    }
+
+    private function managementRequest(ModelMarketPerformance $candidate, PaperOrder $order): array
+    {
+        if (! $order->paper_capital_reservation_id) {
+            return $this->aiRequest($candidate, $this->candles->candlesForBacktest($candidate->symbol, $candidate->timeframe, 1000));
+        }
+        $binding = (array) data_get($order->signal_context, 'specialist_council_binding', []);
+        $management = $this->specialistCouncils->paperBinding($candidate->modelVersion, $order->symbol, $candidate->timeframe,
+            [...$binding, 'management_only' => true]);
+        $request = (array) data_get($order->signal_context, 'management_request', []);
+        if (! ($management['allowed'] ?? false) || $request === [] || $order->management_version !== ($binding['management_version'] ?? null)) {
+            throw new \LogicException('PINNED_SPECIALIST_MANAGEMENT_UNAVAILABLE');
+        }
+        // Strategy, parameters, execution and management authority remain pinned.
+        // Only newly available market observations advance the existing order.
+        $request['candles'] = $this->candles->candlesForBacktest($order->symbol, $order->timeframe, 1000);
+        foreach ((array) ($request['mtf_streams'] ?? []) as $timeframe => $stream) {
+            $request['mtf_streams'][$timeframe] = $this->candles->candlesForBacktest($order->symbol, $timeframe, max(1000, count($stream)));
+        }
+        if (! empty($request['regime_candles'])) $request['regime_candles'] = $this->candles->candlesForBacktest($order->symbol, 'H1', 2000);
+        return $request;
     }
 
     private function score(ModelMarketPerformance $candidate): void

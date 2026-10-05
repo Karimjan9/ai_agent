@@ -259,6 +259,9 @@ class LabImmutableEvidenceService
                 $locked = LabEvaluationRun::query()->whereKey($run->id)->lockForUpdate()->firstOrFail();
                 $run->setRawAttributes($locked->getAttributes(), true);
                 $this->sealTerminalRun($run, $status, $response, $metrics, $metadata, $error);
+                // Publish the evaluation delivery atomically with original
+                // evidence. Its consumer runs only after this transaction.
+                app(SpecialistCouncilLifecycleService::class)->enqueueCompletedRun($run);
             });
         } catch (Throwable $exception) {
             // A rolled-back close must not leave the caller's in-memory run
@@ -267,6 +270,10 @@ class LabImmutableEvidenceService
             $run->refresh();
             throw $exception;
         }
+        // Seal original producer evidence first. Evaluation projection has its
+        // own durable, idempotent delivery and must never rewrite a finished
+        // replay as a technical failure when a downstream consumer is down.
+        app(SpecialistCouncilLifecycleService::class)->notifyCompletedRun($run);
     }
 
     private function sealTerminalRun(
@@ -1325,7 +1332,7 @@ class LabImmutableEvidenceService
             'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'risk_governor',
             'trade_management', 'execution_contract', 'runtime_ensemble', 'agent_constitution',
             'specialist_context_contract', 'contextual_specialist_cell', 'contextual_specialist_contract',
-            'session_specialist_contract', 'regime_specialist_contract'])
+            'session_specialist_contract', 'regime_specialist_contract', 'specialist_council'])
             ->mapWithKeys(fn (string $key): array => [$key => data_get($model?->metadata, $key)])->all();
         $components['smart_composition_treatment'] = \Illuminate\Support\Arr::only(
             (array) data_get($model->metadata, 'smart_composition.composition_passport', []),

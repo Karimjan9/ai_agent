@@ -1,0 +1,424 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\ModelVersion;
+use Carbon\CarbonImmutable;
+use InvalidArgumentException;
+
+/** Typed research products and execution passports; no role catalog entry grants authority. */
+class SpecialistCouncilContractService
+{
+    public const MANIFEST_PROTOCOL = 'specialist_council_manifest_v1';
+    public const PASSPORT_PROTOCOL = 'specialist_passport_v1';
+    public const RUNTIME_PROTOCOL = 'specialist_council_runtime_v1';
+    public const TRADING_ROLES = ['scalp', 'hour', 'day', 'swing'];
+
+    private const PRODUCTS = [
+        'scalp' => ['trade_intent', 'position_management'],
+        'hour' => ['trade_intent', 'position_management'],
+        'day' => ['trade_intent', 'position_management'],
+        'swing' => ['trade_intent', 'position_management'],
+        'strategy' => ['strategy_program'], 'tactic' => ['tactic_program'],
+        'risk' => ['risk_decision'], 'capital' => ['capital_allocation'],
+        'execution' => ['order_lifecycle'], 'toolbox' => ['typed_operator'],
+        'learning' => ['scoped_knowledge'], 'evolution' => ['candidate_proposal'],
+        'data' => ['as_of_observation'], 'evaluator' => ['independent_assessment'],
+    ];
+
+    private const ACTIONS = [
+        'scalp' => ['propose_trade', 'manage_owned_position', 'wait'],
+        'hour' => ['propose_trade', 'manage_owned_position', 'wait'],
+        'day' => ['propose_trade', 'manage_owned_position', 'wait'],
+        'swing' => ['propose_trade', 'manage_owned_position', 'wait'],
+        'strategy' => ['propose_strategy', 'wait'], 'tactic' => ['propose_tactic', 'wait'],
+        'risk' => ['reduce_size', 'reject_intent', 'reduce_exposure', 'wait'],
+        'capital' => ['reserve_capital', 'allocate_within_limits', 'wait'],
+        'execution' => ['execute_approved_plan', 'reconcile_fills', 'wait'],
+        'toolbox' => ['propose_operator', 'wait'], 'learning' => ['derive_mature_knowledge', 'wait'],
+        'evolution' => ['propose_candidate', 'wait'], 'data' => ['provide_observation', 'wait'],
+        'evaluator' => ['assess_original_evidence', 'wait'],
+    ];
+
+    private const PRODUCT_FIELDS = [
+        'trade_intent' => ['symbol', 'direction', 'horizon', 'entry', 'capital_required', 'estimated_cost_percent',
+            'estimated_risk_percent', 'expires_at', 'invalidation', 'management_owner', 'management_version'],
+        'position_management' => ['position_id', 'management_owner', 'management_version', 'action'],
+        'strategy_program' => ['program_id', 'program_version', 'input_type', 'output_type', 'max_compute_ms'],
+        'tactic_program' => ['program_id', 'program_version', 'input_type', 'output_type', 'max_compute_ms'],
+        'risk_decision' => ['intent_id', 'decision', 'original_size', 'approved_size', 'external_limit_version'],
+        'capital_allocation' => ['account_id', 'intent_id', 'reservation_id', 'capital_amount', 'ledger_version'],
+        'order_lifecycle' => ['approved_plan_id', 'order_id', 'idempotency_key', 'state', 'fills', 'costs', 'reconciliation'],
+        'typed_operator' => ['component_id', 'operator_contract', 'input_type', 'output_type', 'consumer_roles'],
+        'scoped_knowledge' => ['scope', 'original_source_ids', 'matured_at', 'conclusion', 'known_limits'],
+        'candidate_proposal' => ['candidate_id', 'lineage', 'components', 'proposed_experiment'],
+        'as_of_observation' => ['symbol', 'event_identity', 'available_at', 'provenance', 'values'],
+        'independent_assessment' => ['candidate_creator_id', 'original_run_ids', 'preregistered_plan_hash', 'reason_codes'],
+    ];
+
+    public function __construct(private ResearchPaperEpochContractService $epochs) {}
+
+    public function roles(): array
+    {
+        $roles = [];
+        foreach (self::PRODUCTS as $role => $products) {
+            $roles[$role] = ['products' => $products, 'allowed_actions' => self::ACTIONS[$role],
+                'may_create_order' => $role === 'execution', 'may_self_certify' => false,
+                'may_change_external_risk_limits' => false, 'promotion_evidence' => false];
+        }
+        return $roles;
+    }
+
+    /** Seal every relevant component and native model, rather than trusting a supplied hash. */
+    public function sealManifest(array $manifest): array
+    {
+        if (($manifest['protocol'] ?? self::MANIFEST_PROTOCOL) !== self::MANIFEST_PROTOCOL) {
+            throw new InvalidArgumentException('Unknown council manifest protocol.');
+        }
+        $this->identity($manifest['council_id'] ?? null, 'council_id');
+        $this->identity((string) ($manifest['version'] ?? ''), 'version');
+        if (! is_array($manifest['members'] ?? null) || count($manifest['members']) < 1 || count($manifest['members']) > 32) {
+            throw new InvalidArgumentException('A council requires one to thirty-two typed members.');
+        }
+        $members = []; $ids = []; $weight = 0.0;
+        foreach ($manifest['members'] as $passport) {
+            $member = $this->sealPassport((array) $passport);
+            if (isset($ids[$member['specialist_id']])) throw new InvalidArgumentException('Duplicate specialist identity.');
+            $ids[$member['specialist_id']] = true;
+            $weight += (float) ($member['capital_weight'] ?? 0);
+            $members[] = $member;
+        }
+        if ($weight > 1.000000001) throw new InvalidArgumentException('Council capital weights exceed the common capital.');
+        $components = [];
+        foreach ((array) ($manifest['components'] ?? []) as $component) {
+            $components[] = $this->sealComponent((array) $component);
+        }
+        foreach (['routing', 'allocation', 'risk', 'execution'] as $policy) {
+            $entry = $manifest[$policy] ?? null;
+            if (! is_array($entry)) throw new InvalidArgumentException("Missing versioned {$policy} policy.");
+            $this->identity($entry['id'] ?? null, $policy.'.id');
+            $this->identity((string) ($entry['version'] ?? ''), $policy.'.version');
+        }
+        $this->validateExecutionPolicy((array) $manifest['execution']);
+        $evaluation = (array) ($manifest['evaluation_policy'] ?? []);
+        if (! in_array($evaluation['objective'] ?? null, ['net_return_at_equal_risk', 'lower_risk_at_equal_return'], true)
+            || ! isset($evaluation['champion_model_version_id'], $evaluation['solo_model_version_id'])) {
+            throw new InvalidArgumentException('Preregister an objective, native champion and suitable solo comparator.');
+        }
+        foreach (['champion_model_version_id', 'solo_model_version_id'] as $key) {
+            $model = ModelVersion::find($evaluation[$key]);
+            if (! $model) throw new InvalidArgumentException('Comparator native model is missing.');
+            $evaluation[$key.'_hash'] = $this->modelHash($model);
+        }
+        $evaluation['minimum_independent_windows'] = max(3, (int) ($evaluation['minimum_independent_windows'] ?? 3));
+        $evaluation['minimum_paired_trades'] = max(8, (int) ($evaluation['minimum_paired_trades'] ?? 8));
+        $evaluation['required_ablations'] = array_values(array_unique([
+            ...array_column($members, 'specialist_id'), ...array_column($components, 'id'),
+        ]));
+        $evaluation['external_risk_limits_mutable'] = false;
+        $sealed = [
+            ...array_diff_key($manifest, array_flip(['manifest_hash', 'promotion_evidence'])),
+            'protocol' => self::MANIFEST_PROTOCOL, 'version' => (string) $manifest['version'],
+            'members' => $members, 'components' => $components, 'evaluation_policy' => $evaluation,
+            'epoch_contract' => $this->epochs->contract(), 'promotion_evidence' => false,
+        ];
+        return [...$sealed, 'manifest_hash' => $this->epochs->parameterHash($sealed)];
+    }
+
+    public function sealPassport(array $passport): array
+    {
+        $role = $passport['role'] ?? null;
+        if (! isset(self::PRODUCTS[$role ?? ''])) throw new InvalidArgumentException('Unknown specialist role.');
+        $this->identity($passport['specialist_id'] ?? null, 'specialist_id');
+        $this->identity((string) ($passport['version'] ?? ''), 'specialist version');
+        $asOf = $this->time($passport['as_of'] ?? null);
+        $actions = array_values((array) ($passport['allowed_actions'] ?? self::ACTIONS[$role]));
+        if (array_diff($actions, self::ACTIONS[$role]) !== [] || ! in_array('wait', $actions, true)) {
+            throw new InvalidArgumentException('Specialist permission exceeds its typed role or omits WAIT.');
+        }
+        $scope = (array) ($passport['scope'] ?? []);
+        if (empty($scope['symbols']) || empty($scope['contexts']) || empty($passport['known_limits'])) {
+            throw new InvalidArgumentException('A passport requires scoped instruments, contexts and known limits.');
+        }
+        $resources = (array) ($passport['resources'] ?? []);
+        foreach (['max_compute_ms' => 60000, 'max_memory_mb' => 512, 'max_lookback_bars' => 1000000] as $key => $ceiling) {
+            if (! is_numeric($resources[$key] ?? null) || $resources[$key] <= 0 || $resources[$key] > $ceiling) {
+                throw new InvalidArgumentException('Missing or unbounded specialist resource budget.');
+            }
+        }
+        if (! is_array($passport['inputs'] ?? null) || $passport['inputs'] === []) {
+            throw new InvalidArgumentException('A specialist needs an explicit as-of input contract.');
+        }
+        $sealed = [
+            ...array_diff_key($passport, array_flip(['passport_hash', 'promotion_evidence', 'qualified'])),
+            'protocol' => self::PASSPORT_PROTOCOL, 'version' => (string) $passport['version'],
+            'as_of' => $asOf->toIso8601String(), 'products' => self::PRODUCTS[$role],
+            'allowed_actions' => $actions, 'inputs_available_as_of_required' => true,
+            'qualified_evidence' => (array) ($passport['qualified_evidence'] ?? []),
+            'recheck_conditions' => (array) ($passport['recheck_conditions'] ?? ['scope_or_component_change']),
+            'uncertainty' => (array) ($passport['uncertainty'] ?? ['status' => 'unqualified']),
+            'promotion_evidence' => false,
+        ];
+        if (in_array($role, self::TRADING_ROLES, true)) {
+            $horizon = (array) ($passport['horizon'] ?? []);
+            if (($horizon['kind'] ?? null) !== $role) throw new InvalidArgumentException('Trading horizon must be declared independently of sensor timeframes.');
+            foreach (['decision_interval_seconds', 'reevaluation_interval_seconds', 'max_holding_seconds'] as $key) {
+                if (! is_int($horizon[$key] ?? null) || $horizon[$key] <= 0 || $horizon[$key] > 31536000) {
+                    throw new InvalidArgumentException('Invalid trading horizon duration.');
+                }
+            }
+            if ($horizon['max_holding_seconds'] < $horizon['reevaluation_interval_seconds']) {
+                throw new InvalidArgumentException('Reassessment must fit inside the holding horizon.');
+            }
+            $requirements = (array) ($passport['data_requirements'] ?? []);
+            $precision = $horizon['execution_precision'] ?? 'candle';
+            $required = $role === 'swing' ? ['gap', 'carry', 'rollover', 'mature_holding_outcomes']
+                : ($role === 'scalp' ? ['bid_ask', 'spread', 'slippage', 'quote_age', 'intrabar_ambiguity'] : ['sessions', 'costs']);
+            if ($role === 'scalp' && $horizon['decision_interval_seconds'] < 60) {
+                $required = [...$required, 'ticks', 'latency', 'order_fills'];
+                if ($precision !== 'tick') throw new InvalidArgumentException('Second-scale scalp requires tick execution evidence.');
+            }
+            if (array_diff($required, $requirements) !== []) throw new InvalidArgumentException('Horizon data prerequisites are incomplete.');
+            $model = ModelVersion::find($passport['model_version_id'] ?? 0);
+            if (! $model) throw new InvalidArgumentException('Trading specialist native model is missing.');
+            foreach (['strategy_version', 'tactic_version', 'management_version'] as $key) {
+                $this->identity((string) ($passport[$key] ?? ''), $key);
+            }
+            if (! is_numeric($passport['capital_weight'] ?? null) || $passport['capital_weight'] <= 0 || $passport['capital_weight'] > 1
+                || ! is_numeric($passport['risk_per_trade_percent'] ?? null) || $passport['risk_per_trade_percent'] <= 0
+                || $passport['risk_per_trade_percent'] > 2) {
+                throw new InvalidArgumentException('Missing bounded capital or risk requirement.');
+            }
+            $sealed['model_version_id'] = $model->id;
+            $sealed['source_model_hash'] = $this->modelHash($model);
+            $sealed['strategy'] = $model->strategy;
+            $sealed['parameters'] = (array) $model->parameters;
+            $sealed['sensor_timeframes'] = array_values((array) ($passport['sensor_timeframes'] ?? []));
+        }
+        return [...$sealed, 'passport_hash' => $this->epochs->parameterHash($sealed)];
+    }
+
+    /** Components can enter bounded research without masquerading as trade-qualified agents. */
+    public function componentAdmission(array $component, string $targetRole): array
+    {
+        try {
+            $sealed = $this->sealComponent($component);
+            if (! isset(self::PRODUCTS[$targetRole]) || ! in_array($targetRole, $sealed['consumer_roles'], true)) {
+                throw new InvalidArgumentException('Component output cannot be consumed by that role.');
+            }
+            return ['status' => 'research_admitted', 'allowed' => true, 'component' => $sealed,
+                'paper_authority_granted' => false, 'promotion_evidence' => false];
+        } catch (InvalidArgumentException $e) {
+            return ['status' => 'withheld', 'allowed' => false, 'reason_code' => 'COMPONENT_CONTRACT_INVALID',
+                'detail' => $e->getMessage(), 'paper_authority_granted' => false, 'promotion_evidence' => false];
+        }
+    }
+
+    /** Structural product admission is separate from evidence qualification and paper entitlement. */
+    public function product(array $passport, array $product, string $asOf): array
+    {
+        $role = $passport['role'] ?? '';
+        $type = $product['type'] ?? '';
+        if (! isset(self::PRODUCTS[$role]) || ! in_array($type, self::PRODUCTS[$role], true)) {
+            throw new InvalidArgumentException('PRODUCT_DOES_NOT_BELONG_TO_SPECIALIST_ROLE');
+        }
+        foreach (self::PRODUCT_FIELDS[$type] as $field) {
+            if (! array_key_exists($field, $product) || $product[$field] === null) throw new InvalidArgumentException('TYPED_PRODUCT_FIELD_MISSING:'.$field);
+        }
+        $time = $this->time($asOf);
+        if ($time->greaterThan(now()->utc())) throw new InvalidArgumentException('PRODUCT_AS_OF_CANNOT_BE_IN_THE_FUTURE');
+        if ($type === 'trade_intent') {
+            if (! in_array('propose_trade', (array) ($passport['allowed_actions'] ?? []), true)
+                || ! in_array(strtoupper((string) $product['symbol']), array_map('strtoupper', $passport['scope']['symbols']), true)
+                || ! in_array($product['direction'], ['BUY', 'SELL'], true)
+                || $this->time($product['expires_at'])->lessThanOrEqualTo($time)
+                || ($product['horizon']['kind'] ?? null) !== $role
+                || $product['management_owner'] !== $passport['specialist_id']
+                || $product['management_version'] !== $passport['management_version']
+                || ! is_numeric($product['capital_required']) || $product['capital_required'] <= 0
+                || ! is_numeric($product['estimated_risk_percent']) || $product['estimated_risk_percent'] <= 0
+                || $product['estimated_risk_percent'] > $passport['risk_per_trade_percent']) {
+                throw new InvalidArgumentException('TRADE_INTENT_SCOPE_PERMISSION_HORIZON_OR_OWNER_INVALID');
+            }
+        }
+        if ($type === 'position_management' && ($product['management_owner'] !== $passport['specialist_id']
+            || $product['management_version'] !== $passport['management_version'])) throw new InvalidArgumentException('POSITION_MANAGEMENT_OWNER_PIN_MISMATCH');
+        if ($type === 'risk_decision' && (! in_array($product['decision'], ['approve_within_limits', 'reduce', 'reject'], true)
+            || ! is_numeric($product['original_size']) || ! is_numeric($product['approved_size'])
+            || $product['approved_size'] < 0 || $product['approved_size'] > $product['original_size'])) {
+            throw new InvalidArgumentException('RISK_PRODUCT_CANNOT_INCREASE_PROPOSED_EXPOSURE');
+        }
+        if ($type === 'as_of_observation' && $this->time($product['available_at'])->greaterThan($time)) throw new InvalidArgumentException('OBSERVATION_NOT_AVAILABLE_AT_PRODUCT_DECISION');
+        if ($type === 'scoped_knowledge' && (empty($product['original_source_ids']) || $this->time($product['matured_at'])->greaterThan($time))) throw new InvalidArgumentException('KNOWLEDGE_FEEDBACK_NOT_MATURE');
+        if ($type === 'independent_assessment' && ($product['candidate_creator_id'] === $passport['specialist_id']
+            || empty($product['original_run_ids']))) throw new InvalidArgumentException('EVALUATOR_CANNOT_SELF_CERTIFY_OR_SYNTHESIZE_EVIDENCE');
+        foreach (['qualified', 'active', 'promotion_evidence', 'paper_authority_granted', 'live_authority_granted'] as $claim) {
+            if (($product[$claim] ?? false) === true) throw new InvalidArgumentException('TYPED_PRODUCT_IS_NOT_AN_AUTHORITY_RECEIPT');
+        }
+        $sealed = [...array_diff_key($product, ['product_hash' => true]), 'protocol' => 'specialist_product_v1',
+            'specialist_id' => $passport['specialist_id'], 'specialist_version' => $passport['version'],
+            'role' => $role, 'as_of' => $time->toIso8601String(), 'promotion_evidence' => false];
+        return [...$sealed, 'product_hash' => $this->epochs->parameterHash($sealed)];
+    }
+
+    public function manifestValid(array $manifest): bool
+    {
+        $hash = $manifest['manifest_hash'] ?? '';
+        return is_string($hash) && strlen($hash) === 64 && hash_equals($hash,
+            $this->epochs->parameterHash(array_diff_key($manifest, ['manifest_hash' => true])));
+    }
+
+    public function modelHash(ModelVersion $model): string
+    {
+        return $this->epochs->parameterHash(['model_version_id' => $model->id,
+            'parameters' => (array) $model->parameters,
+            'runtime_basis' => app(LabImmutableEvidenceService::class)->modelRuntimeBasis($model),
+            'native_contextual_cell' => data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
+            'prospective_context_owner' => data_get($model->metadata, 'causal_learning_cohort'),
+            'composition_owner' => data_get($model->metadata, 'smart_composition.composition_passport'),
+            'instrument_owner' => data_get($model->metadata, 'instrument_research_assignment')]);
+    }
+
+    /** The caller resolves this manifest from storage; passports never accept caller-supplied model vectors. */
+    public function runtimeContract(array $manifest, string $timeframe, string $dataHash, string $executionHash, array $nativeMembers = [], ?string $symbol = null): array
+    {
+        if (! $this->manifestValid($manifest)) throw new InvalidArgumentException('Council manifest seal is invalid.');
+        $common = null;
+        foreach ($manifest['members'] as $member) {
+            if (! in_array($member['role'], self::TRADING_ROLES, true)) continue;
+            $scoped = array_map('strtoupper', $member['scope']['symbols']);
+            $common = $common === null ? $scoped : array_values(array_intersect($common, $scoped));
+        }
+        $symbol = $symbol !== null && $symbol !== '' ? strtoupper($symbol) : (count($common ?? []) === 1 ? $common[0] : null);
+        if ($symbol === null || ! in_array($symbol, $common ?? [], true)) throw new InvalidArgumentException('COUNCIL_SINGLE_DATASET_INSTRUMENT_SCOPE_MISMATCH');
+        foreach ([$dataHash, $executionHash] as $hash) {
+            if (! preg_match('/^[a-f0-9]{64}$/', $hash)) throw new InvalidArgumentException('Missing data or execution identity.');
+        }
+        $seconds = $this->timeframeSeconds($timeframe);
+        $members = [];
+        foreach ($manifest['members'] as $member) {
+            if (! in_array($member['role'], self::TRADING_ROLES, true)) continue;
+            $model = ModelVersion::find($member['model_version_id']);
+            if (! $model || ! hash_equals($member['source_model_hash'], $this->modelHash($model))) {
+                throw new InvalidArgumentException('Council member native model changed after sealing.');
+            }
+            $horizon = $member['horizon'];
+            foreach (['decision_interval_seconds', 'reevaluation_interval_seconds', 'max_holding_seconds'] as $field) {
+                if ($horizon[$field] % $seconds !== 0) throw new InvalidArgumentException('Replay resolution is insufficient for this specialist horizon.');
+            }
+            $runtimeMember = [
+                'specialist_id' => $member['specialist_id'], 'role' => $member['role'],
+                'model_version_id' => $member['model_version_id'], 'strategy' => $member['strategy'],
+                'base_strategy' => data_get($model->metadata, 'base_strategy', $member['strategy']),
+                'version' => $member['version'], 'parameters' => $member['parameters'],
+                'strategy_version' => $member['strategy_version'], 'tactic_version' => $member['tactic_version'],
+                'management_version' => $member['management_version'], 'passport_hash' => $member['passport_hash'],
+                'horizon' => ['kind' => $member['role'],
+                    'decision_interval_bars' => intdiv($horizon['decision_interval_seconds'], $seconds),
+                    'reevaluation_interval_bars' => intdiv($horizon['reevaluation_interval_seconds'], $seconds),
+                    'max_holding_bars' => intdiv($horizon['max_holding_seconds'], $seconds),
+                    'decision_interval_seconds' => $horizon['decision_interval_seconds'],
+                    'reevaluation_interval_seconds' => $horizon['reevaluation_interval_seconds'],
+                    'max_holding_seconds' => $horizon['max_holding_seconds'],
+                    'execution_precision' => $horizon['execution_precision'] ?? 'candle'],
+                'capital_weight' => $member['capital_weight'], 'risk_per_trade_percent' => $member['risk_per_trade_percent'],
+                'scope' => $member['scope'], 'known_limits' => $member['known_limits'],
+                'data_requirements' => $member['data_requirements'], 'resources' => $member['resources'],
+                'sensor_timeframes' => $member['sensor_timeframes'], 'allowed_actions' => $member['allowed_actions'],
+                'execution_requirements' => ['second_scalp' => $member['role'] === 'scalp' && $horizon['decision_interval_seconds'] < 60,
+                    'tick_execution' => ($horizon['execution_precision'] ?? 'candle') === 'tick'],
+            ];
+            $native = $nativeMembers[$member['specialist_id']] ?? null;
+            if (is_array($native)) {
+                if (($native['strategy'] ?? null) !== $model->strategy
+                    || $this->epochs->parameterHash((array) ($native['parameters'] ?? [])) !== $this->epochs->parameterHash((array) $model->parameters)) {
+                    throw new InvalidArgumentException('COUNCIL_MEMBER_NATIVE_PARAMETER_IDENTITY_MISMATCH');
+                }
+                if (isset($native['symbol']) && strtoupper((string) $native['symbol']) !== $symbol) {
+                    throw new InvalidArgumentException('COUNCIL_MEMBER_NATIVE_INSTRUMENT_IDENTITY_MISMATCH');
+                }
+                $runtimeMember['symbol'] = $symbol;
+                $runtimeMember['base_strategy'] = $native['base_strategy'] ?? $runtimeMember['base_strategy'];
+                foreach (['specialist_context_contract', 'composition_runtime_contract', 'instrument_research_assignment', 'mtf_pilot'] as $key) {
+                    if (is_array($native[$key] ?? null) && $native[$key] !== []) $runtimeMember[$key] = $native[$key];
+                }
+            } else {
+                foreach (['specialist_context_contract', 'composition_runtime_contract', 'instrument_research_assignment', 'mtf_pilot'] as $key) {
+                    $contract = data_get($model->metadata, $key);
+                    if (is_array($contract) && $contract !== []) $runtimeMember[$key] = $contract;
+                }
+                if (! isset($runtimeMember['composition_runtime_contract'])
+                    && filled(data_get($model->metadata, 'smart_composition.composition_passport.composition_id'))) {
+                    throw new InvalidArgumentException('COUNCIL_MEMBER_COMPOSITION_REQUIRES_NATIVE_COMPILATION');
+                }
+            }
+            if (isset($member['operator_contract'])) $runtimeMember['operator_contract'] = $member['operator_contract'];
+            $members[] = $runtimeMember;
+        }
+        if ($members === []) throw new InvalidArgumentException('Council contains no executable trading specialist.');
+        $contract = ['protocol' => self::RUNTIME_PROTOCOL, 'council_id' => $manifest['council_id'],
+            'council_version' => $manifest['version'], 'manifest_hash' => $manifest['manifest_hash'],
+            'symbol' => $symbol,
+            'execution_timeframe' => strtoupper($timeframe), 'replay_dataset_hash' => $dataHash,
+            'execution_hash' => $executionHash, 'members' => $members,
+            'policy' => array_diff_key($manifest['execution'], array_flip(['id', 'version'])),
+            'component_identities' => array_map(fn (array $component): array => ['id' => $component['id'],
+                'version' => $component['version'], 'contract_hash' => $component['contract_hash']], $manifest['components']),
+            'routing_identity' => $manifest['routing'], 'allocation_identity' => $manifest['allocation'],
+            'risk_identity' => $manifest['risk'], 'execution_identity' => ['id' => $manifest['execution']['id'], 'version' => $manifest['execution']['version']],
+            'upgrades' => [], 'promotion_evidence' => false];
+        return [...$contract, 'contract_hash' => $this->epochs->parameterHash($contract)];
+    }
+
+    public function timeframeSeconds(string $timeframe): int
+    {
+        if (! preg_match('/^(M|H|D)([1-9][0-9]*)$/i', $timeframe, $match)) throw new InvalidArgumentException('Unsupported council execution timeframe.');
+        return (int) $match[2] * match (strtoupper($match[1])) { 'M' => 60, 'H' => 3600, 'D' => 86400 };
+    }
+
+    private function sealComponent(array $component): array
+    {
+        $this->identity($component['id'] ?? null, 'component id');
+        $this->identity((string) ($component['version'] ?? ''), 'component version');
+        if (! in_array($component['role'] ?? null, ['strategy', 'tactic', 'risk', 'toolbox', 'learning', 'evolution', 'capital', 'execution', 'data'], true)
+            || empty($component['input_type']) || empty($component['output_type']) || empty($component['consumer_roles'])
+            || array_diff((array) $component['consumer_roles'], array_keys(self::PRODUCTS)) !== []
+            || ($component['as_of_only'] ?? null) !== true
+            || ! is_numeric($component['max_compute_ms'] ?? null) || $component['max_compute_ms'] <= 0 || $component['max_compute_ms'] > 60000) {
+            throw new InvalidArgumentException('Component requires typed inputs/outputs, compatible consumers, as-of policy and bounded computation.');
+        }
+        if (array_intersect((array) ($component['permissions'] ?? []), ['self_certify', 'edit_evaluator', 'edit_external_risk_limits', 'use_2026_for_research']) !== []) {
+            throw new InvalidArgumentException('A component may not alter its evidence or external risk authority.');
+        }
+        $sealed = [...array_diff_key($component, array_flip(['contract_hash', 'promotion_evidence'])), 'promotion_evidence' => false];
+        return [...$sealed, 'contract_hash' => $this->epochs->parameterHash($sealed)];
+    }
+
+    private function validateExecutionPolicy(array $policy): void
+    {
+        if (! in_array($policy['broker_position_mode'] ?? null, ['hedging', 'netting'], true)
+            || ! in_array($policy['opposite_position_policy'] ?? null, ['reject', 'hedge'], true)
+            || (($policy['broker_position_mode'] ?? null) === 'netting' && ($policy['opposite_position_policy'] ?? null) === 'hedge')) {
+            throw new InvalidArgumentException('Unsupported broker or opposing-position policy.');
+        }
+        foreach (['max_open_positions' => 32, 'max_reserved_capital_percent' => 100, 'max_gross_exposure_percent' => 100,
+            'max_total_risk_percent' => 5, 'max_drawdown_percent' => 20, 'max_daily_loss_percent' => 5, 'max_expected_cost_percent' => 5] as $key => $ceiling) {
+            if (! is_numeric($policy[$key] ?? null) || $policy[$key] <= 0 || $policy[$key] > $ceiling) {
+                throw new InvalidArgumentException('Council execution policy exceeds the external research envelope.');
+            }
+        }
+    }
+
+    private function identity(mixed $value, string $field): void
+    {
+        if (! is_string($value) || ! preg_match('/^[A-Za-z0-9_.:-]{1,150}$/', $value)) throw new InvalidArgumentException("Invalid {$field} identity.");
+    }
+
+    private function time(mixed $value): CarbonImmutable
+    {
+        if (! is_string($value) || ! preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/', $value)) {
+            throw new InvalidArgumentException('A passport requires an explicit UTC-offset as-of timestamp.');
+        }
+        return CarbonImmutable::parse($value)->utc();
+    }
+}

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:24:31.337Z",
-  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
-  "source_file_count": 1492,
-  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
+  "generated_at": "2026-10-05T04:11:32.317Z",
+  "source_digest": "19a4b0612315a15879b8e5f35004a465060f7c506b8b8a14af99f35654da32c7",
+  "source_file_count": 1507,
+  "git_head": "d82aa0dca2291facea942a46e7985b475d79db6b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -74,6 +74,7 @@
         "backend-laravel/app/Services/AgentKnowledgeService.php",
         "backend-laravel/app/Services/AgentProfessionalExamService.php",
         "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+        "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
         "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
         "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
         "backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php",
@@ -226,6 +227,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
         "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
         "backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php",
         "backend-laravel/tests/Feature/AcademyLearningProgressTest.php",
@@ -280,7 +282,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 105,
+      "source_file_count": 106,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -348,6 +350,7 @@
         "mutation"
       ],
       "paths": [
+        "backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php",
         "backend-laravel/app/Domains/Laboratory",
         "backend-laravel/app/Console/Commands/BuildLabGeneration.php",
         "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
@@ -355,6 +358,12 @@
         "backend-laravel/app/Http/Controllers/EvolutionLabController.php",
         "backend-laravel/app/Services/LabPopulationService.php",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
+        "backend-laravel/app/Services/SpecialistCouncilContractService.php",
+        "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+        "backend-laravel/app/Services/SpecialistCouncilDataUseService.php",
+        "backend-laravel/app/Models/SpecialistCouncilVersion.php",
+        "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+        "docs/architecture/specialist-council.md",
         "backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php",
         "backend-laravel/app/Services/ExperimentQualityProgressService.php",
         "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
@@ -399,6 +408,11 @@
         "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
       ],
       "entry_points": [
+        "trading:specialist-council",
+        "SpecialistCouncilLifecycleService::registerDraft",
+        "SpecialistCouncilLifecycleService::attachResearchModel",
+        "SpecialistCouncilLifecycleService::sealEvaluationPlan",
+        "SpecialistCouncilLifecycleService::evaluateOriginalRuns",
         "GenerationSnapshotAdmissionService::historicalDatasetReadiness",
         "trading:lab-generation --trigger=historical_research",
         "LabPopulationService",
@@ -413,6 +427,13 @@
         "trading:audit-autonomy-streak"
       ],
       "data_tables": [
+        "specialist_council_versions",
+        "specialist_council_evaluation_plans",
+        "specialist_council_evaluations",
+        "specialist_council_evaluation_deliveries",
+        "specialist_council_data_locks",
+        "specialist_council_data_events",
+        "specialist_council_data_uses",
         "ai_laboratories",
         "lab_generations",
         "lab_agents",
@@ -427,6 +448,9 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.",
+        "Council comparison plans preregister equal capital, costs, risk, original windows and champion/solo/ablation/retention identities before evidence. The creator cannot self-certify; research comparison never grants independent, paper or live authority.",
+        "Version adoption and rollback affect future entries only. Open positions retain their original owner and management version; the existing arbiter remains the only autonomous research selector.",
         "Before fresh construction or queue admission, an attested native continuity failure fences the identical actual M5 source SHA. A prospective repair must pass the existing data owner's receipt, row and file guards; Academy waits for that selected dataset's own canonical quoted MTF bundle and never relabels an old bundle.",
         "A contained Academy preparation repair reuses the original bounded kernel gene old/new vectors on the same frozen baseline/data/cost, under fresh IDs and current schema/genome seals. It cannot resample sixteen different discoveries, touch protected primary axes, copy old receipts or replenish the question budget.",
         "Explicit historical research and admitted causal confirmation validate the pre-2026 foundation instead of requiring fresh live candles. Their archive identity is sealed before construction, rechecked against the frozen foundation and M5/H4/H1/M15 periods before dispatch, and cannot bypass active work, technical recovery, protocol pause, exact controls, risk or paper gates.",
@@ -454,6 +478,8 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
         "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
         "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
         "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
@@ -482,7 +508,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 49,
+      "source_file_count": 55,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -516,6 +542,10 @@
         "ai-service-python/app/services/multitimeframe.py",
         "ai-service-python/app/services/backtester.py",
         "ai-service-python/app/services/research_program_tasks.py",
+        "ai-service-python/app/services/specialist_council.py",
+        "ai-service-python/app/services/market_regime.py",
+        "ai-service-python/tests/test_specialist_council.py",
+        "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
         "ai-service-python/tests/test_research_program_tasks.py",
         "ai-service-python/app/services/volume_features.py",
         "ai-service-python/app/services/historical_quotes.py",
@@ -536,6 +566,9 @@
       ],
       "dependencies": [],
       "invariants": [
+        "A per-candidate specialist_council_runtime_v1 executes on one chronological account with shared reservations, costs, exposure and owner-pinned positions. Adding separately computed specialist PnLs is not a native council replay.",
+        "Native specialist_council_receipt_v1 seals dataset, execution, member/version identities and actual account/position ledgers; original-request attestation precedes screen/full cache or learning consumption.",
+        "typed_operator_decision_v1 binds a registered bounded AST/CALL program to actual closed inputs for confirmation, risk reduction or exit. Caller vectors, future inputs, risk increases and unsupported temporal semantics cannot enter the decision path. Exact JSON copies must agree with transported content before hash checking.",
         "Optional policy_context.research_program_task is a bounded pure typed whitelist task, not strategy or arbitrary code. CALL expansion/as-of inputs and producer output identity must match; unsupported temporal semantics remain a dependency. Interpreter CPU is not measured synthesis/search advantage.",
         "API replay and direct closed-MTF feature preparation share the exact clean-discovery scope/probe boundary. Enabled confirmation admits the typed incremental bundle only after that guard; full foundation protocol and all four path/SHA checks remain strict.",
         "Only an original completed server-authorized post-paper window can receive authorized_research_transport_v1 for full replay. The deterministic HMAC binds the persisted release and all actual CSV paths/hashes/UTC rows before cache reuse; literal 2026 stays forbidden. Transport admission is not independent evidence or credit.",
@@ -563,6 +596,9 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_specialist_council.py",
+        "ai-service-python/tests/test_paper_management_contract.py",
+        "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
         "ai-service-python/tests/test_research_program_tasks.py",
         "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
         "ai-service-python/tests/test_clean_discovery_boundary.py",
@@ -594,7 +630,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 25,
+      "source_file_count": 29,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {
@@ -789,6 +825,7 @@
         "laboratory"
       ],
       "invariants": [
+        "The already-locked non-dry arbiter drains bounded native council evaluation deliveries after immutable run publication. Pause fences recovery; STOP may drain admitted deliveries. Retry never replays an arm, rewrites original evidence, self-qualifies a version or creates another scheduler.",
         "A native immutable unexpected-candle-gap envelope closes evaluator retry debt as a data dependency, not a strategy result. The same actual M5 source bytes remain blocked before fresh discovery and queue admission despite source or bundle-label changes; only verified prospective provider data may select new input, without changing old receipts or resetting the original question cap.",
         "Approved Academy preparation containment records its original request/checkpoint/source and zero-scientific-output disposition before canceling only generation-owned batches. Active replay is never killed; canceled deliveries consume normally, then untouched agents finalize after drain. Shared recovery readiness requires the immutable attestation, not a reason label.",
         "Academy publication recovery is bounded to two undelivered transport retries. publication_failed fences stale deliveries; a running/completed/deferred/failed command is not silently retried as an undelivered scientific trial.",
@@ -847,14 +884,21 @@
         "risk-sentinel"
       ],
       "paths": [
+        "backend-laravel/tests/Support/SpecialistPaperReservationWorker.php",
         "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
         "backend-laravel/app/Services/PaperTradingExecutionService.php",
+        "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+        "backend-laravel/app/Models/PaperOrder.php",
+        "backend-laravel/app/Models/PaperFill.php",
+        "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+        "docs/architecture/specialist-council.md",
         "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
         "backend-laravel/app/Services/SmartDisciplineEngineService.php",
         "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
         "backend-laravel/app/Console/Commands/MonitorPaperTrading.php"
       ],
       "entry_points": [
+        "SpecialistPaperAccountService",
         "PaperTradingExecutionService",
         "PaperExecutionStateMachineService",
         "SmartDisciplineEngineService",
@@ -875,12 +919,15 @@
         "causal-learning"
       ],
       "invariants": [
+        "Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.",
+        "Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.",
         "E3/E4 reuse, capture and fill re-read the persisted model and candidate against the original frozen identity; fill locks candidate/model/signal until order and entry-fill publication. Legacy admissions or signals without the new identity are blocked, never backfilled.",
         "A changed or missing sealed contract cannot create a paper order.",
         "NO_TRADE decisions are persisted evidence, not implicit errors.",
         "Invalid process outcomes are quarantined from learning."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
         "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",
         "backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php",
         "backend-laravel/tests/Feature/SmartDisciplineEngineTest.php",
@@ -891,7 +938,7 @@
       "flows": [
         ".project-map/modules/paper-execution/flows/paper-order-lifecycle.md"
       ],
-      "source_file_count": 6,
+      "source_file_count": 11,
       "map": ".project-map/modules/paper-execution/module.yaml"
     }
   ]

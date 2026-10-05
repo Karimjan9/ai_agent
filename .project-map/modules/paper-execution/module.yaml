@@ -9,13 +9,20 @@ aliases:
   - smart-discipline
   - risk-sentinel
 paths:
+  - backend-laravel/tests/Support/SpecialistPaperReservationWorker.php
   - backend-laravel/app/Services/PaperAuthorityAdmissionService.php
   - backend-laravel/app/Services/PaperTradingExecutionService.php
+  - backend-laravel/app/Services/SpecialistPaperAccountService.php
+  - backend-laravel/app/Models/PaperOrder.php
+  - backend-laravel/app/Models/PaperFill.php
+  - backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php
+  - docs/architecture/specialist-council.md
   - backend-laravel/app/Services/PaperExecutionStateMachineService.php
   - backend-laravel/app/Services/SmartDisciplineEngineService.php
   - backend-laravel/app/Services/ExecutionRiskSentinelService.php
   - backend-laravel/app/Console/Commands/MonitorPaperTrading.php
 entry_points:
+  - SpecialistPaperAccountService
   - PaperTradingExecutionService
   - PaperExecutionStateMachineService
   - SmartDisciplineEngineService
@@ -33,6 +40,8 @@ dependencies:
   - market-data
   - causal-learning
 invariants:
+  - Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.
+  - Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.
   - E3/E4 reuse, capture and fill re-read the persisted model and candidate against the original frozen identity; fill locks candidate/model/signal until order and entry-fill publication. Legacy admissions or signals without the new identity are blocked, never backfilled.
   - A changed or missing sealed contract cannot create a paper order.
   - NO_TRADE decisions are persisted evidence, not implicit errors.
@@ -44,6 +53,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistPaperAccountTest.php
   - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php
   - backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php
   - backend-laravel/tests/Feature/SmartDisciplineEngineTest.php

@@ -85,6 +85,24 @@ class PaperManagementContractTest(unittest.TestCase):
         self.assertAlmostEqual(5.55, audit["realized_r_multiple"], places=5)
         self.assertAlmostEqual(10.5, audit["mfe_r"], places=5)
         self.assertAlmostEqual(0.5, audit["mae_r"], places=5)
+        accounting = result["paper_accounting"]
+        self.assertEqual(accounting["protocol"], "specialist_paper_accounting_v1")
+        self.assertEqual(accounting["entry_price"], 100.0)
+        self.assertEqual(accounting["exit_price"], 110.0)
+        self.assertEqual(accounting["partial"]["fraction"], 0.5)
+        self.assertEqual(accounting["partial"]["exit_time"], "2026-01-01T01:00:00+00:00")
+        self.assertEqual(accounting["exit_time"], "2026-01-01T02:00:00+00:00")
+        self.assertEqual(accounting["costs_embedded_in_prices"], {"spread": True, "slippage": True})
+
+    def test_open_paper_partial_has_exact_accounting_without_future_exit(self) -> None:
+        payload = self.payload()
+        payload.candles = payload.candles[:2]
+        result = advance_paper_contract({"request": payload.model_dump(mode="json"),
+            "contract": self.contract(payload), "entry_time": "2026-01-01T00:00:00Z"})
+        self.assertFalse(result["closed"])
+        self.assertIsNone(result["paper_accounting"]["exit_price"])
+        self.assertIsNone(result["paper_accounting"]["exit_time"])
+        self.assertEqual(result["paper_accounting"]["partial"]["fraction"], 0.5)
 
 
 if __name__ == "__main__":

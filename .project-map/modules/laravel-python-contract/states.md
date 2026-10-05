@@ -1,5 +1,14 @@
 # Cross-runtime contract states
 
+An optional per-candidate `specialist_council_runtime_v1` adds
+`declared -> validated -> shared_account_computed -> receipt_attested` under
+the same data/release/execution boundaries. Member positions and cost/capital
+ledgers come from one timeline. No native contract means unchanged legacy
+behavior; an invalid declared contract means technical rejection, not fallback.
+`typed_operator_decision_v1` is separate from pure task telemetry and binds only
+prior-closed inputs to confirmation, risk reduction or exit. Exact transported
+JSON copies, resource ceilings and as-of checks precede interpretation.
+
 An explicit `prospective_clean_discovery_bundle_v1` is incremental discovery
 only. Before cache/child execution, Python checks typed scope, false authority
 flags, exact bundle/probe data and execution identities, 15000+512 row bounds

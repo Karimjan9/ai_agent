@@ -62,6 +62,7 @@ paths:
   - backend-laravel/app/Services/AgentKnowledgeService.php
   - backend-laravel/app/Services/AgentProfessionalExamService.php
   - backend-laravel/app/Services/TypedInstrumentFoundryService.php
+  - backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php
   - backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php
   - backend-laravel/app/Services/CanonicalSkillCartridgeService.php
   - backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php
@@ -215,6 +216,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php
   - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
   - backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php
   - backend-laravel/tests/Feature/AcademyLearningProgressTest.php

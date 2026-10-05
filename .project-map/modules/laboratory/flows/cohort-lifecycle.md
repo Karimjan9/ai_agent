@@ -1,5 +1,21 @@
 # Laboratory cohort lifecycle
 
+## Declared native specialist council
+
+A stored draft seals horizon passports and native model/component vectors.
+Binding an unused research carrier selects that version, not paper authority.
+The existing dispatcher sends one `specialist_council_runtime_v1` per declared
+candidate. Python advances parallel specialists on one shared account; Laravel
+attests original-request/member/dataset/execution/account receipt identities
+before screen, full, cache or learning consumption. Missing explicit bindings
+fail closed rather than silently becoming a solo strategy.
+
+The independent evaluator preregisters original windows, equal capital/costs
+and candidate/champion/solo/ablation/retention arms before outcomes. Research
+comparison may close without qualification. Approval and scheduled adoption
+require the authorized independent route; future entries change version while
+open positions remain pinned. No second research scheduler is introduced.
+
 Explicit clean-discovery Academy cohorts seal a stored
 `prospective_clean_discovery_bundle_v1`, not the incomplete parent full archive.
 Canonical dispatch requires typed ownership and exact stream seals. Each typed

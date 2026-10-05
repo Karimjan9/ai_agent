@@ -2,15 +2,21 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:24:31.337Z",
-  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
-  "source_file_count": 1492,
-  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
+  "generated_at": "2026-10-05T04:11:32.317Z",
+  "source_digest": "19a4b0612315a15879b8e5f35004a465060f7c506b8b8a14af99f35654da32c7",
+  "source_file_count": 1507,
+  "git_head": "d82aa0dca2291facea942a46e7985b475d79db6b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "paper-execution",
   "paths": [
+    "backend-laravel/tests/Support/SpecialistPaperReservationWorker.php",
     "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
     "backend-laravel/app/Services/PaperTradingExecutionService.php",
+    "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+    "backend-laravel/app/Models/PaperOrder.php",
+    "backend-laravel/app/Models/PaperFill.php",
+    "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+    "docs/architecture/specialist-council.md",
     "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
     "backend-laravel/app/Services/SmartDisciplineEngineService.php",
     "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
@@ -18,11 +24,16 @@
   ],
   "source_files": [
     "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
+    "backend-laravel/app/Models/PaperFill.php",
+    "backend-laravel/app/Models/PaperOrder.php",
     "backend-laravel/app/Services/ExecutionRiskSentinelService.php",
     "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
     "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
     "backend-laravel/app/Services/PaperTradingExecutionService.php",
-    "backend-laravel/app/Services/SmartDisciplineEngineService.php"
+    "backend-laravel/app/Services/SmartDisciplineEngineService.php",
+    "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+    "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+    "backend-laravel/tests/Support/SpecialistPaperReservationWorker.php"
   ],
   "symbols": [
     {
@@ -42,6 +53,60 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/MonitorPaperTrading.php",
       "line": 33
+    },
+    {
+      "symbol": "PaperFill",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/PaperFill.php",
+      "line": 5
+    },
+    {
+      "symbol": "order",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperFill.php",
+      "line": 9
+    },
+    {
+      "symbol": "marketPerformance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 18
+    },
+    {
+      "symbol": "fills",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 19
+    },
+    {
+      "symbol": "signal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 20
+    },
+    {
+      "symbol": "paperSignal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 21
+    },
+    {
+      "symbol": "outcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 22
+    },
+    {
+      "symbol": "PaperOrder",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 6
+    },
+    {
+      "symbol": "booted",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/PaperOrder.php",
+      "line": 8
     },
     {
       "symbol": "drawdown",
@@ -233,73 +298,109 @@
       "symbol": "signalInvalidatedByDisconnect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
-      "line": 29
+      "line": 32
     },
     {
       "symbol": "transition",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
-      "line": 36
+      "line": 39
     },
     {
-      "symbol": "canonicalize",
+      "symbol": "simulatedExit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1003
+      "line": 1068
     },
     {
-      "symbol": "confirmationEntryTransport",
+      "symbol": "specialistAccountingAttested",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1018
+      "line": 1129
     },
     {
-      "symbol": "confirmationEntryHashValid",
+      "symbol": "managementRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1053
+      "line": 1164
     },
     {
-      "symbol": "confirmationEntryMtfStreams",
+      "symbol": "score",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1069
-    },
-    {
-      "symbol": "aiRequest",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 1082
+      "line": 1186
     },
     {
       "symbol": "paperTrackAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 109
+      "line": 121
+    },
+    {
+      "symbol": "recordClosedOrderMemory",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1220
+    },
+    {
+      "symbol": "selfAudit",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1241
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1275
+    },
+    {
+      "symbol": "confirmationEntryTransport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1290
+    },
+    {
+      "symbol": "confirmationEntryHashValid",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1325
+    },
+    {
+      "symbol": "confirmationEntryMtfStreams",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1341
+    },
+    {
+      "symbol": "aiRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 1354
     },
     {
       "symbol": "candidatePassport",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 139
+      "line": 155
     },
     {
       "symbol": "frozenPaperGuard",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 157
-    },
-    {
-      "symbol": "captureLatestSignal",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 184
+      "line": 173
     },
     {
       "symbol": "PaperTradingExecutionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
       "line": 20
+    },
+    {
+      "symbol": "captureLatestSignal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 200
     },
     {
       "symbol": "__construct",
@@ -311,73 +412,67 @@
       "symbol": "executePendingSignal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 490
+      "line": 545
     },
     {
       "symbol": "run",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 58
+      "line": 60
+    },
+    {
+      "symbol": "specialistBinding",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 808
+    },
+    {
+      "symbol": "bindingPin",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 816
+    },
+    {
+      "symbol": "executeSpecialistOrder",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
+      "line": 823
     },
     {
       "symbol": "runtimePortfolioAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 745
+      "line": 890
     },
     {
       "symbol": "instrumentVolatility",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 764
+      "line": 909
     },
     {
       "symbol": "instrumentSession",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 777
+      "line": 922
     },
     {
       "symbol": "instrumentSessionContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 783
+      "line": 928
     },
     {
       "symbol": "portfolioTransition",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 793
+      "line": 938
     },
     {
       "symbol": "reconcile",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 807
-    },
-    {
-      "symbol": "simulatedExit",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 887
-    },
-    {
-      "symbol": "score",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 914
-    },
-    {
-      "symbol": "recordClosedOrderMemory",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 948
-    },
-    {
-      "symbol": "selfAudit",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 969
+      "line": 952
     },
     {
       "symbol": "SmartDisciplineEngineService",
@@ -546,6 +641,126 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SmartDisciplineEngineService.php",
       "line": 745
+    },
+    {
+      "symbol": "SpecialistPaperAccountService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 13
+    },
+    {
+      "symbol": "attach",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 176
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 18
+    },
+    {
+      "symbol": "fill",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 188
+    },
+    {
+      "symbol": "decimalUnits",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 21
+    },
+    {
+      "symbol": "release",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 264
+    },
+    {
+      "symbol": "reconciliation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 286
+    },
+    {
+      "symbol": "price",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 31
+    },
+    {
+      "symbol": "locked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 330
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 342
+    },
+    {
+      "symbol": "passport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 347
+    },
+    {
+      "symbol": "scaled",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 36
+    },
+    {
+      "symbol": "multiply",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 48
+    },
+    {
+      "symbol": "ceilRatio",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 54
+    },
+    {
+      "symbol": "notionalCents",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 59
+    },
+    {
+      "symbol": "costCents",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 64
+    },
+    {
+      "symbol": "reserve",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 70
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 7
+    },
+    {
+      "symbol": "down",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 80
+    },
+    {
+      "symbol": "up",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 9
     }
   ],
   "tests": [
@@ -626,6 +841,26 @@
         "closedOrder",
         "reviewableOrder",
         "managementAudit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
+      "tests": [
+        "setUp",
+        "test_two_specialists_keep_opposite_positions_and_exact_shared_costs",
+        "test_native_pending_signal_path_opens_two_members_with_real_risk_and_discipline_gates",
+        "test_reservation_retries_and_partial_cancel_do_not_duplicate_or_release_filled_capital",
+        "test_reserved_capital_is_visible_to_another_owner_before_order_publication",
+        "test_member_score_or_existing_other_owner_authority_cannot_admit_drift",
+        "test_unaccounted_legacy_position_must_drain_before_shared_capital_can_be_reserved",
+        "test_expired_unpublished_intent_releases_capital_and_records_a_terminal_receipt",
+        "test_two_native_processes_cannot_spend_the_same_pending_account_capital",
+        "test_position_pin_is_immutable_and_retired_version_stops_new_entries",
+        "test_native_management_records_a_partial_once_and_uses_the_pinned_request_after_swap",
+        "reserve",
+        "signal",
+        "order",
+        "owners"
       ]
     },
     {

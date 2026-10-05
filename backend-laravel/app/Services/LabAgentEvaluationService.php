@@ -115,6 +115,11 @@ class LabAgentEvaluationService
             && (int) data_get($cachedRuntimePolicy, 'max_cohort_size', -1) === $configuredMaxCohortSize;
         $cacheIsSealed = ! $edgeGenesisReplay
             && ! $this->isCausalLearningConfirmation($agent)
+            // The legacy metadata cache is sealed before the council plan's
+            // capital/window policy is bound. Native councils use Python's
+            // exact request cache instead; never reuse a decorated old arm.
+            && data_get($model->metadata, 'specialist_council') === null
+            && data_get($model->metadata, 'specialist_council_evaluation') === null
             && (int) data_get($cached, 'generation_id') === (int) $agent->lab_generation_id
             && is_array(data_get($cached, 'item'))
             && is_array(data_get($cached, 'request_manifest'))
@@ -503,6 +508,7 @@ class LabAgentEvaluationService
                 ? min(960, max(120, (int) config('services.lab_selection.causal_replay_timeout_seconds', 960)))
                 : min(3900, max(60, (int) config('services.lab_selection.full_replay_timeout_seconds', 3900)));
             $requestId = 'full-'.$agent->id.'-'.bin2hex(random_bytes(6));
+            $request = $this->bindCouncilEvaluationRequests($request, $cohort->pluck('modelVersion')->all());
             $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
             $this->evidence->attachRequest($run, $request, [
                 'request_id' => $requestId,
@@ -542,6 +548,7 @@ class LabAgentEvaluationService
                 if (! $peerItem) {
                     throw new RuntimeException('Missing cohort lab agent result.');
                 }
+                $this->attestSpecialistCouncilReplay($peer->modelVersion, $run, (array) ($peerItem['result'] ?? []));
                 $peerItem['result'] = array_merge((array) ($peerItem['result'] ?? []), [
                     'data_manifest' => $manifest,
                     'full_replay_runtime_policy' => $runtimePolicy,
@@ -575,6 +582,7 @@ class LabAgentEvaluationService
                 throw new RuntimeException('Empty lab agent result.');
             }
         }
+        $this->attestSpecialistCouncilReplay($model, $run, (array) ($item['result'] ?? []));
         // Full replay evidence is unusable without the exact canonical
         // execution hash. Never persist a score from a response that omitted
         // the contract or silently changed spread/gap policy.
@@ -869,6 +877,7 @@ class LabAgentEvaluationService
         }
         $request = $this->applyMtfReplayBundle($request, $mtfBundle);
 
+        $request = $this->bindCouncilEvaluationRequests($request, $arms->pluck('modelVersion')->all());
         return [
             'request' => $request,
             'manifest' => $manifest,
@@ -1175,6 +1184,7 @@ class LabAgentEvaluationService
             );
             $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
         }
+        $request = $this->bindCouncilEvaluationRequests($request, [$model]);
         $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
         $this->assertAiReplayHealthy($requestId, $run, true);
@@ -1203,6 +1213,7 @@ class LabAgentEvaluationService
             throw new RuntimeException('Empty screening result.');
         }
         $result = $item['result'] ?? [];
+        $this->attestSpecialistCouncilReplay($model, $run, (array) $result);
         $screenResult = array_merge($result, [
             'forward_score' => $item['forward_score'] ?? $item['score'] ?? 0,
             'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
@@ -1667,6 +1678,7 @@ class LabAgentEvaluationService
             );
             $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
         }
+        $request = $this->bindCouncilEvaluationRequests($request, $agents->pluck('modelVersion')->all());
         $runs = [];
         foreach ($agents as $agent) {
             $run = $this->evidence->beginRun($agent, 'screening', 'incremental', [
@@ -2045,6 +2057,7 @@ class LabAgentEvaluationService
         }
 
         $result = (array) ($item['result'] ?? []);
+        $this->attestSpecialistCouncilReplay($model, $run, $result);
         $screenResult = array_merge($result, [
             'forward_score' => $item['forward_score'] ?? $item['score'] ?? 0,
             'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
@@ -2929,7 +2942,110 @@ class LabAgentEvaluationService
                 $replayDatasetHash,
             ),
             'specialist_context_contract' => $this->replaySpecialistContextContract($model),
+            'specialist_council_evaluation' => app(SpecialistCouncilLifecycleService::class)->evaluationBindingForModel($model, $replayDatasetHash),
+            // A declared council is executed as one shared account, not as a
+            // sum of independently scored specialists. The persisted version
+            // owns every native member identity; caller flags grant nothing.
+            'specialist_council_contract' => app(SpecialistCouncilLifecycleService::class)->runtimeContractForModel(
+                $model,
+                $runtimeTimeframe,
+                $replayDatasetHash,
+                (string) app(ExecutionContractService::class)->for($agent->symbol, $runtimeTimeframe)['execution_hash'],
+                $mtfBundle,
+                (string) $agent->symbol,
+            ),
         ];
+    }
+
+    /** Bind the stored comparison before the original HTTP request is sealed. */
+    private function bindCouncilEvaluationRequests(array $request, array $models): array
+    {
+        foreach ($models as $model) {
+            if ($model instanceof ModelVersion && data_get($model->metadata, 'specialist_council_evaluation') !== null) {
+                $request = app(SpecialistCouncilLifecycleService::class)->bindEvaluationRequestForModel($model, $request);
+            }
+        }
+        return $request;
+    }
+
+    /**
+     * A council member keeps the same native runtime authority as a standalone
+     * model. Do not reconstruct composition or instrument policy in a second
+     * compiler, and do not mutate a sealed source by generating assignments.
+     */
+    public function specialistCouncilMemberPayload(
+        ModelVersion $model,
+        string $runtimeTimeframe,
+        ?array $mtfBundle,
+        string $replayDatasetHash,
+        string $symbol = '',
+    ): array {
+        if (data_get($model->metadata, 'specialist_council') !== null) {
+            throw new RuntimeException('NESTED_SPECIALIST_COUNCIL_MEMBER_UNSUPPORTED');
+        }
+        $agents = LabAgent::query()->where('model_version_id', $model->id);
+        if ($symbol !== '') {
+            $agents->where('symbol', $symbol);
+        }
+        $nativeAgents = $agents->orderBy('id')->limit(2)->get();
+        $agent = $nativeAgents->first();
+        if ($symbol === '' && LabAgent::query()->where('model_version_id', $model->id)
+            ->select('symbol')->distinct()->limit(2)->pluck('symbol')->count() > 1) {
+            throw new RuntimeException('COUNCIL_MEMBER_NATIVE_SYMBOL_AMBIGUOUS');
+        }
+        if ($agent === null && $symbol !== '' && LabAgent::query()->where('model_version_id', $model->id)->exists()) {
+            throw new RuntimeException('COUNCIL_MEMBER_NATIVE_INSTRUMENT_MISMATCH');
+        }
+        $hasComposition = filled(data_get($model->metadata, 'smart_composition.composition_passport.composition_id'));
+        if ($agent === null && ($hasComposition || data_get($model->metadata, 'causal_learning_cohort') !== null)) {
+            throw new RuntimeException('COUNCIL_MEMBER_NATIVE_LAB_IDENTITY_REQUIRED');
+        }
+        $assignment = (array) data_get($model->metadata, 'instrument_research_assignment', []);
+        if ($hasComposition && $assignment === []) {
+            throw new RuntimeException('COUNCIL_MEMBER_FROZEN_INSTRUMENT_ASSIGNMENT_REQUIRED');
+        }
+        $symbol = $symbol !== '' ? $symbol : (string) ($agent?->symbol ?? '');
+        if ($agent !== null) {
+            $agent->setRelation('modelVersion', $model);
+        }
+        return array_filter([
+            'lab_agent_id' => $agent?->id,
+            'symbol' => $symbol !== '' ? $symbol : null,
+            'strategy' => $model->strategy,
+            'base_strategy' => $this->schemas->runtimeBaseStrategy(
+                (string) $model->strategy,
+                data_get($model->metadata, 'base_strategy'),
+                (string) ($agent?->strategy_family ?? data_get($model->metadata, 'strategy_family', $model->strategy)),
+            ),
+            'version' => $model->version,
+            'parameters' => $model->parameters ?? [],
+            'instrument_research_assignment' => $assignment,
+            'composition_runtime_contract' => $agent === null ? new \stdClass : $this->compositionRuntimeContract(
+                $agent, $assignment, $runtimeTimeframe, $mtfBundle, $replayDatasetHash,
+            ),
+            'specialist_context_contract' => $this->replaySpecialistContextContract($model),
+            'mtf_pilot' => $symbol === '' ? null : app(MultiTimeframePilotService::class)->requestPayload(
+                $symbol, $runtimeTimeframe, (string) $model->strategy,
+                data_get($mtfBundle, 'bundle_hash'),
+            ),
+        ], fn ($value): bool => $value !== null);
+    }
+
+    private function attestSpecialistCouncilReplay(ModelVersion $model, LabEvaluationRun $run, array $result): void
+    {
+        if (data_get($model->metadata, 'specialist_council') === null
+            && data_get($result, 'specialist_council_receipt') === null) {
+            return;
+        }
+        // Use the original transported request, also on cache/recovery paths.
+        // Reconstructing a contract from current model metadata after replay
+        // would silently bless a version switch or a receipt from another run.
+        $request = (array) data_get($run->request_meta, 'payload', []);
+        $owner = app(SpecialistCouncilLifecycleService::class);
+        $receipt = $owner->attestReplayResult($model, $request, $result);
+        if ($receipt !== null && ($version = $owner->researchVersionForModel($model)) !== null) {
+            app(SpecialistCouncilDataUseService::class)->recordReplayUse($version, $request, $run->run_id, $receipt);
+        }
     }
 
     /** A differential child may improve only its declared target lane. */

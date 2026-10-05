@@ -1349,6 +1349,11 @@ def _run_prepared_simple_backtest(
     prepared_snapshot: PreparedSignalSnapshot | None = None,
     fast_stateful: bool | None = None,
 ) -> SimpleBacktestResponse:
+    if payload.specialist_council_contract:
+        from app.services.specialist_council import run_specialist_council
+        # The native account owns its member snapshots. A legacy router's
+        # single selected signal cannot replace independent specialist intents.
+        return run_specialist_council(payload, df)
     validate_composition_runtime_contract(
         payload.composition_runtime_contract,
         base_strategy=payload.base_strategy,

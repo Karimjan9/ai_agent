@@ -7,6 +7,14 @@ replay, holdout and paper-observation evidence. It may create, compare and
 archive candidates, but does not treat an apparent result as a production
 trading entitlement.
 
+A versioned council candidate evaluates scalp/hour/day/swing specialists on
+one shared native account, not a sum of independent backtests. Typed support
+roles and bounded learned operators remain research products until original
+independent evaluation authorizes prospective adoption. Open positions retain
+their original management version, including after rollback. See
+`docs/architecture/specialist-council.md` for the executable boundary and data
+dependencies; registration or deployment alone grants no trading authority.
+
 ## Goals
 
 - Preserve provenance, control identity and decision receipts.

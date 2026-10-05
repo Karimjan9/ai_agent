@@ -408,6 +408,33 @@ def _candidate_cache_contract_is_current(
     execution_current = received.get("execution_hash") == expected.get(
         "execution_hash"
     ) and received.get("parameters") == expected.get("parameters")
+    if payload.specialist_council_contract:
+        from app.services.specialist_council import validate_contract, receipt_hash_is_current
+        from app.services.research_program_tasks import canonical_hash
+        contract = validate_contract(payload)
+        receipt = result.get("specialist_council_receipt")
+        if not isinstance(receipt, dict):
+            return False
+        if (receipt.get("protocol") != "specialist_council_receipt_v1"
+            or receipt.get("contract_hash") != contract["contract_hash"]
+            or receipt.get("dataset_hash") != payload.replay_dataset_hash
+            or receipt.get("execution_hash") != expected["execution_hash"]
+            or not receipt_hash_is_current(receipt)):
+            return False
+        scope = receipt.get("evaluated_scope")
+        if not isinstance(scope, dict) or scope.get("decision_rows") != scope.get("rows", 0) - 1:
+            return False
+        probe = (payload.policy_context or {}).get("prospective_probe_window")
+        budget = (payload.policy_context or {}).get("full_replay_runtime_policy")
+        policy = probe if isinstance(probe, dict) else budget if isinstance(budget, dict) else None
+        if payload.evaluation_mode == "incremental" and not isinstance(probe, dict):
+            limit = 5000 if receipt.get("source_rows", 0) >= 5000 else 2000
+            if scope.get("rows") != min(receipt.get("source_rows", 0), limit) or scope.get("warmup_rows") != max(0, receipt.get("source_rows", 0) - limit):
+                return False
+            if policy is None:
+                policy = scope.get("selector_policy")
+        if scope.get("policy_hash") != (canonical_hash(policy) if isinstance(policy, dict) else None):
+            return False
     probe = (payload.policy_context or {}).get("prospective_probe_window")
     if isinstance(probe, dict):
         receipt = result.get("prospective_probe_window_receipt")
@@ -680,6 +707,8 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
     # candidate-cache return, not just after a cache miss loads source_df.
     _assert_clean_discovery_boundary(payload)
     verify_research_transport(payload, _internal_api_token())
+    if payload.specialist_council_contract and len(payload.strategies) > 1:
+        raise ValueError("SPECIALIST_COUNCIL_BATCH_REQUIRES_PER_CANDIDATE_CONTRACTS")
     timing_started = time.perf_counter()
     stage_timings: dict[str, float] = {}
 
@@ -699,6 +728,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
 
     leaderboard = []
     strategy_configs = payload.strategies or (
+        [{"strategy": payload.strategy, "base_strategy": payload.base_strategy,
+          "version": payload.version, "parameters": payload.parameters,
+          "specialist_council_contract": payload.specialist_council_contract}]
+        if payload.specialist_council_contract else (
         [
             {
                 "strategy": "portfolio_v1",
@@ -717,6 +750,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             }
             for strategy_name in list_strategies()
         ]
+        )
     )
     resume_candidates = []
     for config_index, raw_config in enumerate(strategy_configs):
@@ -870,9 +904,10 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 strategy_name == "portfolio_v1"
                 or config.get("base_strategy") == "portfolio"
             )
+            is_native_council = bool(config.get("specialist_council_contract") or payload.specialist_council_contract)
             parameters = (
                 dict(config.get("parameters") or {})
-                if is_portfolio_config
+                if is_portfolio_config or is_native_council
                 else validate_strategy_parameters(
                     strategy_name,
                     config.get("parameters") or {},
@@ -924,6 +959,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                         config.get("instrument_research_assignment") or {}
                     ),
                     "composition_runtime_contract": composition_runtime_contract,
+                    "specialist_council_contract": dict(
+                        config.get("specialist_council_contract") or payload.specialist_council_contract
+                    ),
                     "specialist_context_contract": dict(
                         config.get("specialist_context_contract") or {}
                     ),
@@ -1000,7 +1038,14 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     mode=payload.evaluation_mode,
                     rows=len(source_df),
                 )
-            if payload.evaluation_mode == "incremental":
+            if strategy_payload.specialist_council_contract:
+                # Each candidate seals a complete council. Running the legacy
+                # candidate strategy independently would erase ownership and
+                # alter the common account/decision clock.
+                analysis = MarketAdaptiveReplayService().run(
+                    strategy_payload, source_df, calculate_strategy_score,
+                )
+            elif payload.evaluation_mode == "incremental":
                 ordered = source_df.sort_values("time").reset_index(drop=True)
                 probe_contract = (strategy_payload.policy_context or {}).get(
                     "prospective_probe_window"
@@ -1695,7 +1740,7 @@ def run_portfolio_backtest(payload: SimpleBacktestRequest) -> dict[str, object]:
     of the request contract and are frozen before the same next-candle,
     conservative-cost execution engine is run.
     """
-    if len(payload.portfolio_members) < 2:
+    if not payload.specialist_council_contract and len(payload.portfolio_members) < 2:
         raise HTTPException(
             status_code=400,
             detail="A portfolio replay requires at least two declared members.",
@@ -1704,6 +1749,12 @@ def run_portfolio_backtest(payload: SimpleBacktestRequest) -> dict[str, object]:
 
 
 def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
+    if payload.specialist_council_contract:
+        source_df = _load_simple_candles(payload)
+        _assert_non_paper_source_pre_2026(payload, source_df)
+        return MarketAdaptiveReplayService().run(
+            payload, source_df, calculate_strategy_score,
+        )["result"]
     if len(payload.portfolio_members) < 2:
         raise ValueError("A portfolio replay requires at least two declared members.")
     validated_members = []
@@ -3410,6 +3461,36 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
             ),
             "partial_exit_price": None,
         }
+        partial_exit_time = None
+
+        def paper_accounting(exit_price: float | None, exit_at: object) -> dict[str, object]:
+            observed = _utc_timestamp(exit_at)
+            holding_days = max((observed - entry_time).total_seconds() / 86400, 0.0)
+            partial = None
+            if position.get("partial_closed"):
+                partial = {
+                    "fraction": float(position["partial_fraction"]),
+                    "exit_price": float(position["partial_exit_price"]),
+                    "exit_time": partial_exit_time,
+                }
+            return {
+                "protocol": "specialist_paper_accounting_v1",
+                "entry_price": entry_price,
+                "exit_price": float(exit_price) if exit_price is not None else None,
+                "exit_time": observed.isoformat() if exit_price is not None else None,
+                "observed_at": observed.isoformat(), "partial": partial,
+                "commission_percent_round_trip": payload.execution.commission_percent,
+                "carry_percent_total": payload.execution.swap_per_day_percent * holding_days,
+                "carry_scope": "initial_notional_canonical_contract",
+                "costs_embedded_in_prices": {"spread": True, "slippage": True},
+                "time_precision": "candle_open_labels_intrabar_order_unknown",
+                "intrabar_policy": payload.execution.intrabar_policy,
+                "holding_days": holding_days,
+                "execution_hash": execution_metadata["execution_hash"],
+                "management_hash": management_contract["management_hash"],
+                "execution_attested": execution_attested,
+                "management_attested": management_attested,
+            }
         maximum_favorable_excursion = 0.0
         maximum_adverse_excursion = 0.0
         for index in range(entry_index, len(df)):
@@ -3442,6 +3523,7 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
                     str(position["direction"]), position, candle, payload
                 )
             if reason is None and _take_partial_profit(position, candle, payload):
+                partial_exit_time = _utc_timestamp(candle["time"]).isoformat()
                 continue
             if reason is None or exit_price is None:
                 continue
@@ -3495,11 +3577,13 @@ def advance_paper_contract(body: dict[str, object]) -> dict[str, object]:
                 "stop_loss": round(float(position["stop_loss"]), 8),
                 "contract_version": contract.get("contract_version"),
                 "management_audit": management_audit,
+                "paper_accounting": paper_accounting(float(exit_price), candle["time"]),
             }
         return {
             "closed": False,
             "stop_loss": round(float(position["stop_loss"]), 8),
             "contract_version": contract.get("contract_version"),
+            "paper_accounting": paper_accounting(None, df.iloc[-1]["time"]),
             "management_audit": _paper_management_audit(
                 position,
                 initial_stop,

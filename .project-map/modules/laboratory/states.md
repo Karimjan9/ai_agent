@@ -1,5 +1,14 @@
 # Laboratory lifecycle states
 
+## Native council version boundary
+
+`draft -> evaluating -> evaluated -> approved -> scheduled -> active -> retired`
+is separate from generation state. Draft/evaluation can be research-only;
+approval requires original authorized independent comparisons by a different
+evaluator. Missing evidence remains withheld. Scheduled adoption or rollback
+changes future entry bindings, not existing position ownership/management.
+Every scalar activity count remains distinct from confirmed improvement.
+
 `historical_research` opens a bounded archive-backed successor after terminal
 settlement without requiring 24 new live H1 bars. Valid champion presence or
 disabled policy denies a new historical root; active work, technical debt,

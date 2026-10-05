@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:24:31.337Z",
-  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
-  "source_file_count": 1492,
-  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
+  "generated_at": "2026-10-05T04:11:32.317Z",
+  "source_digest": "19a4b0612315a15879b8e5f35004a465060f7c506b8b8a14af99f35654da32c7",
+  "source_file_count": 1507,
+  "git_head": "d82aa0dca2291facea942a46e7985b475d79db6b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tables": [
     {
@@ -1719,6 +1719,16 @@
       "line": 75
     },
     {
+      "table": "paper_capital_accounts",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 11
+    },
+    {
+      "table": "paper_capital_reservations",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 23
+    },
+    {
       "table": "paper_confidence_calibrations",
       "migration": "backend-laravel/database/migrations/2026_07_24_160000_add_evolution_feedback_and_economic_events.php",
       "line": 30
@@ -1734,6 +1744,11 @@
       "line": 33
     },
     {
+      "table": "paper_cost_ledger",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 49
+    },
+    {
       "table": "paper_execution_events",
       "migration": "backend-laravel/database/migrations/2026_07_29_160000_create_p0_handoff_blame_execution_tables.php",
       "line": 29
@@ -1742,6 +1757,16 @@
       "table": "paper_fills",
       "migration": "backend-laravel/database/migrations/2026_07_11_020000_complete_ai_learning_loop.php",
       "line": 28
+    },
+    {
+      "table": "paper_fills",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 72
+    },
+    {
+      "table": "paper_fills",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 82
     },
     {
       "table": "paper_mtf_shadow_observations",
@@ -1787,6 +1812,16 @@
       "table": "paper_orders",
       "migration": "backend-laravel/database/migrations/2026_07_16_140000_create_immutable_paper_signal_ledger.php",
       "line": 68
+    },
+    {
+      "table": "paper_orders",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 63
+    },
+    {
+      "table": "paper_orders",
+      "migration": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 86
     },
     {
       "table": "paper_sequential_evidences",
@@ -2076,6 +2111,41 @@
     {
       "table": "smart_discipline_decisions",
       "migration": "backend-laravel/database/migrations/2026_08_27_060000_create_smart_discipline_decisions_table.php",
+      "line": 11
+    },
+    {
+      "table": "specialist_council_data_events",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 62
+    },
+    {
+      "table": "specialist_council_data_locks",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 88
+    },
+    {
+      "table": "specialist_council_data_uses",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 75
+    },
+    {
+      "table": "specialist_council_evaluation_deliveries",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 51
+    },
+    {
+      "table": "specialist_council_evaluation_plans",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 42
+    },
+    {
+      "table": "specialist_council_evaluations",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
+      "line": 33
+    },
+    {
+      "table": "specialist_council_versions",
+      "migration": "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
       "line": 11
     },
     {
@@ -3367,6 +3437,10 @@
     {
       "model": "SmartDisciplineDecision",
       "path": "backend-laravel/app/Models/SmartDisciplineDecision.php"
+    },
+    {
+      "model": "SpecialistCouncilVersion",
+      "path": "backend-laravel/app/Models/SpecialistCouncilVersion.php"
     },
     {
       "model": "StrategyCurriculumContract",

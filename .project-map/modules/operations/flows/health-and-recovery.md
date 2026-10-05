@@ -168,6 +168,11 @@ only dispatched technical recovery is deferred, not a completed successor.
 
 ## Rules
 
+Native specialist evaluation deliveries persist after immutable producer
+publication. The same non-dry locked arbiter rechecks pending consumer work;
+operator PAUSE fences it and STOP can drain admitted deliveries. A retry acts
+on original arm artifacts, never on a new replay or rewritten verdict.
+
 - A dashboard status is not enough; relevant strict command evidence decides health.
 - Recovery must not mutate research, paper or promotion evidence to look healthy.
 - Consult the matching runbook before changing Redis, queues, backups or provider recovery.

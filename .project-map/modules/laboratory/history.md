@@ -1,5 +1,12 @@
 # Laboratory history
 
+## 2026-10-05 - Native specialist council
+
+Typed horizon passports and a stored version lifecycle now bind declared native
+research models to one shared-account replay. Independent comparison plans,
+original receipt attestation, event-use provenance and future-entry adoption
+remain separate from research activity. See ADR-029.
+
 ## 2026-10-03 - Lane-owned research readiness
 
 Historical exploration and admitted learning confirmation seal the validated

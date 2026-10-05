@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-04T19:24:31.337Z",
-  "source_digest": "8152bb473c95f67ab53f0e40f7242955d8a62e64d7f359a77c3774aa8b7d36b2",
-  "source_file_count": 1492,
-  "git_head": "5432809687dc6fa4686f229255e0748a5fcd670f",
+  "generated_at": "2026-10-05T04:11:32.317Z",
+  "source_digest": "19a4b0612315a15879b8e5f35004a465060f7c506b8b8a14af99f35654da32c7",
+  "source_file_count": 1507,
+  "git_head": "d82aa0dca2291facea942a46e7985b475d79db6b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -319,7 +319,8 @@
       "path": "ai-service-python/tests/test_paper_management_contract.py",
       "tests": [
         "test_management_contract_detects_post_entry_parameter_drift",
-        "test_paper_advance_executes_partial_then_final_target_and_emits_r_audit"
+        "test_paper_advance_executes_partial_then_final_target_and_emits_r_audit",
+        "test_open_paper_partial_has_exact_accounting_without_future_exit"
       ]
     },
     {
@@ -513,6 +514,32 @@
         "test_m5_volume_uses_seven_day_m5_budget_and_causal_bucket",
         "test_invalid_legacy_spread_values_cannot_claim_observation",
         "test_numeric_legacy_spread_remains_unverified_for_promotion"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_specialist_council.py",
+      "tests": [
+        "test_swing_stays_open_while_short_members_trade_on_shared_account",
+        "test_simultaneous_requests_cannot_spend_capital_twice",
+        "test_hard_risk_veto_has_role_reason",
+        "test_fees_carry_and_embedded_costs_reconcile",
+        "test_member_and_management_version_pinned_after_upgrade",
+        "test_declared_identity_and_upgrades_tamper_fail_closed",
+        "test_second_scalp_is_dependency_with_no_fake_trade",
+        "test_opposite_policy_hedges_only_when_declared_and_netting_never_fakes_hedging",
+        "test_learned_operator_changes_actual_entry_and_ablation_restores_control",
+        "test_operator_reduces_sizing_and_cannot_increase_external_risk",
+        "test_operator_asof_whitelist_and_resource_bound",
+        "test_float_preserving_contract_transport_and_copy_drift",
+        "test_partial_fill_releases_capital_and_carry_is_proportional",
+        "test_seconds_holding_deadline_reports_unavoidable_weekend_overrun",
+        "test_operator_receipt_is_deterministic_and_float_copy_protected",
+        "test_request_cannot_relax_external_envelope_and_naive_upgrade_rejected",
+        "test_passport_scope_and_permissions_abstain_without_erasing_opportunities",
+        "test_tick_precision_is_dependency_even_with_hourly_decisions",
+        "test_run_all_carries_native_per_candidate_and_cache_refuses_missing_receipt",
+        "test_native_probe_keeps_feature_warmup_without_any_warmup_account_activity",
+        "test_ordinary_native_incremental_uses_canonical_tail_not_the_full_source"
       ]
     },
     {
@@ -3044,10 +3071,85 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php",
+      "tests": [
+        "test_roles_have_distinct_products_and_cannot_escalate_permissions",
+        "test_all_four_horizons_are_sealed_independently_of_shared_sensor_timeframes",
+        "test_second_scalp_requires_its_own_tick_prerequisites",
+        "test_sealed_manifest_and_float_identity_survive_database_roundtrip",
+        "test_declared_missing_binding_fails_closed_instead_of_running_legacy",
+        "test_carrier_cannot_be_an_existing_specialist_or_previously_evaluated_model",
+        "test_creator_cannot_seal_its_own_evaluation_plan",
+        "test_historical_comparison_and_forged_flags_never_grant_approval",
+        "test_independent_evaluation_requires_actual_server_authorized_unused_windows",
+        "test_provider_hash_and_timeframe_relabels_do_not_make_used_events_independent",
+        "test_unavailable_and_immature_feedback_cannot_enter_research",
+        "test_2026_market_events_remain_paper_only",
+        "test_data_use_is_idempotent_and_open_swing_feedback_is_not_mature",
+        "test_retired_version_manages_original_pin_but_cannot_open_new_positions",
+        "test_typed_component_admission_is_research_only_and_compatible_with_consumer",
+        "test_progress_counts_manifest_activity_separately_from_verified_skills",
+        "test_changing_native_member_after_seal_refuses_replay",
+        "test_real_python_receipt_attests_exact_php_manifest_and_detects_resealed_account_tampering",
+        "test_native_command_registers_existing_unobserved_lab_carrier_without_dispatch_or_authority",
+        "test_risk_product_cannot_vote_as_a_trader_or_increase_exposure",
+        "test_completion_delivery_is_durable_bounded_and_never_rewrites_original_run",
+        "test_legacy_completion_notification_has_no_extra_queries",
+        "test_native_dispatcher_handoff_applies_original_plan_economics_and_probe_before_sealing",
+        "test_evaluation_plan_cannot_decorate_different_actual_costs_or_native_risk",
+        "test_conflicting_batch_plan_policy_fails_before_dispatch",
+        "test_equal_dataset_hash_does_not_replace_original_comparator_window_receipt",
+        "test_memory_blinded_arm_cannot_be_annotated_without_original_selector",
+        "test_php_native_member_compiler_refuses_cross_instrument_rebinding",
+        "test_additive_council_schema_index_names_fit_mysql_identifier_limits",
+        "boundPlanFixture",
+        "model",
+        "passport",
+        "draft",
+        "plan",
+        "event"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
+      "tests": [
+        "test_persisted_native_members_execute_on_one_attested_account_after_numeric_transport",
+        "test_declared_model_refuses_an_actual_result_with_both_receipts_removed",
+        "test_even_resealed_native_receipt_cannot_transfer_a_position_management_owner",
+        "test_original_sealed_members_cannot_be_dispatched_on_a_different_carrier_symbol",
+        "test_tick_precision_is_reported_as_a_native_dependency_without_fake_fills_or_evidence",
+        "replay",
+        "model",
+        "candles",
+        "python",
+        "canonicalize"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistLeagueChallengeServiceTest.php",
       "tests": [
         "test_league_admission_requires_independent_and_counterfactual_council_gates",
         "test_open_ended_challenges_are_sealed_pre2026_and_record_transfer_solution_only_as_research"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
+      "tests": [
+        "setUp",
+        "test_two_specialists_keep_opposite_positions_and_exact_shared_costs",
+        "test_native_pending_signal_path_opens_two_members_with_real_risk_and_discipline_gates",
+        "test_reservation_retries_and_partial_cancel_do_not_duplicate_or_release_filled_capital",
+        "test_reserved_capital_is_visible_to_another_owner_before_order_publication",
+        "test_member_score_or_existing_other_owner_authority_cannot_admit_drift",
+        "test_unaccounted_legacy_position_must_drain_before_shared_capital_can_be_reserved",
+        "test_expired_unpublished_intent_releases_capital_and_records_a_terminal_receipt",
+        "test_two_native_processes_cannot_spend_the_same_pending_account_capital",
+        "test_position_pin_is_immutable_and_retired_version_stops_new_entries",
+        "test_native_management_records_a_partial_once_and_uses_the_pinned_request_after_swap",
+        "reserve",
+        "signal",
+        "order",
+        "owners"
       ]
     },
     {
@@ -3266,6 +3368,18 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
+      "tests": [
+        "test_research_candidate_admission_does_not_fake_academy_or_economic_authority",
+        "test_php_export_survives_actual_numeric_json_transport_and_uses_closed_inputs",
+        "test_unbound_future_output_and_size_increase_cannot_be_exported_or_executed",
+        "context",
+        "budget",
+        "execute",
+        "assertNativeRejection"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/UniversalKnowledgeGraphTest.php",
       "tests": [
         "test_training_session_builds_universal_knowledge_graph",
@@ -3316,6 +3430,10 @@
         "exactValidationFacts",
         "exactValidationVector"
       ]
+    },
+    {
+      "path": "backend-laravel/tests/Support/SpecialistPaperReservationWorker.php",
+      "tests": []
     },
     {
       "path": "backend-laravel/tests/TestCase.php",

@@ -1,5 +1,12 @@
 # Paper execution states
 
+Native specialist intake additionally passes `identity_verified -> reserved ->
+published -> managed -> released`. Reservation and order publication share the
+account/candidate transaction; rejection/cancellation releases only the exact
+owned reservation. Retired versions block new intake but do not transition an
+existing open position to an unmanaged state. Position management remains
+pinned until a reconciled terminal close; unsupported netting stays blocked.
+
 | From | Trigger | To | Guard / owner | Failure or compensation |
 | --- | --- | --- | --- | --- |
 | signal_received | signal/contract is persisted | admission_pending | `PaperTradingExecutionService` owns intake | Missing sealed evidence cannot proceed. |
