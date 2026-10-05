@@ -21,7 +21,9 @@ return new class extends Migration
             $table->char('assessment_hash', 64)->nullable();
             $table->json('paper_authority')->nullable();
             $table->unsignedBigInteger('previous_version_id')->nullable();
-            $table->timestamp('sealed_at');
+            // Literal UTC instants are supplied by the immutable owner. Legacy MySQL
+            // TIMESTAMP defaults can silently synthesize zero/current dates in strict mode.
+            $table->dateTime('sealed_at');
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('effective_at')->nullable();
             $table->timestamp('activated_at')->nullable();
@@ -45,7 +47,7 @@ return new class extends Migration
             $table->string('evaluator_id', 150);
             $table->json('plan');
             $table->char('plan_hash', 64);
-            $table->timestamp('sealed_at');
+            $table->dateTime('sealed_at');
             $table->timestamps();
         });
         Schema::create('specialist_council_evaluation_deliveries', function (Blueprint $table): void {
@@ -64,9 +66,9 @@ return new class extends Migration
             $table->char('event_key', 64)->unique('sc_event_key_unique');
             $table->string('symbol', 30);
             $table->string('market', 50);
-            $table->timestamp('event_start');
-            $table->timestamp('event_end');
-            $table->timestamp('available_at');
+            $table->dateTime('event_start');
+            $table->dateTime('event_end');
+            $table->dateTime('available_at');
             $table->timestamp('matured_at')->nullable();
             $table->json('provenance');
             $table->timestamps();
@@ -81,7 +83,7 @@ return new class extends Migration
             $table->string('use', 30);
             $table->string('consumer_id', 150);
             $table->string('run_id', 100)->nullable()->index('sc_use_run_index');
-            $table->timestamp('as_of');
+            $table->dateTime('as_of');
             $table->char('policy_hash', 64);
             $table->timestamps();
         });

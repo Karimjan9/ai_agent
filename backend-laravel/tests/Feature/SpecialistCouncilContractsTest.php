@@ -415,6 +415,37 @@ PY;
         $this->assertContains('sc_delivery_version_index', array_column(\Illuminate\Support\Facades\Schema::getIndexes('specialist_council_evaluation_deliveries'), 'name'));
     }
 
+    public function test_mysql_grammar_requires_literal_datetime_without_implicit_timestamp_defaults(): void
+    {
+        $connection = new \Illuminate\Database\MySqlConnection(null, 'schema_compile_only', '', [
+            'driver' => 'mysql', 'version' => '5.7.0', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_unicode_ci',
+            'strict' => true,
+        ]);
+        $connection->setSchemaGrammar(new \Illuminate\Database\Schema\Grammars\MySqlGrammar($connection));
+        $compiled = [];
+        \Illuminate\Support\Facades\Schema::shouldReceive('create')->times(7)->andReturnUsing(
+            function (string $table, \Closure $callback) use ($connection, &$compiled): void {
+                $blueprint = new \Illuminate\Database\Schema\Blueprint($connection, $table);
+                $blueprint->create(); $callback($blueprint);
+                $compiled[$table] = $blueprint->toSql();
+            }
+        );
+        $migration = require database_path('migrations/2026_10_05_120000_create_specialist_council_contracts.php');
+        $migration->up();
+        $this->assertCount(7, $compiled);
+        foreach (['specialist_council_versions' => ['sealed_at'], 'specialist_council_evaluation_plans' => ['sealed_at'],
+            'specialist_council_data_events' => ['event_start', 'event_end', 'available_at'],
+            'specialist_council_data_uses' => ['as_of']] as $table => $columns) {
+            $create = $compiled[$table][0];
+            foreach ($columns as $column) {
+                $this->assertMatchesRegularExpression('/`'.preg_quote($column, '/').'` datetime not null(?:,|\\))/', $create);
+                $this->assertStringNotContainsString('`'.$column.'` timestamp', $create);
+            }
+            $this->assertStringNotContainsString('CURRENT_TIMESTAMP', $create);
+            $this->assertStringNotContainsString('0000-00-00', $create);
+        }
+    }
+
     private function boundPlanFixture(): array
     {
         $version = $this->draft(); $service = app(SpecialistCouncilLifecycleService::class);
