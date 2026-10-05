@@ -13,6 +13,8 @@ use App\Services\LabReplayRecoveryService;
 use App\Services\LearningProtocolSafetyService;
 use App\Services\OperatorApprovalService;
 use App\Services\TechnicalFailureClassifierService;
+use App\Services\TechnicalGenerationRecoveryService;
+use App\Services\AutonomousModeService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +24,7 @@ use RuntimeException;
 /** Requeues bounded evaluator failures without turning them into strategy evidence. */
 class RecoverLabEvaluationErrors extends Command
 {
-    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay/transport timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--after-dataset-contract-repair : Retry only dataset-contract quarantine after per-lane immutable snapshot repair; generation is required} {--apply : Dispatch the bounded recovery after operator approval} {--autonomous : One-shot timeout recovery under the lighthouse lifecycle policy} {--approved-by=} {--approval-reason=} {--json}';
+    protected $signature = 'trading:recover-lab-evaluation-errors {symbol?} {--timeframe=H1} {--generation= : Restrict recovery to one laboratory generation} {--limit=20} {--mode=screen : Recovery queue mode: screen or full} {--after-auth-repair : Retry only agents whose previous evaluator error was an invalid internal API token} {--after-service-repair : Retry only transport errors after the AI service was restarted} {--after-code-repair : Retry only bounded application-code errors after an explicit code repair; generation is required} {--after-runtime-schema-repair : Retry only bounded schema/runtime errors after the evaluator process was restarted} {--after-ipc-repair : Retry only bounded replay timeouts caused by the evaluator evidence transport containment fix} {--after-timeout-budget-repair : Retry only quarantined agents whose immutable screen run records a bounded replay/transport timeout; generation is required} {--after-retry-budget-repair : Retry only a named generation whose jobs exhausted the old shared-lane retry budget} {--after-dataset-contract-repair : Retry only dataset-contract quarantine after per-lane immutable snapshot repair; generation is required} {--retire-frozen-release : Terminal-only disposition of drained technical rows whose valid original evaluator source has changed; never dispatch replay} {--apply : Dispatch recovery or append terminal-only disposition after authorization} {--autonomous : Bounded recovery or terminal-only source retirement under the lighthouse lifecycle policy} {--approved-by=} {--approval-reason=} {--json}';
 
     protected $description = 'Requeue transport/evaluator failures after a clean AI service restart';
 
@@ -67,17 +69,18 @@ class RecoverLabEvaluationErrors extends Command
         $afterTimeoutBudgetRepair = (bool) $this->option('after-timeout-budget-repair');
         $afterRetryBudgetRepair = (bool) $this->option('after-retry-budget-repair');
         $afterDatasetContractRepair = (bool) $this->option('after-dataset-contract-repair');
+        $retireFrozenRelease = (bool) $this->option('retire-frozen-release');
         if ($autonomous) {
             $lighthouse = $symbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
                 && $timeframe === LearningProtocolSafetyService::LIGHTHOUSE_TIMEFRAME;
-            $boundedAutonomousMode = (int) $afterTimeoutBudgetRepair + (int) $afterRetryBudgetRepair === 1;
+            $boundedAutonomousMode = (int) $afterTimeoutBudgetRepair + (int) $afterRetryBudgetRepair + (int) $retireFrozenRelease === 1;
             if (! $apply
                 || ! (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false)
                 || ! $lighthouse
                 || ! $boundedAutonomousMode
                 || $fullRecovery
                 || $generationNumber === null) {
-                $this->error('Autonomous technical recovery requires --apply, XAUUSD H1, --generation, screen mode, and exactly one bounded timeout/retry-budget repair under the enabled lighthouse policy.');
+                $this->error('Autonomous technical recovery requires --apply, XAUUSD H1, --generation, screen mode, and exactly one bounded timeout/retry-budget/terminal-source mode under the enabled lighthouse policy.');
 
                 return self::FAILURE;
             }
@@ -108,12 +111,20 @@ class RecoverLabEvaluationErrors extends Command
 
             return self::FAILURE;
         }
-        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair])->filter()->count() > 1) {
+        if ($retireFrozenRelease && ($generationNumber === null || $fullRecovery || $symbol !== 'XAUUSD' || $timeframe !== 'H1')) {
+            $this->error('Terminal source retirement requires a named XAUUSD H1 generation and screening scope.');
+            return self::FAILURE;
+        }
+        if (collect([$afterAuthRepair, $afterServiceRepair, $afterCodeRepair, $afterRuntimeSchemaRepair, $afterIpcRepair, $afterTimeoutBudgetRepair, $afterRetryBudgetRepair, $afterDatasetContractRepair, $retireFrozenRelease])->filter()->count() > 1) {
             $this->error('Choose only one bounded repair mode.');
 
             return self::FAILURE;
         }
         $queueBacklog = $this->queueBacklog();
+        if ($retireFrozenRelease) {
+            return $this->retireFrozenRelease($recovery, $approvals, $symbol, $timeframe, $generationNumber,
+                min(2, $limit), $apply, $autonomous, $queueBacklog);
+        }
         if ($queueBacklog['total'] === null || $queueBacklog['total'] > 0) {
             $this->info(sprintf(
                 'Evaluation-error recovery deferred: %d existing lab job(s) remain in %s.',
@@ -626,6 +637,71 @@ class RecoverLabEvaluationErrors extends Command
         return self::SUCCESS;
     }
 
+    /** Existing recovery owner, terminal-only mode; a different evaluator never replays old arms. */
+    private function retireFrozenRelease(LabReplayRecoveryService $recovery, OperatorApprovalService $approvals,
+        string $symbol, string $timeframe, int $generationNumber, int $limit, bool $apply, bool $autonomous, array $backlog): int
+    {
+        $result = ['protocol' => 'frozen_research_source_retirement_v1', 'generation' => $generationNumber,
+            'dispatched' => 0, 'maximum_dispositions' => $limit, 'terminally_reconciled_agent_ids' => [],
+            'blocked_recovery_contracts' => [], 'promotion_evidence' => false, 'strategy_verdict' => 'withheld'];
+        $report = function (array $payload): int {
+            if ($this->option('json')) $this->line(json_encode($payload, JSON_UNESCAPED_SLASHES));
+            else $this->info(($payload['status'] ?? 'blocked').': no replay dispatched; '.count($payload['terminally_reconciled_agent_ids'] ?? []).' terminal disposition(s).');
+            return ($payload['status'] ?? '') === 'blocked' ? self::FAILURE : self::SUCCESS;
+        };
+        if ($backlog['total'] === null || $backlog['total'] > 0) {
+            return $report([...$result, 'status' => 'blocked', 'reason_code' => 'FROZEN_RELEASE_RETIREMENT_QUEUE_NOT_IDLE']);
+        }
+        $probe = app(TechnicalGenerationRecoveryService::class)->readiness();
+        if (($probe['ready'] ?? false) !== true || ($probe['idle'] ?? false) !== true
+            || LabEvaluationRun::query()->whereIn('status', ['started', 'running', 'processing'])->exists()) {
+            return $report([...$result, 'status' => 'blocked', 'reason_code' => 'FROZEN_RELEASE_RETIREMENT_REPLAY_NOT_IDLE']);
+        }
+        if ($apply && $autonomous) {
+            $mode = app(AutonomousModeService::class)->status($symbol, $timeframe);
+            if (($mode['enabled'] ?? false) !== true || ($mode['state'] ?? null) !== 'running') {
+                return $report([...$result, 'status' => 'blocked', 'reason_code' => 'FROZEN_RELEASE_RETIREMENT_CONTROL_FENCE']);
+            }
+        }
+        $agents = LabAgent::query()->with(['modelVersion', 'generation'])
+            ->where('symbol', $symbol)->where('timeframe', $timeframe)
+            ->whereIn('lifecycle_status', ['technical_quarantine', 'evaluation_error'])
+            ->whereHas('generation', fn ($query) => $query->where('generation', $generationNumber)
+                ->whereIn('status', ['technical_quarantine', 'screened', 'completed', 'failed', 'abandoned']))
+            ->orderBy('id')->get();
+        $classes = app(TechnicalFailureClassifierService::class)->forAgents($agents);
+        $agents = $agents->filter(fn (LabAgent $agent): bool => data_get($classes, $agent->id.'.blocks_global_generation') === true)
+            ->take($limit)->values();
+        if ($agents->isEmpty()) return $report([...$result, 'status' => 'nothing_to_retire', 'reason_code' => 'NO_ACTIONABLE_FROZEN_TECHNICAL_ROWS']);
+        if ($apply && ! $autonomous) {
+            try {
+                $approvals->requireForApply('retire-frozen-research-source', $this->option('approved-by'), $this->option('approval-reason'),
+                    ['symbol' => $symbol, 'timeframe' => $timeframe, 'generation' => $generationNumber,
+                        'agent_ids' => $agents->pluck('id')->all(), 'terminal_only' => true, 'promotion_evidence' => false]);
+            } catch (RuntimeException $error) {
+                return $report([...$result, 'status' => 'blocked', 'reason_code' => 'FROZEN_RELEASE_RETIREMENT_APPROVAL_MISSING']);
+            }
+        }
+        foreach ($agents as $agent) {
+            try {
+                $proof = $recovery->frozenSourceRetirementProof($agent);
+                $proof['original_failure_reason_code'] = data_get($classes, $agent->id.'.reason_code');
+                if ($apply) {
+                    $this->sealUnrecoverableFrozenContract($agent, 'screen', new RuntimeException('RESEARCH_RELEASE_SOURCE_DRIFT'),
+                        'release_retirement', $proof);
+                    $result['terminally_reconciled_agent_ids'][] = (int) $agent->id;
+                } else $result['eligible_agent_ids'][] = (int) $agent->id;
+            } catch (\Throwable $error) {
+                $result['blocked_recovery_contracts'][] = ['agent_id' => (int) $agent->id,
+                    'generation_id' => (int) $agent->lab_generation_id, 'reason_code' => substr($error->getMessage(), 0, 200)];
+            }
+        }
+        return $report([...$result, 'status' => ! $apply ? 'dry_run'
+            : ($result['terminally_reconciled_agent_ids'] !== [] ? 'terminally_reconciled' : 'blocked'),
+            'reason_code' => $result['terminally_reconciled_agent_ids'] !== []
+                ? 'FROZEN_RECOVERY_CONTRACT_UNAVAILABLE' : 'FROZEN_RELEASE_RETIREMENT_NOT_PROVEN']);
+    }
+
     private function isRetryBudgetFailure(LabAgent $agent): bool
     {
         $reason = strtolower((string) $agent->decision_reason);
@@ -661,17 +737,29 @@ class RecoverLabEvaluationErrors extends Command
         string $mode,
         \Throwable $exception,
         string $repairMode,
+        ?array $sourceRetirementProof = null,
     ): void {
-        DB::transaction(function () use ($agent, $mode, $exception, $repairMode): void {
+        DB::transaction(function () use ($agent, $mode, $exception, $repairMode, $sourceRetirementProof): void {
             $agent->loadMissing(['modelVersion', 'generation']);
-            $model = $agent->modelVersion?->fresh();
+            $model = $agent->modelVersion ? \App\Models\ModelVersion::query()->whereKey($agent->model_version_id)->lockForUpdate()->first() : null;
             if (! $model) {
                 throw new RuntimeException('Recovery terminal disposition requires a model version.');
             }
+            if ($sourceRetirementProof !== null) {
+                // Revalidate inside the projection transaction; a changed
+                // original seal/model must not inherit a stale proof.
+                $verified = app(LabReplayRecoveryService::class)->frozenSourceRetirementProof($agent->fresh(['modelVersion', 'generation']));
+                if ($verified !== array_diff_key($sourceRetirementProof, ['original_failure_reason_code' => true])) {
+                    throw new RuntimeException('FROZEN_RELEASE_RETIREMENT_PROOF_CHANGED');
+                }
+            }
             $metadata = (array) $model->metadata;
-            $counter = $repairMode === 'retry_budget'
-                ? 'retry_budget_repair_recovery_attempts'
-                : 'timeout_budget_repair_recovery_attempts';
+            if (data_get($model->metadata, 'technical_recovery_terminal_disposition.protocol') === 'frozen_recovery_contract_terminal_v1') return;
+            $counter = match ($repairMode) {
+                'retry_budget' => 'retry_budget_repair_recovery_attempts',
+                'release_retirement' => 'frozen_release_retirement_attempts',
+                default => 'timeout_budget_repair_recovery_attempts',
+            };
             data_set($metadata, $counter, max(1, (int) data_get($metadata, $counter, 0)));
             data_set($metadata, 'technical_recovery_terminal_disposition', [
                 'protocol' => 'frozen_recovery_contract_terminal_v1',
@@ -682,6 +770,7 @@ class RecoverLabEvaluationErrors extends Command
                 'sealed_at' => now()->utc()->toIso8601String(),
                 'strategy_verdict' => 'withheld',
                 'promotion_evidence' => false,
+                ...($sourceRetirementProof !== null ? ['source_retirement_proof' => $sourceRetirementProof] : []),
             ]);
             $model->update(['metadata' => $metadata]);
             $agent->update([
@@ -707,6 +796,7 @@ class RecoverLabEvaluationErrors extends Command
                     'error' => substr($exception->getMessage(), 0, 500),
                     'strategy_verdict' => 'withheld',
                     'promotion_evidence' => false,
+                    ...($sourceRetirementProof !== null ? ['source_retirement_proof' => $sourceRetirementProof] : []),
                 ],
                 'occurred_at' => now(),
             ]);
@@ -719,6 +809,7 @@ class RecoverLabEvaluationErrors extends Command
                     'error' => substr($exception->getMessage(), 0, 500),
                     'strategy_verdict' => 'withheld',
                     'promotion_evidence' => false,
+                    ...($sourceRetirementProof !== null ? ['source_retirement_proof' => $sourceRetirementProof] : []),
                 ],
                 $mode === 'full' ? 'full_validation' : 'screening',
                 null,

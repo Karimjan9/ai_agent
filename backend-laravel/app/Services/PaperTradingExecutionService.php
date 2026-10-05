@@ -10,12 +10,14 @@ use App\Models\PaperOrder;
 use App\Models\PaperSignal;
 use App\Models\PaperSignalOutcome;
 use App\Models\Symbol;
+use App\Models\SpecialistCouncilVersion;
 use App\Services\MarketData\CandlePayloadService;
 use App\Services\MarketData\MarketReadinessService;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 
 class PaperTradingExecutionService
 {
@@ -60,6 +62,11 @@ class PaperTradingExecutionService
     public function run(): array
     {
         $stats = ['mode' => (string) config('services.paper.mode', 'shadow'), 'broker' => 'simulated', 'captured' => 0, 'opened' => 0, 'closed' => 0, 'candidates' => 0];
+        // Adoption uses this existing paper clock, before fresh candidate reads.
+        // It is not a new scheduler and cannot turn a draft/research comparison
+        // into authority: activateDue rechecks the original independent exam
+        // and each member's native paper admission under its lifecycle lock.
+        $stats['specialist_adoption'] = $this->adoptDueSpecialistCouncils();
         $allCandidates = ModelMarketPerformance::with('modelVersion')
             ->where('evidence_status', 'valid')
             ->whereHas('modelVersion', fn ($query) => $query->where('evidence_status', 'valid'))
@@ -94,7 +101,9 @@ class PaperTradingExecutionService
         // belongs to the passed combined council proxy; otherwise a strong
         // member could silently bypass the specialist -> router -> replay
         // sequence and reintroduce the portfolio-rescues-failure problem.
-        $candidates = $allCandidates->filter(fn (ModelMarketPerformance $candidate): bool => $this->paperTrackAllowed($candidate)
+        $nativeIntakeAllowed = ! (bool) config('services.paper.specialist_council_enabled', false)
+            || ($stats['specialist_adoption']['intake_allowed'] ?? false) === true;
+        $candidates = $allCandidates->filter(fn (ModelMarketPerformance $candidate): bool => $nativeIntakeAllowed && $this->paperTrackAllowed($candidate)
         )->values();
 
         foreach ($candidates as $candidate) {
@@ -116,6 +125,47 @@ class PaperTradingExecutionService
         }
 
         return $stats;
+    }
+
+    /** Bounded prospective adoption; a rejected version never blocks owned position management. */
+    private function adoptDueSpecialistCouncils(): array
+    {
+        $base = ['protocol' => 'specialist_paper_adoption_cycle_v1', 'adoptions' => [], 'promotion_evidence' => false];
+        if (! (bool) config('services.paper.specialist_council_enabled', false)) {
+            return [...$base, 'status' => 'disabled', 'intake_allowed' => false, 'reason_code' => 'SPECIALIST_PAPER_DISABLED'];
+        }
+        $symbol = (string) config('services.xauusd_organism.symbol', 'XAUUSD');
+        $timeframe = (string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1');
+        $mode = app(AutonomousModeService::class)->status($symbol, $timeframe);
+        if (($mode['enabled'] ?? false) !== true || ($mode['state'] ?? null) !== 'running') {
+            return [...$base, 'status' => 'blocked', 'intake_allowed' => false,
+                'reason_code' => 'SPECIALIST_ADOPTION_AUTONOMY_FENCE', 'controller_state' => $mode['state'] ?? 'unavailable'];
+        }
+        if (! Schema::hasTable('specialist_council_versions')) {
+            return [...$base, 'status' => 'blocked', 'intake_allowed' => false, 'reason_code' => 'SPECIALIST_COUNCIL_STORAGE_UNAVAILABLE'];
+        }
+        $dueQuery = SpecialistCouncilVersion::query()->where('state', 'scheduled')->where('effective_at', '<=', now()->utc());
+        $dueCount = (clone $dueQuery)->distinct()->count('council_id');
+        // Bounded read-only paging uses the existing monitor minute. Eight
+        // corrupt versions cannot permanently shadow a ninth ready council;
+        // it adds no lease, authority, persistent cache or scheduling owner.
+        $pages = max(1, (int) ceil($dueCount / 8));
+        $page = intdiv(now()->utc()->timestamp, 60) % $pages;
+        $due = $dueQuery->select('council_id')->distinct()->orderBy('council_id')->offset($page * 8)->limit(8)->pluck('council_id');
+        $adoptions = [];
+        foreach ($due as $councilId) {
+            try {
+                $result = $this->specialistCouncils->activateDue((string) $councilId);
+            } catch (\Throwable $error) {
+                // A malformed/seal-drifted version remains blocked. Other due
+                // councils and the old positions still reach their own owners.
+                $result = ['allowed' => false, 'reason_code' => 'COUNCIL_ADOPTION_REVALIDATION_FAILED',
+                    'error_class' => $error::class, 'promotion_evidence' => false];
+            }
+            $adoptions[] = ['council_id' => (string) $councilId, 'result' => $result];
+        }
+        return [...$base, 'status' => 'checked', 'intake_allowed' => true, 'maximum_councils_per_cycle' => 8,
+            'due_councils' => $dueCount, 'bounded_page' => $page, 'adoptions' => $adoptions];
     }
 
     private function paperTrackAllowed(ModelMarketPerformance $candidate): bool

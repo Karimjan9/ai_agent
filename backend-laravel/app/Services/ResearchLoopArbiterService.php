@@ -299,10 +299,10 @@ class ResearchLoopArbiterService
         // The new-generation constructor refuses that work with
         // RECOVER_TECHNICAL; selecting drift/new-data first only creates an
         // exit-zero blocked writer decision and strands the next passport.
-        // Ask the same velocity authority used by generation admission, but
-        // only when this lineage head actually has quarantined agents.
-        if ($latest && in_array((string) $latest->status, ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'], true)
-            && $latest->agents()->whereIn('lifecycle_status', ['evaluation_error', 'technical_quarantine'])->exists()) {
+        // Ask the same bounded-lookback authority used by generation admission.
+        // The actionable debt can belong to an older terminal generation; the
+        // already-reconciled lineage head must not receive endless no-op repairs.
+        if ($latest && in_array((string) $latest->status, ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'], true)) {
             $velocity = app(LearningVelocityGateService::class)->inspect($latest->laboratory);
             if ((string) data_get($velocity, 'status') === 'blocked_technical_recovery') {
                 $recoveryEnabled = (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false);
@@ -317,6 +317,7 @@ class ResearchLoopArbiterService
                         'generation' => $generation,
                         'closure' => $this->compactClosure($closure),
                         'technical_recovery_agents' => (int) data_get($velocity, 'technical_recovery_agents', 0),
+                        'technical_recovery_target' => data_get($velocity, 'technical_recovery_targets.0'),
                         'recovery_enabled' => $recoveryEnabled,
                     ], $dryRun);
             }
@@ -1115,6 +1116,11 @@ class ResearchLoopArbiterService
             'settlement_watermark' => $settlementWatermark,
             'run_control_revision' => data_get(app(AutonomousModeService::class)->status($symbol ?? 'XAUUSD', $timeframe ?? 'H1'), 'changed_at'),
         ];
+        if (is_array(data_get($evidence, 'technical_recovery_target'))) {
+            // Each bounded terminal disposition removes actual actionable IDs,
+            // even when the latest generation's status/count stays unchanged.
+            $state['technical_recovery_target'] = data_get($evidence, 'technical_recovery_target');
+        }
         if (is_array(data_get($evidence, 'archive_dependency'))) {
             // A missing/repaired archive may make the same terminal lineage
             // executable later. Retry only on an actual dependency change,

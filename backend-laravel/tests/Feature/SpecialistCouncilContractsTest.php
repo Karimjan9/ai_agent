@@ -11,6 +11,7 @@ use App\Models\PaperOrder;
 use App\Models\SpecialistCouncilVersion;
 use App\Services\ResearchPaperEpochContractService;
 use App\Services\ExecutionContractService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\SpecialistCouncilContractService;
 use App\Services\SpecialistCouncilDataUseService;
 use App\Services\SpecialistCouncilLifecycleService;
@@ -446,7 +447,126 @@ PY;
         }
     }
 
-    private function boundPlanFixture(): array
+    public function test_rollback_restores_future_entry_binding_for_shared_native_model_without_rebinding_position_pin(): void
+    {
+        $model = $this->model('shared-hour');
+        $previous = $this->draft([$this->passport('hour', $model)]);
+        $manifest = $previous->manifest;
+        unset($manifest['manifest_hash']);
+        $manifest['version'] = '2';
+        $service = app(SpecialistCouncilLifecycleService::class);
+        $current = $service->registerDraft($manifest, 'evolution-owner');
+        // Preapproved versions are fixtures for the rollback transition, not
+        // permission to bypass original independent approval in production.
+        $previous->update(['state' => 'retired', 'approved_at' => now(), 'retired_at' => now()]);
+        $current->update(['state' => 'active', 'approved_at' => now(), 'previous_version_id' => $previous->id]);
+        $pin = ['protocol' => SpecialistCouncilLifecycleService::BINDING_PROTOCOL,
+            'version_id' => $current->id, 'specialist_id' => 'hour', 'management_version' => 'management-v1'];
+        $model->update(['metadata' => [...$model->metadata, 'specialist_council_binding' => $pin]]);
+        $this->mock(\App\Services\PaperAuthorityAdmissionService::class, function ($mock): void {
+            $mock->shouldReceive('verifyFrozenCandidate')->andReturn(['allowed' => true, 'identity_hash' => 'fixture-only']);
+            $mock->shouldReceive('championEligible')->andReturn(true);
+            $mock->shouldReceive('observationReadiness')->andReturn(['allowed' => true]);
+        });
+
+        $result = $service->rollback($current, 'prospective council regression');
+        $this->assertTrue($result['allowed']);
+        $this->assertSame($previous->id, data_get($model->fresh()->metadata, 'specialist_council_binding.version_id'));
+        $this->assertSame('active', $previous->fresh()->state);
+        $this->assertSame('rolled_back', $current->fresh()->state);
+        $this->assertTrue($service->paperBinding($model->fresh(), 'XAUUSD', 'H1')['allowed']);
+        $management = $service->paperBinding($model->fresh(), 'XAUUSD', 'H1', [...$pin, 'management_only' => true]);
+        $this->assertTrue($management['allowed']);
+        $this->assertSame($current->id, $management['version_id']);
+        $this->assertSame($current->id, $pin['version_id']);
+    }
+
+    public function test_rollback_cannot_restore_shared_model_with_changed_native_parameters(): void
+    {
+        $model = $this->model('shared-hour');
+        $previous = $this->draft([$this->passport('hour', $model)]);
+        $manifest = $previous->manifest;
+        unset($manifest['manifest_hash']);
+        $manifest['version'] = '2';
+        $service = app(SpecialistCouncilLifecycleService::class);
+        $current = $service->registerDraft($manifest, 'evolution-owner');
+        $previous->update(['state' => 'retired', 'approved_at' => now(), 'retired_at' => now()]);
+        $current->update(['state' => 'active', 'approved_at' => now(), 'previous_version_id' => $previous->id]);
+        $model->update(['parameters' => ['ema_fast' => 99, 'ema_slow' => 100]]);
+        $result = $service->rollback($current, 'changed native source');
+        $this->assertFalse($result['allowed']);
+        $this->assertSame('COUNCIL_MEMBER_NATIVE_MODEL_DRIFT', $result['reason_code']);
+        $this->assertSame('active', $current->fresh()->state);
+        $this->assertSame('retired', $previous->fresh()->state);
+    }
+
+    public function test_research_council_screen_cannot_become_an_ordinary_economic_survivor_or_repair_anchor(): void
+    {
+        [$version, $carrier] = $this->boundPlanFixture();
+        $lab = AiLaboratory::create(['symbol' => 'XAUUSD', 'name' => 'Council research gate', 'timeframe' => 'H1',
+            'strategy_families' => ['mean_reversion'], 'is_active' => true]);
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'historical_research', 'population_size' => 1, 'status' => 'screening']);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $carrier->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'mean_reversion',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => []]);
+        $this->mock(\App\Services\FailureRepairAnchorService::class, function ($mock): void {
+            $mock->shouldNotReceive('recordFromScreeningDecision');
+            $mock->shouldNotReceive('recordRepairScreeningOutcome');
+        });
+        $this->mock(\App\Services\CooperativeExperimentSettlementService::class, function ($mock): void {
+            $mock->shouldNotReceive('settleGeneration');
+        });
+        $result = app(\App\Services\CandidateGateDecisionService::class)->recordScreening($agent,
+            ['total_trades' => 100, 'profit_factor' => 10, 'net_profit' => 1000, 'max_drawdown' => 0,
+                'risk_of_ruin' => 0, 'screening_survival' => ['status' => 'survivor']]);
+        $this->assertSame('failed', $result->decision);
+        $this->assertSame(['SPECIALIST_COUNCIL_RESEARCH_ONLY'], $result->reason_codes);
+        $this->assertTrue($result->metrics['specialist_council_research_only']);
+        $this->assertFalse($result->metrics['promotion_evidence']);
+        $this->assertSame('research', app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($carrier));
+        $selection = app(\App\Services\CandidateGateDecisionService::class)->recordFullReplaySelection($agent, true);
+        $this->assertSame('failed', $selection->decision);
+        $this->assertSame(['SPECIALIST_COUNCIL_RESEARCH_ONLY'], $selection->reason_codes);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        try {
+            app(\App\Services\LabAgentEvaluationService::class)->evaluate($agent);
+            $this->fail('Research plan entered ordinary full validation.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('SPECIALIST_COUNCIL_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN', $error->getMessage());
+        }
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_council_screen_purpose_cannot_be_forged_in_model_metadata(): void
+    {
+        [$version, $carrier] = $this->boundPlanFixture();
+        $metadata = $carrier->metadata;
+        $metadata['specialist_council_evaluation']['plan_hash'] = str_repeat('a', 64);
+        $metadata['specialist_council_evaluation']['purpose'] = 'independent';
+        $carrier->update(['metadata' => $metadata]);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('DECLARED_COUNCIL_EVALUATION_BINDING_INVALID');
+        app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($carrier->fresh());
+    }
+
+    public function test_prepared_source_drift_is_rejected_before_original_replay(): void
+    {
+        [$version, , , $request] = $this->boundPlanFixture(str_repeat('0', 64));
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('COUNCIL_PREPARATION_SOURCE_CHANGED_BEFORE_ORIGINAL_REPLAY');
+        app(SpecialistCouncilLifecycleService::class)->bindEvaluationRequest($version->fresh(), 'candidate-2025', $request);
+    }
+
+    public function test_current_prepared_source_can_bind_original_request(): void
+    {
+        $currentSource = app(LabImmutableEvidenceService::class)->codeHash();
+        [$version, , , $request] = $this->boundPlanFixture($currentSource);
+        $bound = app(SpecialistCouncilLifecycleService::class)->bindEvaluationRequest($version->fresh(), 'candidate-2025', $request);
+        $this->assertSame($version->id, $bound['specialist_council_evaluation']['version_id']);
+    }
+
+    private function boundPlanFixture(?string $preparationSource = null): array
     {
         $version = $this->draft(); $service = app(SpecialistCouncilLifecycleService::class);
         $carrier = $service->attachResearchModel($version, $this->model('carrier'));
@@ -455,6 +575,7 @@ PY;
         for ($index = 0; $index < 6; $index++) $rows[] = ['time' => \Carbon\CarbonImmutable::parse('2025-01-06T02:00:00Z')->addMinutes(5 * $index)->toIso8601String()];
         $probe = app(\App\Services\ProspectiveRepairProbeWindowService::class)->seal($rows, str_repeat('d', 64), $execution['execution_hash'], 'original-council-plan', 4, 2);
         $plan = $this->plan($version);
+        if ($preparationSource !== null) $plan['preparation_source_hash'] = $preparationSource;
         $plan['execution_hash'] = $execution['execution_hash']; $plan['cost_model'] = $execution['parameters'];
         $plan['risk_policy'] = array_diff_key($version->manifest['execution'], ['id' => true, 'version' => true]);
         $plan['risk_policy']['risk_per_trade_percent'] = .5;

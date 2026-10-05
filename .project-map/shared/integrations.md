@@ -19,6 +19,53 @@ The additive
 paper account remains opt-in and uses the original E3/E4 intake/execution owner;
 native deployment grants no paper or live authority.
 
+`SpecialistCouncilPreparationService` binds a complete prospective research
+manifest and original candidate/solo/ablation plan inside an unused canonical
+draft under the existing dispatch lease; preparation does not call Python or
+enqueue jobs. The ordinary dispatcher then owns data/MTF/source sealing and
+each original request. Research arms retain their native evidence but cannot
+become generic economic survivors or enter full selection merely because the
+comparison is promising. Independent qualification remains a separate complete
+original-authorized-window boundary.
+
+An optional original council `discovery_bundle_manifest` is accepted only by
+the existing MTF readiness/stream restoration owner with exact plan UTC bounds,
+15000 evaluated rows and 512 warmup rows. The preparation seals its original
+bundle/manifest hashes; dispatcher, snapshot admission and evaluator share
+`inspectDiscoveryOwner`, alongside the unchanged Academy guard. Whole-generation
+`isResearchGeneration` rechecks all native source and arm model hashes plus
+current source before research-only screening/full-selection guards. A declared
+invalid owner throws instead of falling through to ordinary authority. No
+full replay or independent evidence is created by this clean-discovery route.
+
+The evaluation-delivery consumer publishes original council assessment and
+`specialist_council_research_feedback_v1` atomically through the existing
+research conversion kernel. Receipt/knowledge closure distinguishes invalid
+technical evidence, missing producer data, insufficient matured power and
+local promising/negative/null comparison. Follow-ups carry explicit blocked,
+non-executable dependencies; they are not requests to an unknown new executor.
+The independent-validation dependency retains the post-paper authorized-data
+policy, and no planned window authorizes 2026 research or fabricated credit.
+Negative/null closes only the original scoped hypothesis, never a global ban.
+
+Later preparation seals at most eight verified original feedback IDs/hashes,
+source-run IDs and a digest in `specialist_council_research_consumption_v1`.
+Retry rechecks that original snapshot rather than reranking on newer outcomes.
+This boundary is research-question consumption, not inferred parameter mutation,
+confirmed inheritance, paper or live permission. A bounded same-release
+completed-question lookup compares native semantics and physical event bounds,
+not fresh council/provider/hash labels; repeated events are never independent
+evidence. The module dependency DAG describes prerequisites, not every reverse
+receipt callback: these writes reuse the causal module's existing conversion,
+knowledge and durable-work owners without introducing another scheduler.
+
+Future native entry adoption and rollback publish versioned model bindings
+only after original qualification, member seals and paper guards are rechecked.
+Rollback restores the prior approved version's future-entry pointers, including
+shared member models; original paper orders retain their council/management
+pins through retirement or rollback. The existing E3/E4 sentinel/discipline/risk
+owner and explicit specialist-paper opt-in remain mandatory.
+
 Paper admission depends on original-source and exact-trait causal verification.
 Causal discovery and Research Mentor do not require paper profitability; later
 performance/Economic Parent handling consumes already sealed E4 receipts as

@@ -211,6 +211,7 @@ class LearningVelocityGateService
         $unresolved = 0;
         $technicalRecovery = 0;
         $activeLearning = 0;
+        $technicalRecoveryTargets = [];
 
         foreach ($generations as $generation) {
             $agents = $generation->agents()->with(['modelVersion', 'generation'])->get();
@@ -224,9 +225,9 @@ class LearningVelocityGateService
             $screenPasses = $screen->where('decision', 'passed')->count();
             $classifications = app(TechnicalFailureClassifierService::class)->forAgents($agents
                 ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)));
-            $technical = $agents
-                ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent, $classifications[(int) $agent->id] ?? []))
-                ->count();
+            $recoverableAgents = $agents
+                ->filter(fn (LabAgent $agent): bool => $this->requiresTechnicalRecovery($agent, $classifications[(int) $agent->id] ?? []));
+            $technical = $recoverableAgents->count();
             $capabilityQuarantined = $agents
                 ->filter(fn (LabAgent $agent): bool => in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true))
                 ->filter(fn (LabAgent $agent): bool => data_get(
@@ -243,6 +244,9 @@ class LearningVelocityGateService
             }
             if ($technical > 0 && $screenPasses === 0 && $fullProgress === 0) {
                 $technicalRecovery += $technical;
+                $technicalRecoveryTargets[] = ['generation_id' => (int) $generation->id,
+                    'generation' => (int) $generation->generation,
+                    'agent_ids' => $recoverableAgents->pluck('id')->map(fn ($id): int => (int) $id)->sort()->values()->all()];
             }
             $isUnresolved = $screenPasses > 0 && $fullProgress === 0;
             if ($isUnresolved) {
@@ -327,6 +331,7 @@ class LearningVelocityGateService
             'max_unresolved_screen_generations' => $maxUnresolved,
             'unresolved_screen_generations' => $unresolved,
             'technical_recovery_agents' => $technicalRecovery,
+            'technical_recovery_targets' => $technicalRecoveryTargets,
             'active_learning_agents' => $activeLearning,
             'learning_starvation' => $starvation,
             'health_layers' => $layers,

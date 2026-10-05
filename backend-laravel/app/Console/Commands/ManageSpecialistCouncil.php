@@ -4,8 +4,10 @@ namespace App\Console\Commands;
 
 use App\Models\ModelVersion;
 use App\Models\LabAgent;
+use App\Models\LabGeneration;
 use App\Models\SpecialistCouncilVersion;
 use App\Services\SpecialistCouncilLifecycleService;
+use App\Services\SpecialistCouncilPreparationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -13,7 +15,9 @@ use InvalidArgumentException;
 /** Operator entrypoint; native population/dispatcher remains the only generation/queue owner. */
 class ManageSpecialistCouncil extends Command
 {
-    protected $signature = 'trading:specialist-council {action : register|plan|attach-arm|status|approve|schedule|rollback}
+    protected $signature = 'trading:specialist-council {action : prepare|register|plan|attach-arm|status|approve|schedule|rollback}
+        {--generation-id= : Constructor-complete unused canonical draft ID, for prepare}
+        {--preparation= : Workspace JSON prospective manifest and complete research plan}
         {--version-id= : Persisted council version ID}
         {--manifest= : Workspace JSON manifest, for register}
         {--carrier-model= : Unobserved native aggregate model ID, for register}
@@ -31,7 +35,12 @@ class ManageSpecialistCouncil extends Command
     {
         try {
             $action = (string) $this->argument('action');
-            if ($action === 'register') {
+            if ($action === 'prepare') {
+                $result = app(SpecialistCouncilPreparationService::class)->prepare(
+                    LabGeneration::findOrFail($this->positiveId('generation-id')),
+                    $this->jsonFile((string) $this->option('preparation')),
+                );
+            } elseif ($action === 'register') {
                 $manifest = $this->jsonFile((string) $this->option('manifest'));
                 $carrier = ModelVersion::findOrFail($this->positiveId('carrier-model'));
                 if (! LabAgent::where('model_version_id', $carrier->id)->exists()) throw new InvalidArgumentException('CANONICAL_UNOBSERVED_LAB_CARRIER_REQUIRED');

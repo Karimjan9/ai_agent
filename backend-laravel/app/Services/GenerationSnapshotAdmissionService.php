@@ -35,11 +35,16 @@ class GenerationSnapshotAdmissionService
             ));
         }
         if ($this->requiresClosedMtfBundle($generation)) {
+            $manifest = (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []);
+            $academyDiscoveryOwner = $generation->trigger_type === 'academy_experiment'
+                && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only';
+            $nativeDiscoveryOwner = ! $academyDiscoveryOwner
+                && ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL
+                && app(SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($generation, $manifest)['allowed'];
             $reasons = array_merge($reasons, $this->mtfBundleReasons(
                 (string) data_get($generation->trigger_context, 'mtf_bundle_hash', ''),
-                (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []),
-                $generation->trigger_type === 'academy_experiment'
-                    && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only',
+                $manifest,
+                $academyDiscoveryOwner || $nativeDiscoveryOwner,
             ));
         }
         foreach ($generation->agents as $agent) {

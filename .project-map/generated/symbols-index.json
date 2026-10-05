@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T04:27:24.322Z",
-  "source_digest": "60eea21046977933ba1df0f0ea8abca978a014f6df871e1c949da8e5de63c27c",
-  "source_file_count": 1507,
-  "git_head": "1529e132ac55d0e7fbdc4d9a1da37d00165a6a3b",
+  "generated_at": "2026-10-05T07:28:25.634Z",
+  "source_digest": "ab6901af1a1e29b957c0d0eda8b1bfe15f10a50892dc6b234d14a466082b7ab9",
+  "source_file_count": 1513,
+  "git_head": "d3a8f408c50264d8821581f9fd8b678d799c368e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -664,16 +664,16 @@
       "line": 32
     },
     {
+      "symbol": "causal",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
+      "line": 1002
+    },
+    {
       "symbol": "DispatchLabGeneration",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
       "line": 33
-    },
-    {
-      "symbol": "causal",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 999
     },
     {
       "symbol": "DispatchLearningLane",
@@ -841,7 +841,7 @@
       "symbol": "ManageSpecialistCouncil",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php",
-      "line": 14
+      "line": 16
     },
     {
       "symbol": "MaterializeFailureWoundSet",
@@ -1153,7 +1153,7 @@
       "symbol": "RecoverLabEvaluationErrors",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RecoverLabEvaluationErrors.php",
-      "line": 23
+      "line": 25
     },
     {
       "symbol": "RecoverLabFullEvaluationErrors",
@@ -5407,7 +5407,7 @@
       "symbol": "PaperTradingExecutionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/PaperTradingExecutionService.php",
-      "line": 20
+      "line": 22
     },
     {
       "symbol": "ParentAwareCreditService",
@@ -5810,6 +5810,18 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
       "line": 18
+    },
+    {
+      "symbol": "SpecialistCouncilPreparationService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
+      "line": 17
+    },
+    {
+      "symbol": "SpecialistCouncilResearchFeedbackService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 15
     },
     {
       "symbol": "SpecialistLeagueChallengeService",
@@ -7660,6 +7672,12 @@
       "line": 16
     },
     {
+      "symbol": "FrozenReleaseLookbackRecoveryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/FrozenReleaseLookbackRecoveryTest.php",
+      "line": 31
+    },
+    {
       "symbol": "FullStackPlaybookMasteryServiceTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/FullStackPlaybookMasteryServiceTest.php",
@@ -8323,13 +8341,31 @@
       "symbol": "SpecialistCouncilContractsTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php",
-      "line": 23
+      "line": 24
     },
     {
       "symbol": "SpecialistCouncilNativeIntegrationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
       "line": 14
+    },
+    {
+      "symbol": "SpecialistCouncilPaperAdoptionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php",
+      "line": 23
+    },
+    {
+      "symbol": "SpecialistCouncilPreparationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
+      "line": 28
+    },
+    {
+      "symbol": "SpecialistCouncilResearchFeedbackTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilResearchFeedbackTest.php",
+      "line": 22
     },
     {
       "symbol": "SpecialistLeagueChallengeServiceTest",

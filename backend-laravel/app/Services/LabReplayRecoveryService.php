@@ -20,6 +20,65 @@ class LabReplayRecoveryService
 
     public function __construct(private LabDatasetExportService $datasets) {}
 
+    /** Read-only proof for terminal retirement, never a permit to replay with new source. */
+    public function frozenSourceRetirementProof(LabAgent $agent): array
+    {
+        $agent->loadMissing(['generation', 'modelVersion']);
+        $generation = $agent->generation;
+        $seal = (array) data_get($generation?->trigger_context, 'research_release', []);
+        if (! $generation || ! $agent->modelVersion || $seal === []) throw new RuntimeException('FROZEN_SOURCE_RELEASE_MISSING');
+        $identity = $seal;
+        unset($identity['release_hash'], $identity['sealed_at'], $identity['promotion_evidence']);
+        foreach (['source_hash', 'python_source_hash', 'dataset_hash', 'release_hash'] as $field) {
+            if (! $this->isSha256((string) ($seal[$field] ?? ''))) throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_IDENTITY_INVALID');
+        }
+        if (($seal['protocol'] ?? null) !== ResearchReleaseSealService::PROTOCOL
+            || ! is_string($seal['php_version'] ?? null) || ! is_array($seal['agent_execution_hashes'] ?? null)
+            || ! hash_equals($seal['release_hash'], app(ExecutionContractService::class)->hashParameters($identity))) {
+            throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_IDENTITY_INVALID');
+        }
+        foreach ($seal['agent_execution_hashes'] as $agentId => $hash) {
+            if (! ctype_digit((string) $agentId) || ! $this->isSha256((string) $hash)) {
+                throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_IDENTITY_INVALID');
+            }
+        }
+        $contract = (array) data_get($agent->modelVersion->metadata, 'execution_contract', []);
+        $execution = app(ExecutionContractService::class)->hashParameters(
+            json_decode(json_encode((array) ($contract['parameters'] ?? $contract)), true));
+        if (! $this->isSha256((string) data_get($seal, 'agent_execution_hashes.'.$agent->id, ''))
+            || ! hash_equals((string) data_get($seal, 'agent_execution_hashes.'.$agent->id), $execution)
+            || ! hash_equals($seal['dataset_hash'], (string) data_get($generation->trigger_context, 'mtf_bundle_hash',
+                data_get($generation->trigger_context, 'canonical_dataset_snapshots.price.sha256', '')))) {
+            throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_EXECUTION_OR_DATA_IDENTITY_INVALID');
+        }
+        try {
+            if (! is_string($seal['sealed_at'] ?? null) || \Carbon\CarbonImmutable::parse($seal['sealed_at'])->greaterThan(now()->utc())) {
+                throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_SEAL_TIME_INVALID');
+            }
+        } catch (\Throwable) { throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_SEAL_TIME_INVALID'); }
+        if (isset($seal['source_artifact'])) app(ResearchReleaseSealService::class)->verifySourceArtifact((array) $seal['source_artifact'], false);
+        $currentPhp = app(LabImmutableEvidenceService::class)->codeHash();
+        $currentPython = app(ResearchReleaseSealService::class)->pythonHash();
+        if (! $this->isSha256($currentPhp) || ! $this->isSha256($currentPython)) throw new RuntimeException('FROZEN_RELEASE_CURRENT_SOURCE_UNVERIFIABLE');
+        if (hash_equals($seal['source_hash'], $currentPhp) && hash_equals($seal['python_source_hash'], $currentPython)) {
+            throw new RuntimeException('FROZEN_RELEASE_CURRENT_SOURCE_MATCHES');
+        }
+        $runs = LabEvaluationRun::query()->where('lab_agent_id', $agent->id)->orderBy('id')->get();
+        foreach ($runs as $run) {
+            if (in_array($run->status, ['started', 'running', 'processing'], true)) throw new RuntimeException('FROZEN_RELEASE_STARTED_RUN_ACTIVE');
+            if ($run->status === 'completed') throw new RuntimeException('FROZEN_RELEASE_COMPLETED_SCIENTIFIC_RUN_EXISTS');
+            if ($run->code_hash !== null && $run->code_hash !== '' && ! hash_equals($seal['source_hash'], (string) $run->code_hash)) {
+                throw new RuntimeException('FROZEN_RELEASE_ORIGINAL_RUN_SOURCE_MISMATCH');
+            }
+        }
+        return ['protocol' => 'frozen_research_source_retirement_v1', 'agent_id' => (int) $agent->id,
+            'generation_id' => (int) $generation->id, 'release_hash' => $seal['release_hash'],
+            'original_source_hash' => $seal['source_hash'], 'original_python_source_hash' => $seal['python_source_hash'],
+            'current_source_hash' => $currentPhp, 'current_python_source_hash' => $currentPython,
+            'original_run_ids' => $runs->pluck('run_id')->all(), 'dataset_hash' => $seal['dataset_hash'],
+            'strategy_verdict' => 'withheld', 'promotion_evidence' => false];
+    }
+
     /** @return array<string, mixed> */
     public function prepare(LabAgent $agent, string $mode, bool $allowPriorDatasetContractMismatch = false): array
     {

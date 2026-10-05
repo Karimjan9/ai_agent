@@ -247,32 +247,45 @@ class AcademyCleanDiscoveryHandoffTest extends TestCase
         $this->assertSame([], data_get($request, 'policy_context.historical_stratified_windows'));
         $this->assertSame(15000, data_get($request, 'policy_context.prospective_probe_window.evaluated_rows'));
         $script = <<<'PY'
-import json, sys
+import json, sys, time
 from unittest.mock import patch
 from app.schemas import SimpleBacktestRequest
 from app.main import _run_all_backtests_sync, _run_prepared_simple_backtest
 from app.services.backtester import _load_simple_candles
 from app.services.prospective_probe_window import select_probe_window
+started = time.perf_counter()
+def stage(message):
+    sys.stderr.write(f'{time.perf_counter() - started:.3f}s {message}\n')
+    sys.stderr.flush()
 r = json.load(sys.stdin)
 p = SimpleBacktestRequest(**r)
 loaded = _load_simple_candles(p)
+stage('real_dataset_loaded:' + str(len(loaded)))
 evaluated, receipt = select_probe_window(loaded, p.policy_context['prospective_probe_window'], p.replay_dataset_hash, p.execution_contract['execution_hash'])
+stage('real_probe_selected:' + str(len(evaluated)))
 executed_rows = []
 def observed_real_backtest(payload, frame, **kwargs):
     executed_rows.append(len(frame))
-    sys.stderr.write('real_backtest_start:' + str(len(frame)) + '\n')
+    stage('real_backtest_start:' + str(len(frame)))
     result = _run_prepared_simple_backtest(payload, frame, **kwargs)
-    sys.stderr.write('real_backtest_complete:' + str(len(frame)) + '\n')
+    stage('real_backtest_complete:' + str(len(frame)))
     return result
 def observed_checkpoint(key, stage, *args, **kwargs):
-    sys.stderr.write('real_replay_stage:' + stage + '\n')
+    sys.stderr.write(f'{time.perf_counter() - started:.3f}s real_replay_stage:{stage}\n')
+    sys.stderr.flush()
 with patch('app.main._load_immutable_replay_cache', return_value=None), patch('app.main._store_immutable_replay_cache'), patch('app.main._write_replay_checkpoint', side_effect=observed_checkpoint), patch('app.main._run_prepared_simple_backtest', side_effect=observed_real_backtest):
     result = _run_all_backtests_sync(p)
 actual = result['leaderboard'][0]['result']['prospective_probe_window_receipt']
 print(json.dumps({'loaded':len(loaded),'evaluated':len(evaluated),'executed_rows':executed_rows,'receipt':actual,'synthetic_fixture':True,'market_replay_proven':False}))
 PY;
         $process = new Process(['python', '-B', '-c', $script], dirname(base_path()).'/ai-service-python');
-        $process->setInput(json_encode($request, JSON_UNESCAPED_SLASHES)); $process->setTimeout(360); $process->mustRun();
+        $process->setInput(json_encode($request, JSON_UNESCAPED_SLASHES)); $process->setTimeout(360);
+        try {
+            $process->mustRun();
+        } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException $error) {
+            throw new \RuntimeException('Real clean-discovery probe timed out; original Python stage/stack diagnostics: '
+                .$process->getErrorOutput(), 0, $error);
+        }
         $actual = json_decode(trim($process->getOutput()), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame(15512, $actual['loaded']); $this->assertSame(15000, $actual['evaluated']);
         $this->assertSame([2000, 15000], $actual['executed_rows']); // real opportunity and stateful survival owners

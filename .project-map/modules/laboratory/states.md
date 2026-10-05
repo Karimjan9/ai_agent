@@ -1,5 +1,18 @@
 # Laboratory lifecycle states
 
+## Frozen technical source retirement
+
+`blocking technical attempt -> terminal technical history` requires an original
+canonical PHP/Python release seal, original execution/data pins, no completed
+scientific run, parity with prior run source, idle replay/queues and running
+control. The existing recovery command's named `--retire-frozen-release` mode
+appends a withheld lifecycle/event proof and model projection only; immutable
+run/evidence/source records are unchanged. Matching, missing or invalid seals
+remain blocked; data gaps are not repaired or silently allowed. The shared
+lookback selects actual actionable older IDs. At most two retirements per cycle
+do not consume actual replay budget or cooldown; zero progress is a typed defer.
+Changed actionable IDs enter the arbiter state watermark, not a minute clock.
+
 ## Native council version boundary
 
 `draft -> evaluating -> evaluated -> approved -> scheduled -> active -> retired`
@@ -8,6 +21,45 @@ approval requires original authorized independent comparisons by a different
 evaluator. Missing evidence remains withheld. Scheduled adoption or rollback
 changes future entry bindings, not existing position ownership/management.
 Every scalar activity count remains distinct from confirmed improvement.
+
+`prepared_for_canonical_dispatch` is an assembly receipt, not a generation or
+queue state. Preparation locks an unused constructor-complete draft and binds
+its complete prospective research arm set; the canonical dispatcher still
+owns snapshot/release sealing and execution. A changed retry, reused model,
+conflicting experiment owner, forged prior feedback or already-completed
+same-release physical question is refused before partial preparation commits.
+
+Optional clean discovery remains a research-only scope: original bundle and
+manifest hashes, actual MTF readiness/restoration, UTC plan calendar and exact
+15000 evaluated/512 warmup rows must agree. The shared discovery guard accepts
+the verified council owner or unchanged Academy owner. A declared preparation
+with any agent/model/current-source drift throws; it cannot be treated as an
+absent ordinary binding. Research-only screening and full-replay refusal also
+cover native source members, not only candidate/control/ablation arms.
+
+The original council assessment has separate observation facets:
+
+| Observation facet | Meaning | Research closure |
+| --- | --- | --- |
+| `technical_unassessable` | Original source, arm, evaluator or parity evidence is invalid. | Technical quarantine plus a blocked bounded original-evidence repair; no scientific negative. |
+| `data_missing` | The producer records an unmet execution-data prerequisite. | Inconclusive knowledge plus a blocked verified-data dependency. |
+| `underpowered` | Original matched comparisons lack enough matured outcomes. | Underpowered knowledge plus a blocked new preregistered scope; censored force closes do not create power. |
+| `research_compared` | Original candidate, solo and observed ablations can be compared. | Scoped local promising/negative/null observation; promising requires separately authorized validation, negative/null closes only the original hypothesis. |
+
+These facets do not replace `evaluated -> approved`. A research-purpose council
+can become `evaluated` but cannot qualify or pass ordinary full/paper selection
+because of a favorable comparison. Assessment and feedback conversion publish
+in one transaction; retry reuses the same original receipt and work item.
+Follow-up work is `executable=false` until its real data/preregistration
+dependency is satisfied, not a second autonomous scheduler or planned credit.
+The later preparation's verified prior-observation snapshot remains
+`research_only`; it is not confirmed inheritance or an inferred trait change.
+
+Activation/rollback recheck the original qualified evidence and paper guards,
+then update future-entry pointers atomically. A retired or rolled-back pinned
+version may still manage its original positions; it cannot propose new entries.
+Old terminal receipts, qualification gaps and absent independent data are not
+backfilled by a newer version, source release or provider label.
 
 `historical_research` opens a bounded archive-backed successor after terminal
 settlement without requiring 24 new live H1 bars. Valid champion presence or

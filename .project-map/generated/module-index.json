@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T04:27:24.322Z",
-  "source_digest": "60eea21046977933ba1df0f0ea8abca978a014f6df871e1c949da8e5de63c27c",
-  "source_file_count": 1507,
-  "git_head": "1529e132ac55d0e7fbdc4d9a1da37d00165a6a3b",
+  "generated_at": "2026-10-05T07:28:25.634Z",
+  "source_digest": "ab6901af1a1e29b957c0d0eda8b1bfe15f10a50892dc6b234d14a466082b7ab9",
+  "source_file_count": 1513,
+  "git_head": "d3a8f408c50264d8821581f9fd8b678d799c368e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -361,6 +361,8 @@
         "backend-laravel/app/Services/SpecialistCouncilContractService.php",
         "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
         "backend-laravel/app/Services/SpecialistCouncilDataUseService.php",
+        "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
+        "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
         "backend-laravel/app/Models/SpecialistCouncilVersion.php",
         "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
         "docs/architecture/specialist-council.md",
@@ -413,6 +415,11 @@
         "SpecialistCouncilLifecycleService::attachResearchModel",
         "SpecialistCouncilLifecycleService::sealEvaluationPlan",
         "SpecialistCouncilLifecycleService::evaluateOriginalRuns",
+        "SpecialistCouncilPreparationService::prepare",
+        "SpecialistCouncilPreparationService::isResearchGeneration",
+        "SpecialistCouncilPreparationService::inspectDiscoveryOwner",
+        "SpecialistCouncilResearchFeedbackService::recordAssessment",
+        "SpecialistCouncilResearchFeedbackService::priorObservations",
         "GenerationSnapshotAdmissionService::historicalDatasetReadiness",
         "trading:lab-generation --trigger=historical_research",
         "LabPopulationService",
@@ -448,8 +455,14 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.",
         "Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.",
         "Council comparison plans preregister equal capital, costs, risk, original windows and champion/solo/ablation/retention identities before evidence. The creator cannot self-certify; research comparison never grants independent, paper or live authority.",
+        "Prospective council preparation locks the canonical dispatch lease and a complete unused draft; every native member and arm must belong to that draft, without another experiment owner or prior queue/replay seals. Each research window requires its candidate, exact solo and at least one ablation before dispatch. Preparation creates no generation or evaluator job.",
+        "Optional council clean discovery freezes the original bundle/manifest hashes only after the existing MTF readiness and actual stream restoration verify the exact 15000 evaluated plus 512 warmup rows and original plan calendar. Shared dispatcher/admission/evaluator guards accept that verified owner or the unchanged Academy owner, never a label. All prepared generation models and current source hashes remain research-only; a declared broken preparation throws and cannot fall through to full replay or promotion.",
+        "A council research comparison can close without an earned champion or retention proof, but remains research-only at screening and full-replay selection. Missing original data, insufficient matured power and technical parity failures remain distinct from local negative or null outcomes; independent qualification still requires its complete original authorized-window comparisons.",
+        "Original council assessment atomically publishes a scoped conversion receipt and knowledge through the existing conversion kernel. A local negative/null closes only its preregistered hypothesis; a promising observation or missing prerequisite leaves a blocked non-executable dependency, never a skill credit or global harmful ban.",
+        "New council preparation consumes at most eight server-verified prior feedback receipts and seals their exact IDs, hashes, source runs and digest in the plan. Retry revalidates the original snapshot, not a new ranking. A bounded original-receipt lookup refuses an already-completed same-release physical question even under new labels; a changed release does not make repeated market events independent.",
         "Version adoption and rollback affect future entries only. Open positions retain their original owner and management version; the existing arbiter remains the only autonomous research selector.",
         "Before fresh construction or queue admission, an attested native continuity failure fences the identical actual M5 source SHA. A prospective repair must pass the existing data owner's receipt, row and file guards; Academy waits for that selected dataset's own canonical quoted MTF bundle and never relabels an old bundle.",
         "A contained Academy preparation repair reuses the original bounded kernel gene old/new vectors on the same frozen baseline/data/cost, under fresh IDs and current schema/genome seals. It cannot resample sixteen different discoveries, touch protected primary axes, copy old receipts or replenish the question budget.",
@@ -478,8 +491,12 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/FrozenReleaseLookbackRecoveryTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilResearchFeedbackTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php",
         "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
         "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
         "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
@@ -508,7 +525,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 55,
+      "source_file_count": 57,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -919,6 +936,7 @@
         "causal-learning"
       ],
       "invariants": [
+        "The existing paper monitor is the sole council adoption clock. Opt-in running control may deliver at most eight due council identities per cycle to the native locked original-evidence owner; pause, stop, drain or safety halt fences adoption and new native entry but never the reconciliation of owned positions. Read-only minute paging prevents rejected versions from starving another due council.",
         "Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.",
         "Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.",
         "E3/E4 reuse, capture and fill re-read the persisted model and candidate against the original frozen identity; fill locks candidate/model/signal until order and entry-fill publication. Legacy admissions or signals without the new identity are blocked, never backfilled.",
@@ -927,6 +945,7 @@
         "Invalid process outcomes are quarantined from learning."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php",
         "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
         "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",
         "backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php",

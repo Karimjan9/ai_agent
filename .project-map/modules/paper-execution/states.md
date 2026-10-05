@@ -7,6 +7,14 @@ owned reservation. Retired versions block new intake but do not transition an
 existing open position to an unmanaged state. Position management remains
 pinned until a reconciled terminal close; unsupported netting stays blocked.
 
+Council `approved -> scheduled -> active` uses the existing paper monitor,
+not a second scheduler. A due version becomes active only after the native
+locked owner rechecks original assessment and every member's paper authority.
+The opt-in/running-control fence leaves scheduled versions unchanged when
+disabled, paused, stopped, draining or safety-halted. A rejected version is
+reported and remains blocked without shadowing another council or suspending
+management of old position pins; only future native entry is fenced.
+
 | From | Trigger | To | Guard / owner | Failure or compensation |
 | --- | --- | --- | --- | --- |
 | signal_received | signal/contract is persisted | admission_pending | `PaperTradingExecutionService` owns intake | Missing sealed evidence cannot proceed. |

@@ -430,6 +430,11 @@ class SpecialistCouncilLifecycleService
     {
         $version = $this->verified($version);
         $owner = $this->plan($version);
+        $preparationSource = $owner['plan']['preparation_source_hash'] ?? null;
+        if ($preparationSource !== null && (! is_string($preparationSource)
+            || ! hash_equals($preparationSource, $this->evidence->codeHash()))) {
+            throw new LogicException('COUNCIL_PREPARATION_SOURCE_CHANGED_BEFORE_ORIGINAL_REPLAY');
+        }
         $arm = $owner['plan']['arms'][$armKey] ?? null;
         if (! $arm || ($request['replay_dataset_hash'] ?? '') !== $owner['plan']['windows'][$arm['window_key']]['dataset_sha256']
             || ($request['execution_hash'] ?? data_get($request, 'execution_contract.execution_hash')) !== $owner['plan']['execution_hash']) {
@@ -584,6 +589,33 @@ class SpecialistCouncilLifecycleService
         return $binding;
     }
 
+    /** Server-owned purpose, not a caller's research-only flag. */
+    public function evaluationPurposeForModel(ModelVersion $model): ?string
+    {
+        $declared = data_get($model->metadata, 'specialist_council_evaluation');
+        if ($declared === null) return null;
+        if (! is_array($declared)) throw new LogicException('DECLARED_COUNCIL_EVALUATION_BINDING_INVALID');
+        $bindings = isset($declared['bindings']) ? $declared['bindings'] : [$declared];
+        if (! is_array($bindings) || $bindings === []) throw new LogicException('DECLARED_COUNCIL_EVALUATION_BINDING_INVALID');
+        $purposes = [];
+        foreach ($bindings as $binding) {
+            $version = $this->verified(SpecialistCouncilVersion::findOrFail($binding['version_id'] ?? 0));
+            $owner = $this->plan($version);
+            $arm = $owner['plan']['arms'][$binding['arm_key'] ?? ''] ?? null;
+            if (! $arm || ($binding['protocol'] ?? null) !== self::PLAN_PROTOCOL
+                || ($binding['plan_hash'] ?? null) !== $owner['hash']
+                || ($binding['manifest_hash'] ?? null) !== $version->manifest_hash
+                || (int) $arm['model_version_id'] !== (int) $model->id
+                || $this->contracts->modelHash($model) !== $arm['model_hash']) {
+                throw new LogicException('DECLARED_COUNCIL_EVALUATION_BINDING_INVALID');
+            }
+            $purposes[] = $owner['plan']['purpose'];
+        }
+        $purposes = array_values(array_unique($purposes));
+        if (count($purposes) !== 1) throw new LogicException('COUNCIL_EVALUATION_PURPOSE_AMBIGUOUS');
+        return $purposes[0];
+    }
+
     /** Native immutable completion calls this; first original arms settle once, without a second scheduler. */
     public function settleEvaluationForRun(LabEvaluationRun $run): ?array
     {
@@ -697,7 +729,10 @@ class SpecialistCouncilLifecycleService
             if (! in_array($current->state, ['evaluating', 'evaluated'], true)) throw new LogicException('Evaluation boundary changed concurrently.');
             if ($current->state === 'evaluated') {
                 if ($current->assessment_hash === $this->epochs->parameterHash($assessment)
-                    && (array) ($current->assessment['original_run_ids'] ?? []) === array_values($runIds)) return $current->assessment;
+                    && (array) ($current->assessment['original_run_ids'] ?? []) === array_values($runIds)) {
+                    app(SpecialistCouncilResearchFeedbackService::class)->recordAssessment($current);
+                    return $current->assessment;
+                }
                 throw new LogicException('ORIGINAL_COUNCIL_ASSESSMENT_ALREADY_SEALED');
             }
             DB::table('specialist_council_evaluations')->insert(['specialist_council_version_id' => $version->id,
@@ -706,6 +741,9 @@ class SpecialistCouncilLifecycleService
                 'created_at' => now(), 'updated_at' => now()]);
             $current->forceFill(['state' => 'evaluated', 'assessment' => $assessment,
                 'assessment_hash' => $this->epochs->parameterHash($assessment)])->save();
+            // The original assessment and its scoped knowledge closure publish together.
+            // This records research information, never a skill or trading entitlement.
+            app(SpecialistCouncilResearchFeedbackService::class)->recordAssessment($current);
             return $assessment;
         });
     }
@@ -764,15 +802,7 @@ class SpecialistCouncilLifecycleService
             $previous = $versions->firstWhere('state', 'active');
             if ($previous) $previous->forceFill(['state' => 'retired', 'retired_at' => now()->utc()])->save();
             $next->forceFill(['state' => 'active', 'previous_version_id' => $previous?->id, 'activated_at' => now()->utc()])->save();
-            foreach ($next->manifest['members'] as $member) {
-                if (! in_array($member['role'], SpecialistCouncilContractService::TRADING_ROLES, true)) continue;
-                $model = ModelVersion::findOrFail($member['model_version_id']);
-                $metadata = (array) $model->metadata;
-                $metadata['specialist_council_binding'] = ['protocol' => self::BINDING_PROTOCOL,
-                    'version_id' => $next->id, 'council_id' => $next->council_id, 'council_version' => $next->version,
-                    'specialist_id' => $member['specialist_id'], 'management_version' => $member['management_version']];
-                $model->forceFill(['metadata' => $metadata])->save();
-            }
+            $this->publishEntryBindings($next);
             return ['allowed' => true, 'state' => 'active', 'version_id' => $next->id,
                 'previous_version_id' => $previous?->id, 'existing_position_versions_preserved' => true, 'promotion_evidence' => false];
         });
@@ -792,9 +822,30 @@ class SpecialistCouncilLifecycleService
             if (! $paper['allowed']) return $paper;
             $current->forceFill(['state' => 'rolled_back', 'retired_at' => now()->utc()])->save();
             $previous->forceFill(['state' => 'active', 'retired_at' => null, 'activated_at' => now()->utc()])->save();
+            // Models may be shared by two council versions. Restore only the
+            // future-entry pointer; existing orders retain their original pin.
+            $this->publishEntryBindings($previous);
             return ['allowed' => true, 'version_id' => $previous->id, 'rolled_back_version_id' => $current->id,
                 'reason' => $reason, 'existing_position_versions_preserved' => true, 'promotion_evidence' => false];
         });
+    }
+
+    private function publishEntryBindings(SpecialistCouncilVersion $version): void
+    {
+        $members = collect($version->manifest['members'])
+            ->filter(fn (array $member): bool => in_array($member['role'], SpecialistCouncilContractService::TRADING_ROLES, true))
+            ->sortBy('model_version_id');
+        foreach ($members as $member) {
+            $model = ModelVersion::lockForUpdate()->findOrFail($member['model_version_id']);
+            if ($this->contracts->modelHash($model) !== $member['source_model_hash']) {
+                throw new LogicException('COUNCIL_MEMBER_NATIVE_MODEL_DRIFT');
+            }
+            $metadata = (array) $model->metadata;
+            $metadata['specialist_council_binding'] = ['protocol' => self::BINDING_PROTOCOL,
+                'version_id' => $version->id, 'council_id' => $version->council_id, 'council_version' => $version->version,
+                'specialist_id' => $member['specialist_id'], 'management_version' => $member['management_version']];
+            $model->forceFill(['metadata' => $metadata])->save();
+        }
     }
 
     /** A pinned retired version may manage existing positions; only the active version may propose new entries. */
@@ -851,7 +902,7 @@ class SpecialistCouncilLifecycleService
 
     private function assessOriginalRuns(SpecialistCouncilVersion $version, array $owner, array $runIds): array
     {
-        $plan = $owner['plan']; $errors = []; $arms = []; $sources = []; $roleCoverage = [];
+        $plan = $owner['plan']; $errors = []; $arms = []; $sources = []; $roleCoverage = []; $dataDependencies = [];
         if ($runIds === [] || count($runIds) > 256 || count(array_unique($runIds)) !== count($runIds)) $errors[] = 'ORIGINAL_RUN_SET_MISSING_OR_DUPLICATED';
         foreach ($runIds as $runId) {
             $run = LabEvaluationRun::where('run_id', $runId)->first();
@@ -897,6 +948,10 @@ class SpecialistCouncilLifecycleService
                     if (($runtime['manifest_hash'] ?? null) !== $version->manifest_hash
                         || ($receipt['contract_hash'] ?? null) !== ($runtime['contract_hash'] ?? null)
                         || ($receipt['protocol'] ?? '') !== 'specialist_council_receipt_v1') throw new LogicException('COUNCIL_RUNTIME_PRODUCER_RECEIPT_MISSING');
+                    if (($receipt['status'] ?? '') === 'dependency') {
+                        $dataDependencies = [...$dataDependencies, ...(array) ($receipt['dependency_reasons'] ?? [])];
+                        $errors[] = 'COUNCIL_EXECUTION_DATA_PREREQUISITES_MISSING';
+                    }
                     if ($arm['kind'] === 'candidate') {
                         $this->attestReplayResult($model, $request, $response);
                         foreach ($version->manifest['members'] as $member) {
@@ -928,14 +983,15 @@ class SpecialistCouncilLifecycleService
                     }
                 }
                 $metrics = $this->metrics($response);
-                $arms[$armKey] = [...$arm, 'metrics' => $metrics];
+                $arms[$armKey] = [...$arm, 'metrics' => $metrics, 'original_run_id' => $run->run_id];
                 $sources[] = ['run_id' => $run->run_id, 'request_hash' => $run->request_hash,
                     'response_hash' => $run->response_hash, 'data_hash' => $run->data_hash,
                     'parameter_hash' => $run->parameter_hash, 'code_hash' => $run->code_hash];
             } catch (\Throwable $e) { $errors[] = $e->getMessage(); }
         }
         foreach ($plan['arms'] as $key => $arm) if (! isset($arms[$key])) $errors[] = 'PREREGISTERED_ARM_NOT_SETTLED:'.$key;
-        $comparisons = []; $memoryComparisons = []; $positive = 0;
+        $originalErrors = $errors;
+        $comparisons = []; $memoryComparisons = []; $positive = 0; $underpowered = false;
         foreach ($plan['windows'] as $windowKey => $window) {
             $windowArms = array_filter($arms, fn (array $arm): bool => $arm['window_key'] === $windowKey);
             $candidate = $this->findArm($windowArms, 'candidate');
@@ -953,35 +1009,70 @@ class SpecialistCouncilLifecycleService
                     'promotion_evidence' => false];
             }
             $champion = $this->findArm($windowArms, 'champion'); $solo = $this->findArm($windowArms, 'solo');
-            if (! $candidate || ! $champion || ! $solo) { $errors[] = 'CANDIDATE_CHAMPION_SOLO_COMPARISON_MISSING'; continue; }
+            $independent = $plan['purpose'] === 'independent';
+            if (! $candidate || ! $solo || ($independent && ! $champion)) {
+                $errors[] = $independent ? 'CANDIDATE_CHAMPION_SOLO_COMPARISON_MISSING' : 'CANDIDATE_SOLO_RESEARCH_COMPARISON_MISSING';
+                continue;
+            }
+            $windowSources = array_values(array_filter($sources, fn (array $source): bool =>
+                in_array($source['run_id'], array_column($windowArms, 'original_run_id'), true)));
+            if (count(array_unique(array_column($windowSources, 'code_hash'))) > 1) $errors[] = 'PAIRED_COUNCIL_EVALUATOR_RELEASE_MISMATCH';
             $metrics = $candidate['metrics'];
             $minTrades = $version->manifest['evaluation_policy']['minimum_paired_trades'];
-            if (min($metrics['matured_trades'], $champion['metrics']['matured_trades'], $solo['metrics']['matured_trades']) < $minTrades) $errors[] = 'COMPARISON_MATURE_OUTCOME_POWER_INSUFFICIENT';
+            $comparatorMetrics = [$solo['metrics']];
+            if ($champion) $comparatorMetrics[] = $champion['metrics'];
+            $powered = min([$metrics['matured_trades'], ...array_column($comparatorMetrics, 'matured_trades')]) >= $minTrades;
+            if (! $powered) { $underpowered = true; $errors[] = 'COMPARISON_MATURE_OUTCOME_POWER_INSUFFICIENT'; }
             $policy = $version->manifest['execution'];
             foreach (['max_drawdown_percent', 'max_daily_loss_percent', 'max_gross_exposure_percent', 'max_total_risk_percent'] as $key) {
                 if ($metrics[$key] > $policy[$key]) $errors[] = 'COUNCIL_EXTERNAL_RISK_LIMIT_EXCEEDED';
             }
             $gain = $plan['objective'] === 'net_return_at_equal_risk'
-                ? $metrics['net_profit'] > max($champion['metrics']['net_profit'], $solo['metrics']['net_profit'])
-                    && $metrics['max_drawdown_percent'] <= min($champion['metrics']['max_drawdown_percent'], $solo['metrics']['max_drawdown_percent'])
-                : $metrics['net_profit'] >= max($champion['metrics']['net_profit'], $solo['metrics']['net_profit'])
-                    && $metrics['max_drawdown_percent'] < min($champion['metrics']['max_drawdown_percent'], $solo['metrics']['max_drawdown_percent']);
-            foreach ($version->manifest['evaluation_policy']['required_ablations'] as $removed) {
+                ? $metrics['net_profit'] > max(array_column($comparatorMetrics, 'net_profit'))
+                    && $metrics['max_drawdown_percent'] <= min(array_column($comparatorMetrics, 'max_drawdown_percent'))
+                : $metrics['net_profit'] >= max(array_column($comparatorMetrics, 'net_profit'))
+                    && $metrics['max_drawdown_percent'] < min(array_column($comparatorMetrics, 'max_drawdown_percent'));
+            $declaredAblations = array_values(array_filter($plan['arms'], fn (array $arm): bool =>
+                $arm['window_key'] === $windowKey && $arm['kind'] === 'ablation'));
+            $targets = $independent ? $version->manifest['evaluation_policy']['required_ablations']
+                : array_values(array_unique(array_column($declaredAblations, 'removed_id')));
+            if (! $independent && $targets === []) $errors[] = 'RESEARCH_INCREMENTAL_ABLATION_NOT_PREREGISTERED';
+            $ablations = [];
+            foreach ($targets as $removed) {
                 $ablation = $this->findArm($windowArms, 'ablation', $removed);
                 if (! $ablation) $errors[] = 'ABLATION_MISSING:'.$removed;
-                elseif ($ablation['metrics']['net_profit'] >= $metrics['net_profit']) $errors[] = 'COMPONENT_INCREMENTAL_VALUE_NOT_SHOWN:'.$removed;
+                else {
+                    if ($ablation['metrics']['matured_trades'] < $minTrades) { $underpowered = true; $errors[] = 'ABLATION_MATURE_OUTCOME_POWER_INSUFFICIENT:'.$removed; }
+                    $incremental = $metrics['net_profit'] > $ablation['metrics']['net_profit'];
+                    $ablations[] = ['removed_id' => $removed, 'metrics' => $ablation['metrics'],
+                        'net_profit_delta' => $metrics['net_profit'] - $ablation['metrics']['net_profit'],
+                        'incremental_value_observed' => $incremental, 'component_authority_granted' => false];
+                    if (! $incremental) $errors[] = 'COMPONENT_INCREMENTAL_VALUE_NOT_SHOWN:'.$removed;
+                }
             }
             $retention = $this->findArm($windowArms, 'retention');
-            if (! $retention || $retention['metrics']['net_profit'] < $champion['metrics']['net_profit']
-                || $retention['metrics']['max_drawdown_percent'] > $champion['metrics']['max_drawdown_percent']) $errors[] = 'IMPORTANT_CAPABILITY_RETENTION_NOT_SHOWN';
+            if ($independent && (! $retention || $retention['metrics']['net_profit'] < $champion['metrics']['net_profit']
+                || $retention['metrics']['max_drawdown_percent'] > $champion['metrics']['max_drawdown_percent'])) $errors[] = 'IMPORTANT_CAPABILITY_RETENTION_NOT_SHOWN';
             if ($gain) $positive++;
             $comparisons[] = ['window_key' => $windowKey, 'candidate' => $metrics,
-                'champion' => $champion['metrics'], 'solo' => $solo['metrics'], 'incremental_value' => $gain];
+                'champion' => $champion['metrics'] ?? null, 'solo' => $solo['metrics'], 'incremental_value' => $gain,
+                'net_profit_delta_vs_solo' => $metrics['net_profit'] - $solo['metrics']['net_profit'],
+                'powered' => $powered, 'ablations' => $ablations, 'independently_confirmed' => false];
         }
         if ($plan['purpose'] !== 'independent') $errors[] = 'RESEARCH_COMPARISON_HAS_NO_INDEPENDENT_PROMOTION_AUTHORITY';
         if (count($plan['windows']) < $version->manifest['evaluation_policy']['minimum_independent_windows']) $errors[] = 'INSUFFICIENT_INDEPENDENT_WINDOWS';
         if ($positive < 2) $errors[] = 'INDEPENDENT_BENEFIT_NOT_REPLICATED';
         $errors = array_values(array_unique($errors));
+        $originalErrors = array_values(array_filter($originalErrors, fn (string $reason): bool =>
+            ! str_starts_with($reason, 'SPECIALIST_MATURE_HORIZON_EVIDENCE_UNDERPOWERED:')
+            && ! ($dataDependencies !== [] && str_starts_with($reason, 'SPECIALIST_ACTUAL_ROLE_DISPATCH_NOT_OBSERVED:'))
+            && $reason !== 'COUNCIL_EXECUTION_DATA_PREREQUISITES_MISSING'));
+        $underpowered = $underpowered || collect($errors)->contains(fn (string $reason): bool =>
+            str_starts_with($reason, 'SPECIALIST_MATURE_HORIZON_EVIDENCE_UNDERPOWERED:'));
+        $researchStatus = $originalErrors !== [] || $comparisons === []
+            || in_array('PAIRED_COUNCIL_EVALUATOR_RELEASE_MISMATCH', $errors, true) ? 'technical_unassessable'
+            : (in_array('COUNCIL_EXECUTION_DATA_PREREQUISITES_MISSING', $errors, true)
+                ? 'data_missing' : ($underpowered ? 'underpowered' : 'research_compared'));
         $qualifiedRoles = [];
         if ($errors === []) {
             foreach ($version->manifest['members'] as $member) {
@@ -992,7 +1083,9 @@ class SpecialistCouncilLifecycleService
         return ['protocol' => self::ASSESSMENT_PROTOCOL, 'version_id' => $version->id,
             'manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'],
             'original_run_ids' => array_values($runIds), 'original_sources' => $sources,
-            'comparisons' => $comparisons, 'positive_independent_windows' => $positive,
+            'comparisons' => $comparisons, 'positive_independent_windows' => $plan['purpose'] === 'independent' ? $positive : 0,
+            'observed_positive_windows' => $positive, 'research_observation_status' => $researchStatus,
+            'data_dependency_reasons' => array_values(array_unique($dataDependencies)),
             'memory_selector_comparisons' => $memoryComparisons, 'memory_superiority_proven' => false,
             'role_mature_outcome_coverage' => $roleCoverage, 'qualified_roles' => array_values(array_unique($qualifiedRoles)),
             'qualified' => $errors === [], 'reason_codes' => $errors, 'promotion_evidence' => false];

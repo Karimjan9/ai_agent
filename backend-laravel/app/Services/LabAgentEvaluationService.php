@@ -22,6 +22,14 @@ class LabAgentEvaluationService
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
+        $agent->loadMissing('modelVersion', 'generation');
+        $councilPurpose = $agent->modelVersion
+            ? app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($agent->modelVersion) : null;
+        if ($councilPurpose === 'research'
+            || ($councilPurpose === null && data_get($agent->modelVersion?->metadata, 'specialist_council') !== null)
+            || ($agent->generation && app(SpecialistCouncilPreparationService::class)->isResearchGeneration($agent->generation))) {
+            throw new RuntimeException('SPECIALIST_COUNCIL_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
+        }
         $agent->loadMissing('generation');
         if (data_get($agent->generation?->trigger_context, 'mtf_bundle_manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL) {
             throw new RuntimeException('DISCOVERY_ONLY_BUNDLE_FULL_VALIDATION_FORBIDDEN');
@@ -1445,10 +1453,11 @@ class LabAgentEvaluationService
         // Refuse stale/direct oversized payloads before local guard runs,
         // snapshots, HTTP or recursive contract splitting. Completed members
         // were already filtered above and retain their original evidence.
-        if ($agents->count() > 1 && $agents->contains(fn (LabAgent $agent): bool =>
-            app(ProspectiveRepairProbeWindowService::class)->requiresSingleCandidateScreening(
+        if ($agents->count() > 1 && (($first->generation
+            && app(SpecialistCouncilPreparationService::class)->isResearchGeneration($first->generation))
+            || $agents->contains(fn (LabAgent $agent): bool => app(ProspectiveRepairProbeWindowService::class)->requiresSingleCandidateScreening(
                 (array) ($agent->modelVersion?->metadata ?? []), (string) $agent->generation?->trigger_type,
-                (array) ($agent->generation?->trigger_context ?? [])))) {
+                (array) ($agent->generation?->trigger_context ?? []))))) {
             throw new RuntimeException('PROSPECTIVE_SCREEN_REQUIRES_SINGLE_CANDIDATE_JOB');
         }
         // A guard seat is a pre-registered WAIT policy, not a strategy replay.
@@ -2418,8 +2427,10 @@ class LabAgentEvaluationService
             throw new RuntimeException('AUTONOMOUS_MTF_BUNDLE_MISSING');
         }
         $discovery = ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
-        if ($discovery && (! $allowDiscovery || $edgeGenesisReplay || $agent->generation?->trigger_type !== 'academy_experiment'
-            || data_get($agent->generation?->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only')) {
+        $academyDiscoveryOwner = $agent->generation?->trigger_type === 'academy_experiment'
+            && data_get($agent->generation?->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only';
+        if ($discovery && (! $allowDiscovery || $edgeGenesisReplay || (! $academyDiscoveryOwner
+            && (! $agent->generation || ! app(SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($agent->generation, $manifest)['allowed'])))) {
             throw new RuntimeException('DISCOVERY_ONLY_BUNDLE_REPLAY_SCOPE_FORBIDDEN');
         }
         $owner = app(MultiTimeframeSnapshotService::class);

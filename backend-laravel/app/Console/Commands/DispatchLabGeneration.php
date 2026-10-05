@@ -655,8 +655,10 @@ class DispatchLabGeneration extends Command
     ): LabGeneration {
         $existingManifest = (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []);
         $discovery = ($existingManifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
-        if ($discovery && ($generation->trigger_type !== 'academy_experiment'
-            || data_get($generation->trigger_context, 'prospective_source_identity.data_role') !== 'pre_2026_discovery_only')) {
+        $academyDiscoveryOwner = $generation->trigger_type === 'academy_experiment'
+            && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only';
+        if ($discovery && ! $academyDiscoveryOwner
+            && ! app(\App\Services\SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($generation, $existingManifest)['allowed']) {
             throw new \RuntimeException('GENERATION_DISCOVERY_BUNDLE_OWNER_INVALID');
         }
         $bundle = $existingManifest !== []
@@ -715,7 +717,8 @@ class DispatchLabGeneration extends Command
         $remainingIds = array_values(array_diff($orderedIds, $controlIds));
         $chunks = array_map(fn (int $id): array => [$id], $controlIds);
         $windowOwner = app(ProspectiveRepairProbeWindowService::class);
-        $singleCandidate = fn (LabAgent $agent): bool => $windowOwner->requiresSingleCandidateScreening(
+        $nativeCouncilResearch = app(\App\Services\SpecialistCouncilPreparationService::class)->isResearchGeneration($generation);
+        $singleCandidate = fn (LabAgent $agent): bool => $nativeCouncilResearch || $windowOwner->requiresSingleCandidateScreening(
             (array) ($agent->modelVersion?->metadata ?? []), (string) $generation->trigger_type,
             (array) ($generation->trigger_context ?? []));
         // Keep both physical dataset and row-budget contracts separate. Never

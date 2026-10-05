@@ -1,5 +1,15 @@
 # Laboratory cohort lifecycle
 
+The shared learning-velocity lookback exposes the actual technical generation
+and actionable IDs to the arbiter/lifecycle. Before bounded replay retry, the
+same recovery owner may retire at most two drained, originally sealed attempts
+whose evaluator has demonstrably changed. Original canonical release,
+execution/data and prior-run source identity are rechecked; terminal-only
+withheld events preserve original evidence and do not spend replay allowance.
+Missing or invalid proof leaves an explicit dependency. Each actual retirement
+changes the arbiter's target watermark so older debt cannot be stranded behind
+an already-reconciled lineage head or a completed no-op decision.
+
 ## Declared native specialist council
 
 A stored draft seals horizon passports and native model/component vectors.
@@ -15,6 +25,59 @@ and candidate/champion/solo/ablation/retention arms before outcomes. Research
 comparison may close without qualification. Approval and scheduled adoption
 require the authorized independent route; future entries change version while
 open positions remain pinned. No second research scheduler is introduced.
+
+`SpecialistCouncilPreparationService::prepare` assembles a research experiment
+inside an already constructor-complete, unused canonical draft. Under the
+dispatcher's existing lease and a database transaction, it verifies that all
+members and arms belong to that draft, refuses other experiment owners or
+earlier replay/queue/source seals, freezes the manifest and original plan,
+and binds every arm before returning `prepared_for_canonical_dispatch`.
+It creates neither a generation nor evaluator jobs. The ordinary snapshot,
+release, MTF and immutable-run dispatcher remains the next owner.
+
+An optional `discovery_bundle_manifest` is frozen in that original preparation
+only after the existing MTF owner verifies readiness, restores actual streams,
+and matches the plan's exact UTC calendar, 15000 evaluated rows and 512 warmup
+rows. `inspectDiscoveryOwner` rechecks the original bundle and preparation at
+dispatcher, snapshot admission and evaluator boundaries; the existing Academy
+owner remains the other unchanged allowed path. `isResearchGeneration` verifies
+all generation agent/model hashes and the original/current source, including
+native source members that are not comparison arms. Every such model is fenced
+research-only. Missing declaration is ordinary; a declared tampered owner
+throws rather than falling through to promotion. Full replay remains forbidden.
+
+Each prepared research window has exactly one candidate, one solo control and
+at least one ablation. A complete original comparison may close without an
+earned champion or retention proof, but `SPECIALIST_COUNCIL_RESEARCH_ONLY`
+withholds economic screening/full selection even for an attractive result.
+Independent qualification keeps its complete champion/solo/ablation/retention,
+matured-power and authorized untouched-window requirements.
+
+Original immutable completion publishes the existing durable evaluation
+delivery. Its arbiter-owned consumer assesses the preregistered original arm
+set, then atomically publishes the assessment and scoped feedback through
+`ResearchExperimentConversionKernelService`. `technical_unassessable`,
+`data_missing`, `underpowered` and `research_compared` are different outcomes,
+not one strategy-failure label. Local negative/null comparisons close the
+original question without a global harmful ban. A promising comparison leaves
+an explicitly blocked independent-validation work item; its plan cannot supply
+absent authorized data, and 2026 remains paper-only. No skill credit follows
+from this research feedback path.
+
+A later prepared council question seals up to eight verified original feedback
+receipt IDs/hashes, source runs and a digest in its
+`specialist_council_research_consumption_v1` receipt. Preparation retries verify
+that original snapshot even if newer knowledge appears. This proves research
+observation consumption, not inherited confirmed skill or parameter mutation.
+A bounded lookup refuses a completed same-release physical question under new
+council/provider/window labels; changed source may permit a newly preregistered
+repair but cannot turn the same market events into independent validation.
+
+Scheduled adoption and rollback publish future-entry member bindings only
+after rechecking original qualification, native model seals and paper guards.
+Rollback restores the prior approved bindings even when versions share models;
+existing orders keep their original council/management pins. The sole paper
+execution owner still requires explicit opt-in and member E3/E4/risk approval.
 
 Explicit clean-discovery Academy cohorts seal a stored
 `prospective_clean_discovery_bundle_v1`, not the incomplete parent full archive.

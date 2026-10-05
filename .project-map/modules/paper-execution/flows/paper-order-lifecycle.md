@@ -2,6 +2,16 @@
 
 ## Optional native specialist account
 
+Before new candidate reads, the existing paper monitor delivers due scheduled
+council versions to `SpecialistCouncilLifecycleService::activateDue`. That
+locked owner rederives original independent assessment and native E3/E4; a
+scheduled flag alone is no approval. Adoption is opt-in and requires running
+global control. At most eight distinct council IDs are checked per cycle;
+read-only minute paging lets another due version proceed despite a rejected
+backlog. Each blocked/corrupt version is reported separately, not converted
+to legacy execution. Pause, stop, drain and safety halt block new native
+adoption/intake while original owned-position reconciliation continues.
+
 Active members use the same `PaperTradingExecutionService` intake and their own
 E3/E4 frozen identity. The specialist account helper serializes shared integer
 capital, held reservations, exposure and risk before order/fill publication.

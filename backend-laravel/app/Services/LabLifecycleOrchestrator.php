@@ -309,8 +309,8 @@ class LabLifecycleOrchestrator
                     $stage = $technical ? self::PHASE_TECHNICAL_RECOVERY : self::PHASE_LEARNING_RECOVERY;
 
                     return $this->summarize($cycleId, $symbol, $timeframe,
-                        $recovered['dispatched'] > 0 ? self::STATUS_RUNNING : self::STATUS_PAUSED,
-                        $strategy['reason'] ?? 'strategy_deadlock', $stage, [...$recovered, 'quarantined' => $quarantined]);
+                        ($recovered['dispatched'] + ($recovered['terminally_reconciled'] ?? 0)) > 0 ? self::STATUS_RUNNING : self::STATUS_PAUSED,
+                        $recovered['paused_reason'] ?? $strategy['reason'] ?? 'strategy_deadlock', $stage, [...$recovered, 'quarantined' => $quarantined]);
                 }
             }
             if ($strategy['state'] === 'blocked') {
@@ -837,7 +837,7 @@ class LabLifecycleOrchestrator
     }
 
     /**
-     * Re-open only the latest generation's immutable transport timeouts.
+     * Recover the actual shared-gate target, not an already reconciled lineage head.
      *
      * This is deliberately separate from learning recovery: it has its own
      * daily budget, one-shot per-agent counter, audited machine authority,
@@ -849,13 +849,54 @@ class LabLifecycleOrchestrator
             return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'autonomous_technical_recovery_disabled'];
         }
 
-        $generationId = (int) data_get($strategy, 'generation_admission.latest_generation_id', 0);
+        $target = (array) data_get($strategy, 'generation_admission.learning_velocity.technical_recovery_targets.0', []);
+        $generationId = (int) ($target['generation_id'] ?? data_get($strategy, 'generation_admission.latest_generation_id', 0));
         $generation = $generationId > 0 ? LabGeneration::query()->find($generationId) : null;
-        if (! $generation) {
+        if (! $generation || ! $generation->laboratory()->where('symbol', $symbol)->where('timeframe', $timeframe)->exists()) {
             return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'technical_recovery_generation_missing'];
         }
 
         $limit = max(1, min(2, (int) config('services.lifecycle_orchestrator.autonomous_technical_recovery_max_dispatch', 2)));
+        // A genuine frozen release whose evaluator changed cannot be replayed
+        // honestly. Retiring its technical attempt is a bounded non-dispatch
+        // transition, not an additional replay allowance or scientific result.
+        // The command rechecks source identity, idle queues and control fences.
+        $targetAgents = $generation->agents()->with(['generation', 'modelVersion'])
+            ->whereIn('lifecycle_status', ['evaluation_error', 'technical_quarantine']);
+        if (($target['agent_ids'] ?? []) !== []) $targetAgents->whereIn('id', $target['agent_ids']);
+        $retirementProven = false;
+        foreach ($targetAgents->orderBy('id')->limit($limit)->get() as $agent) {
+            try {
+                app(LabReplayRecoveryService::class)->frozenSourceRetirementProof($agent);
+                $retirementProven = true;
+                break;
+            } catch (Throwable) {
+                // Missing, current or malformed source proof grants no retirement.
+            }
+        }
+        if ($retirementProven) {
+            try {
+                $exitCode = Artisan::call('trading:recover-lab-evaluation-errors', [
+                    'symbol' => strtoupper($symbol), '--timeframe' => strtoupper($timeframe),
+                    '--generation' => (int) $generation->generation, '--limit' => $limit,
+                    '--mode' => 'screen', '--retire-frozen-release' => true,
+                    '--apply' => true, '--autonomous' => true, '--json' => true,
+                ]);
+                $output = trim(Artisan::output());
+                $record = json_decode($output, true);
+                $retired = $exitCode === 0 && is_array($record)
+                    ? count((array) ($record['terminally_reconciled_agent_ids'] ?? [])) : 0;
+                return ['dispatched' => 0, 'terminally_reconciled' => $retired, 'limit' => $limit,
+                    'recovery_target' => ['generation_id' => $generationId, 'generation' => (int) $generation->generation],
+                    'records' => is_array($record) ? $record : ['command_output' => $output, 'exit_code' => $exitCode],
+                    'strategy' => $strategy,
+                    ...($retired === 0 ? ['paused_reason' => (string) data_get($record, 'reason_code', 'FROZEN_RELEASE_RETIREMENT_DEFERRED')] : []),
+                ];
+            } catch (Throwable $e) {
+                $this->errors->record($cycleId, $symbol, $timeframe, self::PHASE_TECHNICAL_RECOVERY, $e, $generationId);
+                return ['dispatched' => 0, 'strategy' => $strategy, 'paused_reason' => 'frozen_source_retirement_failed_closed'];
+            }
+        }
         $dailyLimit = max(1, (int) config('services.lifecycle_orchestrator.autonomous_technical_recovery_daily_limit', 2));
         $today = now('Asia/Tashkent')->startOfDay()->utc();
         $todayDispatches = SystemEvent::query()
@@ -909,6 +950,7 @@ class LabLifecycleOrchestrator
                 'limit' => min($limit, $remaining),
                 'records' => is_array($record) ? $record : ['command_output' => $output, 'exit_code' => $exitCode],
                 'strategy' => $strategy,
+                ...($dispatched === 0 ? ['paused_reason' => (string) data_get($record, 'reason_code', 'NO_ACTIONABLE_TECHNICAL_REPLAY')] : []),
             ];
         } catch (Throwable $e) {
             $this->errors->record($cycleId, $symbol, $timeframe, self::PHASE_TECHNICAL_RECOVERY, $e, (int) $generation->id);

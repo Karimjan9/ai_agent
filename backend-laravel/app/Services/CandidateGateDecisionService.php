@@ -21,6 +21,20 @@ class CandidateGateDecisionService
 
     public function recordScreening(LabAgent $agent, array $result): CandidateGateDecision
     {
+        $model = $agent->modelVersion;
+        $councilPurpose = $model ? app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($model) : null;
+        if ($councilPurpose === 'research'
+            || ($councilPurpose === null && data_get($model?->metadata, 'specialist_council') !== null)
+            || ($agent->generation && app(SpecialistCouncilPreparationService::class)->isResearchGeneration($agent->generation))) {
+            // Council discovery compares its own original arms. An attractive
+            // aggregate result is not a generic solo survivor, repair lesson,
+            // unrelated cooperative control or economic/paper qualification.
+            $result['research_economic_reason_codes'] = $this->economicReasons($result, 10, 1.0, 100.0, 100.0, 0);
+            $result['decision'] = 'failed';
+            $result['specialist_council_research_only'] = true;
+            $result['promotion_evidence'] = false;
+            return $this->store(null, $agent, 'screening', 'failed', ['SPECIALIST_COUNCIL_RESEARCH_ONLY'], $result);
+        }
         if (data_get($agent->modelVersion?->metadata,
             'cooperative_experiment_block.block_type') === 'phase_scope_probe') {
             // This is an activation question, not an economic screen pass.
@@ -556,6 +570,14 @@ class CandidateGateDecisionService
     public function recordFullReplaySelection(LabAgent $agent, bool $selected, ?string $reason = null): CandidateGateDecision
     {
         $screen = (array) data_get($agent->modelVersion?->metadata, 'last_screen_result', []);
+        $model = $agent->modelVersion;
+        $councilPurpose = $model ? app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($model) : null;
+        if ($councilPurpose === 'research'
+            || ($councilPurpose === null && data_get($model?->metadata, 'specialist_council') !== null)
+            || ($agent->generation && app(SpecialistCouncilPreparationService::class)->isResearchGeneration($agent->generation))) {
+            return $this->store(null, $agent, 'full_replay_selection', 'failed', ['SPECIALIST_COUNCIL_RESEARCH_ONLY'],
+                ['screening_metrics' => $screen, 'promotion_evidence' => false]);
+        }
         if ($selected) {
             $probe = in_array($reason, ['CAUSAL_PROBE_ONLY', 'CAUSAL_PROBE_ALTERNATIVE'], true);
             $portfolio = $reason === 'PORTFOLIO_MEMBER_REPLAY';

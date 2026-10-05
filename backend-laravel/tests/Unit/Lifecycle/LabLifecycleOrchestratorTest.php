@@ -46,9 +46,14 @@ class LabLifecycleOrchestratorTest extends TestCase
 
     protected function tearDown(): void
     {
-        parent::tearDown();
-        m::close();
-        $this->cleanLogDir();
+        // The filesystem facade still needs the live application container.
+        // Clean error-path artifacts before parent tearDown destroys it.
+        try {
+            $this->cleanLogDir();
+        } finally {
+            parent::tearDown();
+            m::close();
+        }
     }
 
     public function test_xauusd_timeframe_alias_routes_to_one_organism_and_creates_exactly_one_generation(): void

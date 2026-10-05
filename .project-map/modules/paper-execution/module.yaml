@@ -40,6 +40,7 @@ dependencies:
   - market-data
   - causal-learning
 invariants:
+  - The existing paper monitor is the sole council adoption clock. Opt-in running control may deliver at most eight due council identities per cycle to the native locked original-evidence owner; pause, stop, drain or safety halt fences adoption and new native entry but never the reconciliation of owned positions. Read-only minute paging prevents rejected versions from starving another due council.
   - Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.
   - Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.
   - E3/E4 reuse, capture and fill re-read the persisted model and candidate against the original frozen identity; fill locks candidate/model/signal until order and entry-fill publication. Legacy admissions or signals without the new identity are blocked, never backfilled.
@@ -53,6 +54,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php
   - backend-laravel/tests/Feature/SpecialistPaperAccountTest.php
   - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php
   - backend-laravel/tests/Feature/PostPaperConfirmedTraitAdmissionTest.php
