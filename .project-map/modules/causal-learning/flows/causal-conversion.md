@@ -1,5 +1,14 @@
 # Causal conversion loop
 
+Original council conversion can preregister a bounded discovery follow-up
+through its existing feedback owner. Server proof, original receipt/plan/source
+and legal parameter delta are verified before the conversion kernel exposes
+ready work. The sole arbiter leases it; its work consumer invokes canonical
+construction, same-cohort continuation, atomic preparation and witnessed queue
+admission. A stable operational hold does not mint another scientific attempt.
+Support-role producer trials and original same-budget Portfolio comparisons
+remain distinct from confirmed skill, qualification and economic inheritance.
+
 Typed operator proposals have a separate bounded research admission:
 `compileResearchCandidate -> decisionOperatorContract -> original closed-input
 confirmation/risk-reduction/exit receipt -> exact absence/ablation comparison`.

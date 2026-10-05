@@ -99,7 +99,7 @@ be promising, negative or null. Negative/null closes only that original scoped
 question, not a globally forbidden instrument or strategy. A promising research
 comparison leaves a blocked independent-validation dependency; missing data,
 power or technical evidence leaves its own blocked dependency. These follow-ups
-are explicitly non-executable until their prerequisites are satisfied. An
+start non-executable until their original-owner prerequisites are satisfied. An
 authorized untouched research window is not created by a plan, provider switch,
 new version or a new hash. The independent follow-up retains the post-paper
 research policy (2027 onward); literal 2026 remains paper-only.
@@ -118,6 +118,56 @@ This path gives a negative or provisional experiment a durable consequence
 without fabricating `repair_credit`, `causal_skill_credit`, qualification,
 Economic Parent or trading authority. Confirmed skill and retained descendant
 benefit remain separately evidenced transitions.
+
+### Executable bounded continuation
+
+`trading:specialist-council register-followup --work-id=ID
+--followup-plan=workspace/plan.json --actor=IDENTITY` registers proof only. The
+server freezes original assessment/receipt/plan hashes, exact native source
+models and legal deltas, current PHP/Python identities and real clean-MTF
+calendar/cost/risk scope. `followup-status` rechecks readiness without execution.
+Parameter selection may be informed by original observed results, but its new
+question is sealed before the new outcomes and is not independent evidence.
+A same-question source repair keeps all original parameters/events and must
+prove the old attempt never produced scientific outcomes, not merely timed out.
+One late instrument descriptor is recoverable only when the original immutable
+schema-refused request proves its exact numerical content and removing only
+that descriptor in memory reconstructs the old full member seal. The fresh
+resolution pins the actual current model and original witness hashes. Arbitrary
+model drift remains blocked and the old invalid preparation is never repaired
+in place.
+
+The existing conversion kernel, arbiter and work consumer own admission and
+execution. The executor creates or resumes one canonical six-reference cohort,
+uses atomic preparation and requires the original dispatch batch witness before
+closing the work item. Crash recovery uses intent, source-model markers and the
+saved cohort checkpoint; projection loss cannot renew the experiment budget.
+Unchanged operational prerequisites stay blocked, with at most eight leases
+for this one cohort. An original failed run is never relabelled successful.
+
+Independent-validation and descendant work currently remain explicit executor
+prerequisites as well as requiring real authorized evidence. They cannot become
+ready from a planned dataset or stored `executable` flag. This limitation must
+not be presented as proof that the complete economic inheritance loop ran.
+
+### Support products and original role benchmarks
+
+Optional `support_role_trials` binds each exact component to its registered
+native producer before original evaluation. Risk/strategy/tactic/toolbox use
+actual closed-input AST receipts with component ablation and retention;
+capital/execution use the reconciled native account, and data uses actual
+version-scoped exposed event/as-of/use records. Role-specific metrics remain
+distinct from profitability and trader/paper qualification. Three authorized
+nonoverlapping original windows and independent assessment are required for
+scoped research role qualification. Future research consumption rechecks the
+original exam, artifacts, component/operator/policy identity and exact scope.
+
+`preregisterSupportPolicyBenchmark` and `settleSupportPolicyBenchmark` route
+learning/evolution questions to the existing Portfolio fixed-question,
+equal-budget original benchmark. Scores and original fold references are real
+research observations; policy activation and causal/economic credit remain
+false. Its missing independent activation adapter is an explicit prerequisite,
+not an invented selection-speed metric or market authority.
 
 ## Typed products and learned operators
 
@@ -193,6 +243,10 @@ assembles the complete prospective manifest/plan and research-consumption
 receipt atomically. It is research-only and requires the existing canonical
 constructor to have produced that draft; it cannot reuse an already attempted
 generation or relabel an old solo receipt as an original native arm.
+Canonical instrument assignments are materialized before any model, member or
+arm hash is sealed. The real producer is re-read by later payload construction;
+it must not lazily change the model descriptor after admission. A failed old
+cohort is not made valid by resealing it.
 
 Expose requested and evaluated UTC bounds, warmup exclusions and row counts
 in every benchmark receipt. Equal source hashes alone are not equal evaluation

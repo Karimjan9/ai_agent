@@ -1,5 +1,14 @@
 # Laboratory history
 
+## 2026-10-05 - Proof-owned council continuation
+
+Original council dependencies now use server-preregistered proof and the
+existing arbiter/work/constructor/preparation/dispatcher chain to admit one
+bounded successor cohort. Stable operational holds and exact checkpoints
+preserve retry identity. Support components use original role-specific
+producer evidence and scoped research consumption, distinct from trader,
+economic and paper qualification. See ADR-029.
+
 ## 2026-10-05 - Native specialist council
 
 Typed horizon passports and a stored version lifecycle now bind declared native

@@ -83,6 +83,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php
   - ai-service-python/tests/test_specialist_council.py
   - ai-service-python/tests/test_paper_management_contract.py
   - backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php

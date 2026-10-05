@@ -296,7 +296,6 @@ class LabImmutableEvidenceService
 
             return;
         }
-        $finished = now();
         // A terminal replay attempt always gets a response-plane envelope,
         // even when the evaluator returned no payload.  This envelope is an
         // operational error record, not a strategy result: its incomplete
@@ -324,26 +323,6 @@ class LabImmutableEvidenceService
             ];
         }
         $responseHash = $terminalResponse === null ? null : $this->hash($terminalResponse);
-        $run->update([
-            'status' => $status,
-            'finished_at' => $finished,
-            'duration_ms' => $run->started_at ? max(0, $run->started_at->diffInMilliseconds($finished)) : null,
-            'response_hash' => $responseHash,
-            'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
-            'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash, $run),
-            // The complete response remains immutable in the compressed
-            // artifact plane. Run metrics are a mutable selector projection;
-            // keep them bounded so retries do not rewrite trade/event arrays.
-            'metrics' => $metrics !== []
-                ? $this->projectionPayload($metrics)
-                : $this->metricsManifest($terminalResponse),
-            'metadata' => array_merge((array) $run->metadata, $metadata, [
-                'terminal' => true, 'terminal_at' => $finished->toIso8601String(),
-            ]),
-            'error_class' => $error ? $error::class : null,
-            'error_message' => $error ? substr($error->getMessage(), 0, 4000) : null,
-        ]);
-
         if ($terminalResponse !== null) {
             $this->recordArtifact($run, 'evaluation_response', $terminalResponse, [
                 'response_hash' => $responseHash,
@@ -371,6 +350,29 @@ class LabImmutableEvidenceService
             }
             $this->recordDecisionTrace($run, $terminalResponse);
         }
+
+        // Completion measures publication, including durable artifact writes.
+        // Sampling before gzip/storage can leave original files timestamped
+        // after finished_at and correctly rejected by the strict consumer.
+        // The existing transaction/row lock publishes this boundary once.
+        $finished = now();
+        $run->update([
+            'status' => $status,
+            'finished_at' => $finished,
+            'duration_ms' => $run->started_at ? max(0, $run->started_at->diffInMilliseconds($finished)) : null,
+            'response_hash' => $responseHash,
+            'trade_ledger_hash' => data_get($terminalResponse, 'trade_ledger_hash'),
+            'response_meta' => $terminalResponse === null ? null : $this->responseManifest($terminalResponse, $run->data_hash, $run),
+            // Keep selector projections bounded; originals stay in artifacts.
+            'metrics' => $metrics !== []
+                ? $this->projectionPayload($metrics)
+                : $this->metricsManifest($terminalResponse),
+            'metadata' => array_merge((array) $run->metadata, $metadata, [
+                'terminal' => true, 'terminal_at' => $finished->toIso8601String(),
+            ]),
+            'error_class' => $error ? $error::class : null,
+            'error_message' => $error ? substr($error->getMessage(), 0, 4000) : null,
+        ]);
 
         $this->recordLifecycle($run->agent, 'evaluation_'.$status, [
             'run_id' => $run->run_id, 'status' => $status, 'response_hash' => $responseHash,

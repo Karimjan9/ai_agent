@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ModelVersion;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
+use Illuminate\Support\Facades\DB;
 
 /** Typed research products and execution passports; no role catalog entry grants authority. */
 class SpecialistCouncilContractService
@@ -13,6 +14,16 @@ class SpecialistCouncilContractService
     public const PASSPORT_PROTOCOL = 'specialist_passport_v1';
     public const RUNTIME_PROTOCOL = 'specialist_council_runtime_v1';
     public const TRADING_ROLES = ['scalp', 'hour', 'day', 'swing'];
+    public const SUPPORT_TRIAL_PROTOCOL = 'specialist_support_role_trial_v1';
+
+    /** Benchmarks name original producer paths, not caller-supplied pass flags. */
+    public const SUPPORT_BENCHMARKS = [
+        'strategy' => 'native_operator_behavior', 'tactic' => 'native_operator_behavior',
+        'toolbox' => 'native_operator_behavior', 'risk' => 'native_operator_risk',
+        'capital' => 'native_account_capital', 'execution' => 'native_account_execution',
+        'data' => 'native_asof_observation', 'learning' => 'native_memory_selector',
+        'evolution' => 'native_candidate_selector',
+    ];
 
     private const PRODUCTS = [
         'scalp' => ['trade_intent', 'position_management'],
@@ -67,6 +78,116 @@ class SpecialistCouncilContractService
                 'may_change_external_risk_limits' => false, 'promotion_evidence' => false];
         }
         return $roles;
+    }
+
+    /** Preregister a role's actual producer and criterion before any outcome is read. */
+    public function sealSupportRoleTrials(array $manifest, array $trials): array
+    {
+        if (count($trials) > 16) throw new InvalidArgumentException('SUPPORT_ROLE_TRIAL_BUDGET_EXCEEDED');
+        $sealed = [];
+        foreach ($trials as $trial) {
+            if (! is_array($trial) || array_diff(array_keys($trial), ['protocol', 'component_id', 'role', 'benchmark',
+                'minimum_evaluations', 'minimum_behavior_delta_decisions', 'minimum_positive_windows', 'minimum_opportunity_fraction',
+                'component_contract_hash', 'producer_contracts', 'policy_binding', 'original_policy_benchmark', 'trial_hash']) !== []) {
+                throw new InvalidArgumentException('SUPPORT_ROLE_TRIAL_ASSERTED_OUTCOMES_FORBIDDEN');
+            }
+            $id = (string) ($trial['component_id'] ?? '');
+            $component = collect($manifest['components'])->firstWhere('id', $id);
+            $role = $trial['role'] ?? '';
+            if (! $component || isset($sealed[$id]) || ($component['role'] ?? '') !== $role
+                || ! isset(self::SUPPORT_BENCHMARKS[$role]) || ($trial['benchmark'] ?? '') !== self::SUPPORT_BENCHMARKS[$role]
+                || ($trial['protocol'] ?? self::SUPPORT_TRIAL_PROTOCOL) !== self::SUPPORT_TRIAL_PROTOCOL) {
+                throw new InvalidArgumentException('SUPPORT_ROLE_TRIAL_COMPONENT_OR_BENCHMARK_MISMATCH');
+            }
+            $producers = [];
+            foreach ($manifest['members'] as $member) {
+                $operator = $member['operator_contract'] ?? null;
+                if (! is_array($operator) || ($operator['component_id'] ?? '') !== $id) continue;
+                if (! in_array($member['role'], $component['consumer_roles'], true)) throw new InvalidArgumentException('SUPPORT_ROLE_PRODUCER_CONSUMER_SCOPE_MISMATCH');
+                $registered = app(TypedInstrumentFoundryService::class)->decisionOperatorContract(
+                    (string) ($operator['source_task_key'] ?? ''), (string) ($operator['target'] ?? ''),
+                    (array) ($operator['input_bindings'] ?? []), (array) ($operator['budget'] ?? []));
+                $copy = array_diff_key($operator, array_flip(['component_id', 'contract_hash', 'contract_json']));
+                $original = array_diff_key((array) ($registered['operator'] ?? []), array_flip(['contract_hash', 'contract_json']));
+                if (($registered['status'] ?? '') !== 'native_decision_contract'
+                    || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($copy, $original)
+                    || ($component['output_type'] ?? '') !== ($operator['target'] ?? '')
+                    || ($role === 'risk' && ($operator['target'] ?? '') !== 'risk_multiplier')) {
+                    throw new InvalidArgumentException('SUPPORT_ROLE_REGISTERED_OPERATOR_REQUIRED');
+                }
+                $producers[$member['specialist_id']] = ['contract_hash' => $operator['contract_hash'],
+                    'ast_hash' => $operator['ast_hash'], 'source_task_key' => $operator['source_task_key'],
+                    'target' => $operator['target'], 'budget' => $operator['budget'], 'passport_hash' => $member['passport_hash']];
+            }
+            $calls = $trial['minimum_evaluations'] ?? 8;
+            $delta = $trial['minimum_behavior_delta_decisions'] ?? 1;
+            $windows = $trial['minimum_positive_windows'] ?? 2;
+            $opportunity = $trial['minimum_opportunity_fraction'] ?? 0.8;
+            if (! is_int($calls) || $calls < 1 || $calls > 100000 || ! is_int($delta) || $delta < 1 || $delta > 100000
+                || ! is_int($windows) || $windows < 2 || $windows > 12
+                || ! is_numeric($opportunity) || $opportunity < 0.5 || $opportunity > 1) {
+                throw new InvalidArgumentException('SUPPORT_ROLE_PREREGISTERED_POWER_OR_RETENTION_INVALID');
+            }
+            $body = ['protocol' => self::SUPPORT_TRIAL_PROTOCOL, 'component_id' => $id, 'role' => $role,
+                'benchmark' => self::SUPPORT_BENCHMARKS[$role], 'component_contract_hash' => $component['contract_hash'],
+                'producer_contracts' => $producers, 'minimum_evaluations' => $calls,
+                'minimum_behavior_delta_decisions' => $delta, 'minimum_positive_windows' => $windows,
+                'minimum_opportunity_fraction' => (float) $opportunity];
+            if (in_array($role, ['capital', 'execution'], true)) {
+                $policy = $manifest[$role === 'capital' ? 'allocation' : 'execution'];
+                $body['policy_binding'] = ($policy['id'] === $id && (string) $policy['version'] === $component['version'])
+                    ? ['id' => $id, 'version' => $component['version'], 'policy_hash' => $this->epochs->parameterHash($policy),
+                        'member_weights' => array_column($manifest['members'], 'capital_weight', 'specialist_id')] : null;
+            }
+            if ($role === 'data') $body['policy_binding'] = $id === SpecialistCouncilDataUseService::PROTOCOL
+                && $component['version'] === '1' ? ['protocol' => SpecialistCouncilDataUseService::PROTOCOL] : null;
+            if (isset($trial['original_policy_benchmark'])) {
+                if (! in_array($role, ['learning', 'evolution'], true)) throw new InvalidArgumentException('SUPPORT_ROLE_POLICY_BENCHMARK_ROLE_MISMATCH');
+                $reference = (array) $trial['original_policy_benchmark'];
+                if (array_diff(array_keys($reference), ['challenge_key', 'challenge_hash', 'policy_key', 'policy_hash',
+                    'original_experiment_ids', 'question_hashes', 'equal_caps']) !== []) {
+                    throw new InvalidArgumentException('SUPPORT_ROLE_POLICY_BENCHMARK_ASSERTED_RESULTS_FORBIDDEN');
+                }
+                $body['original_policy_benchmark'] = $this->supportPolicyBenchmarkReference($component,
+                    (string) ($reference['challenge_key'] ?? ''), (string) ($reference['policy_key'] ?? ''));
+            }
+            $sealed[$id] = [...$body, 'trial_hash' => $this->epochs->parameterHash($body)];
+        }
+        return array_values($sealed);
+    }
+
+    /** Existing Portfolio journals are original producers; this reference grants no qualification. */
+    public function supportPolicyBenchmarkReference(array $component, string $challengeKey, string $policyKey): array
+    {
+        $policy = $this->originalPolicyJournal($policyKey, 'policy');
+        $challenge = $this->originalPolicyJournal($challengeKey, 'policy_challenge');
+        if (! in_array($component['role'] ?? '', ['learning', 'evolution'], true)
+            || ($component['id'] ?? '') !== $policyKey || ($component['version'] ?? '') !== '1'
+            || ! isset($policy['definition'], $challenge['cases'], $challenge['choices'])
+            || ! in_array($policyKey, $challenge['policy_keys'] ?? [], true)
+            || ! isset($challenge['choices'][$policyKey])
+            || ($challenge['evaluator'] ?? '') !== ResearchKnowledgePortfolioService::POLICY_EVALUATOR
+            || count($challenge['cases']) < 3 || count($challenge['cases']) > 16
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($challenge['caps'] ?? [],
+                array_intersect_key($policy['definition'], array_flip(['compute_cap_seconds', 'max_candidates', 'exploration_fraction'])))) {
+            throw new InvalidArgumentException('SUPPORT_ROLE_ORIGINAL_EQUAL_BUDGET_POLICY_CHALLENGE_REQUIRED');
+        }
+        return ['challenge_key' => $challengeKey, 'challenge_hash' => $this->epochs->parameterHash($challenge),
+            'policy_key' => $policyKey, 'policy_hash' => $this->epochs->parameterHash($policy),
+            'original_experiment_ids' => array_map('intval', array_keys($challenge['cases'])),
+            'question_hashes' => array_column($challenge['cases'], 'question_hash'), 'equal_caps' => $challenge['caps']];
+    }
+
+    public function originalPolicyJournal(string $key, string $kind): ?array
+    {
+        if (! preg_match('/^[a-f0-9]{64}$/', $key)) return null;
+        $row = DB::table('research_knowledge_entries')->where('knowledge_key', $key)
+            ->where('subject_type', ResearchKnowledgePortfolioService::META_PROTOCOL.':'.$kind)
+            ->where('authority', 'research_only')->first();
+        if (! $row) return null;
+        $claim = json_decode($row->claim, true); $evidence = json_decode($row->evidence, true);
+        return is_array($claim) && ($claim['protocol'] ?? '') === ResearchKnowledgePortfolioService::META_PROTOCOL
+            && ($evidence['claim_hash'] ?? '') === $this->epochs->parameterHash($claim) ? $claim : null;
     }
 
     /** Seal every relevant component and native model, rather than trusting a supplied hash. */

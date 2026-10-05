@@ -15,9 +15,30 @@ Actual evaluated UTC bounds, warmup and decision-row counts must match the
 preregistered arm; identical source SHA alone is not evaluation parity. Native
 completion publishes its delivery in the original terminal transaction and
 the existing locked arbiter retries only the downstream consumer.
+Original terminal timestamps are sampled after artifact sealing, not before
+compression and file storage; the strict artifact-before-terminal-time check
+is not waived. Canonical instrument assignments are persisted before council
+model/manifest/plan hashes, including native source models outside comparison
+arms, so a later payload lookup must not mutate their frozen identity.
 The additive
 paper account remains opt-in and uses the original E3/E4 intake/execution owner;
 native deployment grants no paper or live authority.
+
+An unbound native source omits `specialist_council_contract` in the Laravel
+strategy payload. Python's strict object schema stays unchanged: explicit
+null, list or scalar declarations are rejected, and an invalid persisted
+native binding throws before ordinary fallback. A real PHP-serialized payload
+is parsed by the Python schema in the transport regression test.
+
+Council follow-up proof registration is an existing-owner CLI operation, not
+queue or population creation. Only the server-sealed original work, current
+source/native vectors and verified clean-MTF plan can become executable.
+The conversion kernel rechecks these prerequisites before the sole arbiter
+claims the work. The work consumer delegates to canonical construction,
+preparation and dispatch; an exit-zero CLI without its durable batch witness
+does not complete the work. Original request/response and prior-credit records
+are never rewritten. Missing independent/descendant execution adapters remain
+explicit code prerequisites, separate from absent authorized datasets.
 
 `SpecialistCouncilPreparationService` binds a complete prospective research
 manifest and original candidate/solo/ablation plan inside an unused canonical

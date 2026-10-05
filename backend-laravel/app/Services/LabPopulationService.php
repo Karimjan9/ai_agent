@@ -5295,7 +5295,8 @@ class LabPopulationService
         bool $allowControlledRescue, ?array $prospectiveExpectation): array
     {
         $keys = ['protocol', 'purpose', 'symbol', 'storage_timeframe', 'population_size', 'research_question', 'creator_id'];
-        if (array_diff(array_keys($intent), $keys) !== [] || array_diff($keys, array_keys($intent)) !== []
+        $followupKeys = ['followup_work_item_id', 'followup_resolution_hash'];
+        if (array_diff(array_keys($intent), [...$keys, ...$followupKeys]) !== [] || array_diff($keys, array_keys($intent)) !== []
             || ($intent['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
             || ($intent['purpose'] ?? null) !== 'research'
             || ($intent['symbol'] ?? null) !== 'XAUUSD' || $symbol !== 'XAUUSD'
@@ -5312,6 +5313,9 @@ class LabPopulationService
                 || strlen($intent[$key]) > $limit || trim($intent[$key]) !== $intent[$key]) {
                 throw new \InvalidArgumentException('NATIVE_COUNCIL_INTENT_IDENTITY_INVALID:'.$key);
             }
+        }
+        if (array_intersect($followupKeys, array_keys($intent)) !== []) {
+            $this->nativeCouncilFollowupResolution($intent, true);
         }
         $sealed = [
             ...$intent, 'authority' => 'research_only', 'requires_atomic_preparation' => true,
@@ -5330,6 +5334,13 @@ class LabPopulationService
         }
         $definitions = [...$definitions, $definitions[2], $definitions[2]];
         $roles = ['source_scalp', 'source_hour', 'source_day', 'source_swing', 'candidate_carrier', 'ablation_carrier'];
+        $resolution = isset($intent['followup_work_item_id']) ? $this->nativeCouncilFollowupResolution($intent) : null;
+        if ($resolution !== null) {
+            foreach (['scalp', 'hour', 'day', 'swing', 'day', 'day'] as $index => $role) {
+                $definitions[$index]['family'] = $resolution['native_source_models'][$role]['family'];
+                $definitions[$index]['followup_source'] = $resolution['native_source_models'][$role];
+            }
+        }
 
         return array_map(fn (array $definition, int $index): array => [
             'family' => $definition['family'], 'origin' => 'native_council_root', 'target' => 'portfolio_router',
@@ -5339,15 +5350,37 @@ class LabPopulationService
                 // These are pristine schema references. Their future council/solo/ablation contrast
                 // is assembled atomically by the preparation owner, not the old pair planner.
                 'control_only' => true, 'parent_lane' => 'autonomous',
+                'native_council_followup_source' => $definition['followup_source'] ?? null,
                 'native_specialist_council_seed' => [
                     'protocol' => self::NATIVE_COUNCIL_INTENT_PROTOCOL,
                     'intent_hash' => $intent['intent_hash'], 'slot_role' => $roles[$index],
                     'prospective_horizon' => $index < 4 ? substr($roles[$index], 7) : null,
                     'qualified_specialist' => false, 'authority' => 'research_only',
+                    'followup_work_item_id' => $intent['followup_work_item_id'] ?? null,
+                    'followup_resolution_hash' => $intent['followup_resolution_hash'] ?? null,
                 ],
                 'promotion_evidence' => false,
             ],
         ], $definitions, array_keys($roles));
+    }
+
+    /** The continuation is a verified prospective research vector, never genetic parent authority. */
+    private function nativeCouncilFollowupResolution(array $intent, bool $requiresLease = false): array
+    {
+        $work = \App\Models\ResearchExperimentWorkItem::find($intent['followup_work_item_id'] ?? 0);
+        if (! $work || ! is_string($intent['followup_resolution_hash'] ?? null)
+            || ($requiresLease && ($work->status !== 'leased' || ! $work->lease_token
+                || ! $work->lease_expires_at || $work->lease_expires_at->isPast()))) {
+            throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED');
+        }
+        $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($work);
+        if (($proof['executable'] ?? false) !== true
+            || ! hash_equals($intent['followup_resolution_hash'], (string) ($proof['resolution_hash'] ?? ''))
+            || ($intent['creator_id'] ?? null) !== ($proof['creator_id'] ?? null)
+            || ($intent['research_question'] ?? null) !== ($proof['research_question'] ?? null)) {
+            throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_PROOF_INVALID');
+        }
+        return $proof;
     }
 
     /** Existing lineage recovery remains a separate bounded semantic-root plan. */
@@ -6658,6 +6691,7 @@ class LabPopulationService
         $nativeSeed = (array) data_get($niche, 'native_specialist_council_seed', []);
         $nativeIntent = (array) data_get($generation->trigger_context, 'native_specialist_council_intent', []);
         $nativeCouncilRoot = $nativeSeed !== [] || $nativeIntent !== [];
+        $nativeFollowupSource = null;
         if ($nativeCouncilRoot) {
             $nativeSeal = $nativeIntent;
             unset($nativeSeal['intent_hash']);
@@ -6675,6 +6709,22 @@ class LabPopulationService
                 || ($nativeIntent['intent_hash'] ?? null) !== app(ResearchPaperEpochContractService::class)->parameterHash($nativeSeal)) {
                 $failureReason = 'NATIVE_COUNCIL_CONSTRUCTOR_SEED_SEAL_INVALID';
 
+                return false;
+            }
+            if (isset($nativeIntent['followup_work_item_id'])) {
+                $resolution = $this->nativeCouncilFollowupResolution($nativeIntent, true);
+                $role = ['scalp', 'hour', 'day', 'swing', 'day', 'day'][$slot - 1];
+                $nativeFollowupSource = $resolution['native_source_models'][$role] ?? null;
+                if (! is_array($nativeFollowupSource) || ($nativeFollowupSource['family'] ?? null) !== $family
+                    || app(ResearchPaperEpochContractService::class)->parameterHash($nativeFollowupSource)
+                        !== app(ResearchPaperEpochContractService::class)->parameterHash((array) data_get($niche, 'native_council_followup_source'))
+                    || ($nativeSeed['followup_work_item_id'] ?? null) !== $nativeIntent['followup_work_item_id']
+                    || ($nativeSeed['followup_resolution_hash'] ?? null) !== $nativeIntent['followup_resolution_hash']) {
+                    $failureReason = 'NATIVE_COUNCIL_FOLLOWUP_SLOT_PROOF_INVALID';
+                    return false;
+                }
+            } elseif (! empty(data_get($niche, 'native_council_followup_source'))) {
+                $failureReason = 'NATIVE_COUNCIL_FOLLOWUP_SLOT_PROOF_INVALID';
                 return false;
             }
         }
@@ -7545,6 +7595,11 @@ class LabPopulationService
         // child's family. Intersecting with the child schema remains a final
         // guard against stale legacy parameters crossing the family boundary.
         $base = array_intersect_key($base, $this->schemas->schema($family));
+        if ($nativeFollowupSource !== null) {
+            // Exact, server-validated prospective vectors. No qualified parent,
+            // inherited authority or new schema default is introduced here.
+            $base = $nativeFollowupSource['parameters'];
+        }
         if ($causalCohortRole !== ''
             || in_array((string) data_get($cooperativeBlock, 'block_type'),
                 ['phase_scope_probe', 'activation_factorial'], true)) {
@@ -7758,6 +7813,7 @@ class LabPopulationService
                     && ! $architectureExperiment))) {
             $architecture = $compositionArchitecture;
         }
+        if ($nativeFollowupSource !== null) $architecture = $nativeFollowupSource['strategy_architecture'];
         $tacticArchitecture = (string) data_get($niche, 'tactic_library_key', $architecture);
         $tacticContract = $this->tactics->for($family, $tacticArchitecture, $target);
         $strategyLibraryContract = (array) data_get($niche, 'strategy_library_contract', []);
@@ -8608,6 +8664,12 @@ class LabPopulationService
             $parameters = $this->schemas->validate($family, $parameters);
         }
         $parameterDiff = $this->diff($base, $parameters);
+        if ($nativeFollowupSource !== null
+            && app(ResearchPaperEpochContractService::class)->parameterHash($parameters)
+                !== $nativeFollowupSource['parameter_hash']) {
+            $failureReason = 'NATIVE_COUNCIL_FOLLOWUP_EXECUTABLE_VECTOR_DRIFT';
+            return false;
+        }
         if ($causalCohortRole === '' && app(InstrumentPolicyConsumptionService::class)->forbiddenDelta(
             (array) $instrumentMutationPolicy, (array) $parameterDiff, (array) $parameters,
         )) {

@@ -14,6 +14,7 @@ use App\Models\InstrumentInvocationLedger;
 use App\Models\LabAgent;
 use App\Models\LabCandleDecisionEvent;
 use App\Models\LabEvaluationRun;
+use App\Models\LabEvidenceArtifact;
 use App\Models\LabGateDecisionEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLifecycleCycle;
@@ -34,6 +35,7 @@ use App\Services\LabHistoricalLearningService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabPopulationService;
 use App\Services\LabQueueJobInspector;
+use App\Services\SpecialistCouncilLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\MaxAttemptsExceededException;
@@ -47,6 +49,114 @@ use Tests\TestCase;
 class ImmutableLabEvidenceTest extends TestCase
 {
     use RefreshDatabase;
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('terminalPublicationStates')]
+    public function test_terminal_publication_clock_is_sampled_after_all_original_artifacts_are_durable(string $status): void
+    {
+        [$run, $ledger] = $this->timedPublicationFixture();
+        $response = $status === 'completed' ? [
+            'total_trades' => 0, 'trade_ledger' => [], 'trade_ledger_hash' => $ledger->hash([]),
+            'trades' => [], 'displayed_trade_count' => 0,
+            'decision_trace' => [['candle_index' => 200, 'candle_time' => '2025-01-01T00:00:00Z',
+                'event_type' => 'signal_evaluation', 'action' => 'WAIT', 'accepted' => false]],
+            'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1',
+                'requested' => true, 'complete' => true, 'event_count' => 1, 'evaluated_candle_count' => 1]],
+        ] : null;
+        $ledger->advancePublication = true;
+        $ledger->finishRun($run, $status, $response, [], ['reason_code' => 'PUBLICATION_CLOCK_FIXTURE']);
+        $run->refresh();
+        $artifacts = LabEvidenceArtifact::where('run_id', $run->run_id)->get();
+        $this->assertNotEmpty($ledger->publicationStates);
+        $this->assertTrue(collect($ledger->publicationStates)->every(fn (array $state): bool =>
+            $state['status'] === 'started' && $state['finished_at'] === null));
+        $this->assertTrue($artifacts->every(fn (LabEvidenceArtifact $artifact): bool => $artifact->created_at->lessThanOrEqualTo($run->finished_at)));
+        $this->assertSame($status, $run->status);
+        $this->assertSame($run->finished_at->toIso8601String(), data_get($run->metadata, 'terminal_at'));
+        $this->assertSame((int) $run->started_at->diffInMilliseconds($run->finished_at), (int) $run->duration_ms);
+        $this->assertGreaterThanOrEqual(6000, $run->duration_ms);
+        // Exercise the real council original-file guard without relaxing it or
+        // substituting assertions that a timing fixture is scientific evidence.
+        $reader = new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'originalArtifact');
+        $reader->setAccessible(true);
+        $original = $reader->invoke(app(SpecialistCouncilLifecycleService::class), $run, 'evaluation_response');
+        $this->assertSame($run->response_hash, $ledger->hash($original));
+        $finished = $run->finished_at->toIso8601String(); $hash = $run->response_hash;
+        $count = $artifacts->count();
+        $this->travelTo(now()->addMinute());
+        $ledger->finishRun($run, 'technical_error', ['different' => true]);
+        $this->assertSame($hash, $run->fresh()->response_hash);
+        $this->assertSame($finished, $run->fresh()->finished_at->toIso8601String());
+        $this->assertSame($count, LabEvidenceArtifact::where('run_id', $run->run_id)->count());
+        $this->travelBack();
+    }
+
+    public static function terminalPublicationStates(): array
+    {
+        return ['completed-producer' => ['completed'], 'technical-envelope' => ['technical_error']];
+    }
+
+    public function test_terminal_publication_artifact_failure_rolls_back_without_final_timestamp(): void
+    {
+        [$run, $ledger] = $this->timedPublicationFixture();
+        $ledger->advancePublication = true;
+        $ledger->failOnArtifact = 'trade_ledger';
+        try {
+            $ledger->finishRun($run, 'completed', ['total_trades' => 0, 'trade_ledger' => [],
+                'trade_ledger_hash' => $ledger->hash([]), 'displayed_trade_count' => 0]);
+            $this->fail('An incomplete durable close must not publish a terminal row.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('Deterministic artifact publication failure', $error->getMessage());
+        }
+        $this->assertSame('started', $run->status);
+        $this->assertNull($run->finished_at);
+        $this->assertNull($run->response_hash);
+        $this->assertNull(data_get($run->metadata, 'terminal_at'));
+        $this->assertSame(0, LabEvidenceArtifact::where('run_id', $run->run_id)->whereIn('artifact_type', ['evaluation_response', 'trade_ledger'])->count());
+        $this->travelBack();
+    }
+
+    /** Time moves at every real artifact write; no wall-clock sleep or timing luck. */
+    private function timedPublicationFixture(): array
+    {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-05T10:00:00Z'));
+        \Illuminate\Support\Facades\Queue::fake();
+        $lab = AiLaboratory::create(['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'name' => 'publication clock fixture',
+            'strategy_families' => ['ema_rsi'], 'is_active' => false]);
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'test', 'status' => 'screening', 'population_size' => 1, 'trigger_context' => []]);
+        $model = ModelVersion::create(['name' => 'timed-original', 'strategy' => 'ema_rsi_v1', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => ['ema_fast' => 4, 'ema_slow' => 10], 'metadata' => []]);
+        $agent = LabAgent::withoutEvents(fn () => LabAgent::create(['lab_generation_id' => $generation->id,
+            'model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'ema_rsi',
+            'origin' => 'test', 'lifecycle_status' => 'screening', 'parameter_diff' => []]));
+        $ledger = new class(fn () => $this->travelTo(now()->addSeconds(2))) extends LabImmutableEvidenceService {
+            public bool $advancePublication = false;
+            public ?string $failOnArtifact = null;
+            public array $publicationStates = [];
+            public function __construct(private \Closure $advance) {}
+            public function recordArtifact(?LabEvaluationRun $run, string $type, array $payload, array $metadata = [],
+                ?LabAgent $agent = null, ?string $runId = null): LabEvidenceArtifact
+            {
+                if ($this->advancePublication && $run !== null) {
+                    $original = LabEvaluationRun::findOrFail($run->id);
+                    $this->publicationStates[] = ['status' => $original->status, 'finished_at' => $original->finished_at];
+                    ($this->advance)();
+                }
+                $artifact = parent::recordArtifact($run, $type, $payload, $metadata, $agent, $runId);
+                if ($type === $this->failOnArtifact) throw new \RuntimeException('Deterministic artifact publication failure');
+                return $artifact;
+            }
+        };
+        $this->app->instance(LabImmutableEvidenceService::class, $ledger);
+        $run = LabEvaluationRun::create(['run_id' => (string) Str::uuid(), 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id, 'phase' => 'screening', 'mode' => 'incremental',
+            'status' => 'started', 'started_at' => now(), 'code_hash' => str_repeat('f', 64), 'data_hash' => str_repeat('c', 64),
+            'parameter_hash' => $ledger->parameterHash($agent), 'metadata' => ['source' => 'publication_clock_fixture']]);
+        $ledger->attachRequest($run, ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy' => $model->strategy,
+            'parameters' => $model->parameters, 'replay_dataset_hash' => str_repeat('c', 64),
+            'candles' => array_fill(0, 201, ['time' => '2025-01-01T00:00:00Z', 'close' => 2000])]);
+        return [$run, $ledger];
+    }
 
     public function test_autonomy_audit_treats_scientific_rejection_as_a_clean_terminal_disposition(): void
     {

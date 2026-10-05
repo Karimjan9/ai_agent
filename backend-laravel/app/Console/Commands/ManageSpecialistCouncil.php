@@ -6,8 +6,10 @@ use App\Models\ModelVersion;
 use App\Models\LabAgent;
 use App\Models\LabGeneration;
 use App\Models\SpecialistCouncilVersion;
+use App\Models\ResearchExperimentWorkItem;
 use App\Services\SpecialistCouncilLifecycleService;
 use App\Services\SpecialistCouncilPreparationService;
+use App\Services\SpecialistCouncilResearchFeedbackService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -15,9 +17,11 @@ use InvalidArgumentException;
 /** Operator entrypoint; native population/dispatcher remains the only generation/queue owner. */
 class ManageSpecialistCouncil extends Command
 {
-    protected $signature = 'trading:specialist-council {action : prepare|register|plan|attach-arm|status|approve|schedule|rollback}
+    protected $signature = 'trading:specialist-council {action : prepare|register|register-followup|followup-status|plan|attach-arm|status|approve|schedule|rollback}
         {--generation-id= : Constructor-complete unused canonical draft ID, for prepare}
         {--preparation= : Workspace JSON prospective manifest and complete research plan}
+        {--work-id= : Original immutable council follow-up work ID}
+        {--followup-plan= : Bounded workspace JSON prospective prerequisite plan}
         {--version-id= : Persisted council version ID}
         {--manifest= : Workspace JSON manifest, for register}
         {--carrier-model= : Unobserved native aggregate model ID, for register}
@@ -39,6 +43,16 @@ class ManageSpecialistCouncil extends Command
                 $result = app(SpecialistCouncilPreparationService::class)->prepare(
                     LabGeneration::findOrFail($this->positiveId('generation-id')),
                     $this->jsonFile((string) $this->option('preparation')),
+                );
+            } elseif ($action === 'register-followup') {
+                $result = app(SpecialistCouncilResearchFeedbackService::class)->registerFollowupProof(
+                    $this->positiveId('work-id'),
+                    $this->jsonFile((string) $this->option('followup-plan')),
+                    $this->required('actor'),
+                );
+            } elseif ($action === 'followup-status') {
+                $result = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness(
+                    ResearchExperimentWorkItem::findOrFail($this->positiveId('work-id')),
                 );
             } elseif ($action === 'register') {
                 $manifest = $this->jsonFile((string) $this->option('manifest'));

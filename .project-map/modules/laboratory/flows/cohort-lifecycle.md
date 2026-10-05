@@ -12,6 +12,16 @@ an already-reconciled lineage head or a completed no-op decision.
 
 ## Declared native specialist council
 
+A council conversion dependency can become runnable only after original-owner
+follow-up proof registration. The kernel verifies the server seal, real source
+and clean-MTF plan before the existing arbiter claims it. Its existing work
+consumer invokes `SpecialistCouncilFollowupExecutionService`, which uses the
+normal constructor, same-generation continuation, atomic preparation and
+canonical dispatcher. The saved work checkpoint, intent and model markers
+identify one cohort; losing an intent projection cannot permit a second build.
+Ready original follow-up work precedes generic settlement of that unfinished
+draft. Actual queue admission, not a command return code, closes the work item.
+
 The canonical population constructor accepts an explicit final
 `nativeCouncilIntent` only for an unforced XAUUSD/H1 historical research build.
 It seals exactly six new schema references: prospective scalp/hour/day/swing
@@ -44,6 +54,10 @@ dispatcher's existing lease and a database transaction, it verifies that all
 members and arms belong to that draft, refuses other experiment owners or
 earlier replay/queue/source seals, freezes the manifest and original plan,
 and binds every arm before returning `prepared_for_canonical_dispatch`.
+Before those seals, all six original agents receive their canonical persisted
+instrument assignments and refreshed model identities. Payload construction
+cannot lazily introduce a new descriptor after admission. Assignment failure,
+unreserved treatment or a changed parameter vector aborts the transaction.
 It creates neither a generation nor evaluator jobs. The ordinary snapshot,
 release, MTF and immutable-run dispatcher remains the next owner.
 

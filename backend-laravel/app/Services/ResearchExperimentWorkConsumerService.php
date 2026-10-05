@@ -33,7 +33,15 @@ class ResearchExperimentWorkConsumerService
 
             return $this->blocked('RESEARCH_LOOP_OWNER_MISMATCH');
         }
-        if (! (bool) data_get($payload, 'executable', false)) {
+        $council = str_starts_with((string) $item->work_type, 'specialist_council_');
+        if ($council) {
+            $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+            if (($proof['executable'] ?? false) !== true) {
+                $reason = (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED');
+                $this->conversion->defer($item, $reason, false);
+                return $this->blocked($reason);
+            }
+        } elseif (! (bool) data_get($payload, 'executable', false)) {
             $reason = (string) data_get($payload, 'retry_condition.code', 'WORK_DEPENDENCY_NOT_EXECUTABLE');
             $this->conversion->defer($item, $reason, false);
 
@@ -44,6 +52,7 @@ class ResearchExperimentWorkConsumerService
 
             return $this->blocked('AUTONOMOUS_MODE_STOPPED');
         }
+        if ($council) return app(SpecialistCouncilFollowupExecutionService::class)->execute($item);
 
         return match ((string) $item->work_type) {
             'cartridge_confirmation' => $this->confirmCartridge($item, $payload),

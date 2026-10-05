@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T08:24:49.993Z",
-  "source_digest": "ae75cfb79d6c6f3962229e74beaf700fa753e7934cfbd93675b0a9b45461bb3c",
-  "source_file_count": 1515,
-  "git_head": "5d513eec1b516c98a45790c5561c63af75729d2f",
+  "generated_at": "2026-10-05T11:01:05.518Z",
+  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
+  "source_file_count": 1521,
+  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -841,7 +841,7 @@
       "symbol": "ManageSpecialistCouncil",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php",
-      "line": 16
+      "line": 18
     },
     {
       "symbol": "MaterializeFailureWoundSet",
@@ -5797,12 +5797,18 @@
       "symbol": "SpecialistCouncilContractService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 10
+      "line": 11
     },
     {
       "symbol": "SpecialistCouncilDataUseService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilDataUseService.php",
+      "line": 13
+    },
+    {
+      "symbol": "SpecialistCouncilFollowupExecutionService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
       "line": 13
     },
     {
@@ -5821,7 +5827,7 @@
       "symbol": "SpecialistCouncilResearchFeedbackService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 15
+      "line": 19
     },
     {
       "symbol": "SpecialistLeagueChallengeService",
@@ -7747,7 +7753,7 @@
       "symbol": "ImmutableLabEvidenceTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
-      "line": 47
+      "line": 49
     },
     {
       "symbol": "IndependentProviderExportAttestationTest",
@@ -8350,6 +8356,24 @@
       "line": 24
     },
     {
+      "symbol": "SpecialistCouncilFollowupCommandTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php",
+      "line": 9
+    },
+    {
+      "symbol": "SpecialistCouncilFollowupExecutionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php",
+      "line": 24
+    },
+    {
+      "symbol": "SpecialistCouncilFollowupReadinessTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
+      "line": 26
+    },
+    {
       "symbol": "SpecialistCouncilNativeIntegrationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
@@ -8372,6 +8396,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilResearchFeedbackTest.php",
       "line": 22
+    },
+    {
+      "symbol": "SpecialistCouncilSupportRoleTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilSupportRoleTest.php",
+      "line": 23
+    },
+    {
+      "symbol": "SpecialistCouncilTransportTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php",
+      "line": 17
     },
     {
       "symbol": "SpecialistLeagueChallengeServiceTest",

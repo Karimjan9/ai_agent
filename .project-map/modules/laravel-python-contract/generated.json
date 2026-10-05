@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T08:24:49.993Z",
-  "source_digest": "ae75cfb79d6c6f3962229e74beaf700fa753e7934cfbd93675b0a9b45461bb3c",
-  "source_file_count": 1515,
-  "git_head": "5d513eec1b516c98a45790c5561c63af75729d2f",
+  "generated_at": "2026-10-05T11:01:05.518Z",
+  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
+  "source_file_count": 1521,
+  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [
@@ -3524,25 +3524,25 @@
       "symbol": "bindCouncilEvaluationRequests",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2972
+      "line": 2981
     },
     {
       "symbol": "specialistCouncilMemberPayload",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2987
+      "line": 2996
     },
     {
       "symbol": "attestSpecialistCouncilReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3045
+      "line": 3054
     },
     {
       "symbol": "appendDifferentialNoRegressionEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3063
+      "line": 3072
     },
     {
       "symbol": "causalFoldEnvelope",
@@ -4509,6 +4509,18 @@
         "rows",
         "test_sealed_window_attests_only_exact_complete_receipt",
         "test_paper_and_short_windows_fail_before_replay"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php",
+      "tests": [
+        "sourceAgent",
+        "payload",
+        "parse",
+        "test_real_unbound_source_payload_omits_council_and_parses_as_ordinary_strategy",
+        "test_declared_native_object_is_preserved_in_a_mixed_transport_not_cast_or_dropped",
+        "test_explicit_null_list_or_scalar_council_stays_rejected_by_strict_python_schema",
+        "test_declared_invalid_native_binding_is_rejected_before_payload_fallback"
       ]
     },
     {

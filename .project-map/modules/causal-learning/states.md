@@ -1,5 +1,18 @@
 # Causal learning states
 
+## Council prospective follow-up
+
+`blocked -> server_preregistered -> ready -> leased -> canonical_cohort_dispatched`
+requires original council receipt/assessment/plan IDs and hashes, current
+evaluator source, exact old/new native vectors, existing mutation/instrument
+firewalls and verified 15000+512 clean-MTF scope. Caller flags are not proof.
+The sole arbiter's work fence and one-cohort checkpoint remain current through
+construction/preparation/dispatch; stable dependency holds prevent no-op retry.
+New observed discovery is not independent confirmation. A source-only repair
+needs verified pre-execution absence of scientific outcomes; generic transport
+failure/timeout is not that proof. Unsupported independent or descendant
+executors stay explicitly blocked, not silently described as data-only waits.
+
 ## Research meta-learning (ADR-028)
 
 New causal questions: `preregistered -> local_target_calibrated | underpowered`.

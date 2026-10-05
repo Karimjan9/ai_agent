@@ -97,6 +97,70 @@ class SpecialistCouncilPreparationTest extends TestCase
         $this->assertRolledBack($generation, $models);
     }
 
+    public function test_invalid_last_native_assignment_rolls_back_all_prospective_assignments_before_sealing(): void
+    {
+        [$generation, $request, $models] = $this->fixture();
+        $producer = app(\App\Services\LabInstrumentResearchService::class);
+        $lastId = $models->last()->id;
+        $this->mock(\App\Services\LabInstrumentResearchService::class, fn ($mock) => $mock->shouldReceive('assignment')
+            ->andReturnUsing(fn (LabAgent $agent): array => $agent->model_version_id === $lastId
+                ? ['protocol' => \App\Services\LabInstrumentResearchService::PROTOCOL, 'status' => 'blocked_exact_pair_reservation_missing']
+                : $producer->assignment($agent)));
+        try {
+            app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+            $this->fail('Invalid original assignment was sealed.');
+        } catch (\LogicException $error) {
+            $this->assertSame('CANONICAL_COUNCIL_PRESEALED_INSTRUMENT_ASSIGNMENT_INVALID', $error->getMessage());
+        }
+        $this->assertRolledBack($generation, $models);
+        foreach ($models as $model) $this->assertNull(data_get($model->fresh()->metadata, 'instrument_research_assignment'));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_assignment_json_storage_number_normalization_preserves_exact_presealed_semantics(): void
+    {
+        [$generation, $request, $models] = $this->fixture();
+        $producer = app(\App\Services\LabInstrumentResearchService::class);
+        $this->mock(\App\Services\LabInstrumentResearchService::class, fn ($mock) => $mock->shouldReceive('assignment')
+            ->andReturnUsing(function (LabAgent $agent) use ($producer): array {
+                $assignment = $producer->assignment($agent);
+                // Simulate JSON's 1.0 -> 1 storage projection, not a different
+                // decision rule or a different producer's assignment hash.
+                $assignment['decision_doctrine']['causal_candidate_limit'] = 1.0;
+                $persisted = data_get($agent->modelVersion->fresh()->metadata, 'instrument_research_assignment');
+                $this->assertTrue(app(\App\Services\LabImmutableEvidenceService::class)->equivalentJsonValue($persisted, $assignment));
+                return $assignment;
+            }));
+        $receipt = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        foreach ($models as $model) {
+            $current = $model->fresh();
+            $this->assertSame(1, data_get($current->metadata, 'instrument_research_assignment.decision_doctrine.causal_candidate_limit'));
+            $this->assertSame($receipt['generation_model_hashes'][(string) $model->id],
+                app(\App\Services\SpecialistCouncilContractService::class)->modelHash($current));
+        }
+        $this->assertTrue(app(SpecialistCouncilPreparationService::class)->isResearchGeneration($generation->fresh()));
+    }
+
+    public function test_changed_assignment_numeric_value_is_not_json_normalization_and_rolls_back(): void
+    {
+        [$generation, $request, $models] = $this->fixture();
+        $producer = app(\App\Services\LabInstrumentResearchService::class);
+        $this->mock(\App\Services\LabInstrumentResearchService::class, fn ($mock) => $mock->shouldReceive('assignment')
+            ->andReturnUsing(function (LabAgent $agent) use ($producer): array {
+                $assignment = $producer->assignment($agent);
+                $assignment['decision_doctrine']['causal_candidate_limit'] = 1.25;
+                return $assignment;
+            }));
+        try {
+            app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+            $this->fail('Changed numeric policy value was treated as storage normalization.');
+        } catch (\LogicException $error) {
+            $this->assertSame('CANONICAL_COUNCIL_PRESEALED_INSTRUMENT_ASSIGNMENT_INVALID', $error->getMessage());
+        }
+        $this->assertRolledBack($generation, $models);
+        foreach ($models as $model) $this->assertNull(data_get($model->fresh()->metadata, 'instrument_research_assignment'));
+    }
+
     public function test_plan_that_cannot_bind_to_actual_execution_rolls_back_before_dispatch(): void
     {
         [$generation, $request, $models] = $this->fixture();
@@ -513,6 +577,29 @@ class SpecialistCouncilPreparationTest extends TestCase
         $receipt = $owner->prepare($generation, $request);
         $this->assertSame(data_get($generation->trigger_context, 'native_specialist_council_intent.intent_hash'), $receipt['native_intent_hash']);
         $this->assertCount(6, $receipt['generation_model_hashes']);
+        // Real producer, not a mocked assignment: the original first replay
+        // must only reuse already sealed descriptors across all six roots.
+        $instruments = app(\App\Services\LabInstrumentResearchService::class);
+        $contracts = app(\App\Services\SpecialistCouncilContractService::class);
+        foreach ($generation->agents()->with('modelVersion', 'generation')->orderBy('id')->get() as $index => $agent) {
+            $frozenHash = $receipt['generation_model_hashes'][(string) $agent->model_version_id];
+            $first = $instruments->assignment($agent);
+            $second = $instruments->assignment($agent->fresh(['modelVersion', 'generation']));
+            $this->assertSame($first['assignment_hash'], $second['assignment_hash']);
+            $this->assertSame($frozenHash, $contracts->modelHash($agent->modelVersion->fresh()));
+            $this->assertSame($before[$agent->model_version_id], $agent->modelVersion->fresh()->parameters);
+            if ($index < 4) {
+                $payload = app(LabAgentEvaluationService::class)->specialistCouncilMemberPayload(
+                    $agent->modelVersion->fresh(), 'M5', $bundle, $bundle['bundle_hash'], 'XAUUSD');
+                $this->assertSame($first['assignment_hash'], $payload['instrument_research_assignment']['assignment_hash']);
+                $this->assertSame($frozenHash, $contracts->modelHash($agent->modelVersion->fresh()));
+            }
+        }
+        $sourceAgent = $generation->agents()->with('modelVersion', 'generation')->orderBy('id')->first();
+        $screenPayload = new \ReflectionMethod(LabAgentEvaluationService::class, 'screeningStrategyPayload');
+        $screenPayload->invoke(app(LabAgentEvaluationService::class), $sourceAgent, 'M5', $bundle, $bundle['bundle_hash']);
+        $this->assertSame($receipt['generation_model_hashes'][(string) $sourceAgent->model_version_id],
+            $contracts->modelHash($sourceAgent->modelVersion->fresh()));
         $this->assertSame(['scalp', 'hour', 'day', 'swing'], array_column($request['manifest']['members'], 'role'));
         $this->assertTrue($owner->isResearchGeneration($generation->fresh()));
         $this->assertTrue($owner->inspectDiscoveryOwner($generation->fresh(), $bundle['manifest'])['allowed']);

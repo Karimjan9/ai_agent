@@ -22,6 +22,7 @@ paths:
   - backend-laravel/app/Services/SpecialistCouncilDataUseService.php
   - backend-laravel/app/Services/SpecialistCouncilPreparationService.php
   - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
+  - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
   - backend-laravel/app/Models/SpecialistCouncilVersion.php
   - backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php
   - docs/architecture/specialist-council.md
@@ -34,6 +35,8 @@ paths:
   - backend-laravel/app/Services/LabLifecycleOrchestrator.php
   - backend-laravel/app/Services/CausalCompoundingKernelService.php
   - backend-laravel/app/Services/LabReplayRecoveryService.php
+  - backend-laravel/app/Services/TechnicalGenerationRecoveryService.php
+  - backend-laravel/app/Console/Commands/RecoverTechnicalGenerations.php
   - backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php
   - backend-laravel/app/Services/LabDataEdgeAuditService.php
   - backend-laravel/app/Console/Commands/RecoverLabEvaluationErrors.php
@@ -79,6 +82,11 @@ entry_points:
   - SpecialistCouncilPreparationService::inspectDiscoveryOwner
   - SpecialistCouncilResearchFeedbackService::recordAssessment
   - SpecialistCouncilResearchFeedbackService::priorObservations
+  - SpecialistCouncilResearchFeedbackService::registerFollowupProof
+  - SpecialistCouncilFollowupExecutionService::execute
+  - SpecialistCouncilLifecycleService::researchSupportBinding
+  - SpecialistCouncilLifecycleService::preregisterSupportPolicyBenchmark
+  - SpecialistCouncilLifecycleService::settleSupportPolicyBenchmark
   - GenerationSnapshotAdmissionService::historicalDatasetReadiness
   - trading:lab-generation --trigger=historical_research
   - LabPopulationService
@@ -154,6 +162,11 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilSupportRoleTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php
   - backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php
   - backend-laravel/tests/Feature/FrozenReleaseLookbackRecoveryTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilContractsTest.php

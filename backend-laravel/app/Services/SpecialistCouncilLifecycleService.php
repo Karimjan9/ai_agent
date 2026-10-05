@@ -20,6 +20,7 @@ class SpecialistCouncilLifecycleService
     public const PLAN_PROTOCOL = 'specialist_council_evaluation_plan_v1';
     public const ASSESSMENT_PROTOCOL = 'specialist_council_independent_assessment_v1';
     public const BINDING_PROTOCOL = 'specialist_council_binding_v1';
+    public const SUPPORT_QUALIFICATION_PROTOCOL = 'specialist_support_role_qualification_v1';
 
     public function __construct(
         private SpecialistCouncilContractService $contracts,
@@ -31,6 +32,7 @@ class SpecialistCouncilLifecycleService
     {
         $this->actor($creatorId);
         $sealed = $this->contracts->sealManifest($manifest);
+        $this->assertResearchSupportConsumptions($sealed);
         return DB::transaction(function () use ($sealed, $creatorId): SpecialistCouncilVersion {
             $existing = SpecialistCouncilVersion::where('council_id', $sealed['council_id'])
                 ->where('version', $sealed['version'])->lockForUpdate()->first();
@@ -84,6 +86,7 @@ class SpecialistCouncilLifecycleService
     public function runtimeContract(SpecialistCouncilVersion $version, string $datasetHash, string $executionHash, string $timeframe, ?array $mtfBundle = null, ?string $symbol = null): array
     {
         $version = $this->verified($version);
+        $this->assertResearchSupportConsumptions($version->manifest);
         $native = [];
         if (method_exists(LabAgentEvaluationService::class, 'specialistCouncilMemberPayload')) {
             $compiler = app(LabAgentEvaluationService::class);
@@ -409,9 +412,27 @@ class SpecialistCouncilLifecycleService
             }
         }
         if ($arms === [] || count($arms) > 256) throw new InvalidArgumentException('Missing or unbounded evaluation arms.');
+        $supportTrials = $this->contracts->sealSupportRoleTrials($version->manifest, (array) ($plan['support_role_trials'] ?? []));
+        foreach ($supportTrials as $trial) {
+            if (isset($trial['original_policy_benchmark']) && \App\Models\CausalFoldReceipt::whereIn(
+                'agent_learning_causal_experiment_id', $trial['original_policy_benchmark']['original_experiment_ids'])
+                ->where(fn ($query) => $query->whereNotNull('request_hash')->orWhereNotNull('response_hash'))->exists()) {
+                throw new LogicException('SUPPORT_ROLE_POLICY_BENCHMARK_MUST_PRECEDE_ORIGINAL_OUTCOMES');
+            }
+        }
+        foreach ($supportTrials as $trial) {
+            foreach (array_keys($windows) as $windowKey) {
+                $windowArms = array_filter($arms, fn (array $arm): bool => $arm['window_key'] === $windowKey);
+                if (! $this->findArm($windowArms, 'candidate') || ! $this->findArm($windowArms, 'retention')
+                    || ! $this->findArm($windowArms, 'ablation', $trial['component_id'])) {
+                    throw new LogicException('SUPPORT_ROLE_ORIGINAL_CANDIDATE_ABLATION_RETENTION_REQUIRED');
+                }
+            }
+        }
         $sealed = [...$plan, 'protocol' => self::PLAN_PROTOCOL, 'version_id' => $version->id,
             'manifest_hash' => $version->manifest_hash, 'objective' => $version->manifest['evaluation_policy']['objective'],
             'windows' => $windows, 'arms' => $arms, 'promotion_evidence' => false];
+        if ($supportTrials !== []) $sealed['support_role_trials'] = $supportTrials;
         $hash = $this->epochs->parameterHash($sealed);
         DB::transaction(function () use ($version, $evaluatorId, $sealed, $hash): void {
             $current = SpecialistCouncilVersion::lockForUpdate()->findOrFail($version->id);
@@ -942,6 +963,7 @@ class SpecialistCouncilLifecycleService
                     }
                 }
                 $this->assertOriginalArmScope($arm, $request, $response, $plan['execution_timeframe']);
+                $producer = null;
                 if (in_array($arm['kind'], ['candidate', 'ablation', 'retention'], true)) {
                     $runtime = (array) ($request['specialist_council_contract'] ?? []);
                     $receipt = (array) ($response['specialist_council_receipt'] ?? []);
@@ -981,9 +1003,14 @@ class SpecialistCouncilLifecycleService
                             throw new LogicException('ABLATION_DID_NOT_REMOVE_REQUESTED_COMPONENT');
                         }
                     }
+                    if (! empty($plan['support_role_trials'])) {
+                        $producer = ['receipt' => $this->attestReplayResult($model, $request, $response),
+                            'runtime' => $runtime, 'code_hash' => $run->code_hash, 'run_id' => $run->run_id, 'version_id' => $version->id];
+                    }
                 }
                 $metrics = $this->metrics($response);
                 $arms[$armKey] = [...$arm, 'metrics' => $metrics, 'original_run_id' => $run->run_id];
+                if ($producer !== null) $arms[$armKey]['support_producer'] = $producer;
                 $sources[] = ['run_id' => $run->run_id, 'request_hash' => $run->request_hash,
                     'response_hash' => $run->response_hash, 'data_hash' => $run->data_hash,
                     'parameter_hash' => $run->parameter_hash, 'code_hash' => $run->code_hash];
@@ -1080,7 +1107,8 @@ class SpecialistCouncilLifecycleService
                     && count($roleCoverage[$member['specialist_id']] ?? []) >= $version->manifest['evaluation_policy']['minimum_independent_windows']) $qualifiedRoles[] = $member['role'];
             }
         }
-        return ['protocol' => self::ASSESSMENT_PROTOCOL, 'version_id' => $version->id,
+        $support = $this->assessSupportRoles($version, $plan, $arms, $originalErrors);
+        $assessment = ['protocol' => self::ASSESSMENT_PROTOCOL, 'version_id' => $version->id,
             'manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'],
             'original_run_ids' => array_values($runIds), 'original_sources' => $sources,
             'comparisons' => $comparisons, 'positive_independent_windows' => $plan['purpose'] === 'independent' ? $positive : 0,
@@ -1089,6 +1117,307 @@ class SpecialistCouncilLifecycleService
             'memory_selector_comparisons' => $memoryComparisons, 'memory_superiority_proven' => false,
             'role_mature_outcome_coverage' => $roleCoverage, 'qualified_roles' => array_values(array_unique($qualifiedRoles)),
             'qualified' => $errors === [], 'reason_codes' => $errors, 'promotion_evidence' => false];
+        if (! empty($plan['support_role_trials'])) $assessment['support_role_qualifications'] = $support;
+        return $assessment;
+    }
+
+    /** Role evidence is derived only from the original native producers above, never the plan's asserted outcomes. */
+    private function assessSupportRoles(SpecialistCouncilVersion $version, array $plan, array $arms, array $originalErrors): array
+    {
+        $qualifications = [];
+        foreach ((array) ($plan['support_role_trials'] ?? []) as $trial) {
+            $id = $trial['component_id']; $reasons = []; $comparisons = []; $positive = 0;
+            $validated = $this->contracts->sealSupportRoleTrials($version->manifest, [$trial]);
+            if ($this->epochs->parameterHash($validated[0]) !== $this->epochs->parameterHash($trial)) $reasons[] = 'SUPPORT_ROLE_SEALED_TRIAL_CHANGED';
+            if ($plan['purpose'] !== 'independent') $reasons[] = 'SUPPORT_ROLE_AUTHORIZED_INDEPENDENT_WINDOWS_REQUIRED';
+            if (count($plan['windows']) < $version->manifest['evaluation_policy']['minimum_independent_windows']) $reasons[] = 'SUPPORT_ROLE_INDEPENDENT_WINDOW_POWER_INSUFFICIENT';
+            // Trader sample size is not a toolbox/risk/execution requirement. Original
+            // producer, source, calendar, authorization and cost integrity still are.
+            $integrityErrors = array_values(array_filter($originalErrors, fn (string $reason): bool =>
+                ! str_starts_with($reason, 'SPECIALIST_MATURE_HORIZON_EVIDENCE_UNDERPOWERED:')));
+            if ($integrityErrors !== []) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EVIDENCE_INVALID';
+            foreach ($plan['windows'] as $windowKey => $window) {
+                $windowArms = array_filter($arms, fn (array $arm): bool => $arm['window_key'] === $windowKey);
+                $candidate = $this->findArm($windowArms, 'candidate');
+                $ablation = $this->findArm($windowArms, 'ablation', $id);
+                $retention = $this->findArm($windowArms, 'retention');
+                $windowReasons = []; $proofs = [];
+                foreach (['candidate' => $candidate, 'ablation' => $ablation, 'retention' => $retention] as $kind => $arm) {
+                    $producer = $arm['support_producer'] ?? null;
+                    if (! is_array($producer) || ($producer['receipt']['status'] ?? '') !== 'computed'
+                        || ($producer['receipt']['asof_policy'] ?? '') !== 'previous_closed_candle_next_open') {
+                        $windowReasons[] = 'SUPPORT_ROLE_ORIGINAL_PRODUCER_MISSING:'.$kind;
+                        continue;
+                    }
+                    $proofs[$kind] = $producer;
+                }
+                if (count($proofs) === 3 && count(array_unique(array_column($proofs, 'code_hash'))) !== 1) $windowReasons[] = 'SUPPORT_ROLE_PAIRED_RELEASE_MISMATCH';
+                $positiveHere = false;
+                $observations = [];
+                if ($windowReasons === []) {
+                    foreach (['candidate', 'retention'] as $kind) {
+                        $observations[$kind] = $this->nativeSupportObservation($trial, $proofs[$kind]);
+                        $windowReasons = [...$windowReasons, ...$observations[$kind]['reason_codes']];
+                    }
+                    $ablationMembers = (array) ($proofs['ablation']['runtime']['members'] ?? []);
+                    foreach ($ablationMembers as $member) {
+                        if (data_get($member, 'operator_contract.component_id') === $id) $windowReasons[] = 'SUPPORT_ROLE_ABLATION_OPERATOR_REMAINED';
+                    }
+                    if (($proofs['ablation']['runtime']['ablation_removed_id'] ?? '') !== $id) $windowReasons[] = 'SUPPORT_ROLE_EXACT_ABLATION_NOT_OBSERVED';
+                    if ($windowReasons === []) {
+                        // Correctness certificates for infrastructure roles do not
+                        // claim causal P&L contribution from removing hard safety.
+                        $positiveHere = true;
+                        if ($trial['role'] === 'risk') {
+                            $baseline = $ablation['metrics']['max_total_risk_percent'];
+                            $candidateRisk = $candidate['metrics']['max_total_risk_percent'];
+                            $retainedRisk = $retention['metrics']['max_total_risk_percent'];
+                            $baselineEntries = $this->executedIntents($proofs['ablation']['receipt']);
+                            $minimumEntries = (int) ceil($baselineEntries * $trial['minimum_opportunity_fraction']);
+                            $positiveHere = $baseline > 0 && $candidateRisk < $baseline && $retainedRisk < $baseline
+                                && $this->executedIntents($proofs['candidate']['receipt']) >= $minimumEntries
+                                && $this->executedIntents($proofs['retention']['receipt']) >= $minimumEntries;
+                            if (! $positiveHere) $windowReasons[] = 'SUPPORT_ROLE_RISK_REDUCTION_OR_OPPORTUNITY_RETENTION_NOT_SHOWN';
+                        }
+                    }
+                }
+                if ($positiveHere) $positive++;
+                $reasons = [...$reasons, ...$windowReasons];
+                $comparisons[] = ['window_key' => $windowKey,
+                    'original_run_ids' => array_values(array_column($proofs, 'run_id')),
+                    'producer_receipt_hashes' => array_map(fn (array $proof): string => $proof['receipt']['receipt_hash'], $proofs),
+                    'observations' => $observations, 'positive_role_capability' => $positiveHere,
+                    'reason_codes' => array_values(array_unique($windowReasons))];
+            }
+            if ($positive < $trial['minimum_positive_windows']) $reasons[] = 'SUPPORT_ROLE_CAPABILITY_NOT_INDEPENDENTLY_REPLICATED';
+            $reasons = array_values(array_unique($reasons));
+            $body = ['protocol' => self::SUPPORT_QUALIFICATION_PROTOCOL, 'version_id' => $version->id,
+                'component_id' => $id, 'role' => $trial['role'], 'component_contract_hash' => $trial['component_contract_hash'],
+                'trial_hash' => $trial['trial_hash'], 'benchmark' => $trial['benchmark'],
+                'status' => $reasons === [] ? 'research_role_qualified' : 'dependency',
+                'positive_independent_windows' => $plan['purpose'] === 'independent' ? $positive : 0,
+                'observed_positive_windows' => $positive, 'comparisons' => $comparisons, 'reason_codes' => $reasons,
+                'authority' => 'scoped_research_component_only', 'economic_skill_proven' => false,
+                'causal_component_value_proven' => false,
+                'paper_authority_granted' => false, 'live_authority_granted' => false, 'promotion_evidence' => false];
+            $qualifications[$id] = [...$body, 'qualification_hash' => $this->epochs->parameterHash($body)];
+        }
+        return $qualifications;
+    }
+
+    private function executedIntents(array $receipt): int
+    {
+        return count(array_filter((array) ($receipt['intent_execution_ledger'] ?? []), fn (array $event): bool =>
+            ($event['stage'] ?? '') === 'execution' && ($event['reason'] ?? '') === 'filled'));
+    }
+
+    /** Callable original producer benchmark; unsupported role adapters stay typed dependencies. */
+    private function nativeSupportObservation(array $trial, array $producer): array
+    {
+        $receipt = $producer['receipt']; $reasons = []; $calls = 0; $changed = 0;
+        if (in_array($trial['benchmark'], ['native_account_capital', 'native_account_execution', 'native_asof_observation'], true)) {
+            return $this->nativeInfrastructureSupportObservation($trial, $producer);
+        }
+        if (! in_array($trial['benchmark'], ['native_operator_behavior', 'native_operator_risk'], true)) {
+            if (isset($trial['original_policy_benchmark'])) return $this->originalPolicyBenchmarkObservation($trial);
+            return ['evaluations' => 0, 'behavior_delta_decisions' => 0,
+                'reason_codes' => ['SUPPORT_ROLE_ORIGINAL_BENCHMARK_ADAPTER_REQUIRED:'.$trial['benchmark']]];
+        }
+        if ($trial['producer_contracts'] === []) $reasons[] = 'SUPPORT_ROLE_ACTUAL_OPERATOR_BINDING_REQUIRED';
+        foreach ($trial['producer_contracts'] as $memberId => $contract) {
+            $member = collect((array) ($receipt['members'] ?? []))->firstWhere('specialist_id', $memberId);
+            $operator = (array) ($member['operator_receipt'] ?? []);
+            foreach (['contract_hash', 'ast_hash', 'source_task_key', 'target'] as $field) {
+                if (($operator[$field] ?? null) !== $contract[$field]) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_OPERATOR_IDENTITY_MISMATCH';
+            }
+            if (($operator['protocol'] ?? '') !== 'typed_operator_decision_v1' || ($operator['research_only'] ?? null) !== true
+                || ($operator['cpu_budget_compliant'] ?? null) !== true
+                || ! is_int($operator['calls'] ?? null) || $operator['calls'] < 0 || $operator['calls'] > $contract['budget']['max_calls']
+                || ! is_int($operator['node_evaluations'] ?? null) || $operator['node_evaluations'] < 0 || $operator['node_evaluations'] > $contract['budget']['max_node_evaluations']
+                || ! is_int($operator['behavior_delta_decisions'] ?? null) || $operator['behavior_delta_decisions'] < 0
+                || $operator['behavior_delta_decisions'] > $operator['calls']
+                || ! preg_match('/^[a-f0-9]{64}$/', (string) ($operator['observation_hash'] ?? ''))
+                || (float) ($operator['cpu_seconds_budget'] ?? 0) !== (float) $contract['budget']['cpu_seconds']) {
+                $reasons[] = 'SUPPORT_ROLE_ORIGINAL_COMPUTE_OR_BEHAVIOR_RECEIPT_INVALID';
+            }
+            $calls += (int) ($operator['calls'] ?? 0); $changed += (int) ($operator['behavior_delta_decisions'] ?? 0);
+        }
+        if ($calls < $trial['minimum_evaluations']) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EVALUATION_POWER_INSUFFICIENT';
+        if ($changed < $trial['minimum_behavior_delta_decisions']) $reasons[] = 'SUPPORT_ROLE_ACTUAL_BEHAVIOR_CONTRIBUTION_NOT_OBSERVED';
+        return ['evaluations' => $calls, 'behavior_delta_decisions' => $changed, 'reason_codes' => array_values(array_unique($reasons))];
+    }
+
+    /** Callable prospective benchmark intake through the existing original equal-budget producer. */
+    public function preregisterSupportPolicyBenchmark(SpecialistCouncilVersion $version, string $evaluatorId,
+        string $componentId, array $policyKeys, array $experimentIds, string $seed): array
+    {
+        $version = $this->verified($version); $this->independentActor($version, $evaluatorId);
+        if ($version->state !== 'draft') throw new LogicException('SUPPORT_ROLE_POLICY_BENCHMARK_REQUIRES_DRAFT');
+        $component = collect($version->manifest['components'])->firstWhere('id', $componentId);
+        if (! $component || ! in_array($component['role'], ['learning', 'evolution'], true)
+            || ! in_array($componentId, $policyKeys, true)) throw new LogicException('SUPPORT_ROLE_POLICY_COMPONENT_IDENTITY_MISMATCH');
+        $challenge = app(ResearchKnowledgePortfolioService::class)->preregisterPolicyChallenge($policyKeys, $experimentIds, $seed);
+        if (($challenge['status'] ?? '') === 'blocked') return $challenge;
+        return ['status' => 'original_benchmark_preregistered', 'component_id' => $componentId,
+            'original_policy_benchmark' => $this->contracts->supportPolicyBenchmarkReference($component,
+                $challenge['knowledge_key'], $componentId), 'research_only' => true, 'promotion_evidence' => false];
+    }
+
+    /** Settlement executes the original producer, not caller-supplied benchmark scores. */
+    public function settleSupportPolicyBenchmark(SpecialistCouncilVersion $version, string $evaluatorId, string $componentId): array
+    {
+        $version = $this->verified($version); $owner = $this->plan($version);
+        $this->independentActor($version, $evaluatorId);
+        if ($owner['evaluator_id'] !== $evaluatorId) throw new LogicException('SUPPORT_ROLE_ORIGINAL_EVALUATOR_REQUIRED');
+        $trial = collect($owner['plan']['support_role_trials'] ?? [])->firstWhere('component_id', $componentId);
+        if (! isset($trial['original_policy_benchmark'])) throw new LogicException('SUPPORT_ROLE_ORIGINAL_POLICY_BENCHMARK_NOT_PREREGISTERED');
+        $result = app(ResearchKnowledgePortfolioService::class)->settlePolicyChallenge($trial['original_policy_benchmark']['challenge_key']);
+        return ['status' => ($result['status'] ?? '') === 'fixed_real_question_comparison' ? 'provisional_original_benchmark' : 'dependency',
+            'benchmark' => $result, 'observation' => $this->originalPolicyBenchmarkObservation($trial),
+            'role_qualified' => false, 'policy_activated' => false, 'promotion_evidence' => false];
+    }
+
+    private function originalPolicyBenchmarkObservation(array $trial): array
+    {
+        $reference = $trial['original_policy_benchmark'];
+        $key = hash('sha256', ResearchKnowledgePortfolioService::META_PROTOCOL.'|policy_challenge_result|'.$reference['challenge_key']);
+        $result = $this->contracts->originalPolicyJournal($key, 'policy_challenge_result');
+        $reasons = ['SUPPORT_ROLE_ORIGINAL_BENCHMARK_ADAPTER_REQUIRED:'.$trial['benchmark']];
+        $score = $result['scores'][$reference['policy_key']] ?? null;
+        if (! is_array($score) || ($result['status'] ?? '') !== 'fixed_real_question_comparison'
+            || ($result['challenge_key'] ?? '') !== $reference['challenge_key']
+            || ($result['policy_activated'] ?? null) !== false || ($result['economic_authority'] ?? null) !== false) {
+            $reasons[] = 'SUPPORT_ROLE_ORIGINAL_FIXED_QUESTION_OUTCOMES_REQUIRED';
+            return ['evaluations' => 0, 'behavior_delta_decisions' => null, 'reason_codes' => $reasons];
+        }
+        return ['evaluations' => $score['assessable_local_questions'], 'behavior_delta_decisions' => null,
+            'status' => 'provisional_original_equal_budget_benchmark',
+            'original_challenge_key' => $reference['challenge_key'], 'original_result_key' => $key,
+            'original_result_hash' => $this->epochs->parameterHash($result), 'policy_key' => $reference['policy_key'],
+            'original_fold_receipt_ids' => array_merge(...array_column($result['outcomes'], 'receipt_ids')),
+            'same_budget_policy_scores' => $result['scores'], 'selector_cpu_seconds' => $score['selector_cpu_seconds'],
+            'compute_advantage_proven' => false, 'role_qualified' => false, 'policy_activated' => false,
+            'reason_codes' => $reasons];
+    }
+
+    private function nativeInfrastructureSupportObservation(array $trial, array $producer): array
+    {
+        $receipt = $producer['receipt']; $runtime = $producer['runtime']; $reasons = [];
+        $binding = $trial['policy_binding'] ?? null; $observations = 0;
+        if (! is_array($binding)) $reasons[] = 'SUPPORT_ROLE_NATIVE_POLICY_BINDING_REQUIRED:'.$trial['role'];
+        if ($trial['role'] === 'data') {
+            if (($receipt['source_attestation']['status'] ?? '') !== 'verified'
+                || ($receipt['asof_policy'] ?? '') !== 'previous_closed_candle_next_open') $reasons[] = 'SUPPORT_ROLE_ORIGINAL_ASOF_SOURCE_ATTESTATION_REQUIRED';
+            $uses = DB::table('specialist_council_data_uses as uses')
+                ->join('specialist_council_data_events as events', 'events.id', '=', 'uses.event_id')
+                ->where('uses.run_id', $producer['run_id'])->where('uses.use', 'evaluation')
+                ->where('uses.specialist_council_version_id', $producer['version_id'])
+                ->select('uses.as_of', 'events.available_at', 'events.matured_at', 'events.event_end')->get();
+            foreach ($uses as $use) {
+                if (! $use->matured_at || CarbonImmutable::parse($use->available_at, 'UTC')->greaterThan(CarbonImmutable::parse($use->as_of, 'UTC'))
+                    || CarbonImmutable::parse($use->matured_at, 'UTC')->greaterThan(CarbonImmutable::parse($use->as_of, 'UTC'))
+                    || CarbonImmutable::parse($use->available_at, 'UTC')->lessThan(CarbonImmutable::parse($use->event_end, 'UTC'))) {
+                    $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EVENT_USE_CHRONOLOGY_INVALID';
+                }
+            }
+            $observations = $uses->count();
+            if ($observations === 0) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_DATA_USE_PRODUCER_MISSING';
+        } else {
+            $identity = $runtime[$trial['role'] === 'capital' ? 'allocation_identity' : 'execution_identity'] ?? [];
+            if (! is_array($binding) || ($identity['id'] ?? '') !== ($binding['id'] ?? '')
+                || (string) ($identity['version'] ?? '') !== ($binding['version'] ?? '')) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_POLICY_IDENTITY_MISMATCH';
+            if ($trial['role'] === 'capital') {
+                if ($this->epochs->parameterHash($identity) !== ($binding['policy_hash'] ?? '')
+                    || ! $this->evidence->equivalentJsonValue(array_column($runtime['members'], 'capital_weight', 'specialist_id'), $binding['member_weights'] ?? [])) {
+                    $reasons[] = 'SUPPORT_ROLE_ORIGINAL_ALLOCATION_VECTOR_CHANGED';
+                }
+                foreach ((array) ($receipt['account_ledger'] ?? []) as $point) {
+                    $equity = $this->number($point['equity'] ?? null); $reserved = $this->number($point['reserved_capital'] ?? null);
+                    if ($reserved < 0 || $reserved > max(0, $equity) + 1e-7
+                        || abs($equity - $reserved - $this->number($point['free_capital'] ?? null)) > 1e-7 * max(1, abs($equity))) {
+                        $reasons[] = 'SUPPORT_ROLE_CAPITAL_CONSERVATION_OR_RESERVATION_FAILED';
+                    }
+                }
+                $observations = count((array) ($receipt['account_ledger'] ?? []));
+            } else {
+                $expectedPolicy = [...($runtime['policy'] ?? []), 'id' => $identity['id'] ?? '', 'version' => (string) ($identity['version'] ?? '')];
+                if ($this->epochs->parameterHash($expectedPolicy) !== ($binding['policy_hash'] ?? '')) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EXECUTION_POLICY_CHANGED';
+                $observations = $this->executedIntents($receipt);
+                if (abs($this->number($receipt['account']['reconciliation_error'] ?? null)) > 1e-7) $reasons[] = 'SUPPORT_ROLE_NATIVE_EXECUTION_RECONCILIATION_FAILED';
+                // This producer is candle replay, not broker latency/partial fill competence.
+                if (($receipt['execution_capabilities']['candle_execution'] ?? null) !== true) $reasons[] = 'SUPPORT_ROLE_ACTUAL_EXECUTION_CAPABILITY_MISSING';
+            }
+        }
+        if ($observations < $trial['minimum_evaluations']) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EVALUATION_POWER_INSUFFICIENT';
+        return ['evaluations' => $observations, 'behavior_delta_decisions' => null,
+            'qualification_scope' => 'native_candle_correctness_only_not_learned_economic_value',
+            'reason_codes' => array_values(array_unique($reasons))];
+    }
+
+    /** Reverify the immutable exam and producer on every use; this is never paper/trading approval. */
+    public function researchSupportBinding(SpecialistCouncilVersion $version, string $componentId): array
+    {
+        $version = $this->verified($version); $owner = $this->plan($version);
+        $this->independentActor($version, $owner['evaluator_id']);
+        $exam = DB::table('specialist_council_evaluations')->where('specialist_council_version_id', $version->id)->first();
+        if (! $exam || $exam->evaluator_id !== $owner['evaluator_id']
+            || ! in_array($version->state, ['evaluated', 'approved', 'scheduled', 'active', 'retired', 'rolled_back'], true)
+            || $this->epochs->parameterHash(json_decode($exam->assessment, true, 512, JSON_THROW_ON_ERROR)) !== $exam->assessment_hash
+            || $exam->assessment_hash !== $version->assessment_hash) throw new LogicException('SUPPORT_ROLE_ORIGINAL_ASSESSMENT_MISSING_OR_CHANGED');
+        $runIds = json_decode($exam->original_run_ids, true, 512, JSON_THROW_ON_ERROR);
+        $assessment = $this->assessOriginalRuns($version, $owner, $runIds);
+        if ($this->epochs->parameterHash($assessment) !== $exam->assessment_hash) throw new LogicException('SUPPORT_ROLE_ORIGINAL_PROOF_NO_LONGER_VALID');
+        $proof = $assessment['support_role_qualifications'][$componentId] ?? null;
+        $component = collect($version->manifest['components'])->firstWhere('id', $componentId);
+        if (! is_array($proof) || ! $component || ($proof['status'] ?? '') !== 'research_role_qualified'
+            || $proof['component_contract_hash'] !== $component['contract_hash']) {
+            throw new LogicException('SUPPORT_ROLE_NOT_INDEPENDENTLY_QUALIFIED');
+        }
+        return ['protocol' => 'specialist_support_research_binding_v1', 'source_version_id' => $version->id,
+            'source_manifest_hash' => $version->manifest_hash, 'assessment_hash' => $exam->assessment_hash,
+            'component_id' => $componentId, 'component_contract_hash' => $component['contract_hash'],
+            'qualification_hash' => $proof['qualification_hash'], 'role' => $proof['role'],
+            'scope' => array_values(array_map(fn (array $member): array => $member['scope'], $version->manifest['members'])),
+            'authority' => 'scoped_research_component_only', 'paper_authority_granted' => false, 'promotion_evidence' => false];
+    }
+
+    /** Native draft registration and each replay recheck research component adoption, not asserted flags. */
+    private function assertResearchSupportConsumptions(array $manifest): void
+    {
+        $uses = (array) ($manifest['support_role_consumptions'] ?? []);
+        if (count($uses) > 16) throw new LogicException('SUPPORT_ROLE_CONSUMPTION_BUDGET_EXCEEDED');
+        foreach ($uses as $use) {
+            if (! is_array($use) || array_diff(array_keys($use), ['source_version_id', 'component_id', 'qualification_hash']) !== []) {
+                throw new LogicException('SUPPORT_ROLE_CONSUMPTION_ASSERTED_AUTHORITY_FORBIDDEN');
+            }
+            $source = SpecialistCouncilVersion::find($use['source_version_id'] ?? 0);
+            if (! $source) throw new LogicException('SUPPORT_ROLE_CONSUMPTION_SOURCE_MISSING');
+            $proof = $this->researchSupportBinding($source, (string) ($use['component_id'] ?? ''));
+            $component = collect($manifest['components'])->firstWhere('id', $proof['component_id']);
+            if (! $component || $component['contract_hash'] !== $proof['component_contract_hash']
+                || ($use['qualification_hash'] ?? '') !== $proof['qualification_hash']) {
+                throw new LogicException('SUPPORT_ROLE_CONSUMPTION_COMPONENT_OR_PROOF_CHANGED');
+            }
+            $originalTrial = collect($this->plan($source)['plan']['support_role_trials'] ?? [])->firstWhere('component_id', $proof['component_id']);
+            $newTrial = $this->contracts->sealSupportRoleTrials($manifest, [$originalTrial])[0];
+            if ($newTrial['producer_contracts'] === [] && empty($newTrial['policy_binding'])) throw new LogicException('SUPPORT_ROLE_CONSUMPTION_EXECUTABLE_BINDING_MISSING');
+            if (! $this->evidence->equivalentJsonValue($newTrial['policy_binding'] ?? null, $originalTrial['policy_binding'] ?? null)) {
+                throw new LogicException('SUPPORT_ROLE_CONSUMPTION_NATIVE_POLICY_CHANGED');
+            }
+            foreach ($newTrial['producer_contracts'] as $contract) {
+                $compatible = collect($originalTrial['producer_contracts'])->contains(fn (array $original): bool =>
+                    $this->evidence->equivalentJsonValue(array_diff_key($contract, ['passport_hash' => true]),
+                        array_diff_key($original, ['passport_hash' => true])));
+                if (! $compatible) throw new LogicException('SUPPORT_ROLE_CONSUMPTION_EXECUTABLE_OPERATOR_CHANGED');
+            }
+            foreach ($manifest['members'] as $member) {
+                if (data_get($member, 'operator_contract.component_id') !== $proof['component_id']
+                    && (empty($newTrial['policy_binding']) || ! in_array($member['role'], $component['consumer_roles'], true))) continue;
+                if (! collect($proof['scope'])->contains(fn (array $scope): bool => $this->evidence->equivalentJsonValue($scope, $member['scope']))) {
+                    throw new LogicException('SUPPORT_ROLE_CONSUMPTION_SCOPE_WIDENED');
+                }
+            }
+        }
     }
 
     private function metrics(array $response): array

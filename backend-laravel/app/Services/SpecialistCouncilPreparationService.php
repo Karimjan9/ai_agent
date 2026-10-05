@@ -79,6 +79,17 @@ class SpecialistCouncilPreparationService
                 if ($models->count() !== count($generationModelIds)) throw new LogicException('CANONICAL_COUNCIL_NATIVE_MODEL_MISSING');
                 $nativeIntent = $this->nativeConstructorIntent($draft, $models, $agents);
                 if ($nativeIntent !== null) $this->assertNativeIntentRequest($nativeIntent, $request, $models);
+                $followupProof = null;
+                if (isset($nativeIntent['followup_work_item_id'])) {
+                    $work = \App\Models\ResearchExperimentWorkItem::find($nativeIntent['followup_work_item_id']);
+                    $followupProof = $work ? app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($work) : [];
+                    if (($followupProof['executable'] ?? false) !== true
+                        || ($followupProof['resolution_hash'] ?? null) !== $nativeIntent['followup_resolution_hash']
+                        || $this->epochs->parameterHash($request) !== $this->epochs->parameterHash(
+                            app(SpecialistCouncilFollowupExecutionService::class)->preparationRequest($draft, $followupProof))) {
+                        throw new LogicException('CANONICAL_COUNCIL_FOLLOWUP_PREREGISTERED_REQUEST_DRIFT');
+                    }
+                }
                 foreach (['academy_trial_id', 'prospective_repair', 'causal_learning_cohort', 'cooperative_experiment_blocks'] as $owner) {
                     if (! empty($context[$owner])) throw new LogicException('CANONICAL_COUNCIL_GENERATION_RESERVED_FOR_ANOTHER_EXPERIMENT');
                 }
@@ -117,6 +128,30 @@ class SpecialistCouncilPreparationService
                         throw new LogicException('CANONICAL_COUNCIL_NATIVE_MODEL_ALREADY_BOUND');
                     }
                 }
+                // Ordinary replay materializes this exact native owner. Do so
+                // before any passport/model/plan seal, never during a sealed
+                // member's first replay where it would change the whole cohort.
+                $instrumentResearch = app(LabInstrumentResearchService::class);
+                foreach ($agents as $agent) {
+                    $model = $models[(int) $agent->model_version_id];
+                    $parametersBefore = $this->epochs->parameterHash((array) $model->parameters);
+                    $agent->setRelation('modelVersion', $model)->setRelation('generation', $draft);
+                    $assignment = $instrumentResearch->assignment($agent);
+                    $model->refresh();
+                    $agent->setRelation('modelVersion', $model);
+                    if (($assignment['protocol'] ?? null) !== LabInstrumentResearchService::PROTOCOL
+                        || ! in_array($assignment['status'] ?? null, ['assigned', 'no_executable_instrument_match'], true)
+                        || ($assignment['lab_agent_id'] ?? null) !== $agent->id
+                        || ($assignment['lab_generation_id'] ?? null) !== $draft->id
+                        || ($assignment['model_version_id'] ?? null) !== $model->id
+                        || preg_match('/^[a-f0-9]{64}$/D', (string) ($assignment['assignment_hash'] ?? '')) !== 1
+                        || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue(
+                            data_get($model->metadata, 'instrument_research_assignment'), $assignment)
+                        || $parametersBefore !== $this->epochs->parameterHash((array) $model->parameters)
+                        || (data_get($assignment, 'pair_reservation.required') === true && data_get($assignment, 'pair_reservation.status') !== 'reserved')) {
+                        throw new LogicException('CANONICAL_COUNCIL_PRESEALED_INSTRUMENT_ASSIGNMENT_INVALID');
+                    }
+                }
                 $version = $this->lifecycle->registerDraft($request['manifest'], $request['creator_id']);
                 $feedback = app(SpecialistCouncilResearchFeedbackService::class);
                 $observations = $feedback->priorObservations($version->council_id, 8);
@@ -133,6 +168,14 @@ class SpecialistCouncilPreparationService
                     'prior_feedback_digest' => $observationHash, 'authority' => 'research_only',
                     'confirmed_trait_inherited' => false, 'parameter_mutation_inferred' => false,
                     'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+                if ($followupProof !== null) {
+                    $consumption['original_followup'] = ['work_item_id' => $followupProof['work_item_id'],
+                        'source_receipt_id' => $followupProof['source_receipt_id'], 'resolution_hash' => $followupProof['resolution_hash'],
+                        'source_contract_hash' => $followupProof['source_contract_hash'] ?? null,
+                        'source_evidence_hash' => $followupProof['source_evidence_hash'] ?? null,
+                        'parameter_deltas' => array_map(fn (array $spec): array => $spec['parameter_deltas'] ?? [], $followupProof['native_source_models']),
+                        'authority' => 'research_only', 'confirmed_trait_inherited' => false, 'promotion_evidence' => false];
+                }
                 $originalPlan = [...$request['evaluation_plan'], 'research_question' => $request['research_question'],
                     'research_question_fingerprint' => $questionFingerprint,
                     'preparation_source_hash' => $sourceHash,
@@ -192,6 +235,16 @@ class SpecialistCouncilPreparationService
                 throw new LogicException('CANONICAL_COUNCIL_ATOMIC_PREPARATION_REQUIRED');
             }
             return false;
+        }
+        if ($generation->status === 'draft'
+            && (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id', 0) > 0) {
+            $work = \App\Models\ResearchExperimentWorkItem::find((int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id'));
+            $proof = $work ? app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($work) : [];
+            if (! $work || $work->status !== 'leased' || ! $work->lease_expires_at || $work->lease_expires_at->isPast()
+                || ($proof['executable'] ?? false) !== true
+                || ($proof['resolution_hash'] ?? null) !== data_get($generation->trigger_context, 'native_specialist_council_intent.followup_resolution_hash')) {
+                throw new LogicException('CANONICAL_COUNCIL_FOLLOWUP_CURRENT_DISPATCH_OWNER_REQUIRED');
+            }
         }
         $this->verifiedGeneration($generation);
         return true;
@@ -380,6 +433,12 @@ class SpecialistCouncilPreparationService
         foreach (['requested_m5_rows' => 15512, 'evaluated_rows' => 15000, 'warmup_rows' => 512] as $field => $value) {
             if (data_get($manifest, 'bounded_cost_contract.'.$field) !== $value) throw new LogicException('CANONICAL_COUNCIL_DISCOVERY_BUNDLE_BUDGET_MISMATCH');
         }
+    }
+
+    /** Prospective continuation compiler reuses this exact data owner before fresh model IDs exist. */
+    public function assertProspectiveDiscoveryPlan(array $plan, array $manifest): void
+    {
+        $this->assertDiscoveryPlan($plan, $manifest);
     }
 
     private function utc(mixed $value): string

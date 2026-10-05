@@ -159,6 +159,15 @@ class ResearchExperimentConversionKernelService
         return $this->claimMatching($limit, $owner);
     }
 
+    /** Resume only the work which already owns this unfinished canonical cohort. */
+    public function claimCouncilContinuationForGeneration(\App\Models\LabGeneration $generation): ?ResearchExperimentWorkItem
+    {
+        $id = (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id', 0);
+        if ($id <= 0 || ! $this->available()) return null;
+        $this->reconcileOwnershipAndDependencies();
+        return $this->claimMatching(1, ResearchLoopArbiterService::class, $id)[0] ?? null;
+    }
+
     /**
      * Repair legacy metadata and release only dependencies that are now
      * executable. Unsupported follow-ups remain visible and explicitly
@@ -184,6 +193,27 @@ class ResearchExperimentConversionKernelService
                     $item->refresh();
                     if ($before !== (array) $item->payload) $normalized++;
                     $payload = (array) $item->payload;
+                    if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
+                        $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+                        $payload['executable'] = ($proof['executable'] ?? false) === true;
+                        $payload['retry_condition']['code'] = (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED');
+                        $hold = (array) data_get($item->result, 'dependency_hold', []);
+                        if (($hold['dependency_check_failed'] ?? false) === true) {
+                            $payload['executable'] = false;
+                            $payload['retry_condition']['code'] = 'COUNCIL_OPERATIONAL_DEPENDENCY_CHECK_UNAVAILABLE';
+                        }
+                        if ($payload['executable'] && isset($hold['prerequisite_hash'])) {
+                            try {
+                                $unchanged = hash_equals((string) $hold['prerequisite_hash'],
+                                    app(SpecialistCouncilFollowupExecutionService::class)->retryPrerequisiteHash($item));
+                            } catch (\Throwable) { $unchanged = true; }
+                            if ($unchanged) {
+                                $payload['executable'] = false;
+                                $payload['retry_condition']['code'] = (string) ($hold['reason'] ?? 'COUNCIL_OPERATIONAL_DEPENDENCY_UNCHANGED');
+                            }
+                        }
+                        if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
+                    }
                     $executable = (bool) ($payload['executable'] ?? false);
                     $dependencyReady = $this->dependencyReady($item, $payload);
                     $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
@@ -213,13 +243,14 @@ class ResearchExperimentConversionKernelService
     }
 
     /** @return array<int,ResearchExperimentWorkItem> */
-    private function claimMatching(int $limit, ?string $owner = null): array
+    private function claimMatching(int $limit, ?string $owner = null, ?int $workItemId = null): array
     {
-        return DB::transaction(function () use ($limit, $owner): array {
+        return DB::transaction(function () use ($limit, $owner, $workItemId): array {
             ResearchExperimentWorkItem::query()->where('status', 'leased')->where('lease_expires_at', '<=', now())
                 ->update(['status' => 'ready', 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null,
                     'last_error' => 'LEASE_EXPIRED', 'updated_at' => now()]);
             $query = ResearchExperimentWorkItem::query()->where('status', 'ready');
+            if ($workItemId !== null) $query->whereKey($workItemId);
             if ($owner !== null) {
                 // Filter ownership in SQL before applying the bounded claim
                 // limit. Otherwise twenty unrelated high-priority rows can
@@ -284,7 +315,8 @@ class ResearchExperimentConversionKernelService
             ...$nextWork,
             'owner' => (string) ($nextWork['owner'] ?? ResearchLoopArbiterService::class),
             'executor' => (string) ($nextWork['executor'] ?? ResearchExperimentWorkConsumerService::class),
-            'executable' => $activationRequiresWindow ? false : (bool) ($nextWork['executable'] ?? $executable),
+            'executable' => $activationRequiresWindow || str_starts_with($type, 'specialist_council_')
+                ? false : (bool) ($nextWork['executable'] ?? $executable),
             'retry_condition' => $retryCondition,
         ];
     }
@@ -295,6 +327,11 @@ class ResearchExperimentConversionKernelService
             ...((array) $item->payload),
             'type' => (string) ($item->work_type ?: data_get($item->payload, 'type', '')),
         ]);
+        if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
+            // This projection is derived again immediately by the original
+            // readiness owner; do not toggle it false/true on every scan.
+            $payload['executable'] = (bool) data_get($item->payload, 'executable', false);
+        }
         if ((array) $item->payload !== $payload) {
             $item->update(['payload' => $payload]);
         }
@@ -302,6 +339,9 @@ class ResearchExperimentConversionKernelService
 
     private function dependencyReady(ResearchExperimentWorkItem $item, array $payload): bool
     {
+        if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
+            return (app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item)['executable'] ?? false) === true;
+        }
         if (! (bool) ($payload['executable'] ?? false)) return false;
         if ((string) $item->work_type !== 'cartridge_confirmation') return true;
         $cartridgeId = (int) ($payload['cartridge_id'] ?? 0);

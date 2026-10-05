@@ -242,11 +242,13 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
             $evidence = app(LabImmutableEvidenceService::class);
             $evidence->recordArtifact($run, 'evaluation_request', $request, ['request_hash' => $run->request_hash]);
             $responseArtifact = $evidence->recordArtifact($run, 'evaluation_response', $response);
-            $run->forceFill(['response_hash' => $responseArtifact->sha256])->save();
+            // Synthetic publication must finish after the original files exist,
+            // rather than racing their created_at timestamp under parallel load.
+            $run->forceFill(['response_hash' => $responseArtifact->sha256, 'finished_at' => now()])->save();
             $runIds[] = $run->run_id;
         }
         $assessment = app(SpecialistCouncilLifecycleService::class)->evaluateOriginalRuns($version->fresh(), 'independent-examiner', $runIds);
-        $this->assertSame('research_compared', $assessment['research_observation_status']);
+        $this->assertSame('research_compared', $assessment['research_observation_status'], json_encode($assessment['reason_codes']));
         $this->assertCount(1, $assessment['comparisons']);
         $this->assertNull($assessment['comparisons'][0]['champion']);
         $this->assertCount(1, $assessment['comparisons'][0]['ablations']);

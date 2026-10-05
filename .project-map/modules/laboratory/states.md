@@ -15,6 +15,32 @@ Changed actionable IDs enter the arbiter state watermark, not a minute clock.
 
 ## Native council version boundary
 
+Council next work follows `blocked -> server_preregistered -> ready -> leased
+-> constructed_checkpoint -> prepared_checkpoint -> canonical_dispatch_admitted
+-> settled_work`. Server proof, current arbiter fence and actual dataset/source
+identity are rechecked; a caller `executable=true` grants nothing. Construction
+and checkpoint/model markers preserve one exact cohort after restart or lost
+projection. A pending follow-up cohort resumes its original work before generic
+generation settlement. Operational refusals hold on a stable prerequisite hash;
+unchanged dependencies do not open another lease each minute. Eight operational
+leases never mean eight scientific experiments, and source changes do not reset
+the one-cohort budget. Approval/credit still requires later original settlement.
+An unobserved same-question source repair may preserve one specifically proven
+late instrument descriptor from its original hashed null-schema refusal. The
+server pins original and actual full model hashes plus the original request;
+only an in-memory descriptor removal may reconstruct the old hash. Arbitrary
+model changes, missing witnesses, peer drift or observed outcomes stay blocked.
+This new prospective proof never makes the old preparation valid.
+
+Support-role qualification is separate from trader and paper qualification.
+An original role-specific producer, component ablation and retention can grant
+only scoped research component use after authorized nonoverlapping windows and
+the independently stored exam. Native account/data tests attest correctness,
+not economic alpha. Learning/evolution original same-budget Portfolio benchmarks
+are callable but provisional until their independent activation adapter exists.
+Every research support consumption revalidates original artifact hashes, native
+operator/policy identity and unchanged scope. A poisoned producer revokes use.
+
 `native_constructor_intent -> six unused draft references -> prepared_for_canonical_dispatch`
 uses the existing canonical constructor/preparation owners. The first step is
 fixed-six, research-only and unforced; it does not qualify its prospective
@@ -24,6 +50,17 @@ still block it. Incomplete construction follows existing continuation rules;
 unprepared or tampered declared references cannot queue as ordinary candidates.
 Preparation must preserve the original creator/question/hash and all six
 source/carrier markers before normal release and snapshot admission.
+Its atomic unused-draft boundary materializes each canonical instrument
+assignment before model, manifest and arm hashes are sealed. Later member and
+singleton payload construction must reuse that descriptor without changing
+the frozen model identity. A blocked assignment or parameter change rolls back
+the preparation; an old lazily mutated cohort remains technical history.
+
+Immutable replay completion samples its terminal time after original response,
+trade and decision artifacts are durable inside the locked transaction. Failed
+artifact sealing rolls back publication; duplicate completion cannot alter the
+original terminal time or evidence. The original-artifact timestamp guard stays
+strict.
 
 `draft -> evaluating -> evaluated -> approved -> scheduled -> active -> retired`
 is separate from generation state. Draft/evaluation can be research-only;

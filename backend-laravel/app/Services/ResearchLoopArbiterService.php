@@ -203,6 +203,27 @@ class ResearchLoopArbiterService
 
         // Already-admitted work settles before any new hypothesis. STOP is
         // drain-first, so this branch intentionally precedes the mode check.
+        // A crash between the canonical constructor and atomic preparation is
+        // not an ordinary draft. Resume its original fenced work before the
+        // generic lifecycle can repeatedly attempt an unprepared admission.
+        if ($latest && (int) data_get($latest->trigger_context, 'native_specialist_council_intent.followup_work_item_id', 0) > 0
+            && ((string) $latest->status === 'draft' || LabPopulationService::constructionIncomplete($latest))) {
+            $work = $dryRun || ! $this->autonomy->enabled($symbol, $timeframe)
+                ? null : $this->conversion->claimCouncilContinuationForGeneration($latest);
+            if ($work) {
+                return $this->decide($symbol, $timeframe, 'RESUME_COUNCIL_DURABLE_NEXT_WORK', 100,
+                    'trading:consume-research-work', [0 => (int) $work->id,
+                        '--lease-token' => (string) $work->lease_token, '--fence' => (int) $work->fence_version,
+                        '--json' => true], 'scheduler-constructor', ['ORIGINAL_COUNCIL_WORK_OWNS_PENDING_INTAKE'],
+                    ['generation' => $generation, 'work_item_id' => (int) $work->id,
+                        'source_receipt_id' => (int) $work->research_experiment_receipt_id], $dryRun);
+            }
+            $pending = \App\Models\ResearchExperimentWorkItem::find((int) data_get($latest->trigger_context, 'native_specialist_council_intent.followup_work_item_id'));
+            return $this->decide($symbol, $timeframe, 'WAIT_COUNCIL_DURABLE_NEXT_WORK', 100,
+                null, [], null, ['ORIGINAL_COUNCIL_WORK_FENCE_OR_DEPENDENCY_NOT_READY'],
+                ['generation' => $generation, 'work_item_id' => $pending?->id, 'work_status' => $pending?->status,
+                    'work_dependency_reason' => $pending?->last_error], $dryRun);
+        }
         if ($latest && (in_array((string) $latest->status, self::ACTIVE_GENERATION_STATUSES, true)
             || LabPopulationService::constructionIncomplete($latest))) {
             // A sealed replay can legitimately outlive several scheduler ticks.

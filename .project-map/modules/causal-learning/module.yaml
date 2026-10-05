@@ -75,6 +75,9 @@ paths:
   - backend-laravel/app/Services/ResearchPaperEpochContractService.php
   - backend-laravel/app/Services/CooperativeExperimentSettlementService.php
   - backend-laravel/app/Services/ResearchExperimentConversionKernelService.php
+  - backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php
+  - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
+  - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
   - backend-laravel/app/Services/ResearchKnowledgePortfolioService.php
   - backend-laravel/app/Services/MultiModalLearningPortfolioService.php
   - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
@@ -119,6 +122,10 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - SpecialistCouncilResearchFeedbackService::registerFollowupProof
+  - SpecialistCouncilResearchFeedbackService::inspectFollowupReadiness
+  - ResearchExperimentConversionKernelService::claimCouncilContinuationForGeneration
+  - SpecialistCouncilFollowupExecutionService::execute
   - trading:audit-research-window-provenance
   - trading:admit-academy-experiment
   - AcademyExperimentMaterializerService::proposal
@@ -216,6 +223,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php
   - backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php
   - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
   - backend-laravel/tests/Feature/ProspectiveResearchMetaLearningTest.php

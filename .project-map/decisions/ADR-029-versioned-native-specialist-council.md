@@ -35,3 +35,20 @@ inheritance and qualified active specialists require real original evidence.
 
 See `docs/architecture/specialist-council.md` for owner/API boundaries and the
 focused end-to-end acceptance contract.
+
+## Bounded continuation and support proof
+
+Council follow-up work is executable only from a server-sealed original
+preregistration, current source/native vectors and verified real clean scope.
+The existing kernel, arbiter, work consumer, constructor, preparation and
+dispatcher retain their authority. Stable operational holds and one-cohort
+checkpoints prevent minute-based retries, duplicate generations or reset
+scientific budgets. A validated pre-execution schema refusal can support one
+changed-source, unchanged-question repair; a timeout cannot prove no outcome.
+
+Typed support components use separate original role-specific producer trials,
+ablation and retention. Their scoped research adoption revalidates original
+exam/artifacts/native operators every use. Account integrity is not causal
+allocation value; an original equal-budget learning/evolution benchmark is
+provisional until its independent policy activation adapter exists. Explicit
+missing code and authorized data prerequisites never become claimed authority.

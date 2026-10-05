@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T08:24:49.993Z",
-  "source_digest": "ae75cfb79d6c6f3962229e74beaf700fa753e7934cfbd93675b0a9b45461bb3c",
-  "source_file_count": 1515,
-  "git_head": "5d513eec1b516c98a45790c5561c63af75729d2f",
+  "generated_at": "2026-10-05T11:01:05.518Z",
+  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
+  "source_file_count": 1521,
+  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1867,6 +1867,12 @@
     {
       "path": "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
       "tests": [
+        "test_terminal_publication_clock_is_sampled_after_all_original_artifacts_are_durable",
+        "terminalPublicationStates",
+        "test_terminal_publication_artifact_failure_rolls_back_without_final_timestamp",
+        "timedPublicationFixture",
+        "__construct",
+        "recordArtifact",
         "test_autonomy_audit_treats_scientific_rejection_as_a_clean_terminal_disposition",
         "test_autonomy_audit_reports_a_technical_quarantine_as_terminal_but_not_technically_clean",
         "test_uncertainty_abstain_is_a_local_wait_receipt_and_never_calls_replay",
@@ -3143,6 +3149,65 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php",
+      "tests": [
+        "test_followup_registration_delivers_bounded_prospective_contract_and_actor_to_original_owner",
+        "test_followup_registration_refuses_missing_actor_before_owner_mutation",
+        "test_followup_registration_refuses_non_workspace_proof_before_owner_mutation",
+        "test_followup_registration_refuses_nonpositive_identity_before_owner_mutation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php",
+      "tests": [
+        "work",
+        "fixture",
+        "test_actual_six_constructor_preserves_verified_vectors_with_zero_parent_authority_and_same_generation_resume",
+        "test_caller_executable_flag_and_stale_fence_cannot_dispatch_unproved_council_work",
+        "test_actual_cohort_projection_loss_cannot_create_a_second_cohort_from_the_same_work",
+        "test_specific_generation_resume_claim_cannot_take_another_higher_priority_work",
+        "test_exhausted_operational_work_is_blocked_without_creating_or_removing_its_original_generation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
+      "tests": [
+        "test_missing_server_resolution_stays_blocked_despite_caller_executable_flag",
+        "test_one_prospective_research_resolution_freezes_real_old_new_vectors_and_is_idempotent",
+        "test_previously_sealed_question_cannot_be_tuned_after_registration",
+        "test_rehashed_forged_work_proof_does_not_replace_server_registration",
+        "test_changed_original_native_model_invalidates_even_the_server_signed_resolution",
+        "test_new_source_after_registration_cannot_mix_followup_evaluator_versions",
+        "test_data_readiness_is_rechecked_after_successful_registration",
+        "test_completed_and_exhausted_work_does_not_reopen_one_scientific_attempt",
+        "test_caller_executable_or_authority_fields_are_not_accepted_as_preregistration",
+        "test_prospective_identity_limits_match_actual_native_constructor",
+        "test_eighth_current_lease_can_finish_but_expired_or_ninth_lease_cannot_start_again",
+        "test_fresh_native_vector_cannot_bypass_original_edge_risk_mutation_firewall",
+        "test_exact_instrument_delta_veto_is_consulted_not_a_council_wide_harmful_ban",
+        "test_unobserved_technical_repair_retains_same_question_and_requires_changed_source",
+        "test_new_technical_discovery_is_not_created_by_changing_only_question_text",
+        "test_original_null_contract_schema_rejection_can_receive_one_unobserved_source_repair",
+        "test_generic_transport_timeout_cannot_be_reclassified_as_unobserved_schema_failure",
+        "test_real_assignment_materialization_is_proven_only_for_one_new_unobserved_same_question_repair",
+        "test_assignment_materialization_numeric_projection_is_equivalent_but_never_an_excluded_hash_field",
+        "test_changed_assignment_after_materialization_proof_is_not_resealed_or_treated_as_original",
+        "test_assignment_without_original_request_witness_cannot_repair_member_model_drift",
+        "test_proven_assignment_does_not_hide_an_undispatched_original_carrier_change",
+        "test_proven_assignment_materialization_is_not_a_general_new_discovery_model_drift_exception",
+        "test_later_native_outcome_invalidates_preexecution_repair_without_rewriting_original",
+        "test_data_repair_requires_actual_changed_verified_data_not_renamed_question",
+        "test_underpowered_extension_cannot_relabel_same_physical_event_scope",
+        "test_one_work_cannot_retry_a_failed_generation_or_own_a_second_cohort",
+        "test_out_of_range_or_coupled_invalid_parameter_delta_is_not_clamped",
+        "test_external_risk_and_capital_cannot_change_under_same_followup_proof",
+        "test_data_owner_failure_rolls_back_registration_instead_of_waking_work",
+        "test_independent_and_descendant_claims_do_not_become_discovery_executable",
+        "fixture",
+        "recordOriginalSchemaFailure"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
       "tests": [
         "test_persisted_native_members_execute_on_one_attested_account_after_numeric_transport",
@@ -3181,6 +3246,9 @@
         "test_atomic_native_preparation_preregisters_all_arms_without_dispatch_or_authority",
         "test_identical_unused_draft_retry_is_idempotent_but_changed_request_is_not",
         "test_late_invalid_ablation_rolls_back_version_plan_and_every_model_binding",
+        "test_invalid_last_native_assignment_rolls_back_all_prospective_assignments_before_sealing",
+        "test_assignment_json_storage_number_normalization_preserves_exact_presealed_semantics",
+        "test_changed_assignment_numeric_value_is_not_json_normalization_and_rolls_back",
         "test_plan_that_cannot_bind_to_actual_execution_rolls_back_before_dispatch",
         "test_dispatcher_and_preparation_share_one_lease",
         "test_snapshot_or_original_observation_prevents_prospective_binding",
@@ -3232,6 +3300,39 @@
         "test_failed_knowledge_publication_rolls_back_original_assessment_transaction",
         "test_complete_original_research_arms_compare_without_fictitious_champion_authority",
         "fixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilSupportRoleTest.php",
+      "tests": [
+        "test_original_native_risk_proof_qualifies_and_is_consumed_without_trader_or_paper_authority",
+        "test_historical_native_role_evidence_never_becomes_independent_qualification",
+        "test_a_called_but_behaviorally_noop_native_operator_does_not_qualify",
+        "test_role_trial_rejects_asserted_flags_and_unregistered_operator_identity",
+        "test_support_trial_requires_original_control_and_retention_before_outcomes",
+        "test_missing_server_role_adapter_is_dependency_not_a_typed_flag_or_shared_pnl_certificate",
+        "test_original_native_account_and_event_use_qualify_correctness_not_learned_pnl_or_broker_competence",
+        "test_original_equal_budget_policy_benchmark_is_callable_and_bound_but_never_self_qualifies",
+        "policyExperiment",
+        "completePolicyExperiment",
+        "completedNativeExam",
+        "draft",
+        "trial",
+        "trials",
+        "model",
+        "execution"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php",
+      "tests": [
+        "sourceAgent",
+        "payload",
+        "parse",
+        "test_real_unbound_source_payload_omits_council_and_parses_as_ordinary_strategy",
+        "test_declared_native_object_is_preserved_in_a_mixed_transport_not_cast_or_dropped",
+        "test_explicit_null_list_or_scalar_council_stays_rejected_by_strict_python_schema",
+        "test_declared_invalid_native_binding_is_rejected_before_payload_fallback"
       ]
     },
     {
