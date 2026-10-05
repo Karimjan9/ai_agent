@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T11:01:05.518Z",
-  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
-  "source_file_count": 1521,
-  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
+  "generated_at": "2026-10-05T12:28:51.882Z",
+  "source_digest": "4f0711b43924cca8e9dbf1f4a52646f828534905baa608d2315927f6cd13f75a",
+  "source_file_count": 1523,
+  "git_head": "133cf4ffd1f2a0d2998d49364bf0887da4cc9b56",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
@@ -24,6 +24,8 @@
     "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
     "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
     "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
+    "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+    "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
     "backend-laravel/app/Models/SpecialistCouncilVersion.php",
     "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
     "docs/architecture/specialist-council.md",
@@ -122,6 +124,7 @@
     "backend-laravel/app/Services/SpecialistCouncilContractService.php",
     "backend-laravel/app/Services/SpecialistCouncilDataUseService.php",
     "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
+    "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
     "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
     "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
     "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
@@ -133,7 +136,8 @@
     "backend-laravel/scripts/diagnose-signal-boundary.py",
     "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
     "backend-laravel/tests/Feature/ExperimentQualityProgressServiceTest.php",
-    "backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php"
+    "backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php",
+    "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php"
   ],
   "symbols": [
     {
@@ -4370,85 +4374,91 @@
       "symbol": "supportPolicyBenchmarkReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 160
+      "line": 172
     },
     {
       "symbol": "originalPolicyJournal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 181
+      "line": 193
+    },
+    {
+      "symbol": "supportNativePolicyBenchmarkReference",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
+      "line": 205
     },
     {
       "symbol": "sealManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 194
+      "line": 221
     },
     {
       "symbol": "sealPassport",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 249
+      "line": 276
     },
     {
       "symbol": "componentAdmission",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 323
+      "line": 350
     },
     {
       "symbol": "product",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 339
+      "line": 366
     },
     {
       "symbol": "manifestValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 385
+      "line": 412
     },
     {
       "symbol": "modelHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 392
+      "line": 419
     },
     {
       "symbol": "runtimeContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 404
+      "line": 431
     },
     {
       "symbol": "timeframeSeconds",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 494
+      "line": 521
     },
     {
       "symbol": "sealComponent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 500
+      "line": 527
     },
     {
       "symbol": "validateExecutionPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 518
+      "line": 545
     },
     {
       "symbol": "identity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 533
+      "line": 560
     },
     {
       "symbol": "time",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
-      "line": 538
+      "line": 565
     },
     {
       "symbol": "__construct",
@@ -4583,184 +4593,280 @@
       "line": 26
     },
     {
-      "symbol": "runtimeContractForAblation",
+      "symbol": "assertParent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 111
+    },
+    {
+      "symbol": "SpecialistCouncilIndependentPanelService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 18
+    },
+    {
+      "symbol": "assertOriginalComparators",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 220
+    },
+    {
+      "symbol": "physicalProgram",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 241
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 25
+    },
+    {
+      "symbol": "memberVectors",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 250
+    },
+    {
+      "symbol": "assertLease",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 267
+    },
+    {
+      "symbol": "seal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 276
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 283
+    },
+    {
+      "symbol": "assertCanonicalWindowProducer",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 298
+    },
+    {
+      "symbol": "register",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 35
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 53
+    },
+    {
+      "symbol": "execute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 85
+    },
+    {
+      "symbol": "owner",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+      "line": 97
+    },
+    {
+      "symbol": "paperBinding",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 107
+      "line": 1002
+    },
+    {
+      "symbol": "activeTradingMembers",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1035
+    },
+    {
+      "symbol": "assessOriginalRuns",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1053
+    },
+    {
+      "symbol": "nativePolicyQuestionOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 113
     },
     {
       "symbol": "assessSupportRoles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1125
+      "line": 1254
     },
     {
       "symbol": "executedIntents",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1208
+      "line": 1343
     },
     {
       "symbol": "nativeSupportObservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1215
-    },
-    {
-      "symbol": "runtimeContractForModel",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 124
+      "line": 1350
     },
     {
       "symbol": "preregisterSupportPolicyBenchmark",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1251
+      "line": 1387
     },
     {
       "symbol": "settleSupportPolicyBenchmark",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1267
+      "line": 1403
+    },
+    {
+      "symbol": "preregisterSupportNativePolicyBenchmark",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1417
+    },
+    {
+      "symbol": "settleSupportNativePolicyBenchmark",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1439
+    },
+    {
+      "symbol": "nativePolicyBenchmarkObservation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1450
+    },
+    {
+      "symbol": "rankQualifiedResearchQuestions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1488
     },
     {
       "symbol": "originalPolicyBenchmarkObservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1280
+      "line": 1511
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 153
     },
     {
       "symbol": "nativeInfrastructureSupportObservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1303
+      "line": 1534
     },
     {
       "symbol": "researchSupportBinding",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1358
+      "line": 1589
     },
     {
-      "symbol": "attestReplayResult",
+      "symbol": "registerDraft",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 138
+      "line": 159
     },
     {
       "symbol": "assertResearchSupportConsumptions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1385
+      "line": 1616
     },
     {
       "symbol": "metrics",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1423
+      "line": 1654
     },
     {
       "symbol": "findArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1437
+      "line": 1668
     },
     {
       "symbol": "originalArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1443
+      "line": 1674
     },
     {
       "symbol": "paperAuthority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1456
+      "line": 1687
     },
     {
       "symbol": "verified",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1477
+      "line": 1708
     },
     {
       "symbol": "plan",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1487
+      "line": 1718
+    },
+    {
+      "symbol": "authorizedPlanWindow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 1729
     },
     {
       "symbol": "accountPolicyKeys",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1497
+      "line": 1734
     },
     {
       "symbol": "normalizeEvaluationScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1503
+      "line": 1740
     },
     {
       "symbol": "sameEvaluationScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1520
+      "line": 1757
     },
     {
       "symbol": "scopeFromProbe",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1525
+      "line": 1762
     },
     {
       "symbol": "assertOriginalArmScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1534
+      "line": 1771
     },
     {
       "symbol": "requestForRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1559
-    },
-    {
-      "symbol": "independentActor",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1568
-    },
-    {
-      "symbol": "actor",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1576
-    },
-    {
-      "symbol": "time",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1581
-    },
-    {
-      "symbol": "blocked",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1587
-    },
-    {
-      "symbol": "json",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1592
-    },
-    {
-      "symbol": "number",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 1597
+      "line": 1796
     },
     {
       "symbol": "SpecialistCouncilLifecycleService",
@@ -4769,166 +4875,214 @@
       "line": 18
     },
     {
-      "symbol": "__construct",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 25
-    },
-    {
-      "symbol": "assertReceiptSeal",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 260
-    },
-    {
-      "symbol": "progressForModels",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 276
-    },
-    {
-      "symbol": "registerDraft",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 31
-    },
-    {
-      "symbol": "sealEvaluationPlan",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 317
-    },
-    {
-      "symbol": "bindEvaluationRequest",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 450
-    },
-    {
       "symbol": "attachResearchModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 52
+      "line": 180
     },
     {
-      "symbol": "bindEvaluationRequestForModel",
+      "symbol": "independentActor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 537
+      "line": 1805
     },
     {
-      "symbol": "attachEvaluationArm",
+      "symbol": "actor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 557
+      "line": 1813
     },
     {
-      "symbol": "evaluationBindingForModel",
+      "symbol": "time",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 585
+      "line": 1818
     },
     {
-      "symbol": "evaluationPurposeForModel",
+      "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 614
+      "line": 1824
     },
     {
-      "symbol": "settleEvaluationForRun",
+      "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 641
+      "line": 1829
     },
     {
-      "symbol": "enqueueCompletedRun",
+      "symbol": "number",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 671
-    },
-    {
-      "symbol": "notifyCompletedRun",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 689
-    },
-    {
-      "symbol": "reconcilePendingEvaluations",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 696
-    },
-    {
-      "symbol": "deliverEvaluation",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 707
-    },
-    {
-      "symbol": "evaluateOriginalRuns",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 740
+      "line": 1834
     },
     {
       "symbol": "researchVersionForModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 75
-    },
-    {
-      "symbol": "approve",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 772
-    },
-    {
-      "symbol": "schedule",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 793
-    },
-    {
-      "symbol": "activateDue",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 809
-    },
-    {
-      "symbol": "rollback",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 832
-    },
-    {
-      "symbol": "publishEntryBindings",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 854
+      "line": 203
     },
     {
       "symbol": "runtimeContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 86
+      "line": 214
     },
     {
-      "symbol": "paperBinding",
+      "symbol": "runtimeContractForAblation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 873
+      "line": 235
     },
     {
-      "symbol": "activeTradingMembers",
+      "symbol": "runtimeContractForModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 906
+      "line": 252
     },
     {
-      "symbol": "assessOriginalRuns",
+      "symbol": "nativePolicyQuestionSpec",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
-      "line": 924
+      "line": 26
+    },
+    {
+      "symbol": "attestReplayResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 266
+    },
+    {
+      "symbol": "qualifiedOriginalResearchProof",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 32
+    },
+    {
+      "symbol": "assertReceiptSeal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 388
+    },
+    {
+      "symbol": "progressForModels",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 404
+    },
+    {
+      "symbol": "sealEvaluationPlan",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 445
+    },
+    {
+      "symbol": "bindEvaluationRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 579
+    },
+    {
+      "symbol": "inspectOriginalQualification",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 59
+    },
+    {
+      "symbol": "nativePolicySpec",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 64
+    },
+    {
+      "symbol": "bindEvaluationRequestForModel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 666
+    },
+    {
+      "symbol": "attachEvaluationArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 686
+    },
+    {
+      "symbol": "evaluationBindingForModel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 714
+    },
+    {
+      "symbol": "evaluationPurposeForModel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 743
+    },
+    {
+      "symbol": "settleEvaluationForRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 770
+    },
+    {
+      "symbol": "enqueueCompletedRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 800
+    },
+    {
+      "symbol": "notifyCompletedRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 818
+    },
+    {
+      "symbol": "reconcilePendingEvaluations",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 825
+    },
+    {
+      "symbol": "deliverEvaluation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 836
+    },
+    {
+      "symbol": "evaluateOriginalRuns",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 869
+    },
+    {
+      "symbol": "approve",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 901
+    },
+    {
+      "symbol": "schedule",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 922
+    },
+    {
+      "symbol": "activateDue",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 938
+    },
+    {
+      "symbol": "rollback",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 961
+    },
+    {
+      "symbol": "publishEntryBindings",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 983
     },
     {
       "symbol": "SpecialistCouncilPreparationService",
@@ -5042,7 +5196,7 @@
       "symbol": "inspectFollowupReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 241
+      "line": 240
     },
     {
       "symbol": "__construct",
@@ -5054,13 +5208,13 @@
       "symbol": "followupOriginal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 325
+      "line": 323
     },
     {
       "symbol": "projectNativeSources",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 343
+      "line": 341
     },
     {
       "symbol": "recordAssessment",
@@ -5072,79 +5226,79 @@
       "symbol": "assertFollowupDesign",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 408
+      "line": 406
     },
     {
       "symbol": "unobservedTechnicalProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 442
+      "line": 440
     },
     {
       "symbol": "originalDescriptorMaterialization",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 566
+      "line": 564
     },
     {
       "symbol": "followupBlocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 607
+      "line": 605
     },
     {
       "symbol": "followupServerSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 614
+      "line": 612
     },
     {
       "symbol": "priorObservations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 622
+      "line": 620
     },
     {
       "symbol": "assertPriorObservations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 632
+      "line": 630
     },
     {
       "symbol": "completedQuestionForSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 650
+      "line": 648
     },
     {
       "symbol": "observationFromReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 683
+      "line": 681
     },
     {
       "symbol": "questionFingerprint",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 698
+      "line": 696
     },
     {
       "symbol": "priorReceiptValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 720
+      "line": 718
     },
     {
       "symbol": "closure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 749
+      "line": 747
     },
     {
       "symbol": "economicDirection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 787
+      "line": 785
     },
     {
       "symbol": "library",
@@ -5637,6 +5791,90 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php",
       "line": 99
+    },
+    {
+      "symbol": "test_completed_future_data_does_not_hide_the_missing_canonical_cohort_producer",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 100
+    },
+    {
+      "symbol": "test_register_refuses_context_shaped_generations_without_mutating_originals",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 111
+    },
+    {
+      "symbol": "test_forged_seal_and_expired_lease_do_not_publish_a_run_or_call_transport",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 131
+    },
+    {
+      "symbol": "assertParent",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 147
+    },
+    {
+      "symbol": "fixture",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 153
+    },
+    {
+      "symbol": "SpecialistCouncilIndependentPanelTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 20
+    },
+    {
+      "symbol": "test_unchanged_program_and_exact_clone_controls_pass_semantic_comparison_only",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 24
+    },
+    {
+      "symbol": "test_new_weaker_solo_cannot_replace_the_original_frozen_control",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 31
+    },
+    {
+      "symbol": "test_founding_champion_is_only_the_unchanged_original_solo_not_arbitrary_new_model",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 39
+    },
+    {
+      "symbol": "test_risk_routing_and_scientific_criteria_cannot_be_weakened_in_independent_followup",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 52
+    },
+    {
+      "symbol": "test_duplicate_roles_do_not_hide_a_changed_specialist_or_roster_member",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 65
+    },
+    {
+      "symbol": "test_actual_original_member_parameter_drift_cannot_hide_behind_unchanged_sealed_vectors",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 75
+    },
+    {
+      "symbol": "test_late_instrument_descriptor_cannot_reinterpret_an_original_member_seal",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 83
+    },
+    {
+      "symbol": "test_descendant_requires_original_qualified_parent_not_provisional_observations",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "line": 92
     }
   ],
   "tests": [
@@ -6258,6 +6496,7 @@
         "test_missing_server_resolution_stays_blocked_despite_caller_executable_flag",
         "test_one_prospective_research_resolution_freezes_real_old_new_vectors_and_is_idempotent",
         "test_previously_sealed_question_cannot_be_tuned_after_registration",
+        "test_original_assessment_redelivery_and_stale_normalization_preserve_registered_resolution",
         "test_rehashed_forged_work_proof_does_not_replace_server_registration",
         "test_changed_original_native_model_invalidates_even_the_server_signed_resolution",
         "test_new_source_after_registration_cannot_mix_followup_evaluator_versions",
@@ -6397,6 +6636,13 @@
         "test_original_native_account_and_event_use_qualify_correctness_not_learned_pnl_or_broker_competence",
         "test_original_equal_budget_policy_benchmark_is_callable_and_bound_but_never_self_qualifies",
         "policyExperiment",
+        "test_native_policy_panel_adapter_qualifies_role_and_consumes_real_ranker_without_paper_or_cpu_claims",
+        "test_native_policy_null_and_retention_regression_are_not_qualified",
+        "test_native_policy_poisoned_original_outcomes_refuse_settlement_and_authority",
+        "test_native_policy_no_effect_or_asserted_inputs_are_rejected_before_outcomes",
+        "test_independent_authority_suffix_is_not_sent_as_a_new_authorization_receipt",
+        "test_original_research_parent_and_native_policy_question_reject_flags_without_original_independent_producers",
+        "nativePolicyFixture",
         "completePolicyExperiment",
         "completedNativeExam",
         "draft",

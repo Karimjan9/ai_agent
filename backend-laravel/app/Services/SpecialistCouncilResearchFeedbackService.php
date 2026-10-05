@@ -141,8 +141,7 @@ class SpecialistCouncilResearchFeedbackService
             }
             [$receipt, $version, $original] = $this->followupOriginal($work);
             if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)) {
-                return $this->followupBlocked($work->work_type === 'specialist_council_independent_validation'
-                    ? 'AUTHORIZED_UNUSED_POST_PAPER_COUNCIL_EXECUTOR_REQUIRED' : 'QUALIFIED_PARENT_AND_DESCENDANT_EXECUTOR_REQUIRED');
+                return app(SpecialistCouncilIndependentPanelService::class)->register($work, $proposed, $actor, $version, $original);
             }
             if (($proposed['protocol'] ?? null) !== self::FOLLOWUP_PROTOCOL
                 || array_diff(array_keys($proposed), ['protocol', 'research_question', 'creator_id', 'evaluator_id',
@@ -243,8 +242,7 @@ class SpecialistCouncilResearchFeedbackService
         try {
             [$receipt, $version, $original] = $this->followupOriginal($work);
             if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)) {
-                return $this->followupBlocked($work->work_type === 'specialist_council_independent_validation'
-                    ? 'AUTHORIZED_UNUSED_POST_PAPER_COUNCIL_EXECUTOR_REQUIRED' : 'QUALIFIED_PARENT_AND_DESCENDANT_EXECUTOR_REQUIRED');
+                return app(SpecialistCouncilIndependentPanelService::class)->inspect($work, $version);
             }
             $body = data_get($work->payload, 'followup_resolution');
             if (! is_array($body)) return $this->followupBlocked('COUNCIL_FOLLOWUP_PREREGISTRATION_REQUIRED');

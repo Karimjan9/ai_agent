@@ -32,12 +32,24 @@ only an in-memory descriptor removal may reconstruct the old hash. Arbitrary
 model changes, missing witnesses, peer drift or observed outcomes stay blocked.
 This new prospective proof never makes the old preparation valid.
 
+Independent/descendant reference inspection remains
+`blocked: CANONICAL_AUTHORIZED_WINDOW_COHORT_PRODUCER_REQUIRED` until a real
+canonical per-window reservation/snapshot producer and original terminal owner
+exist. Current ordinary and historical native-six drafts cannot satisfy this
+producer contract. Registration writes neither panel ownership nor readiness;
+no fabricated constructor marker, existing discovery release or caller flag
+can wake it. Actual unused authorized data is an additional requirement.
+
 Support-role qualification is separate from trader and paper qualification.
 An original role-specific producer, component ablation and retention can grant
 only scoped research component use after authorized nonoverlapping windows and
 the independently stored exam. Native account/data tests attest correctness,
-not economic alpha. Learning/evolution original same-budget Portfolio benchmarks
-are callable but provisional until their independent activation adapter exists.
+not economic alpha. Historical Portfolio benchmarks remain provisional. The
+separate native-policy adapter preregisters exact policy-axis ablation, original
+question sets, equal caps and at least three authorized disjoint windows before
+outcomes. Actual ranking and consumed-prefix changes, original wall costs and
+retention are required; a null ranking effect never becomes activation.
+Pure original-parent/policy inspection grants no paper or economic authority.
 Every research support consumption revalidates original artifact hashes, native
 operator/policy identity and unchanged scope. A poisoned producer revokes use.
 

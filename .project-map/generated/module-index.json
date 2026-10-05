@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T11:01:05.518Z",
-  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
-  "source_file_count": 1521,
-  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
+  "generated_at": "2026-10-05T12:28:51.882Z",
+  "source_digest": "4f0711b43924cca8e9dbf1f4a52646f828534905baa608d2315927f6cd13f75a",
+  "source_file_count": 1523,
+  "git_head": "133cf4ffd1f2a0d2998d49364bf0887da4cc9b56",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -90,6 +90,7 @@
         "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
         "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
         "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
+        "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
         "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
         "backend-laravel/app/Services/MultiModalLearningPortfolioService.php",
         "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
@@ -163,6 +164,9 @@
         "TypedInstrumentFoundryService::behaviorAlternatives",
         "ResearchKnowledgePortfolioService::preregisterExperiment",
         "ResearchKnowledgePortfolioService::chooseDiscriminatingProbe",
+        "ResearchKnowledgePortfolioService::preregisterNativePolicyChallenge",
+        "ResearchKnowledgePortfolioService::inspectNativePolicyChallenge",
+        "SpecialistCouncilLifecycleService::rankQualifiedResearchQuestions",
         "XauusdEdgeFormationAcademyService::learningProgress",
         "XauusdEdgeFormationAcademyService::skillDependencyGraph",
         "EvolutionaryAuthorityFoundryService::settleDescendantOutcome",
@@ -291,7 +295,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 109,
+      "source_file_count": 110,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -374,6 +378,8 @@
         "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
         "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
         "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
+        "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
         "backend-laravel/app/Models/SpecialistCouncilVersion.php",
         "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
         "docs/architecture/specialist-council.md",
@@ -439,6 +445,10 @@
         "SpecialistCouncilLifecycleService::researchSupportBinding",
         "SpecialistCouncilLifecycleService::preregisterSupportPolicyBenchmark",
         "SpecialistCouncilLifecycleService::settleSupportPolicyBenchmark",
+        "SpecialistCouncilLifecycleService::preregisterSupportNativePolicyBenchmark",
+        "SpecialistCouncilLifecycleService::settleSupportNativePolicyBenchmark",
+        "SpecialistCouncilLifecycleService::qualifiedOriginalResearchProof",
+        "SpecialistCouncilIndependentPanelService::inspect",
         "GenerationSnapshotAdmissionService::historicalDatasetReadiness",
         "trading:lab-generation --trigger=historical_research",
         "LabPopulationService",
@@ -552,7 +562,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 61,
+      "source_file_count": 63,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {

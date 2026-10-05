@@ -22,6 +22,134 @@ class SpecialistCouncilLifecycleService
     public const BINDING_PROTOCOL = 'specialist_council_binding_v1';
     public const SUPPORT_QUALIFICATION_PROTOCOL = 'specialist_support_role_qualification_v1';
 
+    /** Read-only original question intake before any arm outcome, not caller features or a new dispatcher. */
+    public function nativePolicyQuestionSpec(int $versionId, string $windowKey, string $evaluatorId): array
+    {
+        return $this->nativePolicySpec($versionId, $windowKey, $evaluatorId, true);
+    }
+
+    /** Read-only research-parent proof; does not call approve or grant paper/economic authority. */
+    public function qualifiedOriginalResearchProof(SpecialistCouncilVersion $version): array
+    {
+        try {
+            $version = $this->verified($version->fresh()); $owner = $this->plan($version);
+            $this->independentActor($version, $owner['evaluator_id']);
+            $exam = DB::table('specialist_council_evaluations')->where('specialist_council_version_id', $version->id)->first();
+            if ($owner['plan']['purpose'] !== 'independent' || ! $exam || $exam->evaluator_id !== $owner['evaluator_id']) {
+                throw new LogicException('ORIGINAL_INDEPENDENT_RESEARCH_PARENT_REQUIRED');
+            }
+            $runIds = json_decode($exam->original_run_ids, true, 512, JSON_THROW_ON_ERROR);
+            $stored = json_decode($exam->assessment, true, 512, JSON_THROW_ON_ERROR);
+            $assessment = $this->assessOriginalRuns($version, $owner, $runIds);
+            if (($assessment['qualified'] ?? false) !== true || $this->epochs->parameterHash($stored) !== $exam->assessment_hash
+                || $exam->assessment_hash !== $version->assessment_hash || $this->epochs->parameterHash($assessment) !== $exam->assessment_hash) {
+                throw new LogicException('ORIGINAL_RESEARCH_PARENT_PROOF_INVALID_OR_UNQUALIFIED');
+            }
+            return ['allowed' => true, 'status' => 'original_independent_research_parent', 'reason' => null,
+                'source_version_id' => $version->id, 'manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'],
+                'assessment_hash' => $exam->assessment_hash, 'evaluator_id' => $exam->evaluator_id, 'original_run_ids' => $runIds,
+                'qualified_roles' => $assessment['qualified_roles'], 'economic_parent' => false, 'paper_authority_granted' => false,
+                'promotion_evidence' => false];
+        } catch (\Throwable $error) {
+            return ['allowed' => false, 'status' => 'blocked', 'reason' => $error instanceof LogicException ? $error->getMessage() : 'ORIGINAL_RESEARCH_PARENT_PRODUCER_REQUIRED',
+                'economic_parent' => false, 'paper_authority_granted' => false, 'promotion_evidence' => false];
+        }
+    }
+
+    public function inspectOriginalQualification(SpecialistCouncilVersion $version): array
+    {
+        return $this->qualifiedOriginalResearchProof($version);
+    }
+
+    private function nativePolicySpec(int $versionId, string $windowKey, string $evaluatorId, bool $unobserved, ?string $source = null): array
+    {
+        $version = $this->verified(SpecialistCouncilVersion::findOrFail($versionId));
+        $owner = $this->plan($version); $plan = $owner['plan']; $this->independentActor($version, $evaluatorId);
+        $window = $plan['windows'][$windowKey] ?? null;
+        if ($owner['evaluator_id'] !== $evaluatorId || $plan['purpose'] !== 'independent' || ! is_array($window)
+            || ! $this->authorizedPlanWindow($window, $window['dataset_sha256'])) {
+            throw new LogicException('AUTHORIZED_ORIGINAL_NATIVE_POLICY_QUESTION_REQUIRED');
+        }
+        foreach ($version->manifest['members'] as $member) foreach ($member['scope']['symbols'] as $symbol) {
+            if (app(SpecialistCouncilDataUseService::class)->intervalExposed($version, $symbol,
+                $window['start_inclusive'], $window['end_exclusive'])) throw new LogicException('NATIVE_POLICY_QUESTION_EVENTS_PREVIOUSLY_EXPOSED');
+        }
+        $arms = array_filter($plan['arms'], fn ($arm) => $arm['window_key'] === $windowKey);
+        if (! $this->findArm($arms, 'candidate') || ! $this->findArm($arms, 'solo')
+            || ! $this->findArm($arms, 'champion') || ! $this->findArm($arms, 'retention')
+            || ! collect($arms)->contains(fn ($arm) => $arm['kind'] === 'ablation')) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_COMPARATORS_AND_RETENTION_REQUIRED');
+        }
+        if ($unobserved && LabEvaluationRun::whereIn('model_version_id', array_column($plan['arms'], 'model_version_id'))->exists()) {
+            throw new LogicException('OBSERVED_NATIVE_POLICY_QUESTION_CANNOT_BE_PREREGISTERED');
+        }
+        $source ??= $plan['preparation_source_hash'] ?? $this->evidence->codeHash();
+        if (! preg_match('/^[a-f0-9]{64}$/D', (string) $source)
+            || (isset($plan['preparation_source_hash']) && $plan['preparation_source_hash'] !== $source)) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_SOURCE_REQUIRED');
+        }
+        $physical = ['manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'],
+            'window' => $window, 'objective' => $plan['objective'], 'arms' => $arms];
+        // A new version/plan label does not make an unchanged physical question distinct.
+        $question = $this->epochs->parameterHash(['members' => array_map(fn ($member) => [
+            'parameters' => $member['parameters'], 'role' => $member['role'], 'scope' => $member['scope'],
+            'horizon' => $member['horizon']], $version->manifest['members']), 'objective' => $plan['objective'],
+            'window' => $window, 'risk_policy' => $plan['risk_policy'], 'cost_model' => $plan['cost_model']]);
+        $ceiling = array_sum(array_map(fn ($member) => max(1, (float) ($member['resources']['max_compute_ms']
+            ?? $member['resources']['cpu_budget_ms'] ?? 1000)) / 1000, $version->manifest['members']));
+        return ['version_id' => $versionId, 'window_key' => $windowKey, 'window' => $window,
+            'manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'], 'physical_hash' => $this->epochs->parameterHash($physical),
+            'scope' => array_column($version->manifest['members'], 'scope'),
+            'evaluator_id' => $evaluatorId, 'source_hash' => $source, 'question_hash' => $question,
+            // These sealed resource/opportunity proxies are not learned causal forecasts.
+            // Unknown expected value/progress stay zero rather than being invented.
+            'selector_input' => ['question_id' => $question, 'ready' => true, 'safety_preserved' => true,
+                'cost_ceiling_seconds' => $ceiling, 'features' => ['expected_value' => 0,
+                    'information_gain' => 1 / (count($arms) + 1), 'learning_progress' => 0,
+                    'diversity' => count(array_unique(array_column($version->manifest['members'], 'role'))) / 4]]];
+    }
+
+    /** Only original independent exams and immutable artifacts can supply policy question utility/cost. */
+    public function nativePolicyQuestionOutcome(array $spec, string $registeredAt, string $evaluatorId): array
+    {
+        try {
+            $current = $this->nativePolicySpec($spec['version_id'], $spec['window_key'], $evaluatorId, false, $spec['source_hash']);
+            if ($this->epochs->parameterHash($current) !== $this->epochs->parameterHash($spec)) throw new LogicException('ORIGINAL_NATIVE_POLICY_QUESTION_DRIFT');
+            $version = $this->verified(SpecialistCouncilVersion::findOrFail($spec['version_id'])); $owner = $this->plan($version);
+            $exam = DB::table('specialist_council_evaluations')->where('specialist_council_version_id', $version->id)->first();
+            if (! $exam || $exam->evaluator_id !== $evaluatorId) throw new LogicException('ORIGINAL_NATIVE_POLICY_EXAM_REQUIRED');
+            $runIds = json_decode($exam->original_run_ids, true, 512, JSON_THROW_ON_ERROR);
+            $assessment = $this->assessOriginalRuns($version, $owner, $runIds);
+            if ($this->epochs->parameterHash($assessment) !== $exam->assessment_hash || $exam->assessment_hash !== $version->assessment_hash
+                || ($assessment['research_observation_status'] ?? '') !== 'research_compared') throw new LogicException('ORIGINAL_NATIVE_POLICY_ASSESSMENT_UNASSESSABLE');
+            $comparison = collect($assessment['comparisons'])->firstWhere('window_key', $spec['window_key']);
+            if (! $comparison) throw new LogicException('ORIGINAL_NATIVE_POLICY_WINDOW_COMPARISON_REQUIRED');
+            $keys = array_keys(array_filter($owner['plan']['arms'], fn ($arm) => $arm['window_key'] === $spec['window_key']));
+            $sources = []; $wall = 0; $seen = [];
+            foreach (LabEvaluationRun::whereIn('run_id', $runIds)->get() as $run) {
+                $request = $this->requestForRun($run, $this->originalArtifact($run, 'evaluation_request')); $binding = $request['specialist_council_evaluation'] ?? [];
+                if (! in_array($binding['arm_key'] ?? '', $keys, true)) continue;
+                if (isset($seen[$binding['arm_key']]) || $run->code_hash !== $spec['source_hash']
+                    || ! $run->started_at || $run->started_at->lt($this->time($registeredAt))
+                    || ! $run->finished_at || ! is_numeric($run->duration_ms) || $run->duration_ms < 0
+                    || abs($run->duration_ms - $run->started_at->diffInMilliseconds($run->finished_at)) > 1) {
+                    throw new LogicException('ORIGINAL_NATIVE_POLICY_RESOURCE_OR_PREREGISTRATION_INVALID');
+                }
+                $seen[$binding['arm_key']] = true; $wall += $run->duration_ms / 1000;
+                $sources[] = ['run_id' => $run->run_id, 'request_hash' => $run->request_hash,
+                    'response_hash' => $run->response_hash, 'code_hash' => $run->code_hash, 'duration_ms' => $run->duration_ms];
+            }
+            if (count($seen) !== count($keys) || $wall <= 0) throw new LogicException('ORIGINAL_NATIVE_POLICY_COMPLETE_RESOURCE_WITNESS_REQUIRED');
+            return ['status' => 'original_independent_question_observed', 'question_hash' => $spec['question_hash'],
+                'assessment_hash' => $exam->assessment_hash, 'original_sources' => $sources,
+                'powered' => ($comparison['powered'] ?? false) === true, 'positive' => ($comparison['incremental_value'] ?? false) === true
+                    && ($assessment['qualified'] ?? false) === true, 'end_to_end_wall_seconds' => $wall,
+                'window' => $spec['window'], 'economic_authority' => false];
+        } catch (\Throwable $error) {
+            return ['status' => 'dependency', 'reason' => $error instanceof LogicException ? $error->getMessage() : 'ORIGINAL_NATIVE_POLICY_PRODUCER_REQUIRED'];
+        }
+    }
+
     public function __construct(
         private SpecialistCouncilContractService $contracts,
         private ResearchPaperEpochContractService $epochs,
@@ -336,6 +464,7 @@ class SpecialistCouncilLifecycleService
                 $receipt = app(InstrumentResearchWindowService::class)->seal((string) ($window['authorization_id'] ?? ''),
                     (string) ($window['dataset_sha256'] ?? ''));
                 if (! $receipt) throw new LogicException('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW');
+                if ($key !== $receipt['window_key']) throw new LogicException('INDEPENDENT_WINDOW_KEY_DIFFERS_FROM_SERVER_IDENTITY');
                 $window = $receipt;
                 if ($declaredScope !== null) $window['evaluation_scope'] = $declaredScope;
             } else {
@@ -950,7 +1079,7 @@ class SpecialistCouncilLifecycleService
                     throw new LogicException('ORIGINAL_ARM_IDENTITY_OR_EQUAL_CAPITAL_COST_RISK_MISMATCH');
                 }
                 if ($plan['purpose'] === 'independent'
-                    && ! app(InstrumentResearchWindowService::class)->authorized($window, $run->data_hash)) throw new LogicException('ORIGINAL_WINDOW_AUTHORIZATION_MISSING');
+                    && ! $this->authorizedPlanWindow($window, $run->data_hash)) throw new LogicException('ORIGINAL_WINDOW_AUTHORIZATION_MISSING');
                 if (! is_array($request['specialist_council_evaluation_policy'] ?? null)
                     || (float) ($request['risk_per_trade'] ?? 0) !== (float) ($plan['risk_policy']['risk_per_trade_percent'] ?? 0)) {
                     throw new LogicException('ORIGINAL_ARM_PLAN_ECONOMICS_NOT_NATIVE_BOUND');
@@ -1159,6 +1288,11 @@ class SpecialistCouncilLifecycleService
                         $observations[$kind] = $this->nativeSupportObservation($trial, $proofs[$kind]);
                         $windowReasons = [...$windowReasons, ...$observations[$kind]['reason_codes']];
                     }
+                    if (isset($trial['original_native_policy_benchmark'])) {
+                        $native = $this->nativePolicyBenchmarkObservation($trial, $window);
+                        $windowReasons = [...$windowReasons, ...$native['reason_codes']];
+                        $observations['original_policy_panel'] = $native;
+                    }
                     $ablationMembers = (array) ($proofs['ablation']['runtime']['members'] ?? []);
                     foreach ($ablationMembers as $member) {
                         if (data_get($member, 'operator_contract.component_id') === $id) $windowReasons[] = 'SUPPORT_ROLE_ABLATION_OPERATOR_REMAINED';
@@ -1168,6 +1302,7 @@ class SpecialistCouncilLifecycleService
                         // Correctness certificates for infrastructure roles do not
                         // claim causal P&L contribution from removing hard safety.
                         $positiveHere = true;
+                        if (isset($trial['original_native_policy_benchmark'])) $positiveHere = ($native['positive_role_capability'] ?? false) === true;
                         if ($trial['role'] === 'risk') {
                             $baseline = $ablation['metrics']['max_total_risk_percent'];
                             $candidateRisk = $candidate['metrics']['max_total_risk_percent'];
@@ -1219,6 +1354,7 @@ class SpecialistCouncilLifecycleService
             return $this->nativeInfrastructureSupportObservation($trial, $producer);
         }
         if (! in_array($trial['benchmark'], ['native_operator_behavior', 'native_operator_risk'], true)) {
+            if (isset($trial['original_native_policy_benchmark'])) return $this->nativePolicyBenchmarkObservation($trial);
             if (isset($trial['original_policy_benchmark'])) return $this->originalPolicyBenchmarkObservation($trial);
             return ['evaluations' => 0, 'behavior_delta_decisions' => 0,
                 'reason_codes' => ['SUPPORT_ROLE_ORIGINAL_BENCHMARK_ADAPTER_REQUIRED:'.$trial['benchmark']]];
@@ -1275,6 +1411,101 @@ class SpecialistCouncilLifecycleService
         return ['status' => ($result['status'] ?? '') === 'fixed_real_question_comparison' ? 'provisional_original_benchmark' : 'dependency',
             'benchmark' => $result, 'observation' => $this->originalPolicyBenchmarkObservation($trial),
             'role_qualified' => false, 'policy_activated' => false, 'promotion_evidence' => false];
+    }
+
+    /** Bounded prospective independent producer route; no policy scores/authorization flags are accepted. */
+    public function preregisterSupportNativePolicyBenchmark(SpecialistCouncilVersion $version, string $evaluatorId,
+        string $componentId, string $ablationPolicyKey, string $retentionPolicyKey, string $axis,
+        array $panels, string $seed, float $wallBudget): array
+    {
+        $version = $this->verified($version); $this->independentActor($version, $evaluatorId);
+        if ($version->state !== 'draft') throw new LogicException('SUPPORT_ROLE_NATIVE_POLICY_BENCHMARK_REQUIRES_DRAFT');
+        $component = collect($version->manifest['components'])->firstWhere('id', $componentId);
+        if (! $component || ! in_array($component['role'], ['learning', 'evolution'], true)) {
+            throw new LogicException('SUPPORT_ROLE_NATIVE_POLICY_COMPONENT_REQUIRED');
+        }
+        $challenge = app(ResearchKnowledgePortfolioService::class)->preregisterNativePolicyChallenge($componentId,
+            $ablationPolicyKey, $retentionPolicyKey, $axis, $panels, $seed, $wallBudget, $evaluatorId);
+        if (($challenge['status'] ?? '') === 'blocked') return $challenge;
+        foreach ($challenge['panels'] as $panel) foreach (['target_cases', 'retention_cases'] as $kind) foreach ($panel[$kind]['cases'] as $spec) {
+            foreach ($spec['scope'] as $scope) if (! collect($version->manifest['members'])->contains(fn ($member) =>
+                $this->evidence->equivalentJsonValue($member['scope'], $scope))) throw new LogicException('SUPPORT_ROLE_NATIVE_POLICY_PANEL_SCOPE_WIDENED');
+        }
+        return ['status' => 'original_native_policy_benchmark_preregistered', 'component_id' => $componentId,
+            'original_native_policy_benchmark' => $this->contracts->supportNativePolicyBenchmarkReference($component, $challenge['knowledge_key']),
+            'role_qualified' => false, 'policy_activated' => false, 'promotion_evidence' => false];
+    }
+
+    public function settleSupportNativePolicyBenchmark(SpecialistCouncilVersion $version, string $evaluatorId, string $componentId): array
+    {
+        $version = $this->verified($version); $owner = $this->plan($version); $this->independentActor($version, $evaluatorId);
+        if ($owner['evaluator_id'] !== $evaluatorId) throw new LogicException('SUPPORT_ROLE_ORIGINAL_EVALUATOR_REQUIRED');
+        $trial = collect($owner['plan']['support_role_trials'] ?? [])->firstWhere('component_id', $componentId);
+        if (! isset($trial['original_native_policy_benchmark'])) throw new LogicException('SUPPORT_ROLE_NATIVE_POLICY_BENCHMARK_NOT_PREREGISTERED');
+        $result = app(ResearchKnowledgePortfolioService::class)->settleNativePolicyChallenge($trial['original_native_policy_benchmark']['challenge_key']);
+        return ['status' => $result['status'], 'benchmark' => $result, 'observation' => $this->nativePolicyBenchmarkObservation($trial),
+            'role_qualified' => false, 'policy_activated' => false, 'promotion_evidence' => false];
+    }
+
+    private function nativePolicyBenchmarkObservation(array $trial, ?array $window = null): array
+    {
+        $reference = $trial['original_native_policy_benchmark'];
+        $component = ['id' => $trial['component_id'], 'role' => $trial['role'], 'version' => '1'];
+        $fresh = $this->contracts->supportNativePolicyBenchmarkReference($component, $reference['challenge_key']);
+        $reasons = [];
+        if ($this->epochs->parameterHash($fresh) !== $this->epochs->parameterHash($reference)) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_NATIVE_POLICY_REFERENCE_DRIFT';
+        // Re-execute the pure original producer verification, not a stored qualified/result flag.
+        $result = app(ResearchKnowledgePortfolioService::class)->inspectNativePolicyChallenge($reference['challenge_key']);
+        $resultKey = hash('sha256', ResearchKnowledgePortfolioService::META_PROTOCOL.'|native_policy_challenge_result|'.$reference['challenge_key']);
+        $stored = $this->contracts->originalPolicyJournal($resultKey, 'native_policy_challenge_result');
+        if ($stored === null || $this->epochs->parameterHash($stored) !== $this->epochs->parameterHash($result)) {
+            $reasons[] = 'SUPPORT_ROLE_ORIGINAL_NATIVE_POLICY_RESULT_NOT_SETTLED_OR_DRIFTED';
+        }
+        if (($result['status'] ?? '') !== 'original_independent_native_question_comparison') $reasons[] = $result['reason'] ?? 'SUPPORT_ROLE_ORIGINAL_NATIVE_POLICY_PANELS_REQUIRED';
+        $panels = (array) ($result['panels'] ?? []);
+        if ($window !== null) {
+            $panels = array_filter($panels, fn ($panel) => $this->evidence->equivalentJsonValue($panel['window'], $window));
+            if (count($panels) !== 1) $reasons[] = 'SUPPORT_ROLE_NATIVE_POLICY_EXACT_AUTHORIZED_WINDOW_REQUIRED';
+        }
+        $evaluations = 0; $changed = 0;
+        foreach ($panels as $panel) {
+            $evaluations += count($panel['original_question_outcomes']['target_cases']) + count($panel['original_question_outcomes']['retention_cases']);
+            $changed += (int) $panel['actual_prefix_selection_changed'];
+            if (! $panel['retained_original_role_utility']) $reasons[] = 'SUPPORT_ROLE_NATIVE_POLICY_RETENTION_REGRESSED';
+        }
+        $positive = count(array_filter($panels, fn ($panel) => $panel['positive_role_capability']));
+        if ($window === null && $positive < $trial['minimum_positive_windows']) $reasons[] = 'SUPPORT_ROLE_NATIVE_POLICY_PREFIX_UTILITY_NOT_INDEPENDENTLY_REPLICATED';
+        if ($evaluations < $trial['minimum_evaluations']) $reasons[] = 'SUPPORT_ROLE_ORIGINAL_EVALUATION_POWER_INSUFFICIENT';
+        if ($changed < $trial['minimum_behavior_delta_decisions']) $reasons[] = 'SUPPORT_ROLE_ACTUAL_BEHAVIOR_CONTRIBUTION_NOT_OBSERVED';
+        return ['evaluations' => $evaluations, 'behavior_delta_decisions' => $changed, 'original_panels' => $panels,
+            'positive_role_capability' => $window !== null && $positive === 1,
+            'original_result_hash' => $this->epochs->parameterHash(array_diff_key($result, ['knowledge_key' => true])),
+            'compute_advantage_proven' => false, 'selector_cpu_seconds' => null,
+            'resource_scope' => 'original_end_to_end_wall_seconds_not_cpu', 'reason_codes' => array_values(array_unique($reasons))];
+    }
+
+    /** Explicit scoped research consumption executes the original declarative ranker; no scheduler/paper policy changes. */
+    public function rankQualifiedResearchQuestions(SpecialistCouncilVersion $source, string $componentId, array $caseRefs, string $seed): array
+    {
+        $binding = $this->researchSupportBinding($source, $componentId);
+        if (! in_array($binding['role'], ['learning', 'evolution'], true) || count($caseRefs) < 2 || count($caseRefs) > 16) {
+            throw new LogicException('QUALIFIED_BOUNDED_RESEARCH_POLICY_REQUIRED');
+        }
+        $owner = $this->plan($source); $inputs = []; $questions = [];
+        foreach ($caseRefs as $case) {
+            if (! is_array($case) || array_diff(array_keys($case), ['version_id', 'window_key']) !== []) throw new LogicException('QUALIFIED_POLICY_CALLER_FEATURES_FORBIDDEN');
+            $spec = $this->nativePolicyQuestionSpec((int) $case['version_id'], (string) $case['window_key'], $owner['evaluator_id']);
+            foreach ($spec['scope'] as $scope) if (! collect($binding['scope'])->contains(fn ($original) =>
+                $this->evidence->equivalentJsonValue($scope, $original))) throw new LogicException('QUALIFIED_POLICY_CONSUMPTION_SCOPE_WIDENED');
+            if (isset($questions[$spec['question_hash']])) throw new LogicException('QUALIFIED_POLICY_QUESTION_DUPLICATED');
+            $questions[$spec['question_hash']] = true; $inputs[] = $spec['selector_input'];
+        }
+        $rank = app(ResearchKnowledgePortfolioService::class)->rankResearchQuestions($inputs, $seed, $componentId, false);
+        if (($rank['status'] ?? '') !== 'research_ranking' || count((array) ($rank['ranking'] ?? [])) !== count($inputs)) {
+            throw new LogicException('QUALIFIED_POLICY_MATCHED_OPPORTUNITY_OR_CAP_REQUIRED');
+        }
+        return [...$rank, 'original_qualification_binding' => $binding, 'actual_policy_consumed' => true,
+            'research_only' => true, 'paper_authority_granted' => false, 'promotion_evidence' => false];
     }
 
     private function originalPolicyBenchmarkObservation(array $trial): array
@@ -1492,6 +1723,12 @@ class SpecialistCouncilLifecycleService
             || ($plan['manifest_hash'] ?? '') !== $version->manifest_hash) throw new LogicException('ORIGINAL_PREREGISTERED_EVALUATION_PLAN_MISSING');
         return ['plan' => $plan, 'hash' => $row->plan_hash, 'evaluator_id' => $row->evaluator_id,
             'sealed_at' => CarbonImmutable::parse($row->sealed_at, 'UTC')];
+    }
+
+    /** Evaluation scope is an evaluator suffix, never a replacement/rename of the original seven-field authority receipt. */
+    private function authorizedPlanWindow(array $window, string $hash): bool
+    {
+        return app(InstrumentResearchWindowService::class)->authorized(array_diff_key($window, ['evaluation_scope' => true]), $hash);
     }
 
     private function accountPolicyKeys(): array

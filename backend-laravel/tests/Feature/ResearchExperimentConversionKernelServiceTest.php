@@ -8,6 +8,8 @@ use App\Services\ResearchExperimentConversionKernelService;
 use App\Services\ActivationValidationPlanService;
 use App\Services\ResearchLoopArbiterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class ResearchExperimentConversionKernelServiceTest extends TestCase
@@ -141,5 +143,75 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
         $this->assertSame('leased', $claimed[0]->status);
         $this->assertSame(21, ResearchExperimentWorkItem::query()
             ->where('status', 'ready')->where('payload->owner', 'ExternalOwner')->count());
+    }
+
+    public function test_chunk_identity_is_reread_before_preserving_a_concurrent_council_registration(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $row = $kernel->record($this->contract(), ['technical' => true], 'TECHNICAL_QUARANTINE', [
+            'type' => 'specialist_council_technical_repair', 'identity' => 'concurrent-registration',
+        ]);
+        $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+        $legacy = $work->payload; unset($legacy['executor']);
+        $work->update(['payload' => $legacy]);
+        $concurrent = [...$legacy, 'executor' => \App\Services\ResearchExperimentWorkConsumerService::class,
+            'followup_resolution' => ['test_projection_only' => true, 'resolution_hash' => str_repeat('a', 64)]];
+        $this->mock(\App\Services\SpecialistCouncilResearchFeedbackService::class, fn ($mock) => $mock
+            ->shouldReceive('inspectFollowupReadiness')->andReturn(['executable' => false, 'reason' => 'TEST_PROOF_REMAINS_BLOCKED']));
+        $injected = false;
+        ResearchExperimentWorkItem::retrieved(function ($snapshot) use ($work, $concurrent, &$injected): void {
+            if ($injected || $snapshot->id !== $work->id) return;
+            $injected = true;
+            // Deterministic test-only interleaving: another original owner
+            // commits after the chunk captured its stale row.
+            DB::table('research_experiment_work_items')->where('id', $work->id)
+                ->update(['payload' => json_encode($concurrent, JSON_THROW_ON_ERROR)]);
+        });
+        try { $kernel->reconcileOwnershipAndDependencies(); }
+        finally { Event::forget('eloquent.retrieved: '.ResearchExperimentWorkItem::class); }
+        $current = $work->fresh();
+        $this->assertTrue($injected);
+        $this->assertSame($concurrent['followup_resolution'], $current->payload['followup_resolution']);
+        $this->assertFalse($current->payload['executable']);
+        $this->assertSame('blocked', $current->status);
+        $this->assertSame(0, $current->attempts);
+        $this->assertNull($current->lease_token);
+    }
+
+    public function test_chunk_reconciliation_does_not_reopen_a_newly_leased_or_settled_council_checkpoint(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $this->mock(\App\Services\SpecialistCouncilResearchFeedbackService::class, fn ($mock) => $mock
+            ->shouldNotReceive('inspectFollowupReadiness'));
+        foreach (['leased', 'settled'] as $status) {
+            $contract = $this->contract(); $contract['source']['id'] = $status === 'leased' ? 701 : 702;
+            $row = $kernel->record($contract, ['technical' => true], 'TECHNICAL_QUARANTINE', [
+                'type' => 'specialist_council_technical_repair', 'identity' => 'concurrent-'.$status,
+            ]);
+            $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+            $payload = [...$work->payload, 'followup_resolution' => ['test_projection_only' => true, 'resolution_hash' => str_repeat('b', 64)]];
+            $result = ['generation_id' => 891, 'original_checkpoint' => true];
+            $token = $status === 'leased' ? 'original-worker-token' : null;
+            $injected = false;
+            ResearchExperimentWorkItem::retrieved(function ($snapshot) use ($work, $payload, $result, $status, $token, &$injected): void {
+                if ($injected || $snapshot->id !== $work->id) return;
+                $injected = true;
+                DB::table('research_experiment_work_items')->where('id', $work->id)->update([
+                    'status' => $status, 'payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+                    'result' => json_encode($result, JSON_THROW_ON_ERROR), 'attempts' => 3, 'fence_version' => 5,
+                    'lease_token' => $token, 'completed_at' => $status === 'settled' ? now() : null,
+                ]);
+            });
+            try { $kernel->reconcileOwnershipAndDependencies(); }
+            finally { Event::forget('eloquent.retrieved: '.ResearchExperimentWorkItem::class); }
+            $current = $work->fresh();
+            $this->assertTrue($injected);
+            $this->assertSame($status, $current->status);
+            $this->assertSame($payload, $current->payload);
+            $this->assertSame($result, $current->result);
+            $this->assertSame(3, $current->attempts);
+            $this->assertSame(5, $current->fence_version);
+            $this->assertSame($token, $current->lease_token);
+        }
     }
 }

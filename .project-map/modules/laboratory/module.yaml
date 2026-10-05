@@ -23,6 +23,8 @@ paths:
   - backend-laravel/app/Services/SpecialistCouncilPreparationService.php
   - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
   - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
+  - backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php
+  - backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php
   - backend-laravel/app/Models/SpecialistCouncilVersion.php
   - backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php
   - docs/architecture/specialist-council.md
@@ -87,6 +89,10 @@ entry_points:
   - SpecialistCouncilLifecycleService::researchSupportBinding
   - SpecialistCouncilLifecycleService::preregisterSupportPolicyBenchmark
   - SpecialistCouncilLifecycleService::settleSupportPolicyBenchmark
+  - SpecialistCouncilLifecycleService::preregisterSupportNativePolicyBenchmark
+  - SpecialistCouncilLifecycleService::settleSupportNativePolicyBenchmark
+  - SpecialistCouncilLifecycleService::qualifiedOriginalResearchProof
+  - SpecialistCouncilIndependentPanelService::inspect
   - GenerationSnapshotAdmissionService::historicalDatasetReadiness
   - trading:lab-generation --trigger=historical_research
   - LabPopulationService

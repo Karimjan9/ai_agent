@@ -22,6 +22,22 @@ identify one cohort; losing an intent projection cannot permit a second build.
 Ready original follow-up work precedes generic settlement of that unfinished
 draft. Actual queue admission, not a command return code, closes the work item.
 
+Independent/descendant follow-up references are validated separately against
+the original evaluator, windows, native programs and external/scientific policy.
+They remain non-executable without the canonical authorized-window cohort
+producer and original generation-terminal adapter. This is a code prerequisite,
+not just a data wait: ordinary construction cannot produce several fresh drafts
+at once, and finishing immutable runs alone cannot close those drafts. Refusal
+precedes ownership or readiness mutation; the existing historical six-reference
+discovery constructor is not relabelled into independent confirmation.
+
+Learning/evolution support proof uses a separate preregistered native-question
+benchmark, not an upgrade of historical fold evidence. Exact policy-axis
+ablation, authorized disjoint original windows, actual ranking/consumed-prefix
+change, original wall cost and retention feed the independent support-role exam.
+Fresh research ranking can consume its reverified scoped policy, without paper,
+economic or causal-skill authority.
+
 The canonical population constructor accepts an explicit final
 `nativeCouncilIntent` only for an unforced XAUUSD/H1 historical research build.
 It seals exactly six new schema references: prospective scalp/hour/day/swing

@@ -67,6 +67,41 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         $service->registerFollowupProof($work->id, $proposal);
     }
 
+    public function test_original_assessment_redelivery_and_stale_normalization_preserve_registered_resolution(): void
+    {
+        [$work, $proposal, $version] = $this->fixture();
+        $stale = $work->fresh();
+        // A legacy projection captured before the registrar commits must
+        // never replace the registrar's original current proof.
+        $legacy = $stale->payload;
+        unset($legacy['executor']);
+        $stale->forceFill(['payload' => $legacy]);
+        $feedback = app(SpecialistCouncilResearchFeedbackService::class);
+        $registered = $feedback->registerFollowupProof($work->id, $proposal, 'original-registrar');
+        $this->assertTrue($registered['executable']);
+        $seal = $work->fresh()->payload['followup_resolution'];
+        $kernel = app(\App\Services\ResearchExperimentConversionKernelService::class);
+        $normalize = new \ReflectionMethod($kernel, 'normalizePersistedWork');
+        $normalize->invoke($kernel, $stale);
+        $this->assertSame($seal, $work->fresh()->payload['followup_resolution']);
+        $this->assertSame($seal, $stale->payload['followup_resolution']);
+
+        $redelivered = $feedback->recordAssessment($version->fresh());
+        $this->assertSame($work->id, $redelivered['work_id']);
+        $kernel->reconcileOwnershipAndDependencies();
+        $current = $work->fresh();
+        $this->assertSame($seal, $current->payload['followup_resolution']);
+        $ready = $feedback->inspectFollowupReadiness($current);
+        $this->assertTrue($ready['executable']);
+        $this->assertSame($registered['resolution_hash'], $ready['resolution_hash']);
+        $this->assertSame('original-registrar', $ready['registered_by']);
+        $this->assertSame(0, $current->attempts);
+        $this->assertNull($current->lease_token);
+        $this->assertSame([], (array) $current->result);
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
+        $this->assertDatabaseCount('lab_generations', 0);
+    }
+
     public function test_rehashed_forged_work_proof_does_not_replace_server_registration(): void
     {
         [$work, $proposal] = $this->fixture();
@@ -405,9 +440,9 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         [$work] = $this->fixture();
         $work->update(['work_type' => 'specialist_council_independent_validation']);
         $service = app(SpecialistCouncilResearchFeedbackService::class);
-        $this->assertSame('AUTHORIZED_UNUSED_POST_PAPER_COUNCIL_EXECUTOR_REQUIRED', $service->inspectFollowupReadiness($work->fresh())['reason']);
+        $this->assertSame('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW', $service->inspectFollowupReadiness($work->fresh())['reason']);
         $work->update(['work_type' => 'specialist_council_descendant_transfer']);
-        $this->assertSame('QUALIFIED_PARENT_AND_DESCENDANT_EXECUTOR_REQUIRED', $service->inspectFollowupReadiness($work->fresh())['reason']);
+        $this->assertSame('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW', $service->inspectFollowupReadiness($work->fresh())['reason']);
         $this->assertNull(data_get($work->fresh()->payload, 'followup_resolution'));
     }
 

@@ -145,10 +145,23 @@ saved cohort checkpoint; projection loss cannot renew the experiment budget.
 Unchanged operational prerequisites stay blocked, with at most eight leases
 for this one cohort. An original failed run is never relabelled successful.
 
-Independent-validation and descendant work currently remain explicit executor
-prerequisites as well as requiring real authorized evidence. They cannot become
-ready from a planned dataset or stored `executable` flag. This limitation must
-not be presented as proof that the complete economic inheritance loop ran.
+Independent-validation and descendant references have a separate original-panel
+validator. It checks original evaluator/plan/window identities, unchanged
+external and scientific policies, exact selected native programs and required
+control/ablation/retention comparisons. Descendant references additionally
+require an original independently qualified research parent and executable
+component removal; a relabelled scalar gene is not an ablation.
+
+This release intentionally refuses registration and execution with
+`CANONICAL_AUTHORIZED_WINDOW_COHORT_PRODUCER_REQUIRED`: a canonical per-window
+reservation/snapshot producer and original generation-terminal adapter are not
+yet available. The ordinary constructor cannot supply several simultaneous
+unused drafts, and a completed run alone does not close those generations.
+The validator writes no ownership or work readiness while this prerequisite is
+missing. No caller flag, manually inserted constructor label, planned dataset
+or old discovery release may bypass it. Authorized unused post-paper data is
+an additional, separate requirement. This limitation must not be presented as
+proof that the complete economic inheritance loop ran.
 
 ### Support products and original role benchmarks
 
@@ -162,12 +175,26 @@ nonoverlapping original windows and independent assessment are required for
 scoped research role qualification. Future research consumption rechecks the
 original exam, artifacts, component/operator/policy identity and exact scope.
 
-`preregisterSupportPolicyBenchmark` and `settleSupportPolicyBenchmark` route
-learning/evolution questions to the existing Portfolio fixed-question,
-equal-budget original benchmark. Scores and original fold references are real
-research observations; policy activation and causal/economic credit remain
-false. Its missing independent activation adapter is an explicit prerequisite,
-not an invented selection-speed metric or market authority.
+`preregisterSupportPolicyBenchmark` and `settleSupportPolicyBenchmark` retain
+the provisional historical Portfolio benchmark; its fold references cannot
+be upgraded into independent evidence. The separate
+`preregisterSupportNativePolicyBenchmark` / `settleSupportNativePolicyBenchmark`
+adapter uses preregistered original native questions in at least three real
+authorized, nonoverlapping windows. Caller scores, predicted utility and CPU
+measurements are forbidden. Original evaluator plans, artifact-backed arm
+outcomes and exact single-axis policy ablation are rechecked on settlement and
+consumption. The qualified original-parent inspection is read-only and grants
+no paper authority.
+
+Policy ranking must change the actual question order and the bounded consumed
+prefix, with retained role utility. Equal conservative selector allowance and
+original end-to-end wall durations are charged to every policy; wall time is
+not CPU or proof of a compute speedup. Resource/opportunity features are
+explicit pre-outcome proxies, not learned causal forecasts. Null effect,
+retention regression, changed policy or poisoned original evidence blocks
+scoped role qualification. A qualified policy can guide only fresh research
+questions with a recorded consumption reference; no economic or skill credit
+is fabricated by the benchmark.
 
 ## Typed products and learned operators
 

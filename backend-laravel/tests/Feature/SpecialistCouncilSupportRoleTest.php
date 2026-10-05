@@ -44,6 +44,15 @@ class SpecialistCouncilSupportRoleTest extends TestCase
             $this->assertCount(3, $comparison['original_run_ids']);
         }
         $owner = app(SpecialistCouncilLifecycleService::class);
+        $parent = $owner->qualifiedOriginalResearchProof($version->fresh());
+        $this->assertFalse($parent['allowed'], 'Real native risk correctness is not a qualified whole-council parent.');
+        $this->assertFalse($parent['paper_authority_granted']);
+        $this->assertSame('ORIGINAL_RESEARCH_PARENT_PROOF_INVALID_OR_UNQUALIFIED', $parent['reason']);
+        $nativeQuestion = $owner->nativePolicyQuestionOutcome(['version_id' => $version->id,
+            'window_key' => array_key_first($this->windows), 'source_hash' => LabEvaluationRun::where('run_id', $runIds[0])->sole()->code_hash],
+            now()->toIso8601String(), 'independent-examiner');
+        $this->assertSame('ORIGINAL_NATIVE_POLICY_COMPARATORS_AND_RETENTION_REQUIRED', $nativeQuestion['reason'],
+            'Real support-only producer arms must not be upgraded into an absent whole-question benchmark.');
         $binding = $owner->researchSupportBinding($version->fresh(), 'bounded-risk');
         $this->assertSame('scoped_research_component_only', $binding['authority']);
         $this->assertSame($proof['qualification_hash'], $binding['qualification_hash']);
@@ -240,6 +249,217 @@ class SpecialistCouncilSupportRoleTest extends TestCase
             'research_release' => ['source_hash' => str_repeat('c', 64)],
             'policy_context' => ['causal_fold_job' => ['fold_count' => 3, 'per_fold_budget_seconds' => 60],
                 'learning_confirmation_contracts' => ['minimum_trades' => 3]]]];
+    }
+
+    /** Conditional native-producer stubs test the adapter; they are NOT original market evidence. */
+    public function test_native_policy_panel_adapter_qualifies_role_and_consumes_real_ranker_without_paper_or_cpu_claims(): void
+    {
+        [$version, $trial, $plan, $arms, $key, $refs, $owner] = $this->nativePolicyFixture();
+        $portfolio = app(\App\Services\ResearchKnowledgePortfolioService::class);
+        $result = $portfolio->settleNativePolicyChallenge($key);
+        $this->assertSame(3, $result['positive_windows']);
+        $this->assertFalse($result['compute_advantage_proven']);
+        foreach ($result['panels'] as $panel) {
+            $this->assertTrue($panel['actual_prefix_selection_changed']);
+            $this->assertTrue($panel['retained_original_role_utility']);
+        }
+        $method = new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'assessSupportRoles');
+        $proof = $method->invoke($owner, $version, $plan, $arms, [])[$trial['component_id']];
+        $this->assertSame('research_role_qualified', $proof['status'], json_encode($proof));
+        $this->assertSame(3, $proof['positive_independent_windows']);
+        $this->assertFalse($proof['paper_authority_granted']);
+        $this->assertFalse($proof['economic_skill_proven']);
+        $count = DB::table('research_knowledge_entries')->count();
+        $this->assertSame($proof, $method->invoke($owner, $version, $plan, $arms, [])[$trial['component_id']]);
+        $this->assertSame($count, DB::table('research_knowledge_entries')->count(), 'Read-only proof verification wrote new evidence.');
+        $this->assertSame($result, $portfolio->settleNativePolicyChallenge($key), 'Redelivery changed the immutable benchmark.');
+        $owner->shouldReceive('researchSupportBinding')->andReturn(['role' => 'learning', 'scope' => array_column($version->manifest['members'], 'scope'),
+            'authority' => 'scoped_research_component_only', 'qualification_hash' => $proof['qualification_hash']]);
+        // Only this test's qualification lookup is conditional; the original declarative
+        // rankResearchQuestions policy and exact frozen native inputs really execute.
+        DB::table('specialist_council_evaluation_plans')->insert(['specialist_council_version_id' => $version->id,
+            'evaluator_id' => 'policy-examiner', 'plan' => json_encode($plan),
+            'plan_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($plan),
+            'sealed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+        $rank = $owner->rankQualifiedResearchQuestions($version, $trial['component_id'], $refs[0]['target_cases'], 'native-seed');
+        $this->assertTrue($rank['actual_policy_consumed']);
+        $this->assertSame($trial['component_id'], $rank['policy_key']);
+        $this->assertFalse($rank['paper_authority_granted']);
+        $this->assertCount(2, $rank['ranking']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->partialMock(\App\Services\ResearchKnowledgePortfolioService::class,
+            fn ($mock) => $mock->shouldReceive('rankResearchQuestions')->once()->andReturn(['status' => 'research_ranking', 'ranking' => []]));
+        try {
+            $owner->rankQualifiedResearchQuestions($version, $trial['component_id'], $refs[0]['target_cases'], 'native-seed');
+            $this->fail('A refused/filtered ranking was reported as actual policy consumption.');
+        } catch (\LogicException $error) {
+            $this->assertSame('QUALIFIED_POLICY_MATCHED_OPPORTUNITY_OR_CAP_REQUIRED', $error->getMessage());
+        }
+    }
+
+    public function test_native_policy_null_and_retention_regression_are_not_qualified(): void
+    {
+        foreach (['null', 'retention_regression'] as $variant) {
+            [$version, $trial, $plan, $arms, $key, , $owner] = $this->nativePolicyFixture($variant);
+            $result = app(\App\Services\ResearchKnowledgePortfolioService::class)->settleNativePolicyChallenge($key);
+            $this->assertSame(0, $result['positive_windows']);
+            $proof = (new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'assessSupportRoles'))
+                ->invoke($owner, $version, $plan, $arms, [])[$trial['component_id']];
+            $this->assertSame('dependency', $proof['status']);
+            $this->assertContains('SUPPORT_ROLE_CAPABILITY_NOT_INDEPENDENTLY_REPLICATED', $proof['reason_codes']);
+            $this->assertFalse($proof['paper_authority_granted']);
+        }
+    }
+
+    public function test_native_policy_poisoned_original_outcomes_refuse_settlement_and_authority(): void
+    {
+        [, , , , $key] = $this->nativePolicyFixture('poisoned');
+        $result = app(\App\Services\ResearchKnowledgePortfolioService::class)->settleNativePolicyChallenge($key);
+        $this->assertSame('blocked', $result['status']);
+        $this->assertSame('ORIGINAL_NATIVE_POLICY_QUESTION_DRIFT', $result['reason']);
+        $this->assertSame(0, DB::table('research_knowledge_entries')
+            ->where('subject_type', \App\Services\ResearchKnowledgePortfolioService::META_PROTOCOL.':native_policy_challenge_result')->count());
+    }
+
+    public function test_native_policy_no_effect_or_asserted_inputs_are_rejected_before_outcomes(): void
+    {
+        [, $trial, , , , $refs] = $this->nativePolicyFixture();
+        $portfolio = app(\App\Services\ResearchKnowledgePortfolioService::class);
+        $candidate = $portfolio->registerPolicy(['weights' => ['expected_value' => 1], 'compute_cap_seconds' => 180]);
+        $ablated = $portfolio->registerPolicy(['weights' => ['expected_value' => 0], 'compute_cap_seconds' => 180]);
+        $result = $portfolio->preregisterNativePolicyChallenge($candidate['knowledge_key'], $ablated['knowledge_key'], $ablated['knowledge_key'],
+            'expected_value', $refs, 'native-seed', 2.5, 'policy-examiner');
+        $this->assertSame('NATIVE_POLICY_AXIS_NO_ACTUAL_ORDER_EFFECT', $result['reason']);
+        $bad = $refs; $bad[0]['target_cases'][0]['qualified'] = true;
+        $key = $trial['original_native_policy_benchmark']['challenge_key'];
+        $challenge = app(SpecialistCouncilContractService::class)->originalPolicyJournal($key, 'native_policy_challenge');
+        $result = $portfolio->preregisterNativePolicyChallenge($challenge['candidate_policy_key'], $challenge['ablation_policy_key'],
+            $challenge['retention_policy_key'], 'cost', $bad, 'native-seed', 2.5, 'policy-examiner');
+        $this->assertSame('NATIVE_CASE_ASSERTED_FEATURES_FORBIDDEN', $result['reason']);
+    }
+
+    public function test_independent_authority_suffix_is_not_sent_as_a_new_authorization_receipt(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        config(['services.instrument_policy.authorized_research_windows' => [[
+            'authorization_id' => 'window-a', 'research_epoch_id' => 'post-paper',
+            'purpose' => 'instrument_independent_validation',
+            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z',
+            'dataset_sha256' => str_repeat('a', 64),
+        ]]]);
+        $windows = app(InstrumentResearchWindowService::class);
+        $canonical = $windows->seal('window-a', str_repeat('a', 64));
+        $this->assertNotNull($canonical);
+        $this->assertCount(7, $canonical);
+        $this->assertTrue($windows->authorized($canonical, str_repeat('a', 64)));
+        $owner = app(SpecialistCouncilLifecycleService::class);
+        $method = new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'authorizedPlanWindow');
+        $scoped = [...$canonical, 'evaluation_scope' => ['rows' => 15000]];
+        $this->assertFalse($windows->authorized($scoped, str_repeat('a', 64)), 'Original owner must not accept an eight-field authority receipt.');
+        $this->assertTrue($method->invoke($owner, $scoped, str_repeat('a', 64)));
+        $this->assertFalse($method->invoke($owner, [...$scoped, 'qualified' => true], str_repeat('a', 64)));
+        $this->assertFalse($method->invoke($owner, [...$scoped, 'window_key' => 'caller-relabel'], str_repeat('a', 64)));
+        $this->assertFalse($method->invoke($owner, $scoped, str_repeat('c', 64)));
+        [$version] = $this->draft();
+        try {
+            $owner->sealEvaluationPlan($version, 'independent-examiner', [
+                'purpose' => 'independent', 'execution_timeframe' => 'H1', 'execution_hash' => $this->execution()['execution_hash'],
+                'initial_capital' => 10000, 'cost_model' => $this->execution()['parameters'], 'risk_policy' => ['risk_per_trade_percent' => .5],
+                'windows' => [[...$canonical, 'window_key' => 'caller-relabel']], 'arms' => [],
+            ]);
+            $this->fail('A caller renamed the server-authorized physical window.');
+        } catch (\LogicException $error) {
+            $this->assertSame('INDEPENDENT_WINDOW_KEY_DIFFERS_FROM_SERVER_IDENTITY', $error->getMessage());
+        }
+        config(['services.instrument_policy.authorized_research_windows.0.end_exclusive' => '2029-02-01T00:00:00Z']);
+        $this->assertNull($windows->seal('window-a', str_repeat('a', 64)), 'Future original windows are not completed evidence.');
+        $this->assertFalse($method->invoke($owner, $scoped, str_repeat('a', 64)));
+        $this->assertDatabaseCount('specialist_council_evaluation_plans', 0);
+    }
+
+    public function test_original_research_parent_and_native_policy_question_reject_flags_without_original_independent_producers(): void
+    {
+        [$version] = $this->draft();
+        $owner = app(SpecialistCouncilLifecycleService::class);
+        $proof = $owner->qualifiedOriginalResearchProof($version);
+        $this->assertFalse($proof['allowed']);
+        $this->assertFalse($proof['economic_parent']);
+        $this->assertFalse($proof['paper_authority_granted']);
+        $this->assertSame('ORIGINAL_PREREGISTERED_EVALUATION_PLAN_MISSING', $proof['reason']);
+        $outcome = $owner->nativePolicyQuestionOutcome(['version_id' => $version->id, 'window_key' => 'invented',
+            'source_hash' => str_repeat('c', 64)], now()->toIso8601String(), 'independent-examiner');
+        $this->assertSame('dependency', $outcome['status']);
+        $this->assertSame('ORIGINAL_PREREGISTERED_EVALUATION_PLAN_MISSING', $outcome['reason']);
+        $this->assertSame('draft', $version->fresh()->state);
+        $this->assertDatabaseCount('specialist_council_evaluations', 0);
+    }
+
+    private function nativePolicyFixture(string $variant = 'positive'): array
+    {
+        $base = SpecialistCouncilVersion::where('council_id', 'support-council')->where('version', '1')->first();
+        if (! $base) [$base] = $this->draft();
+        $portfolio = app(\App\Services\ResearchKnowledgePortfolioService::class);
+        $candidate = $portfolio->registerPolicy(['weights' => ['cost' => -1], 'compute_cap_seconds' => 180]);
+        $ablated = $portfolio->registerPolicy(['weights' => ['cost' => 0], 'compute_cap_seconds' => 180]);
+        $manifest = $base->manifest; $manifest['version'] = 'native-policy-'.$variant;
+        unset($manifest['members'][0]['operator_contract']);
+        $manifest['components'] = [['id' => $candidate['knowledge_key'], 'version' => '1', 'role' => 'learning',
+            'input_type' => 'original_research_question', 'output_type' => 'research_ranking', 'consumer_roles' => ['hour'],
+            'as_of_only' => true, 'max_compute_ms' => 100]];
+        $version = app(SpecialistCouncilLifecycleService::class)->registerDraft($manifest, 'policy-creator');
+        $refs = []; $specs = []; $windows = []; $offset = 0;
+        foreach ([1, 3, 5] as $month) {
+            $window = ['window_key' => 'native-'.$month, 'authorization_id' => 'native-'.$month,
+                'start_inclusive' => '2027-'.sprintf('%02d', $month).'-01T00:00:00Z',
+                'end_exclusive' => '2027-'.sprintf('%02d', $month).'-10T00:00:00Z', 'dataset_sha256' => hash('sha256', 'native-'.$month)];
+            $windows[$window['window_key']] = $window; $panel = [];
+            foreach (['target_cases', 'retention_cases'] as $kind) {
+                $ids = [++$offset, ++$offset];
+                $questions = array_map(fn ($id) => hash('sha256', 'original-question-'.$id), $ids);
+                $first = strcmp($questions[0], $questions[1]) < 0 ? 0 : 1;
+                foreach ($ids as $i => $id) {
+                    $cheap = $i !== $first; $panel[$kind][] = ['version_id' => $id, 'window_key' => $window['window_key']];
+                    $specs[$id] = ['version_id' => $id, 'window_key' => $window['window_key'], 'window' => $window,
+                        'scope' => array_column($version->manifest['members'], 'scope'), 'question_hash' => $questions[$i],
+                        'kind' => $kind, 'cheap' => $cheap, 'selector_input' => ['question_id' => $questions[$i], 'ready' => true,
+                            'safety_preserved' => true, 'cost_ceiling_seconds' => $cheap ? 1 : 10, 'features' => ['expected_value' => 0]]];
+                }
+            }
+            $refs[] = $panel;
+        }
+        foreach ($refs as $panel) {
+            $inputs = array_map(fn ($case) => $specs[$case['version_id']]['selector_input'], $panel['target_cases']);
+            $a = $portfolio->rankResearchQuestions($inputs, 'native-seed', $candidate['knowledge_key'], false);
+            $b = $portfolio->rankResearchQuestions($inputs, 'native-seed', $ablated['knowledge_key'], false);
+            $this->assertNotSame(array_column($a['ranking'], 'question_id'), array_column($b['ranking'], 'question_id'), json_encode([$inputs, $a, $b]));
+        }
+        $this->mock(InstrumentResearchWindowService::class, fn ($mock) => $mock->shouldReceive('authorized')->andReturn(true));
+        $owner = $this->partialMock(SpecialistCouncilLifecycleService::class, function ($mock) use ($specs, $variant): void {
+            $mock->shouldReceive('nativePolicyQuestionSpec')->andReturnUsing(fn ($id) => $specs[$id]);
+            $mock->shouldReceive('nativePolicyQuestionOutcome')->andReturnUsing(function ($spec) use ($variant): array {
+                if ($variant === 'poisoned') return ['status' => 'dependency', 'reason' => 'ORIGINAL_NATIVE_POLICY_QUESTION_DRIFT'];
+                $positive = $variant !== 'null' && $spec['cheap'];
+                if ($variant === 'retention_regression' && $spec['kind'] === 'retention_cases') $positive = ! $spec['cheap'];
+                return ['status' => 'original_independent_question_observed', 'powered' => true, 'positive' => $positive,
+                    'end_to_end_wall_seconds' => 1.5, 'original_sources' => [['run_id' => 'conditional-native-'.$spec['version_id']]]];
+            });
+        });
+        $owner->__construct(app(SpecialistCouncilContractService::class), app(ResearchPaperEpochContractService::class), app(LabImmutableEvidenceService::class));
+        $challenge = $portfolio->preregisterNativePolicyChallenge($candidate['knowledge_key'], $ablated['knowledge_key'],
+            $ablated['knowledge_key'], 'cost', $refs, 'native-seed', 2.5, 'policy-examiner');
+        $this->assertSame('awaiting_original_independent_native_panels', $challenge['status'], json_encode($challenge));
+        $trial = app(SpecialistCouncilContractService::class)->sealSupportRoleTrials($version->manifest, [[
+            'component_id' => $candidate['knowledge_key'], 'role' => 'learning', 'benchmark' => 'native_memory_selector',
+            'minimum_evaluations' => 4, 'minimum_behavior_delta_decisions' => 1,
+            'original_native_policy_benchmark' => ['challenge_key' => $challenge['knowledge_key']]]])[0];
+        $plan = ['manifest_hash' => $version->manifest_hash, 'purpose' => 'independent', 'windows' => $windows, 'support_role_trials' => [$trial]]; $arms = [];
+        foreach ($windows as $key => $window) foreach (['candidate', 'retention', 'ablation'] as $kind) {
+            $arms[] = ['kind' => $kind, 'window_key' => $key, 'removed_id' => $trial['component_id'],
+                'support_producer' => ['run_id' => 'conditional-'.$key.'-'.$kind, 'code_hash' => str_repeat('c', 64),
+                    'runtime' => ['members' => [], 'ablation_removed_id' => $trial['component_id']],
+                    'receipt' => ['status' => 'computed', 'asof_policy' => 'previous_closed_candle_next_open', 'receipt_hash' => str_repeat('d', 64)]]];
+        }
+        return [$version, $trial, $plan, $arms, $challenge['knowledge_key'], $refs, $owner];
     }
 
     /** Conditional original fold fixtures exercise the server benchmark; they are not live authority. */

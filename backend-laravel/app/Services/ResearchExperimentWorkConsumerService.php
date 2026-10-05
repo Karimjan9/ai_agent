@@ -52,7 +52,9 @@ class ResearchExperimentWorkConsumerService
 
             return $this->blocked('AUTONOMOUS_MODE_STOPPED');
         }
-        if ($council) return app(SpecialistCouncilFollowupExecutionService::class)->execute($item);
+        if ($council) return ($proof['executor_protocol'] ?? '') === SpecialistCouncilIndependentPanelService::PROTOCOL
+            ? app(SpecialistCouncilIndependentPanelService::class)->execute($item)
+            : app(SpecialistCouncilFollowupExecutionService::class)->execute($item);
 
         return match ((string) $item->work_type) {
             'cartridge_confirmation' => $this->confirmCartridge($item, $payload),

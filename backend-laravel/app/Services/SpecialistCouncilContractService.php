@@ -88,7 +88,7 @@ class SpecialistCouncilContractService
         foreach ($trials as $trial) {
             if (! is_array($trial) || array_diff(array_keys($trial), ['protocol', 'component_id', 'role', 'benchmark',
                 'minimum_evaluations', 'minimum_behavior_delta_decisions', 'minimum_positive_windows', 'minimum_opportunity_fraction',
-                'component_contract_hash', 'producer_contracts', 'policy_binding', 'original_policy_benchmark', 'trial_hash']) !== []) {
+                'component_contract_hash', 'producer_contracts', 'policy_binding', 'original_policy_benchmark', 'original_native_policy_benchmark', 'trial_hash']) !== []) {
                 throw new InvalidArgumentException('SUPPORT_ROLE_TRIAL_ASSERTED_OUTCOMES_FORBIDDEN');
             }
             $id = (string) ($trial['component_id'] ?? '');
@@ -151,6 +151,18 @@ class SpecialistCouncilContractService
                 $body['original_policy_benchmark'] = $this->supportPolicyBenchmarkReference($component,
                     (string) ($reference['challenge_key'] ?? ''), (string) ($reference['policy_key'] ?? ''));
             }
+            if (isset($trial['original_native_policy_benchmark'])) {
+                if (! in_array($role, ['learning', 'evolution'], true) || isset($trial['original_policy_benchmark'])) {
+                    throw new InvalidArgumentException('SUPPORT_ROLE_NATIVE_POLICY_BENCHMARK_ROLE_MISMATCH');
+                }
+                $reference = (array) $trial['original_native_policy_benchmark'];
+                if (array_diff(array_keys($reference), ['challenge_key', 'challenge_hash', 'policy_key', 'policy_hash']) !== []) {
+                    throw new InvalidArgumentException('SUPPORT_ROLE_NATIVE_POLICY_BENCHMARK_ASSERTED_RESULTS_FORBIDDEN');
+                }
+                $body['original_native_policy_benchmark'] = $this->supportNativePolicyBenchmarkReference($component, (string) ($reference['challenge_key'] ?? ''));
+                $body['policy_binding'] = ['protocol' => ResearchKnowledgePortfolioService::NATIVE_POLICY_PROTOCOL,
+                    'id' => $id, 'version' => $component['version'], 'policy_hash' => $body['original_native_policy_benchmark']['policy_hash']];
+            }
             $sealed[$id] = [...$body, 'trial_hash' => $this->epochs->parameterHash($body)];
         }
         return array_values($sealed);
@@ -188,6 +200,21 @@ class SpecialistCouncilContractService
         $claim = json_decode($row->claim, true); $evidence = json_decode($row->evidence, true);
         return is_array($claim) && ($claim['protocol'] ?? '') === ResearchKnowledgePortfolioService::META_PROTOCOL
             && ($evidence['claim_hash'] ?? '') === $this->epochs->parameterHash($claim) ? $claim : null;
+    }
+
+    public function supportNativePolicyBenchmarkReference(array $component, string $challengeKey): array
+    {
+        $challenge = $this->originalPolicyJournal($challengeKey, 'native_policy_challenge');
+        $policy = $this->originalPolicyJournal((string) ($component['id'] ?? ''), 'policy');
+        if (! in_array($component['role'] ?? '', ['learning', 'evolution'], true) || ($component['version'] ?? '') !== '1'
+            || ($challenge['native_protocol'] ?? '') !== ResearchKnowledgePortfolioService::NATIVE_POLICY_PROTOCOL
+            || ($challenge['candidate_policy_key'] ?? '') !== ($component['id'] ?? '') || ! isset($policy['definition'])
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($challenge['policies'][$component['id']] ?? null,
+                $policy) || count($challenge['panels'] ?? []) < 3) {
+            throw new InvalidArgumentException('SUPPORT_ROLE_ORIGINAL_AUTHORIZED_NATIVE_POLICY_CHALLENGE_REQUIRED');
+        }
+        return ['challenge_key' => $challengeKey, 'challenge_hash' => $this->epochs->parameterHash($challenge),
+            'policy_key' => $component['id'], 'policy_hash' => $this->epochs->parameterHash($policy)];
     }
 
     /** Seal every relevant component and native model, rather than trusting a supplied hash. */

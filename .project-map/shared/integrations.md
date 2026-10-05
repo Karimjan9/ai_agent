@@ -37,8 +37,22 @@ The conversion kernel rechecks these prerequisites before the sole arbiter
 claims the work. The work consumer delegates to canonical construction,
 preparation and dispatch; an exit-zero CLI without its durable batch witness
 does not complete the work. Original request/response and prior-credit records
-are never rewritten. Missing independent/descendant execution adapters remain
-explicit code prerequisites, separate from absent authorized datasets.
+are never rewritten. The separate independent/descendant reference validator
+checks exact original full-window transport, external/scientific policy and
+native control/ablation/retention identities. It refuses registration without
+the canonical authorized-window cohort producer and terminal adapter; no owner
+marker or executable projection is written. These explicit code prerequisites
+are separate from absent authorized datasets. A discovery snapshot or source
+relabel cannot become a post-paper full-window release.
+
+The native learning/evolution policy adapter preregisters original question
+references, exact axis ablation and equal resource caps. Original immutable
+native exams supply outcomes and actual end-to-end wall duration. Authorized
+seven-field server window receipts remain canonical: only the evaluator's own
+sealed evaluation-scope suffix is removed for authorization verification;
+unknown fields and altered window keys are rejected. Role qualification and
+subsequent research ranking recheck original evidence without publishing new
+assessments or granting economic/paper authority.
 
 `SpecialistCouncilPreparationService` binds a complete prospective research
 manifest and original candidate/solo/ablation plan inside an unused canonical

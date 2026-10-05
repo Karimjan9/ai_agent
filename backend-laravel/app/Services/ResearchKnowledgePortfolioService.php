@@ -19,6 +19,7 @@ class ResearchKnowledgePortfolioService
     public const KNOWLEDGE_TYPES = ['EPISODIC', 'SEMANTIC', 'PROCEDURAL', 'CAUSAL', 'NEGATIVE', 'COUNTERFACTUAL', 'CIVILIZATIONAL'];
     public const META_PROTOCOL = 'prospective_research_meta_learning_v1';
     public const POLICY_EVALUATOR = 'bounded_research_policy_evaluator_v1';
+    public const NATIVE_POLICY_PROTOCOL = 'original_native_policy_panel_v1';
 
     /** A forecast is advice, never evidence of its own correctness. */
     public function predictExperiment(array $spec): array
@@ -338,6 +339,143 @@ class ResearchKnowledgePortfolioService
             ['status' => 'fixed_real_question_comparison', 'challenge_key' => $challengeKey, 'outcomes' => $outcomes, 'scores' => $scores,
                 'policy_activated' => false, 'market_edge_proven' => false, 'economic_authority' => false,
                 'independent_window_owner_required_for_activation' => true]);
+    }
+
+    /** Original independent council questions; historical fold challenges are never upgraded. */
+    public function preregisterNativePolicyChallenge(string $candidateKey, string $ablationKey, string $retentionKey,
+        string $axis, array $panels, string $seed, float $wallBudget, string $evaluator): array
+    {
+        if (! in_array($axis, ['expected_value', 'information_gain', 'learning_progress', 'cost', 'diversity'], true)
+            || count($panels) < 3 || count($panels) > 12 || $seed === '' || $evaluator === ''
+            || ! is_finite($wallBudget) || $wallBudget <= 0 || $wallBudget > 3600
+            || count(array_unique([$candidateKey, $ablationKey])) !== 2) return $this->metaBlocked('BOUNDED_NATIVE_POLICY_PANELS_REQUIRED');
+        $policies = [];
+        foreach (array_unique([$candidateKey, $ablationKey, $retentionKey]) as $key) {
+            $policy = $this->journalRead($key);
+            if (! isset($policy['definition'])) return $this->metaBlocked('SEALED_POLICY_REQUIRED');
+            $policies[$key] = $policy;
+        }
+        $definition = $policies[$candidateKey]['definition']; $ablated = $definition;
+        if ((float) ($ablated['weights'][$axis] ?? 0) === 0.0) return $this->metaBlocked('POLICY_AXIS_HAS_NO_ACTUAL_EFFECT');
+        $ablated['weights'][$axis] = 0;
+        if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($ablated, $policies[$ablationKey]['definition'])) {
+            return $this->metaBlocked('EXACT_SINGLE_POLICY_AXIS_ABLATION_REQUIRED');
+        }
+        $caps = array_intersect_key($definition, array_flip(['compute_cap_seconds', 'max_candidates', 'exploration_fraction']));
+        foreach ($policies as $policy) if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($caps,
+            array_intersect_key($policy['definition'], array_flip(['compute_cap_seconds', 'max_candidates', 'exploration_fraction'])))) {
+            return $this->metaBlocked('EQUAL_POLICY_CHALLENGE_CAPS_REQUIRED');
+        }
+        if ($wallBudget > $caps['compute_cap_seconds']) return $this->metaBlocked('PREFIX_BUDGET_EXCEEDS_SEALED_POLICY_CAP');
+        $owner = app(SpecialistCouncilLifecycleService::class); $sealed = []; $windows = []; $questions = [];
+        foreach ($panels as $panel) {
+            if (! is_array($panel) || array_diff(array_keys($panel), ['target_cases', 'retention_cases']) !== []) return $this->metaBlocked('NATIVE_PANEL_ASSERTED_OUTCOMES_FORBIDDEN');
+            $sets = []; $window = null;
+            foreach (['target_cases', 'retention_cases'] as $kind) {
+                $cases = (array) ($panel[$kind] ?? []);
+                if (count($cases) < 2 || count($cases) > $caps['max_candidates']) return $this->metaBlocked('BOUNDED_DISTINCT_NATIVE_QUESTION_OPPORTUNITIES_REQUIRED');
+                $inputs = []; $specs = [];
+                foreach ($cases as $case) {
+                    if (! is_array($case) || array_diff(array_keys($case), ['version_id', 'window_key']) !== []) return $this->metaBlocked('NATIVE_CASE_ASSERTED_FEATURES_FORBIDDEN');
+                    $spec = $owner->nativePolicyQuestionSpec((int) ($case['version_id'] ?? 0), (string) ($case['window_key'] ?? ''), $evaluator);
+                    if (isset($questions[$spec['question_hash']])) return $this->metaBlocked('DUPLICATE_PHYSICAL_NATIVE_POLICY_QUESTION');
+                    $questions[$spec['question_hash']] = true;
+                    if ($window !== null && $this->metaHash($window) !== $this->metaHash($spec['window'])) return $this->metaBlocked('PAIRED_POLICY_QUESTION_WINDOW_MISMATCH');
+                    $window = $spec['window'];
+                    $inputs[] = $spec['selector_input']; $specs[$spec['question_hash']] = $spec;
+                }
+                $rankings = []; $wall = [];
+                foreach (array_unique([$candidateKey, $ablationKey, $retentionKey]) as $key) {
+                    $started = hrtime(true);
+                    $rankings[$key] = $this->rankResearchQuestions($inputs, $seed, $key, false)['ranking'];
+                    $wall[$key] = (hrtime(true) - $started) / 1000000000;
+                    if (count($rankings[$key]) !== count($inputs)) return $this->metaBlocked('MATCHED_NATIVE_POLICY_OPPORTUNITY_REQUIRED');
+                }
+                if ($kind === 'target_cases' && array_column($rankings[$candidateKey], 'question_id')
+                    === array_column($rankings[$ablationKey], 'question_id')) return $this->metaBlocked('NATIVE_POLICY_AXIS_NO_ACTUAL_ORDER_EFFECT');
+                $sets[$kind] = ['cases' => $specs, 'rankings' => $rankings, 'selector_wall_seconds' => $wall];
+            }
+            if (isset($windows[$window['window_key']])) return $this->metaBlocked('DUPLICATE_AUTHORIZED_POLICY_WINDOW');
+            $windows[$window['window_key']] = $window;
+            $sealed[$window['window_key']] = ['window' => $window, ...$sets];
+        }
+        if (count(array_unique(array_column($windows, 'dataset_sha256'))) !== count($windows)) return $this->metaBlocked('NATIVE_POLICY_WINDOWS_OVERLAP_OR_RELABELLED');
+        $ordered = array_values($windows); usort($ordered, fn ($a, $b) => strcmp($a['start_inclusive'], $b['start_inclusive']));
+        for ($i = 1; $i < count($ordered); $i++) if ($ordered[$i - 1]['end_exclusive'] > $ordered[$i]['start_inclusive']
+            || $ordered[$i - 1]['dataset_sha256'] === $ordered[$i]['dataset_sha256']) return $this->metaBlocked('NATIVE_POLICY_WINDOWS_OVERLAP_OR_RELABELLED');
+        $body = ['native_protocol' => self::NATIVE_POLICY_PROTOCOL, 'candidate_policy_key' => $candidateKey,
+            'ablation_policy_key' => $ablationKey, 'retention_policy_key' => $retentionKey,
+            'policies' => $policies, 'axis' => $axis, 'panels' => $sealed, 'caps' => $caps,
+            'prefix_wall_budget_seconds' => $wallBudget, 'selector_cpu_seconds' => null,
+            'seed_hash' => hash('sha256', $seed), 'evaluator_id' => $evaluator,
+            'preregistered_at' => now()->utc()->toIso8601String(), 'status' => 'awaiting_original_independent_native_panels'];
+        return $this->journalWrite($this->metaKey('native_policy_challenge', $this->metaHash($body)), 'native_policy_challenge', $this->metaHash($body), [], $body);
+    }
+
+    /** Ranking/prefix actually determines consumed questions; every charged cost is original wall time, not invented CPU. */
+    public function settleNativePolicyChallenge(string $challengeKey): array
+    {
+        $result = $this->inspectNativePolicyChallenge($challengeKey);
+        if (($result['status'] ?? '') === 'blocked') return $result;
+        return $this->journalWrite($this->metaKey('native_policy_challenge_result', $challengeKey), 'native_policy_challenge_result', $challengeKey, [], $result);
+    }
+
+    /** Pure current verification: qualification/redelivery cannot publish new benchmark evidence. */
+    public function inspectNativePolicyChallenge(string $challengeKey): array
+    {
+        $challenge = $this->journalRead($challengeKey);
+        if (($challenge['native_protocol'] ?? '') !== self::NATIVE_POLICY_PROTOCOL) return $this->metaBlocked('ORIGINAL_NATIVE_POLICY_CHALLENGE_REQUIRED');
+        foreach ($challenge['policies'] as $key => $policy) {
+            $current = $this->journalRead($key);
+            if ($current === null || $this->metaHash($policy) !== $this->metaHash($current)) return $this->metaBlocked('ORIGINAL_NATIVE_POLICY_DEFINITION_DRIFT');
+        }
+        $owner = app(SpecialistCouncilLifecycleService::class); $panels = [];
+        foreach ($challenge['panels'] as $windowKey => $panel) {
+            $window = $panel['window'];
+            if (! app(InstrumentResearchWindowService::class)->authorized(array_diff_key($window, ['evaluation_scope' => true]), $window['dataset_sha256'])) return $this->metaBlocked('AUTHORIZED_UNUSED_NATIVE_POLICY_WINDOW_REQUIRED');
+            $scores = []; $outcomes = [];
+            foreach (['target_cases', 'retention_cases'] as $kind) {
+                foreach ($panel[$kind]['cases'] as $question => $spec) {
+                    $outcome = $owner->nativePolicyQuestionOutcome($spec, $challenge['preregistered_at'], $challenge['evaluator_id']);
+                    if (($outcome['status'] ?? '') !== 'original_independent_question_observed') return $this->metaBlocked($outcome['reason'] ?? 'ORIGINAL_NATIVE_POLICY_QUESTION_OUTCOMES_REQUIRED');
+                    $outcomes[$kind][$question] = $outcome;
+                }
+                foreach ($panel[$kind]['rankings'] as $policy => $ranking) {
+                    // Equal conservative selector allowance prevents wall-clock microjitter
+                    // alone deciding which arm can afford its final question.
+                    $selectorAllowance = max($panel[$kind]['selector_wall_seconds']);
+                    $charged = $selectorAllowance; $selected = []; $answers = 0; $positive = 0;
+                    foreach ($ranking as $choice) {
+                        $outcome = $outcomes[$kind][$choice['question_id']];
+                        if ($charged + $outcome['end_to_end_wall_seconds'] > $challenge['prefix_wall_budget_seconds']) break;
+                        $charged += $outcome['end_to_end_wall_seconds']; $selected[] = $choice['question_id'];
+                        $answers += (int) $outcome['powered']; $positive += (int) ($outcome['powered'] && $outcome['positive']);
+                    }
+                    $scores[$kind][$policy] = ['selected_question_hashes' => $selected, 'powered_answers' => $answers,
+                        'positive_answers' => $positive, 'end_to_end_wall_seconds' => $charged,
+                        'selector_wall_seconds' => $panel[$kind]['selector_wall_seconds'][$policy],
+                        'equal_selector_wall_allowance' => $selectorAllowance, 'selector_cpu_seconds' => null];
+                }
+            }
+            $candidate = $challenge['candidate_policy_key']; $ablation = $challenge['ablation_policy_key']; $retention = $challenge['retention_policy_key'];
+            $target = $scores['target_cases']; $keep = $scores['retention_cases'];
+            $activeOrder = array_column($panel['target_cases']['rankings'][$candidate], 'question_id')
+                !== array_column($panel['target_cases']['rankings'][$ablation], 'question_id')
+                && $target[$candidate]['selected_question_hashes'] !== $target[$ablation]['selected_question_hashes'];
+            $retained = $keep[$candidate]['powered_answers'] >= $keep[$retention]['powered_answers']
+                && $keep[$candidate]['positive_answers'] >= $keep[$retention]['positive_answers'] && $keep[$candidate]['powered_answers'] > 0;
+            $benefit = $activeOrder && $target[$candidate]['powered_answers'] >= $target[$ablation]['powered_answers']
+                && $target[$candidate]['positive_answers'] > $target[$ablation]['positive_answers'] && $retained;
+            $panels[$windowKey] = ['window' => $window, 'scores' => $scores, 'original_question_outcomes' => $outcomes,
+                'actual_prefix_selection_changed' => $activeOrder, 'retained_original_role_utility' => $retained,
+                'positive_role_capability' => $benefit];
+        }
+        return ['native_protocol' => self::NATIVE_POLICY_PROTOCOL, 'status' => 'original_independent_native_question_comparison',
+                'challenge_key' => $challengeKey, 'challenge_hash' => $this->metaHash($challenge), 'panels' => $panels,
+                'positive_windows' => count(array_filter($panels, fn ($p) => $p['positive_role_capability'])),
+                'qualified' => false, 'policy_activated' => false, 'compute_advantage_proven' => false,
+                'resource_scope' => 'original_end_to_end_wall_seconds_not_cpu', 'economic_authority' => false,
+                'protocol' => self::META_PROTOCOL, 'promotion_evidence' => false];
     }
 
     /** Forecast-guided portfolio with a deterministic, prospectively seeded exploration share. */

@@ -1,5 +1,15 @@
 # Laboratory history
 
+## 2026-10-05 - Original native policy panels
+
+Learning/evolution support benchmarks now use preregistered original native
+questions, exact policy-axis ablation, consumed-prefix behavior and retained
+role utility across authorized disjoint windows. Resource proof records real
+wall duration, not invented CPU advantage. Pure original-parent inspection
+does not grant paper authority. Independent/descendant reference validation
+keeps the missing canonical window-cohort producer and terminal owner explicit;
+no discovery cohort or caller flag can pretend to satisfy them. See ADR-029.
+
 ## 2026-10-05 - Proof-owned council continuation
 
 Original council dependencies now use server-preregistered proof and the

@@ -78,6 +78,7 @@ paths:
   - backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php
   - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
   - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
+  - backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php
   - backend-laravel/app/Services/ResearchKnowledgePortfolioService.php
   - backend-laravel/app/Services/MultiModalLearningPortfolioService.php
   - backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php
@@ -150,6 +151,9 @@ entry_points:
   - TypedInstrumentFoundryService::behaviorAlternatives
   - ResearchKnowledgePortfolioService::preregisterExperiment
   - ResearchKnowledgePortfolioService::chooseDiscriminatingProbe
+  - ResearchKnowledgePortfolioService::preregisterNativePolicyChallenge
+  - ResearchKnowledgePortfolioService::inspectNativePolicyChallenge
+  - SpecialistCouncilLifecycleService::rankQualifiedResearchQuestions
   - XauusdEdgeFormationAcademyService::learningProgress
   - XauusdEdgeFormationAcademyService::skillDependencyGraph
   - EvolutionaryAuthorityFoundryService::settleDescendantOutcome

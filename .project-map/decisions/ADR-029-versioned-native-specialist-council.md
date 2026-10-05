@@ -49,6 +49,10 @@ changed-source, unchanged-question repair; a timeout cannot prove no outcome.
 Typed support components use separate original role-specific producer trials,
 ablation and retention. Their scoped research adoption revalidates original
 exam/artifacts/native operators every use. Account integrity is not causal
-allocation value; an original equal-budget learning/evolution benchmark is
-provisional until its independent policy activation adapter exists. Explicit
-missing code and authorized data prerequisites never become claimed authority.
+allocation value. Historical policy-fold benchmarks remain provisional; the
+separate original native-policy adapter requires preregistered actual rank and
+consumed-prefix changes, exact axis ablation, retention and at least three
+authorized disjoint windows. Original wall duration is never labelled CPU or
+a measured compute advantage. Pure qualification reinspection publishes no new
+evidence. Explicit missing code and authorized data prerequisites never become
+claimed authority.

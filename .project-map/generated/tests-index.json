@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T11:01:05.518Z",
-  "source_digest": "f086502c7b2a772e468333277327c4f37c6a17601c4b4394c278d63cc3f23af4",
-  "source_file_count": 1521,
-  "git_head": "77a684fe870481b375102e3617a45ef626707f0c",
+  "generated_at": "2026-10-05T12:28:51.882Z",
+  "source_digest": "4f0711b43924cca8e9dbf1f4a52646f828534905baa608d2315927f6cd13f75a",
+  "source_file_count": 1523,
+  "git_head": "133cf4ffd1f2a0d2998d49364bf0887da4cc9b56",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -2791,7 +2791,9 @@
         "test_activation_continuation_requires_the_preregistered_plan_hash",
         "test_next_work_is_owned_retry_bounded_and_visible_to_closure_truth",
         "test_unadmitted_instrument_transfer_cannot_be_made_executable_by_the_caller",
-        "test_owner_claim_cannot_be_starved_by_another_owners_priority_rows"
+        "test_owner_claim_cannot_be_starved_by_another_owners_priority_rows",
+        "test_chunk_identity_is_reread_before_preserving_a_concurrent_council_registration",
+        "test_chunk_reconciliation_does_not_reopen_a_newly_leased_or_settled_council_checkpoint"
       ]
     },
     {
@@ -3175,6 +3177,7 @@
         "test_missing_server_resolution_stays_blocked_despite_caller_executable_flag",
         "test_one_prospective_research_resolution_freezes_real_old_new_vectors_and_is_idempotent",
         "test_previously_sealed_question_cannot_be_tuned_after_registration",
+        "test_original_assessment_redelivery_and_stale_normalization_preserve_registered_resolution",
         "test_rehashed_forged_work_proof_does_not_replace_server_registration",
         "test_changed_original_native_model_invalidates_even_the_server_signed_resolution",
         "test_new_source_after_registration_cannot_mix_followup_evaluator_versions",
@@ -3205,6 +3208,24 @@
         "test_independent_and_descendant_claims_do_not_become_discovery_executable",
         "fixture",
         "recordOriginalSchemaFailure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
+      "tests": [
+        "test_unchanged_program_and_exact_clone_controls_pass_semantic_comparison_only",
+        "test_new_weaker_solo_cannot_replace_the_original_frozen_control",
+        "test_founding_champion_is_only_the_unchanged_original_solo_not_arbitrary_new_model",
+        "test_risk_routing_and_scientific_criteria_cannot_be_weakened_in_independent_followup",
+        "test_duplicate_roles_do_not_hide_a_changed_specialist_or_roster_member",
+        "test_actual_original_member_parameter_drift_cannot_hide_behind_unchanged_sealed_vectors",
+        "test_late_instrument_descriptor_cannot_reinterpret_an_original_member_seal",
+        "test_descendant_requires_original_qualified_parent_not_provisional_observations",
+        "test_completed_future_data_does_not_hide_the_missing_canonical_cohort_producer",
+        "test_register_refuses_context_shaped_generations_without_mutating_originals",
+        "test_forged_seal_and_expired_lease_do_not_publish_a_run_or_call_transport",
+        "assertParent",
+        "fixture"
       ]
     },
     {
@@ -3314,6 +3335,13 @@
         "test_original_native_account_and_event_use_qualify_correctness_not_learned_pnl_or_broker_competence",
         "test_original_equal_budget_policy_benchmark_is_callable_and_bound_but_never_self_qualifies",
         "policyExperiment",
+        "test_native_policy_panel_adapter_qualifies_role_and_consumes_real_ranker_without_paper_or_cpu_claims",
+        "test_native_policy_null_and_retention_regression_are_not_qualified",
+        "test_native_policy_poisoned_original_outcomes_refuse_settlement_and_authority",
+        "test_native_policy_no_effect_or_asserted_inputs_are_rejected_before_outcomes",
+        "test_independent_authority_suffix_is_not_sent_as_a_new_authorization_receipt",
+        "test_original_research_parent_and_native_policy_question_reject_flags_without_original_independent_producers",
+        "nativePolicyFixture",
         "completePolicyExperiment",
         "completedNativeExam",
         "draft",

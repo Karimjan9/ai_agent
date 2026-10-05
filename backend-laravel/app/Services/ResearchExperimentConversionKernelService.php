@@ -187,45 +187,52 @@ class ResearchExperimentConversionKernelService
             ->whereIn('status', ['ready', 'blocked'])
             ->orderBy('id')
             ->chunkById(100, function ($items) use (&$normalized, &$released, &$blocked): void {
-                foreach ($items as $item) {
-                    $before = (array) $item->payload;
-                    $this->normalizePersistedWork($item);
-                    $item->refresh();
-                    if ($before !== (array) $item->payload) $normalized++;
-                    $payload = (array) $item->payload;
-                    if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
-                        $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
-                        $payload['executable'] = ($proof['executable'] ?? false) === true;
-                        $payload['retry_condition']['code'] = (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED');
-                        $hold = (array) data_get($item->result, 'dependency_hold', []);
-                        if (($hold['dependency_check_failed'] ?? false) === true) {
-                            $payload['executable'] = false;
-                            $payload['retry_condition']['code'] = 'COUNCIL_OPERATIONAL_DEPENDENCY_CHECK_UNAVAILABLE';
-                        }
-                        if ($payload['executable'] && isset($hold['prerequisite_hash'])) {
-                            try {
-                                $unchanged = hash_equals((string) $hold['prerequisite_hash'],
-                                    app(SpecialistCouncilFollowupExecutionService::class)->retryPrerequisiteHash($item));
-                            } catch (\Throwable) { $unchanged = true; }
-                            if ($unchanged) {
+                foreach ($items as $snapshot) {
+                    // The chunk is only a bounded list of identities. A
+                    // registrar or worker may have sealed/leased this row
+                    // since it was read; never write that stale payload back.
+                    DB::transaction(function () use ($snapshot, &$normalized, &$released, &$blocked): void {
+                        $item = ResearchExperimentWorkItem::whereKey($snapshot->id)->lockForUpdate()->first();
+                        if (! $item || ! in_array($item->status, ['ready', 'blocked'], true)) return;
+                        $before = (array) $item->payload;
+                        $this->normalizePersistedWork($item);
+                        $item->refresh();
+                        if ($before !== (array) $item->payload) $normalized++;
+                        $payload = (array) $item->payload;
+                        if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
+                            $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+                            $payload['executable'] = ($proof['executable'] ?? false) === true;
+                            $payload['retry_condition']['code'] = (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED');
+                            $hold = (array) data_get($item->result, 'dependency_hold', []);
+                            if (($hold['dependency_check_failed'] ?? false) === true) {
                                 $payload['executable'] = false;
-                                $payload['retry_condition']['code'] = (string) ($hold['reason'] ?? 'COUNCIL_OPERATIONAL_DEPENDENCY_UNCHANGED');
+                                $payload['retry_condition']['code'] = 'COUNCIL_OPERATIONAL_DEPENDENCY_CHECK_UNAVAILABLE';
                             }
+                            if ($payload['executable'] && isset($hold['prerequisite_hash'])) {
+                                try {
+                                    $unchanged = hash_equals((string) $hold['prerequisite_hash'],
+                                        app(SpecialistCouncilFollowupExecutionService::class)->retryPrerequisiteHash($item));
+                                } catch (\Throwable) { $unchanged = true; }
+                                if ($unchanged) {
+                                    $payload['executable'] = false;
+                                    $payload['retry_condition']['code'] = (string) ($hold['reason'] ?? 'COUNCIL_OPERATIONAL_DEPENDENCY_UNCHANGED');
+                                }
+                            }
+                            if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
                         }
-                        if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
-                    }
-                    $executable = (bool) ($payload['executable'] ?? false);
-                    $dependencyReady = $this->dependencyReady($item, $payload);
-                    $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
-                    if ((string) $item->status !== $desired) {
-                        $item->update([
-                            'status' => $desired,
-                            'last_error' => $desired === 'blocked'
-                                ? (string) data_get($payload, 'retry_condition.code', 'DEPENDENCY_NOT_READY')
-                                : null,
-                        ]);
-                        $desired === 'ready' ? $released++ : $blocked++;
-                    }
+                        $executable = (bool) ($payload['executable'] ?? false);
+                        $dependencyReady = $this->dependencyReady($item, $payload);
+                        $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
+                        if ((string) $item->status !== $desired) {
+                            $item->update([
+                                'status' => $desired,
+                                'last_error' => $desired === 'blocked'
+                                    ? (string) data_get($payload, 'retry_condition.code', 'DEPENDENCY_NOT_READY')
+                                    : null,
+                            ]);
+                            $desired === 'ready' ? $released++ : $blocked++;
+                        }
+                    });
                 }
             });
 
@@ -323,18 +330,24 @@ class ResearchExperimentConversionKernelService
 
     private function normalizePersistedWork(ResearchExperimentWorkItem $item): void
     {
-        $payload = $this->normalizeNextWork([
-            ...((array) $item->payload),
-            'type' => (string) ($item->work_type ?: data_get($item->payload, 'type', '')),
-        ]);
-        if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
-            // This projection is derived again immediately by the original
-            // readiness owner; do not toggle it false/true on every scan.
-            $payload['executable'] = (bool) data_get($item->payload, 'executable', false);
-        }
-        if ((array) $item->payload !== $payload) {
-            $item->update(['payload' => $payload]);
-        }
+        DB::transaction(function () use ($item): void {
+            $current = ResearchExperimentWorkItem::whereKey($item->id)->lockForUpdate()->first();
+            if (! $current) return;
+            if (in_array($current->status, ['ready', 'blocked'], true)) {
+                $payload = $this->normalizeNextWork([
+                    ...((array) $current->payload),
+                    'type' => (string) ($current->work_type ?: data_get($current->payload, 'type', '')),
+                ]);
+                if (str_starts_with((string) $current->work_type, 'specialist_council_')) {
+                    // Derive readiness from the registrar's original current
+                    // proof below, never from the caller or a stale snapshot.
+                    $payload['executable'] = (bool) data_get($current->payload, 'executable', false);
+                }
+                if ((array) $current->payload !== $payload) $current->update(['payload' => $payload]);
+            }
+            // Record's caller must also see the current leased/settled row.
+            $item->setRawAttributes($current->getAttributes(), true);
+        });
     }
 
     private function dependencyReady(ResearchExperimentWorkItem $item, array $payload): bool
