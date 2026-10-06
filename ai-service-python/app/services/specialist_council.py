@@ -33,6 +33,16 @@ POLICY_LIMITS = {
     "max_daily_loss_percent": (0, 5),
     "max_expected_cost_percent": (0, 5),
 }
+PRIMARY_TRACE_FIELDS = ('time', 'open', 'high', 'low', 'close', 'volume')
+MEMBER_TRACE_FIELDS = ('time', 'close', 'signal_confidence', 'market_regime',
+    'volatility_regime', 'mtf_stack_context_hash', 'composition_decision_id', 'entry_contract_status')
+
+
+def _closed_trace_input(row, fields, kernel):
+    # Every actual closed input remains hash-bound, while only the bounded
+    # inspection snapshot is duplicated across the account/member clocks.
+    full = {key: kernel._semantic_event_value(value) for key, value in row.items()}
+    return {key: full[key] for key in fields if key in full}, canonical_hash(full), len(full)
 
 
 def seal_contract(body: dict) -> dict:
@@ -362,6 +372,11 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     rows = frame.to_dict("records")
     positions: dict[str, dict] = {}
     receipts: list[dict] = []
+    decision_trace: list[dict] = []
+    decision_count = 0
+    trace_clock = None
+    trace_members = {}
+    emit_trace = bool(payload.emit_decision_trace)
     account_ledger: list[dict] = []
     position_ledger: list[dict] = []
     trades: list[SimpleTrade] = []
@@ -399,6 +414,22 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                          "council_version": runtime.council_version,
                          "member_version_hash": runtime.version_hash})
         receipts.append(item)
+        # Observe the actual pre-entry branch. Intrabar exits and outcomes
+        # retain their separate execution ledger and cannot leak into inputs.
+        if trace_clock is not None and runtime is not None:
+            observed = trace_members.get(runtime.version_hash)
+            if observed is not None and (stage in {'intent', 'risk', 'operator'}
+                    or (stage == 'execution' and reason in {'filled', 'duplicate_intent'})):
+                observed['stage_receipts'].append({'stage': stage, 'reason': reason,
+                    'detail': {key: kernel._semantic_event_value(value) for key, value in detail.items()}})
+                if stage == 'risk' or reason in {'decision_cadence_wait', 'expired', 'duplicate_intent'}:
+                    observed.update({'action': 'WAIT', 'accepted': False, 'rejection_code': reason})
+                elif stage == 'execution' and reason == 'filled':
+                    observed.update({'action': observed['raw_signal'], 'accepted': True,
+                        'rejection_code': None, 'position_id': detail['position_id']})
+                    trace_clock['action'] = (observed['raw_signal'] if trace_clock['action'] == 'WAIT'
+                        else trace_clock['action'] if trace_clock['action'] == observed['raw_signal'] else 'MIXED')
+                    trace_clock.update({'accepted': True, 'rejection_code': None})
 
     def close_position(pos: dict, market_exit: float, execution_exit: float, reason: str, timestamp: object, index: int) -> None:
         nonlocal cash, reserved, fees, carry_total, embedded_costs, gross_profit, gross_loss
@@ -497,6 +528,25 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                   effective_at=upgrade["effective_at"], pinned_open_positions=list(positions))
         open_price = float(candle["open"])
         opening_equity = marked_equity(open_price, timestamp)
+        decision_count += 1
+        trace_clock, trace_members = None, {}
+        if emit_trace:
+            closed_source, source_input_hash, source_columns = _closed_trace_input(rows[index - 1], PRIMARY_TRACE_FIELDS, kernel)
+            source_clock = {'contract_hash': contract['contract_hash'], 'dataset_hash': payload.replay_dataset_hash,
+                'source_sha256': attestation.get('actual_source_sha256', ''), 'candle_index': index,
+                'signal_time': _stamp(rows[index - 1]['time']), 'decision_at': _stamp(signal_at),
+                'execution_time': _stamp(timestamp)}
+            trace_clock = {'candle_index': index, 'candle_time': _stamp(timestamp),
+                'signal_time': source_clock['signal_time'], 'decision_at': source_clock['decision_at'],
+                'execution_time': source_clock['execution_time'], 'decision_id': canonical_hash(source_clock),
+                'source_clock': source_clock, 'event_type': 'signal_evaluation', 'action': 'WAIT',
+                'accepted': False, 'rejection_code': 'no_native_member_fill', 'price': open_price,
+                'features': closed_source, 'closed_source_inputs_hash': source_input_hash,
+                'closed_source_input_columns': source_columns,
+                'state': {'cash_at_open': cash, 'equity_at_open': opening_equity,
+                    'reserved_capital_at_open': reserved, 'owned_positions_at_open': list(positions),
+                    'council_version': active_version}, 'member_decisions': []}
+            decision_trace.append(trace_clock)
         if day != _utc(timestamp).date():
             day, day_equity = _utc(timestamp).date(), opening_equity
         peak_equity = max(peak_equity, opening_equity)
@@ -559,6 +609,18 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         for runtime in active:
             member = runtime.declaration
             prior = runtime.rows[index - 1]
+            if trace_clock is not None:
+                closed_inputs, input_hash, input_columns = _closed_trace_input(prior, MEMBER_TRACE_FIELDS, kernel)
+                observed = {'decision_id': canonical_hash({'account_decision_id': trace_clock['decision_id'],
+                        'member_version_hash': runtime.version_hash}),
+                    'specialist_id': runtime.identity, 'council_version': runtime.council_version,
+                    'member_version_hash': runtime.version_hash, 'raw_signal': str(prior.get('signal', 'WAIT')),
+                    'action': 'WAIT', 'accepted': False, 'rejection_code': 'no_signal',
+                    'closed_inputs': closed_inputs, 'closed_inputs_hash': input_hash,
+                    'closed_input_columns': input_columns,
+                    'stage_receipts': []}
+                trace_members[runtime.version_hash] = observed
+                trace_clock['member_decisions'].append(observed)
             kernel._temporal_update_pending(runtime.temporal_state, prior, index - 1, runtime.payload)
             if runtime.loss_wait_until >= 0 and index >= runtime.loss_wait_until:
                 runtime.loss_streak, runtime.loss_wait_until = 0, -1
@@ -573,9 +635,12 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
             runtime.last_decision_at = signal_at
             runtime.stages["decision:observed"] += 1
             if signal not in {"BUY", "SELL"}:
-                no_signal_reason = str(prior.get("volume_policy_rejection", "") or prior.get("specialist_scope_first_veto", "")
-                    or prior.get("composition_decision_reason", "") or prior.get("entry_contract_status", "") or "no_signal")
+                reasons = (kernel._instrument_observed_value(prior.get(key)) for key in (
+                    'volume_policy_rejection', 'specialist_scope_first_veto', 'composition_decision_reason', 'entry_contract_status'))
+                no_signal_reason = next((str(value) for value in reasons if value), 'no_signal')
                 runtime.stages[f"intent:{no_signal_reason}"] += 1
+                if trace_clock is not None:
+                    trace_members[runtime.version_hash]['rejection_code'] = no_signal_reason
                 continue
             intent_id = canonical_hash({"council_version": runtime.council_version,
                 "member_version_hash": runtime.version_hash, "signal_at": _stamp(signal_at),
@@ -842,6 +907,11 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     reconciliation_error = cash - payload.initial_balance - net_ledger
     if abs(reconciliation_error) > 1e-7 * max(1.0, payload.initial_balance):
         raise ValueError("SPECIALIST_COUNCIL_ACCOUNT_RECONCILIATION_FAILED")
+    decision_trace = _receipt_json_value(decision_trace)
+    trace_identity = {'protocol': 'native_council_decision_trace_v1', 'contract_hash': contract['contract_hash'],
+        'trace_hash': canonical_hash(decision_trace), 'source_rows': len(rows), 'decision_rows': decision_count,
+        'warmup_rows': warmup_rows, 'first_candle_index': evaluation_start_index + 1,
+        'last_candle_index': len(rows) - 1 if decision_count else None, 'scope_policy_hash': evaluated_scope['policy_hash']}
     receipt_body = {
         "protocol": RECEIPT_PROTOCOL, "contract_hash": contract["contract_hash"],
         "council_id": contract["council_id"], "council_version": contract["council_version"],
@@ -850,6 +920,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         "execution_timeframe": payload.timeframe, "replay_start": evaluated_scope["start_inclusive"],
         "replay_end": _stamp(ending), "source_rows": len(rows),
         "source_attestation": attestation, "evaluated_scope": evaluated_scope,
+        "decision_trace_identity": trace_identity,
         "asof_policy": "previous_closed_candle_next_open",
         "status": "dependency" if dependencies else "computed",
         "dependency_reasons": sorted(set(dependencies)), "members": member_receipts,
@@ -893,6 +964,13 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     data_quality = dict(frame.attrs.get("data_quality") or {})
     data_quality.update({"dataset_attestation": attestation, "research_release_receipt": release_receipt,
         "specialist_council_receipt": receipt, "replay_evaluation_scope": evaluated_scope})
+    data_quality['decision_trace'] = {'protocol': 'candle_decision_trace_v1', 'requested': emit_trace,
+        'complete': emit_trace and not dependencies and decision_count == evaluated_scope['decision_rows'],
+        'event_count': len(decision_trace), 'evaluated_candle_count': decision_count,
+        'input_candle_count': len(rows), 'warmup_rows': warmup_rows,
+        'first_candle_index': evaluation_start_index + 1, 'evaluated_scope': evaluated_scope,
+        'scope_owner': 'native_specialist_council_v1', 'trace_hash': trace_identity['trace_hash'],
+        'promotion_evidence': False}
     if probe_receipt is not None:
         data_quality["prospective_probe_window_receipt"] = probe_receipt
     response = SimpleBacktestResponse(
@@ -909,6 +987,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         execution_assumptions=payload.execution.model_dump(),
         execution_contract=execution_contract_metadata(payload), policy_boundary=policy_boundary,
         specialist_council_receipt=receipt, data_quality=data_quality,
+        decision_trace=decision_trace, trade_ledger=trades, displayed_trade_count=len(trades),
         prospective_probe_window_receipt=probe_receipt or {},
         entry_funnel={"strategy_signals": stages["intent:created"],
             "entries_accepted": stages["execution:filled"],

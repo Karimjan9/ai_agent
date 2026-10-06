@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T12:28:51.882Z",
-  "source_digest": "4f0711b43924cca8e9dbf1f4a52646f828534905baa608d2315927f6cd13f75a",
-  "source_file_count": 1523,
-  "git_head": "133cf4ffd1f2a0d2998d49364bf0887da4cc9b56",
+  "generated_at": "2026-10-06T09:09:34.780Z",
+  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
+  "source_file_count": 1532,
+  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -19,19 +19,19 @@
       "symbol": "SimpleBacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 111
+      "line": 114
     },
     {
       "symbol": "Metrics",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 210
+      "line": 213
     },
     {
       "symbol": "Trade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 220
+      "line": 223
     },
     {
       "symbol": "StrategyConfig",
@@ -43,37 +43,37 @@
       "symbol": "MistakeJournalEntry",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 233
+      "line": 236
     },
     {
       "symbol": "DailyReportDay",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 239
+      "line": 242
     },
     {
       "symbol": "DailyReport",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 250
+      "line": 253
     },
     {
       "symbol": "BacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 255
+      "line": 258
     },
     {
       "symbol": "SimpleTrade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 264
+      "line": 267
     },
     {
       "symbol": "SimpleBacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 307
+      "line": 310
     },
     {
       "symbol": "BacktestRequest",
@@ -91,7 +91,13 @@
       "symbol": "ExecutionConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 95
+      "line": 98
+    },
+    {
+      "symbol": "OriginalSoloAccountObserver",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/authorized_council_arm.py",
+      "line": 219
     },
     {
       "symbol": "_ImmutableSourceRowIndex",
@@ -122,6 +128,12 @@
       "kind": "python_class",
       "path": "ai-service-python/app/services/composition_runtime.py",
       "line": 83
+    },
+    {
+      "symbol": "_OriginalFullQuoteCalendar",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/historical_quotes.py",
+      "line": 12
     },
     {
       "symbol": "MarketAdaptiveReplayService",
@@ -157,7 +169,7 @@
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 215
+      "line": 225
     },
     {
       "symbol": "StrategyDnaService",
@@ -271,7 +283,7 @@
       "symbol": "SpecialistCouncilTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_specialist_council.py",
-      "line": 77
+      "line": 78
     },
     {
       "symbol": "StatisticalValidationTest",
@@ -4897,13 +4909,13 @@
       "symbol": "forward",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 4272
+      "line": 4370
     },
     {
       "symbol": "gene",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 461
+      "line": 469
     },
     {
       "symbol": "LabQueueJobInspector",
@@ -5794,6 +5806,12 @@
       "line": 10
     },
     {
+      "symbol": "SpecialistCouncilAuthorizedArmExecutionService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilAuthorizedArmExecutionService.php",
+      "line": 23
+    },
+    {
       "symbol": "SpecialistCouncilContractService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilContractService.php",
@@ -5821,6 +5839,12 @@
       "symbol": "SpecialistCouncilLifecycleService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
+      "line": 18
+    },
+    {
+      "symbol": "SpecialistCouncilPanelReservationService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/SpecialistCouncilPanelReservationService.php",
       "line": 18
     },
     {
@@ -7336,6 +7360,12 @@
       "line": 17
     },
     {
+      "symbol": "AuthorizedSpecialistCouncilConstructorTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php",
+      "line": 23
+    },
+    {
       "symbol": "AutonomousLearningProgressDirectorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
@@ -8050,6 +8080,12 @@
       "line": 13
     },
     {
+      "symbol": "NativeDecisionTraceCompletenessTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php",
+      "line": 22
+    },
+    {
       "symbol": "NativeSpecialistCouncilConstructorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
@@ -8278,6 +8314,12 @@
       "line": 14
     },
     {
+      "symbol": "ResearchWorkLeaseBudgetTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ResearchWorkLeaseBudgetTest.php",
+      "line": 20
+    },
+    {
       "symbol": "RiskBoundedEvolutionTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php",
@@ -8377,7 +8419,7 @@
       "symbol": "SpecialistCouncilFollowupReadinessTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
-      "line": 26
+      "line": 27
     },
     {
       "symbol": "SpecialistCouncilIndependentPanelTest",
@@ -8390,6 +8432,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
       "line": 14
+    },
+    {
+      "symbol": "SpecialistCouncilPanelReservationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
+      "line": 38
+    },
+    {
+      "symbol": "OriginalCouncilPanelReservationFixture",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
+      "line": 579
     },
     {
       "symbol": "SpecialistCouncilPaperAdoptionTest",

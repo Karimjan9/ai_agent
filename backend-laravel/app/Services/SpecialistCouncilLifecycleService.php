@@ -256,7 +256,16 @@ class SpecialistCouncilLifecycleService
         if (! $version) throw new LogicException('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
         $binding = $this->evaluationBindingForModel($model, $datasetHash);
         if ($binding !== null) {
-            $owner = $this->plan($version); $arm = $owner['plan']['arms'][$binding['arm_key']];
+            $owner = $this->plan(SpecialistCouncilVersion::findOrFail($binding['version_id']));
+            $arm = $owner['plan']['arms'][$binding['arm_key']];
+            if ((int) $binding['version_id'] !== (int) $version->id) {
+                if (($owner['plan']['purpose'] ?? null) !== 'independent' || ! isset($owner['plan']['panel_reservation_hash'])
+                    || ! in_array($arm['kind'], ['champion', 'solo'], true)) {
+                    throw new LogicException('COUNCIL_ORIGINAL_COMPARATOR_RUNTIME_OWNER_CHANGED');
+                }
+                app(SpecialistCouncilPanelReservationService::class)->assertWindowComparator($owner['plan'], $arm, $model);
+                return $this->runtimeContract($version, $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol);
+            }
             if ($arm['kind'] === 'ablation') return $this->runtimeContractForAblation($version, $arm['removed_id'], $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol);
         }
         return $this->runtimeContract($version, $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol);
@@ -267,7 +276,10 @@ class SpecialistCouncilLifecycleService
     {
         $declared = data_get($model->metadata, 'specialist_council');
         $receipt = $result['specialist_council_receipt'] ?? data_get($result, 'data_quality.specialist_council_receipt');
-        if ($declared === null && $receipt === null) return null;
+        $qualityReceipt = data_get($result, 'data_quality.specialist_council_receipt');
+        if ($declared === null && ($receipt === null || $receipt === [])
+            && ($qualityReceipt === null || $qualityReceipt === [])
+            && ! $this->requestDeclaresNativeCouncilForModel($model, $originalRequest)) return null;
         if ($declared === null || ! is_array($receipt)) throw new LogicException('SPECIALIST_COUNCIL_RECEIPT_OR_BINDING_MISSING');
         $version = $this->researchVersionForModel($model);
         if (! $version) throw new LogicException('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
@@ -382,6 +394,21 @@ class SpecialistCouncilLifecycleService
         }
         if ($receipt['status'] === 'computed' && empty($receipt['account_ledger'])) throw new LogicException('COUNCIL_ACTUAL_ACCOUNT_OBSERVATIONS_MISSING');
         return $receipt;
+    }
+
+    /** Empty response defaults cannot erase a native declaration in the original owner request. */
+    private function requestDeclaresNativeCouncilForModel(ModelVersion $model, array $request): bool
+    {
+        if (array_key_exists('specialist_council_contract', $request)) return true;
+        $agentIds = \App\Models\LabAgent::where('model_version_id', $model->id)->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        foreach ((array) ($request['strategies'] ?? []) as $strategy) {
+            if (! is_array($strategy) || ! array_key_exists('specialist_council_contract', $strategy)) continue;
+            $matches = isset($strategy['lab_agent_id']) ? in_array((int) $strategy['lab_agent_id'], $agentIds, true)
+                : (($strategy['strategy'] ?? null) === $model->strategy && ($strategy['version'] ?? null) === $model->version
+                    && $this->epochs->parameterHash((array) ($strategy['parameters'] ?? [])) === $this->epochs->parameterHash((array) $model->parameters));
+            if ($matches) return true;
+        }
+        return false;
     }
 
     /** Retain the producer's exact object/list shape and float spelling through associative PHP decoding. */
@@ -512,7 +539,12 @@ class SpecialistCouncilLifecycleService
                 'solo' => $version->manifest['evaluation_policy']['solo_model_version_id'],
                 default => $model->id,
             };
-            if ((int) $expectedModel !== (int) $model->id) throw new InvalidArgumentException('Comparator differs from the preregistered champion/solo.');
+            if ((int) $expectedModel !== (int) $model->id) {
+                if (($plan['purpose'] ?? null) !== 'independent' || ! isset($plan['panel_reservation_hash'])) {
+                    throw new InvalidArgumentException('Comparator differs from the preregistered champion/solo.');
+                }
+                app(SpecialistCouncilPanelReservationService::class)->assertWindowComparator($plan, $arm, $model);
+            }
             if ($arm['kind'] === 'ablation' && ! in_array($arm['removed_id'] ?? null, $version->manifest['evaluation_policy']['required_ablations'], true)) {
                 throw new InvalidArgumentException('Ablation must remove a sealed member or component.');
             }

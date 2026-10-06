@@ -32,6 +32,10 @@ class LabPopulationService
 {
     public const CONSTRUCTOR_LOCK_TTL_SECONDS = 3000;
 
+    /** Read-only proof reuse is confined to one invocation holding this constructor's mutex. */
+    private bool $nativeFollowupConstructorInvocation = false;
+    private ?array $nativeFollowupInvocationProof = null;
+
     /** @var array{status: string, reason_code: string, retryable: bool, context: array<string, mixed>} */
     private array $lastBuildOutcome = [
         'status' => 'blocked',
@@ -330,8 +334,12 @@ class LabPopulationService
      * validation evidence, even when an operator supplies --force.
      */
     public const ACTIVE_GENERATION_STATUSES = [
-        'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+        'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation', 'research_reserved',
     ];
+
+    public const AUTHORIZED_COUNCIL_PANEL_TRIGGER = 'specialist_council_independent_panel';
+
+    public const AUTHORIZED_COUNCIL_PANEL_INTENT_PROTOCOL = 'authorized_specialist_council_panel_intent_v1';
 
     /** Screening is terminal only after every agent has a terminal outcome. */
     public const TERMINAL_GENERATION_STATUSES = [
@@ -554,7 +562,7 @@ class LabPopulationService
         }
     }
 
-    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false, ?array $prospectiveExpectation = null, ?array $nativeCouncilIntent = null): ?LabGeneration
+    public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false, ?array $prospectiveExpectation = null, ?array $nativeCouncilIntent = null, ?array $authorizedCouncilPanelIntent = null): ?LabGeneration
     {
         $this->parentPerformanceSnapshots = [];
         $this->archiveFrontierSnapshots = [];
@@ -571,6 +579,26 @@ class LabPopulationService
             'retryable' => false,
             'context' => ['symbol' => $symbol, 'timeframe' => $timeframe, 'trigger' => $trigger],
         ];
+        if ($authorizedCouncilPanelIntent !== null || $trigger === self::AUTHORIZED_COUNCIL_PANEL_TRIGGER) {
+            try {
+                if ($authorizedCouncilPanelIntent === null || $nativeCouncilIntent !== null || $symbol !== 'XAUUSD'
+                    || $requestedTimeframe !== 'H1' || $trigger !== self::AUTHORIZED_COUNCIL_PANEL_TRIGGER
+                    || $force || $coverageRescue !== [] || $roleComplete || $targetedFailureProfile !== null
+                    || $allowControlledRescue || $prospectiveExpectation !== null) {
+                    throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_REQUIRES_EXACT_UNFORCED_OWNER');
+                }
+                $authorizedCouncilPanelIntent = $this->authorizedCouncilPanelProof($authorizedCouncilPanelIntent);
+                $size = count($authorizedCouncilPanelIntent['arm_roots']);
+                if ($populationLimit !== null && $populationLimit !== $size) {
+                    throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_EXACT_ARM_BUDGET_REQUIRED');
+                }
+                $populationLimit = $size;
+                $refreshHistoricalLearning = false;
+            } catch (\Throwable $error) {
+                return $this->blocked('AUTHORIZED_COUNCIL_PANEL_CONSTRUCTOR_INTENT_INVALID', false,
+                    ['dependency' => $error instanceof \LogicException ? $error->getMessage() : 'AUTHORIZED_COUNCIL_PANEL_ORIGINAL_OWNER_UNAVAILABLE']);
+            }
+        }
         if ($nativeCouncilIntent !== null) {
             try {
                 $nativeCouncilIntent = $this->sealNativeCouncilIntent($nativeCouncilIntent, $symbol, $requestedTimeframe,
@@ -607,6 +635,8 @@ class LabPopulationService
                 'lock_owner' => Cache::get($this->constructorOwnerKey($symbol, $timeframe)),
             ]);
         }
+        $this->nativeFollowupConstructorInvocation = true;
+        $this->nativeFollowupInvocationProof = null;
         try {
             Cache::put($this->constructorOwnerKey($symbol, $timeframe), $this->constructorOwner('build', $trigger), now()->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS));
             // Existing queued jobs stay intact.  This only prevents creation of a
@@ -618,6 +648,29 @@ class LabPopulationService
             }
             $this->ensureLaboratories();
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
+            if ($authorizedCouncilPanelIntent !== null) {
+                $owned = $lab->generations()->where('trigger_context->authorized_specialist_council_panel_intent->reservation_hash', $authorizedCouncilPanelIntent['reservation_hash'])
+                    ->where('trigger_context->authorized_specialist_council_panel_intent->window_key', $authorizedCouncilPanelIntent['window_key'])
+                    ->orderBy('id')->limit(2)->get();
+                if ($owned->count() > 1) return $this->blocked('AUTHORIZED_COUNCIL_PANEL_MULTIPLE_WINDOW_OWNERS');
+                if ($existing = $owned->first()) {
+                    $stored = (array) data_get($existing->trigger_context, 'authorized_specialist_council_panel_intent', []);
+                    if (app(ResearchPaperEpochContractService::class)->parameterHash($stored)
+                        !== app(ResearchPaperEpochContractService::class)->parameterHash($authorizedCouncilPanelIntent)) {
+                        return $this->blocked('AUTHORIZED_COUNCIL_PANEL_EXISTING_WINDOW_OWNER_DRIFT');
+                    }
+                    $existing->load('agents.modelVersion');
+                    $slots = [];
+                    foreach ($existing->agents as $agent) {
+                        $slot = $this->constructorSlot($existing, $agent, '');
+                        if ($slot === null || isset($slots[$slot])) return $this->blocked('AUTHORIZED_COUNCIL_PANEL_DUPLICATE_OR_MISSING_SLOT');
+                        $slots[$slot] = true;
+                    }
+                    $this->lastBuildOutcome = ['status' => 'existing', 'reason_code' => 'AUTHORIZED_COUNCIL_PANEL_SAME_WINDOW_OWNER',
+                        'retryable' => false, 'context' => ['generation_id' => $existing->id, 'window_key' => $stored['window_key']]];
+                    return $existing->fresh(['agents.modelVersion']);
+                }
+            }
             $lineageHead = $lab->generations()->latest('generation')->first();
             $historicalPolicy = app(GenerationAdmissionDecisionService::class)->historicalResearchPolicy($symbol, $timeframe);
             if ($trigger === GenerationAdmissionDecisionService::HISTORICAL_TRIGGER && ! $historicalPolicy['eligible']) {
@@ -715,13 +768,13 @@ class LabPopulationService
                 $this->historicalLearning->refreshForLab($lab->symbol, $lab->timeframe);
             }
             $provider = (string) config('services.market_data.provider', 'csv');
-            if (! $historicalResearch && ! $force && $provider !== 'csv' && ! $this->continuity->isReady($provider, $lab->symbol, $lab->timeframe)) {
+            if ($authorizedCouncilPanelIntent === null && ! $historicalResearch && ! $force && $provider !== 'csv' && ! $this->continuity->isReady($provider, $lab->symbol, $lab->timeframe)) {
                 return $this->blocked('MARKET_DATA_CONTINUITY_NOT_READY', true);
             }
             // A forced protocol activation is an explicit operator action after a
             // successful market-data audit.  Normal scheduled populations remain
             // blocked by both continuity and historical-data readiness gates.
-            if (! $historicalResearch && ! $force && ! app()->environment('testing') && ! $this->historicalData->ready($lab->symbol, $lab->timeframe)) {
+            if ($authorizedCouncilPanelIntent === null && ! $historicalResearch && ! $force && ! app()->environment('testing') && ! $this->historicalData->ready($lab->symbol, $lab->timeframe)) {
                 return $this->blocked('HISTORICAL_DATA_NOT_READY', true);
             }
             if ($historicalResearch) {
@@ -745,7 +798,10 @@ class LabPopulationService
                     return $this->blocked('CANONICAL_DATA_CONTRACT_NOT_READY', true);
                 }
             }
-            $snapshot = $this->dataSnapshot($lab);
+            $snapshot = $authorizedCouncilPanelIntent === null ? $this->dataSnapshot($lab) : [
+                'fingerprint' => $authorizedCouncilPanelIntent['authorized_window']['dataset_sha256'],
+                'count' => 0, 'latest' => $authorizedCouncilPanelIntent['authorized_window']['end_exclusive'],
+            ];
             $fingerprint = $snapshot['fingerprint'];
             $latest = $lab->generations()->latest('generation')->first();
             // A durable audit owns the very next root population regardless of
@@ -784,7 +840,8 @@ class LabPopulationService
             // can leave an older generation in screening while a later terminal
             // row exists; that older stream still owns the laboratory lock.
             if ($lab->generations()->latest('id')->first()?->status !== null
-                && in_array((string) $lab->generations()->latest('id')->value('status'), self::ACTIVE_GENERATION_STATUSES, true)) {
+                && in_array((string) $lab->generations()->latest('id')->value('status'), self::ACTIVE_GENERATION_STATUSES, true)
+                && ! $this->sameReservedCouncilPanel($lab->generations()->latest('id')->first(), $authorizedCouncilPanelIntent)) {
                 return $this->blocked('LATEST_GENERATION_ACTIVE', true);
             }
             // A long-lived scheduler can submit the generic candidate-handoff
@@ -815,6 +872,7 @@ class LabPopulationService
                 'shadow_research' => $shadowResearch,
                 'coverage_rescue' => (bool) data_get($coverageRescue, 'eligible', false),
                 'force' => $force,
+                'authorized_specialist_council_panel_intent' => $authorizedCouncilPanelIntent,
             ]);
             $learningVelocity = (array) data_get($generationAdmission, 'learning_velocity', []);
             if (! (bool) data_get($generationAdmission, 'allowed', false)) {
@@ -842,7 +900,8 @@ class LabPopulationService
                 && (bool) data_get($coverageRescue, 'eligible')
                 && data_get($coverageRescue, 'protocol') === CoverageRescueAuditService::PROTOCOL;
             if ($latest && in_array($latest->status, self::ACTIVE_GENERATION_STATUSES, true)
-                && ! $screenedCandidateHandoff && ! $screenedDataEdgeAudit && ! $screenedCoverageRescue) {
+                && ! $screenedCandidateHandoff && ! $screenedDataEdgeAudit && ! $screenedCoverageRescue
+                && ! $this->sameReservedCouncilPanel($latest, $authorizedCouncilPanelIntent)) {
                 return $this->blocked('LATEST_GENERATION_ACTIVE', true);
             }
             $latestRequiresAudit = $latest
@@ -903,7 +962,7 @@ class LabPopulationService
             // independent holdout just like the normal lane.
             $structuralEscapeAdmission = (string) data_get($generationAdmission, 'decision')
                 === GenerationAdmissionDecisionService::OPEN_STRUCTURAL_ESCAPE;
-            if ($latest && $newCandles < $minimumFreshCandles && ! $historicalResearch && ! $force && ! $structuralEscapeAdmission
+            if ($authorizedCouncilPanelIntent === null && $latest && $newCandles < $minimumFreshCandles && ! $historicalResearch && ! $force && ! $structuralEscapeAdmission
                 && ! in_array($trigger, ['degradation', 'candidate_handoff', 'data_edge_audit', 'shadow_research', 'learning_confirmation', 'quality_evolution_synthesis'], true)) {
                 return $this->blocked('INSUFFICIENT_FRESH_CANDLES', true, ['new_candles' => $newCandles, 'minimum_fresh_candles' => $minimumFreshCandles]);
             }
@@ -917,12 +976,13 @@ class LabPopulationService
                 static fn (mixed $target): string => (string) $target,
                 (array) data_get($targetedFailureProfile, 'targets', []),
             ))));
-            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission, $nativeCouncilIntent): ?array {
+            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission, $nativeCouncilIntent, $authorizedCouncilPanelIntent): ?array {
                 // Scheduler and manual/operator requests may arrive together. Lock
                 // the laboratory row before assigning the next generation number;
                 // otherwise two workers can build the same G and one can leave a
                 // partially recorded handoff behind.
                 $lockedLab = AiLaboratory::query()->whereKey($lab->id)->lockForUpdate()->firstOrFail();
+                if ($authorizedCouncilPanelIntent !== null) $authorizedCouncilPanelIntent = $this->authorizedCouncilPanelProof($authorizedCouncilPanelIntent);
                 $latestInTransaction = $lockedLab->generations()->latest('generation')->lockForUpdate()->first();
                 // Repeat the check after acquiring the row lock.  The preflight
                 // check prevents normal duplicates; this one closes the race
@@ -948,7 +1008,8 @@ class LabPopulationService
                     && $latestInTransaction?->status === 'screened'
                     && (bool) data_get($coverageRescue, 'eligible')
                     && data_get($coverageRescue, 'protocol') === CoverageRescueAuditService::PROTOCOL;
-                if ($latestInTransaction !== null && in_array((string) $latestInTransaction->status, self::ACTIVE_GENERATION_STATUSES, true)) {
+                if ($latestInTransaction !== null && in_array((string) $latestInTransaction->status, self::ACTIVE_GENERATION_STATUSES, true)
+                    && ! $this->sameReservedCouncilPanel($latestInTransaction, $authorizedCouncilPanelIntent)) {
                     return $this->blocked('LATEST_GENERATION_ACTIVE', true);
                 }
                 $lockedGenerationAdmission = app(GenerationAdmissionDecisionService::class)->decide($lockedLab, $latestInTransaction, [
@@ -961,6 +1022,7 @@ class LabPopulationService
                     'shadow_research' => $shadowResearch,
                     'coverage_rescue' => (bool) data_get($coverageRescue, 'eligible', false),
                     'force' => (bool) data_get($generationAdmission, 'input.force', false),
+                    'authorized_specialist_council_panel_intent' => $authorizedCouncilPanelIntent,
                 ]);
                 if (! (bool) data_get($lockedGenerationAdmission, 'allowed', false)) {
                     return $this->blocked(
@@ -1024,6 +1086,9 @@ class LabPopulationService
                         'council_protocol' => $roleComplete ? self::ROLE_COMPLETE_COUNCIL_PROTOCOL : null,
                         'role_complete_council' => $roleComplete,
                         'native_specialist_council_intent' => $nativeCouncilIntent,
+                        'authorized_specialist_council_panel_intent' => $authorizedCouncilPanelIntent,
+                        'specialist_council_authorized_panel' => $authorizedCouncilPanelIntent === null ? null
+                            : $this->authorizedCouncilPanelMarker($authorizedCouncilPanelIntent),
                         'canonical_data_contract' => $roleComplete
                             ? app(MarketDriftDetectionService::class)->canonicalDataContract($lockedLab->symbol, $lockedLab->timeframe)
                             : null,
@@ -1055,9 +1120,9 @@ class LabPopulationService
                 // Fixed, auditable experiment budget.  A slot is assigned for the
                 // gate it is meant to move; it is not an undifferentiated "more
                 // agents" budget.
-                $plan = $nativeCouncilIntent !== null
+                $plan = $authorizedCouncilPanelIntent !== null ? $this->authorizedCouncilPanelSeedPlan($authorizedCouncilPanelIntent) : ($nativeCouncilIntent !== null
                     ? $this->nativeCouncilSeedPlan($lockedLab, $nativeCouncilIntent)
-                    : $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile);
+                    : $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile));
                 if ($learningConfirmation && $causalRepairFrontier) {
                     $lockedFrontier = app(CausalRepairFrontierService::class)->eligible(
                         $lockedLab->symbol,
@@ -1286,6 +1351,7 @@ class LabPopulationService
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && $nativeCouncilIntent === null
+                    && $authorizedCouncilPanelIntent === null
                     && count($plan) >= 3) {
                     $causalLearningCohort = app(CausalLearningCohortPlannerService::class)->materialize(
                         $plan,
@@ -1356,6 +1422,7 @@ class LabPopulationService
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
                     && ! $roleComplete
                     && $nativeCouncilIntent === null
+                    && $authorizedCouncilPanelIntent === null
                     && count($plan) >= 2) {
                     $normalControlPairing = $this->researchAllocation->materializeNormalControlPairing(
                         $plan,
@@ -1717,6 +1784,11 @@ class LabPopulationService
             }
 
             $freshGeneration = $this->finalizeLineageContinuationContract($generation);
+            if ($authorizedCouncilPanelIntent !== null && $createdAgents === count($plan)
+                && (bool) data_get($freshGeneration->trigger_context, 'lineage_continuation_contract.allowed', false)) {
+                $freshGeneration->update(['status' => 'research_reserved', 'completed_at' => null]);
+                $freshGeneration = $freshGeneration->fresh(['agents.modelVersion']);
+            }
             $this->lastBuildOutcome = [
                 'status' => $freshGeneration->status === 'technical_quarantine' ? 'blocked' : 'created',
                 'reason_code' => $freshGeneration->status === 'technical_quarantine'
@@ -1734,6 +1806,8 @@ class LabPopulationService
 
             return $freshGeneration;
         } finally {
+            $this->nativeFollowupInvocationProof = null;
+            $this->nativeFollowupConstructorInvocation = false;
             optional($constructorLock)->release();
             Cache::forget($this->constructorOwnerKey($symbol, $timeframe));
         }
@@ -1786,6 +1860,8 @@ class LabPopulationService
                 'failures' => [],
             ];
         }
+        $this->nativeFollowupConstructorInvocation = true;
+        $this->nativeFollowupInvocationProof = null;
         $constructorSymbol = (string) $generation->laboratory->symbol;
         $constructorTimeframe = (string) $generation->laboratory->timeframe;
         try {
@@ -1837,9 +1913,7 @@ class LabPopulationService
 
             $slotPattern = '/_g'.preg_quote((string) $generation->generation, '/').'_a(\d+)$/';
             $existingSlots = $generation->agents
-                ->map(fn (LabAgent $agent): ?int => preg_match($slotPattern, (string) $agent->modelVersion?->strategy, $match) === 1
-                    ? (int) $match[1]
-                    : null)
+                ->map(fn (LabAgent $agent): ?int => $this->constructorSlot($generation, $agent, $slotPattern))
                 ->filter(fn (?int $slot): bool => $slot !== null)
                 ->values()->all();
             $createdSlots = [];
@@ -1989,7 +2063,7 @@ class LabPopulationService
 
             $fresh = $generation->fresh(['agents.modelVersion']);
             $completedSlots = $fresh->agents
-                ->map(fn (LabAgent $agent): ?int => preg_match($slotPattern, (string) $agent->modelVersion?->strategy, $match) === 1 ? (int) $match[1] : null)
+                ->map(fn (LabAgent $agent): ?int => $this->constructorSlot($fresh, $agent, $slotPattern))
                 ->filter(fn (?int $slot): bool => $slot !== null)->unique()->values()->all();
             $complete = count($completedSlots) === count($plan);
             $context = (array) ($fresh->trigger_context ?? []);
@@ -2056,7 +2130,8 @@ class LabPopulationService
                     ->where('lifecycle_status', 'technical_quarantine')
                     ->where('decision_reason', 'Generation construction incomplete; candidate quarantined before replay and strategy verdict withheld.')
                     ->update(['lifecycle_status' => 'draft', 'decision_reason' => null]);
-                $fresh->update(['status' => 'draft', 'completed_at' => null]);
+                $fresh->update(['status' => data_get($fresh->trigger_context, 'authorized_specialist_council_panel_intent') !== null
+                    ? 'research_reserved' : 'draft', 'completed_at' => null]);
                 $fresh = $fresh->fresh(['agents.modelVersion']);
             }
 
@@ -2068,6 +2143,8 @@ class LabPopulationService
                 'failures' => $failures,
             ];
         } finally {
+            $this->nativeFollowupInvocationProof = null;
+            $this->nativeFollowupConstructorInvocation = false;
             optional($constructorLock)->release();
             Cache::forget($this->constructorOwnerKey($constructorSymbol, $constructorTimeframe));
         }
@@ -2143,6 +2220,27 @@ class LabPopulationService
                 'required_protocol' => CausalBlindedMutationSelectorService::PROTOCOL,
             ]],
         ];
+    }
+
+    /** Native clones retain original strategy strings; only this verified owner supplies their slot. */
+    private function constructorSlot(LabGeneration $generation, LabAgent $agent, string $ordinaryPattern): ?int
+    {
+        $intent = data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent');
+        if ($intent === null) return preg_match($ordinaryPattern, (string) $agent->modelVersion?->strategy, $match) === 1 ? (int) $match[1] : null;
+        $seed = data_get($agent->modelVersion?->metadata, 'authorized_specialist_council_panel_seed');
+        if (! is_array($intent) || ! is_array($seed) || ($seed['lab_generation_id'] ?? null) !== $generation->id
+            || ($seed['work_item_id'] ?? null) !== $intent['work_item_id'] || ($seed['reservation_hash'] ?? null) !== $intent['reservation_hash']
+            || ($seed['intent_hash'] ?? null) !== $intent['intent_hash'] || ! is_int($seed['construction_slot'] ?? null)) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_PERSISTED_SLOT_OWNER_INVALID');
+        }
+        $slot = $seed['construction_slot']; $arm = array_values($intent['arm_roots'])[$slot - 1] ?? null;
+        if (! is_array($arm) || ($seed['arm_key'] ?? null) !== $arm['arm_key'] || ($seed['source_model_hash'] ?? null) !== $arm['source_model_hash']
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($agent->modelVersion->parameters, $arm['parameters'])) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_PERSISTED_SLOT_VECTOR_DRIFT');
+        }
+        $source = $this->authorizedCouncilPanelSource($arm);
+        $this->assertAuthorizedCouncilPanelPhysicalClone($agent->modelVersion, $source);
+        return $slot;
     }
 
     private function finalizeLineageContinuationContract(LabGeneration $generation): LabGeneration
@@ -5325,6 +5423,141 @@ class LabPopulationService
         return [...$sealed, 'intent_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($sealed)];
     }
 
+    /** The original panel owner, not a caller flag, admits a prospective full-window cohort. */
+    private function authorizedCouncilPanelProof(array $intent): array
+    {
+        $unsigned = array_diff_key($intent, ['intent_hash' => true]);
+        $proof = app(SpecialistCouncilIndependentPanelService::class)->assertConstructorIntent($unsigned);
+        if (! is_array($proof) || ($proof['protocol'] ?? null) !== self::AUTHORIZED_COUNCIL_PANEL_INTENT_PROTOCOL
+            || ($proof['symbol'] ?? null) !== 'XAUUSD' || ($proof['storage_timeframe'] ?? null) !== 'H1'
+            || ! is_int($proof['work_item_id'] ?? null) || $proof['work_item_id'] <= 0
+            || ! is_string($proof['work_key'] ?? null) || $proof['work_key'] === ''
+            || ! is_string($proof['window_key'] ?? null) || $proof['window_key'] === ''
+            || ! is_int($proof['window_ordinal'] ?? null) || $proof['window_ordinal'] < 1 || $proof['window_ordinal'] > 3
+            || ! is_array($proof['arm_roots'] ?? null) || count($proof['arm_roots']) < 5 || count($proof['arm_roots']) > 12
+            || ($proof['authority'] ?? null) !== 'research_only' || ($proof['promotion_evidence'] ?? null) !== false
+            || ($proof['independent_evidence_claimed'] ?? null) !== false) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_ORIGINAL_CONSTRUCTOR_PROOF_INVALID');
+        }
+        foreach (['reservation_hash', 'current_source_hash', 'current_python_source_hash'] as $field) {
+            if (! preg_match('/^[a-f0-9]{64}$/D', (string) ($proof[$field] ?? ''))) {
+                throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_SOURCE_SEAL_REQUIRED');
+            }
+        }
+        if ($proof['current_source_hash'] !== app(LabImmutableEvidenceService::class)->codeHash()
+            || $proof['current_python_source_hash'] !== app(ResearchReleaseSealService::class)->pythonHash()) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_SOURCE_CHANGED');
+        }
+        $window = $proof['authorized_window'] ?? [];
+        if (($window['window_key'] ?? null) !== $proof['window_key']
+            || ! preg_match('/^[a-f0-9]{64}$/D', (string) ($window['dataset_sha256'] ?? ''))
+            || ! is_string($window['start_inclusive'] ?? null) || ! is_string($window['end_exclusive'] ?? null)
+            || \Carbon\CarbonImmutable::parse($window['start_inclusive'])->utc()->lessThan(\Carbon\CarbonImmutable::parse('2027-01-01T00:00:00Z'))
+            || ! \Carbon\CarbonImmutable::parse($window['end_exclusive'])->utc()->greaterThan(\Carbon\CarbonImmutable::parse($window['start_inclusive'])->utc())) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_POST_PAPER_WINDOW_REQUIRED');
+        }
+        $keys = [];
+        foreach ($proof['arm_roots'] as $arm) {
+            if (! is_array($arm) || ! is_string($arm['arm_key'] ?? null) || $arm['arm_key'] === ''
+                || isset($keys[$arm['arm_key']]) || ! in_array($arm['kind'] ?? null, ['candidate', 'champion', 'solo', 'ablation', 'retention'], true)) {
+                throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_EXACT_ARM_ROOTS_REQUIRED');
+            }
+            $keys[$arm['arm_key']] = true;
+            $this->authorizedCouncilPanelSource($arm);
+        }
+        $proof['intent_hash'] = app(ResearchPaperEpochContractService::class)->parameterHash($proof);
+        if (isset($intent['intent_hash']) && $intent['intent_hash'] !== $proof['intent_hash']) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_CONSTRUCTOR_INTENT_DRIFT');
+        }
+        return $proof;
+    }
+
+    private function authorizedCouncilPanelSource(array $arm): ModelVersion
+    {
+        $source = ModelVersion::find($arm['source_model_version_id'] ?? 0);
+        if (! $source || ($arm['source_model_hash'] ?? null) !== app(SpecialistCouncilContractService::class)->modelHash($source)
+            || ($arm['strategy'] ?? null) !== $source->strategy || ($arm['family'] ?? null) !== $this->schemas->family($source->strategy)
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($arm['parameters'] ?? null, (array) $source->parameters)) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_ORIGINAL_ARM_MODEL_DRIFT');
+        }
+        $validated = $this->schemas->validate($source->strategy, (array) $source->parameters);
+        if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($validated, (array) $source->parameters)) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_CLONE_REQUIRES_PARAMETER_RENORMALIZATION');
+        }
+        return $source;
+    }
+
+    private function authorizedCouncilPanelMarker(array $intent): array
+    {
+        return [...\Illuminate\Support\Arr::only($intent, ['protocol', 'work_item_id', 'work_key', 'reservation_hash',
+            'window_key', 'window_ordinal', 'source_version_id', 'evaluator_id', 'intent_hash']),
+            'panel_version_id' => null, 'plan_hash' => null, 'arm_units' => [],
+            'authority' => 'research_only', 'promotion_evidence' => false];
+    }
+
+    /** Only the original reservation's still-unused sibling drafts may coexist. */
+    private function sameReservedCouncilPanel(?LabGeneration $generation, ?array $intent): bool
+    {
+        return self::reservedAuthorizedPanelOwnerMatches($generation, $intent);
+    }
+
+    /** Pure original-constructor proof shared with admission; a label-only draft never owns a panel. */
+    public static function reservedAuthorizedPanelOwnerMatches(?LabGeneration $generation, ?array $intent): bool
+    {
+        if ($generation === null || $intent === null || $generation->status !== 'research_reserved') return false;
+        $owner = data_get($generation->trigger_context, 'specialist_council_authorized_panel');
+        $stored = data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent');
+        if (! is_array($owner) || ! is_array($stored) || ! is_array($stored['arm_roots'] ?? null)
+            || count($stored['arm_roots']) < 5 || count($stored['arm_roots']) > 12
+            || ($stored['intent_hash'] ?? null) !== app(ResearchPaperEpochContractService::class)->parameterHash(array_diff_key($stored, ['intent_hash' => true]))
+            || ($stored['current_source_hash'] ?? null) !== ($intent['current_source_hash'] ?? null)
+            || ($stored['current_python_source_hash'] ?? null) !== ($intent['current_python_source_hash'] ?? null)
+            || ($owner['intent_hash'] ?? null) !== $stored['intent_hash']
+            || (int) $generation->population_size !== count($stored['arm_roots'])
+            || ($owner['work_item_id'] ?? null) !== $intent['work_item_id']
+            || ($stored['work_item_id'] ?? null) !== $intent['work_item_id']
+            || ($stored['work_key'] ?? null) !== $intent['work_key']
+            || ($stored['reservation_hash'] ?? null) !== $intent['reservation_hash']
+            || ! (bool) data_get(app(ImmutableGenerationContractService::class)->validate($generation), 'valid', false)
+            || data_get($generation->trigger_context, 'immutable_generation_contract.protocol') !== ImmutableGenerationContractService::PROTOCOL) return false;
+        $valid = ($owner['work_item_id'] ?? null) === $intent['work_item_id']
+            && ($owner['work_key'] ?? null) === $intent['work_key'] && ($owner['reservation_hash'] ?? null) === $intent['reservation_hash']
+            && $generation->trigger_type === self::AUTHORIZED_COUNCIL_PANEL_TRIGGER
+            && ! $generation->agents()->where('lifecycle_status', '!=', 'draft')->exists()
+            && ! \App\Models\LabEvaluationRun::where('lab_generation_id', $generation->id)->exists();
+        if (! $valid) return false;
+        $agents = $generation->agents()->with('modelVersion')->get();
+        if ($agents->count() !== count($stored['arm_roots'])) return false;
+        $slots = []; $evidence = app(LabImmutableEvidenceService::class);
+        foreach ($agents as $agent) {
+            $seed = data_get($agent->modelVersion?->metadata, 'authorized_specialist_council_panel_seed');
+            $slot = is_array($seed) ? ($seed['construction_slot'] ?? null) : null;
+            $arm = is_int($slot) ? (array_values($stored['arm_roots'])[$slot - 1] ?? null) : null;
+            if (! is_array($arm) || isset($slots[$slot]) || $agent->origin !== 'authorized_council_panel_root'
+                || ($seed['lab_generation_id'] ?? null) !== $generation->id || ($seed['intent_hash'] ?? null) !== $stored['intent_hash']
+                || ($seed['arm_key'] ?? null) !== $arm['arm_key'] || ($seed['source_model_hash'] ?? null) !== $arm['source_model_hash']) return false;
+            $source = ModelVersion::find($arm['source_model_version_id'] ?? 0);
+            if (! $source || ($arm['source_model_hash'] ?? null) !== app(SpecialistCouncilContractService::class)->modelHash($source)
+                || ! $evidence->equivalentJsonValue($source->parameters, $agent->modelVersion->parameters)
+                || ! $evidence->equivalentJsonValue($evidence->modelRuntimeBasis($source), $evidence->modelRuntimeBasis($agent->modelVersion))
+                || ! $evidence->equivalentJsonValue(data_get($source->metadata, 'instrument_research_assignment'), data_get($agent->modelVersion->metadata, 'instrument_research_assignment'))) return false;
+            $slots[$slot] = true;
+        }
+        return true;
+    }
+
+    private function authorizedCouncilPanelSeedPlan(array $intent): array
+    {
+        return array_map(fn (array $arm, int $index): array => [
+            'family' => $arm['family'], 'origin' => 'authorized_council_panel_root', 'target' => 'portfolio_router',
+            'niche' => ['protocol' => self::AUTHORIZED_COUNCIL_PANEL_INTENT_PROTOCOL, 'control_only' => true,
+                'role' => 'authorized_panel_'.$arm['kind'], 'promotion_evidence' => false,
+                'authorized_specialist_council_panel_seed' => [...$this->authorizedCouncilPanelMarker($intent),
+                    'construction_slot' => $index + 1, 'arm_key' => $arm['arm_key'], 'kind' => $arm['kind'],
+                    'source_model_version_id' => $arm['source_model_version_id'], 'source_model_hash' => $arm['source_model_hash']]],
+        ], array_values($intent['arm_roots']), array_keys(array_values($intent['arm_roots'])));
+    }
+
     /** Six unused references for one future atomic council question, not six qualified specialists. */
     private function nativeCouncilSeedPlan(AiLaboratory $lab, array $intent): array
     {
@@ -5365,13 +5598,17 @@ class LabPopulationService
     }
 
     /** The continuation is a verified prospective research vector, never genetic parent authority. */
-    private function nativeCouncilFollowupResolution(array $intent, bool $requiresLease = false): array
+    private function nativeCouncilFollowupResolution(array $intent, bool $requiresLease = false, ?int $generationId = null): array
     {
         $work = \App\Models\ResearchExperimentWorkItem::find($intent['followup_work_item_id'] ?? 0);
         if (! $work || ! is_string($intent['followup_resolution_hash'] ?? null)
             || ($requiresLease && ($work->status !== 'leased' || ! $work->lease_token
-                || ! $work->lease_expires_at || $work->lease_expires_at->isPast()))) {
+                || ! $work->lease_expires_at || ! $work->lease_expires_at->isFuture()))) {
             throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED');
+        }
+        if ($this->nativeFollowupConstructorInvocation && $this->nativeFollowupInvocationProof !== null) {
+            $this->assertNativeFollowupInvocationCurrent($intent, $this->nativeFollowupInvocationProof, $generationId);
+            return $this->nativeFollowupInvocationProof['proof'];
         }
         $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($work);
         if (($proof['executable'] ?? false) !== true
@@ -5380,7 +5617,42 @@ class LabPopulationService
             || ($intent['research_question'] ?? null) !== ($proof['research_question'] ?? null)) {
             throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_PROOF_INVALID');
         }
+        // Expensive proof may outlast the original lease. Never persist even
+        // the first slot merely because its entry check preceded expiry.
+        if ($requiresLease || $this->nativeFollowupConstructorInvocation) {
+            $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($work->fresh());
+            $memo = ['proof' => $proof, 'work_id' => $work->id, 'lease_token' => $work->lease_token,
+                'fence_version' => (int) $work->fence_version, 'source_binding' => $binding];
+            $this->assertNativeFollowupInvocationCurrent($intent, $memo, $generationId);
+            if ($this->nativeFollowupConstructorInvocation) $this->nativeFollowupInvocationProof = $memo;
+        }
         return $proof;
+    }
+
+    /** Cheap per-slot and persistence fence; no lease extension or cross-invocation cache. */
+    private function assertNativeFollowupInvocationCurrent(array $intent, array $memo, ?int $generationId = null): void
+    {
+        $query = \App\Models\ResearchExperimentWorkItem::whereKey($memo['work_id']);
+        if (DB::transactionLevel() > 0) $query->lockForUpdate();
+        $current = $query->first();
+        if (! $current || $current->status !== 'leased' || ! $current->lease_expires_at?->isFuture()
+            || ! is_string($current->lease_token) || $current->lease_token === ''
+            || $current->lease_token !== $memo['lease_token'] || (int) $current->fence_version !== $memo['fence_version']
+            || $current->id !== ($intent['followup_work_item_id'] ?? null)
+            || data_get($current->payload, 'followup_resolution.resolution_hash') !== ($intent['followup_resolution_hash'] ?? null)) {
+            throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED');
+        }
+        $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($current);
+        if ($binding !== $memo['source_binding']) throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_CHANGED_DURING_CONSTRUCTION');
+        if ($ownedId = $generationId ?? (int) ($memo['proof']['owned_generation_id'] ?? 0)) {
+            app(SpecialistCouncilResearchFeedbackService::class)->assertUnobservedConstructorBinding($current, $ownedId);
+        }
+        foreach ((array) ($memo['proof']['native_source_models'] ?? []) as $spec) {
+            $source = ModelVersion::find($spec['model_version_id']);
+            if (! $source || app(SpecialistCouncilContractService::class)->modelHash($source) !== ($spec['model_hash'] ?? null)) {
+                throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_VECTOR_CHANGED_DURING_CONSTRUCTION');
+            }
+        }
     }
 
     /** Existing lineage recovery remains a separate bounded semantic-root plan. */
@@ -6673,6 +6945,81 @@ class LabPopulationService
         };
     }
 
+    /** An original, fully-attested native arm clone within the canonical per-seat transaction. */
+    private function createAuthorizedCouncilPanelAgent(LabGeneration $generation, string $family, string $origin,
+        int $slot, string $target, array $niche): bool
+    {
+        $intent = $this->authorizedCouncilPanelProof((array) data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent', []));
+        $arm = array_values($intent['arm_roots'])[$slot - 1] ?? null;
+        $seed = (array) data_get($niche, 'authorized_specialist_council_panel_seed', []);
+        if ($origin !== 'authorized_council_panel_root' || $target !== 'portfolio_router' || ! is_array($arm)
+            || $family !== $arm['family'] || ($seed['construction_slot'] ?? null) !== $slot
+            || ($seed['arm_key'] ?? null) !== $arm['arm_key'] || ($seed['source_model_hash'] ?? null) !== $arm['source_model_hash']
+            || ($seed['intent_hash'] ?? null) !== $intent['intent_hash'] || ($seed['reservation_hash'] ?? null) !== $intent['reservation_hash']) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_SLOT_PREREGISTRATION_INVALID');
+        }
+        $source = $this->authorizedCouncilPanelSource($arm);
+        $this->publishConstructorStage($generation, $slot, 'seat_started');
+        // Preserve every physical runtime/assignment owner, including the old
+        // council runtime binding. The global unobserved panel preparation owns
+        // its controlled rebinding; stripping it here would change the program.
+        // Old outcome/evaluation/credit/parent identities are not inherited.
+        $metadata = \Illuminate\Support\Arr::only((array) $source->metadata, [
+            'architecture', 'strategy_architecture', 'base_strategy', 'tactic', 'tactic_contract',
+            'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'risk_governor',
+            'trade_management', 'execution_contract', 'runtime_ensemble', 'agent_constitution',
+            'specialist_context_contract', 'contextual_specialist_cell', 'contextual_specialist_contract',
+            'session_specialist_contract', 'regime_specialist_contract', 'specialist_council', 'smart_composition',
+            'specialist_council_membership', 'causal_learning_cohort', 'instrument_research_assignment',
+            'instrument_learning_policy',
+        ]);
+        $metadata['lab_symbol'] = $generation->laboratory->symbol;
+        $metadata['lab_timeframe'] = $generation->laboratory->timeframe;
+        $metadata['authorized_specialist_council_panel_seed'] = [...$seed, 'lab_generation_id' => (int) $generation->id,
+            'physical_program_hash' => app(ResearchPaperEpochContractService::class)->parameterHash(
+                app(LabImmutableEvidenceService::class)->modelRuntimeBasis($source)),
+            'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+        $metadata['parent_mentor_broker'] = ['parameter_baseline_source' => 'original_preregistered_native_arm',
+            'parent_tier' => 'no_parent', 'authority' => 'research_only', 'promotion_evidence' => false];
+        $metadata['mutation_constructor_invariant'] = ['protocol' => 'agent_constructor_invariant_v1',
+            'kind' => 'exact_preregistered_panel_arm', 'source_model_version_id' => $source->id,
+            'source_model_hash' => $arm['source_model_hash'], 'zero_diff_expected' => true,
+            'causal_baseline_is_genetic_parent' => false, 'promotion_evidence' => false];
+        $this->publishConstructorStage($generation, $slot, 'model_persistence');
+        $model = ModelVersion::create(['name' => 'authorized_panel_g'.$generation->generation.'_a'.str_pad((string) $slot, 2, '0', STR_PAD_LEFT),
+            'strategy' => $source->strategy, 'version' => 'panel_g'.$generation->generation.'_a'.$slot,
+            'generation' => $generation->generation, 'status' => 'testing', 'parameters' => (array) $source->parameters,
+            'description' => 'Prospective original native arm; no inherited outcome or authority.', 'metadata' => $metadata]);
+        $this->sealParameterIntegrity($model, $family);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'parent_a_model_version_id' => null, 'parent_b_model_version_id' => null,
+            'symbol' => $generation->laboratory->symbol, 'timeframe' => $generation->laboratory->timeframe,
+            'strategy_family' => $family, 'origin' => $origin, 'lifecycle_status' => 'draft', 'parameter_diff' => []]);
+        $model->refresh();
+        $this->assertAuthorizedCouncilPanelPhysicalClone($model, $source);
+        app(LearningKernelService::class)->openEpisode($agent, ['decision_key' => 'generation:'.$generation->id.':agent:'.$agent->id,
+            'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $family,
+            'stage' => 'mutation_selection', 'decision' => 'CONTROL',
+            'context' => ['original_panel_work_item_id' => $intent['work_item_id'], 'window_key' => $intent['window_key'],
+                'arm_key' => $arm['arm_key'], 'research_only' => true],
+            'parameter_hash' => $this->parameterFingerprint($family, (array) $model->parameters)]);
+        $this->publishConstructorStage($generation, $slot, 'post_persistence_contracts');
+        return true;
+    }
+
+    private function assertAuthorizedCouncilPanelPhysicalClone(ModelVersion $model, ModelVersion $source): void
+    {
+        $evidence = app(LabImmutableEvidenceService::class);
+        if (! $evidence->equivalentJsonValue($model->parameters, $source->parameters)
+            || ! $evidence->equivalentJsonValue($evidence->modelRuntimeBasis($model), $evidence->modelRuntimeBasis($source))
+            || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'instrument_research_assignment'), data_get($source->metadata, 'instrument_research_assignment'))
+            || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'specialist_council_membership.contextual_cell'), data_get($source->metadata, 'specialist_council_membership.contextual_cell'))
+            || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'causal_learning_cohort'), data_get($source->metadata, 'causal_learning_cohort'))
+            || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'smart_composition.composition_passport'), data_get($source->metadata, 'smart_composition.composition_passport'))) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_PERSISTED_PHYSICAL_PROGRAM_DRIFT');
+        }
+    }
+
     private function createAgent(
         LabGeneration $generation,
         string $family,
@@ -6688,6 +7035,10 @@ class LabPopulationService
         $failureReason = null;
         $lab = $generation->laboratory;
         $niche ??= [];
+        if (data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent') !== null
+            || data_get($niche, 'authorized_specialist_council_panel_seed') !== null || $origin === 'authorized_council_panel_root') {
+            return $this->createAuthorizedCouncilPanelAgent($generation, $family, $origin, $slot, $target, $niche);
+        }
         $nativeSeed = (array) data_get($niche, 'native_specialist_council_seed', []);
         $nativeIntent = (array) data_get($generation->trigger_context, 'native_specialist_council_intent', []);
         $nativeCouncilRoot = $nativeSeed !== [] || $nativeIntent !== [];
@@ -6712,7 +7063,7 @@ class LabPopulationService
                 return false;
             }
             if (isset($nativeIntent['followup_work_item_id'])) {
-                $resolution = $this->nativeCouncilFollowupResolution($nativeIntent, true);
+                $resolution = $this->nativeCouncilFollowupResolution($nativeIntent, true, $generation->id);
                 $role = ['scalp', 'hour', 'day', 'swing', 'day', 'day'][$slot - 1];
                 $nativeFollowupSource = $resolution['native_source_models'][$role] ?? null;
                 if (! is_array($nativeFollowupSource) || ($nativeFollowupSource['family'] ?? null) !== $family
@@ -8986,6 +9337,7 @@ class LabPopulationService
                     === ProofFrontierService::PHASE_PROBE_REFREEZE_PROTOCOL
                     ? [(string) data_get($niche, 'phase_scope_probe.prospective_passport_hash', '')] : []),
             ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)) : null;
+        if ($nativeFollowupSource !== null) $this->nativeCouncilFollowupResolution($nativeIntent, true, $generation->id);
         $model = ModelVersion::create([
             'name' => $strategy, 'strategy' => $strategy, 'version' => 'v'.$generation->generation,
             'generation' => $generation->generation, 'status' => 'testing', 'parameters' => $parameters,
@@ -9798,6 +10150,7 @@ class LabPopulationService
         // this immutable experiment intent so later screening/full-replay
         // evidence can settle a named causal claim rather than only a cohort.
         app(LearningReceiptService::class)->issue($agent->fresh(['modelVersion', 'generation']), $decisionPacket);
+        if ($nativeFollowupSource !== null) $this->nativeCouncilFollowupResolution($nativeIntent, true, $generation->id);
         $this->publishConstructorStage($generation, $slot, 'seat_complete');
 
         return true;

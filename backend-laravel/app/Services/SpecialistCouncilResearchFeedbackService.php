@@ -22,6 +22,8 @@ class SpecialistCouncilResearchFeedbackService
 
     public const FOLLOWUP_PROTOCOL = 'specialist_council_followup_resolution_v1';
 
+    public const SOURCE_AMENDMENT_PROTOCOL = 'specialist_council_unobserved_source_amendment_v1';
+
     public const FOLLOWUP_TYPES = ['specialist_council_technical_repair', 'specialist_council_data_repair',
         'specialist_council_power_extension', 'specialist_council_independent_validation', 'specialist_council_descendant_transfer'];
 
@@ -261,10 +263,9 @@ class SpecialistCouncilResearchFeedbackService
                 || ($body['fresh_model_attestation_required'] ?? null) !== true) {
                 throw new LogicException('COUNCIL_FOLLOWUP_ORIGINAL_RESOLUTION_DRIFT');
             }
-            if (! hash_equals($body['current_source_hash'], app(LabImmutableEvidenceService::class)->codeHash())
-                || ! hash_equals($body['current_python_source_hash'], app(ResearchReleaseSealService::class)->pythonHash())) {
-                throw new LogicException('COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED');
-            }
+            // Operational source repairs append a separate original proof;
+            // the scientific resolution and its original hash never change.
+            $sourceBinding = $this->inspectFollowupSourceBinding($work);
             $unobservedProof = ($body['scientific_question_kind'] ?? null) === 'unobserved_same_question_source_repair'
                 ? $this->unobservedTechnicalProof($receipt, $version, $original) : null;
             if ($unobservedProof !== null && $this->epochs->parameterHash($unobservedProof)
@@ -310,6 +311,9 @@ class SpecialistCouncilResearchFeedbackService
             }
             return ['protocol' => self::FOLLOWUP_PROTOCOL, 'status' => 'ready', 'executable' => true,
                 ...$body, 'owned_generation_id' => $generation?->id,
+                'effective_source_hash' => $sourceBinding['source_hash'],
+                'effective_python_source_hash' => $sourceBinding['python_source_hash'],
+                'operational_source_amendment_hash' => $sourceBinding['amendment_hash'],
                 'native_intent' => ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL,
                     'purpose' => 'research', 'symbol' => 'XAUUSD', 'storage_timeframe' => 'H1', 'population_size' => 6,
                     'creator_id' => $body['creator_id'], 'research_question' => $body['research_question'],
@@ -318,6 +322,262 @@ class SpecialistCouncilResearchFeedbackService
         } catch (\Throwable $error) {
             return $this->followupBlocked($error instanceof LogicException ? $error->getMessage() : 'COUNCIL_FOLLOWUP_OWNER_PROOF_UNAVAILABLE');
         }
+    }
+
+    /**
+     * Public, append-only repair of an unobserved constructor attempt. This
+     * does not retune a question, extend a lease, create a generation, alter
+     * original evidence or authorize independently confirmed/paper skill.
+     */
+    public function amendUnobservedFollowupSource(int $workItemId, int $generationId, string $actor, string $reason): array
+    {
+        if (! preg_match('/^[A-Za-z0-9_.:-]{1,120}$/D', $actor)
+            || trim($reason) === '' || strlen($reason) > 500 || trim($reason) !== $reason) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ATTRIBUTION_REQUIRED');
+        }
+        return DB::transaction(function () use ($workItemId, $generationId, $actor, $reason): array {
+            $work = ResearchExperimentWorkItem::whereKey($workItemId)->lockForUpdate()->firstOrFail();
+            [$receipt] = $this->followupOriginal($work);
+            $body = $this->assertSignedFollowupResolution($work);
+            if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)
+                || ! in_array($work->status, ['blocked', 'ready'], true) || $work->lease_token !== null
+                || $work->completed_at !== null || (int) $work->attempts >= 8
+                || ! in_array($work->last_error, ['COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT',
+                    'COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED', 'COUNCIL_FOLLOWUP_NEEDS_CONSTRUCTION_CONTINUATION'], true)) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_UNLEASED_OPERATIONAL_ATTEMPT');
+            }
+            $generation = LabGeneration::whereKey($generationId)->lockForUpdate()->firstOrFail();
+            $snapshot = $this->unobservedNativeConstructorSnapshot($work, $body, $generation);
+            $source = app(LabImmutableEvidenceService::class)->codeHash();
+            $python = app(ResearchReleaseSealService::class)->pythonHash();
+            $amendments = (array) data_get($work->payload, 'followup_source_amendments', []);
+            $prior = $amendments === [] ? null : end($amendments);
+            if ($prior !== null) {
+                $this->assertSourceAmendmentChain($work, $body, $amendments);
+                if (($prior['source_hash'] ?? null) === $source && ($prior['python_source_hash'] ?? null) === $python) {
+                    return ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'status' => 'already_registered',
+                        'work_item_id' => $work->id, 'generation_id' => $generation->id,
+                        'resolution_hash' => $body['resolution_hash'], 'amendment_hash' => $prior['amendment_hash'],
+                        'promotion_evidence' => false];
+                }
+            }
+            if (count($amendments) >= 3 || ! preg_match('/^[a-f0-9]{64}$/D', $source)
+                || ! preg_match('/^[a-f0-9]{64}$/D', $python)
+                || ($source === $body['current_source_hash'] && $python === $body['current_python_source_hash'])) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_BOUNDED_CHANGED_VERIFIED_SOURCE');
+            }
+            $releases = app(ResearchReleaseSealService::class);
+            $sourceArtifact = $releases->currentSourceArtifact() ?? $releases->buildSourceArtifact();
+            $sourceVerified = $releases->verifySourceArtifact($sourceArtifact, true);
+            if (($sourceVerified['status'] ?? null) !== 'verified'
+                || ($sourceArtifact['source_hash'] ?? null) !== $source
+                || ($sourceArtifact['python_source_hash'] ?? null) !== $python) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_CURRENT_ARCHIVE_REQUIRED');
+            }
+            $amendment = ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'work_item_id' => $work->id,
+                'work_key' => $work->work_key, 'source_receipt_id' => $receipt->id,
+                'generation_id' => $generation->id, 'original_resolution_hash' => $body['resolution_hash'],
+                'original_resolution_body_hash' => $this->epochs->parameterHash($body),
+                'previous_amendment_hash' => $prior['amendment_hash'] ?? null,
+                'original_source_hash' => $body['current_source_hash'],
+                'original_python_source_hash' => $body['current_python_source_hash'],
+                'source_hash' => $source, 'python_source_hash' => $python,
+                'source_artifact' => $sourceArtifact,
+                'native_constructor_snapshot' => $snapshot, 'registered_at' => now()->utc()->toIso8601String(),
+                'registered_by' => $actor, 'reason' => $reason,
+                'operation' => 'bounded_unobserved_native_constructor_repair',
+                'authority' => 'research_only', 'new_scientific_attempt' => false,
+                'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+            $amendment['amendment_hash'] = $this->epochs->parameterHash($amendment);
+            $amendment['server_seal'] = $this->sourceAmendmentSeal($amendment);
+            $artifact = app(LabImmutableEvidenceService::class)->recordArtifact(null, self::SOURCE_AMENDMENT_PROTOCOL,
+                $amendment, ['generation_id' => $generation->id, 'work_item_id' => $work->id,
+                    'promotion_evidence' => false], $generation->agents()->orderBy('id')->first());
+            $amendments[] = [...$amendment, 'artifact_id' => $artifact->artifact_id, 'artifact_sha256' => $artifact->sha256];
+            $work->update(['payload' => [...(array) $work->payload, 'followup_source_amendments' => $amendments]]);
+            return ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'status' => 'registered',
+                'work_item_id' => $work->id, 'generation_id' => $generation->id,
+                'resolution_hash' => $body['resolution_hash'], 'amendment_hash' => $amendment['amendment_hash'],
+                'artifact_id' => $artifact->artifact_id, 'promotion_evidence' => false];
+        });
+    }
+
+    /** Cheap original source fence; never substitutes for full readiness/admission. */
+    public function inspectFollowupSourceBinding(ResearchExperimentWorkItem $work): array
+    {
+        $body = $this->assertSignedFollowupResolution($work);
+        $amendments = (array) data_get($work->payload, 'followup_source_amendments', []);
+        $last = $amendments === [] ? null : $this->assertSourceAmendmentChain($work, $body, $amendments);
+        $source = $last['source_hash'] ?? $body['current_source_hash'];
+        $python = $last['python_source_hash'] ?? $body['current_python_source_hash'];
+        if (! hash_equals($source, app(LabImmutableEvidenceService::class)->codeHash())
+            || ! hash_equals($python, app(ResearchReleaseSealService::class)->pythonHash())) {
+            throw new LogicException('COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED');
+        }
+        return ['source_hash' => $source, 'python_source_hash' => $python,
+            'amendment_hash' => $last['amendment_hash'] ?? null,
+            'resolution_body_hash' => $this->epochs->parameterHash($body)];
+    }
+
+    /** Constructor-only fence before preparation; checks cheap original rows, never data replay readiness. */
+    public function assertUnobservedConstructorBinding(ResearchExperimentWorkItem $work, int $generationId): void
+    {
+        $body = $this->assertSignedFollowupResolution($work);
+        $generation = LabGeneration::findOrFail($generationId);
+        $current = $this->unobservedNativeConstructorSnapshot($work, $body, $generation);
+        foreach ((array) data_get($work->payload, 'followup_source_amendments', []) as $amendment) {
+            $frozen = $amendment['native_constructor_snapshot'] ?? [];
+            if (($amendment['generation_id'] ?? null) !== $generationId
+                || ($frozen['intent_hash'] ?? null) !== $current['intent_hash']
+                || ($frozen['plan_hash'] ?? null) !== $current['plan_hash']
+                || ($frozen['original_native_vectors_hash'] ?? null) !== $current['original_native_vectors_hash']) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_CONSTRUCTOR_DRIFT');
+            }
+            $roster = array_column($current['existing_roster'], null, 'agent_id');
+            foreach ((array) ($frozen['existing_roster'] ?? []) as $row) {
+                if (($roster[$row['agent_id']] ?? null) !== $row) {
+                    throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_CONSTRUCTOR_DRIFT');
+                }
+            }
+        }
+    }
+
+    private function assertSignedFollowupResolution(ResearchExperimentWorkItem $work): array
+    {
+        $body = data_get($work->payload, 'followup_resolution');
+        if (! is_array($body) || ($body['protocol'] ?? null) !== self::FOLLOWUP_PROTOCOL
+            || ($body['resolution_hash'] ?? null) !== $this->epochs->parameterHash(array_diff_key($body, ['resolution_hash' => true, 'server_seal' => true]))
+            || ! is_string($body['server_seal'] ?? null)
+            || ! hash_equals($body['server_seal'], $this->followupServerSeal(array_diff_key($body, ['server_seal' => true])))
+            || ($body['work_item_id'] ?? null) !== $work->id || ($body['work_key'] ?? null) !== $work->work_key
+            || ($body['source_receipt_id'] ?? null) !== $work->research_experiment_receipt_id
+            || ($body['authority'] ?? null) !== 'research_only' || ($body['max_experiments'] ?? null) !== 1
+            || ($body['promotion_evidence'] ?? null) !== false || ($body['independent_evidence_claimed'] ?? null) !== false) {
+            throw new LogicException('COUNCIL_FOLLOWUP_ORIGINAL_RESOLUTION_DRIFT');
+        }
+        return $body;
+    }
+
+    private function assertSourceAmendmentChain(ResearchExperimentWorkItem $work, array $body, array $amendments): array
+    {
+        if (! array_is_list($amendments) || count($amendments) > 3) throw new LogicException('COUNCIL_SOURCE_AMENDMENT_CHAIN_INVALID');
+        $previous = null;
+        foreach ($amendments as $entry) {
+            if (! is_array($entry)) throw new LogicException('COUNCIL_SOURCE_AMENDMENT_CHAIN_INVALID');
+            $original = array_diff_key($entry, ['artifact_id' => true, 'artifact_sha256' => true]);
+            $unsigned = array_diff_key($original, ['amendment_hash' => true, 'server_seal' => true]);
+            $artifact = LabEvidenceArtifact::where('artifact_id', $entry['artifact_id'] ?? '')->first();
+            if (($entry['protocol'] ?? null) !== self::SOURCE_AMENDMENT_PROTOCOL
+                || ($entry['work_item_id'] ?? null) !== $work->id || ($entry['work_key'] ?? null) !== $work->work_key
+                || ($entry['source_receipt_id'] ?? null) !== $work->research_experiment_receipt_id
+                || ($entry['original_resolution_hash'] ?? null) !== $body['resolution_hash']
+                || ($entry['original_resolution_body_hash'] ?? null) !== $this->epochs->parameterHash($body)
+                || ($entry['previous_amendment_hash'] ?? null) !== $previous
+                || ($entry['original_source_hash'] ?? null) !== $body['current_source_hash']
+                || ($entry['original_python_source_hash'] ?? null) !== $body['current_python_source_hash']
+                || ($entry['operation'] ?? null) !== 'bounded_unobserved_native_constructor_repair'
+                || ($entry['authority'] ?? null) !== 'research_only' || ($entry['new_scientific_attempt'] ?? null) !== false
+                || ($entry['independent_evidence_claimed'] ?? null) !== false || ($entry['promotion_evidence'] ?? null) !== false
+                || ($entry['amendment_hash'] ?? null) !== $this->epochs->parameterHash($unsigned)
+                || ! is_string($entry['server_seal'] ?? null)
+                || ! hash_equals($entry['server_seal'], $this->sourceAmendmentSeal(array_diff_key($original, ['server_seal' => true])))
+                || ! $artifact || $artifact->artifact_type !== self::SOURCE_AMENDMENT_PROTOCOL
+                || $artifact->sha256 !== ($entry['artifact_sha256'] ?? null)
+                || $this->epochs->parameterHash(app(LabImmutableEvidenceService::class)->readArtifactPayload($artifact))
+                    !== $this->epochs->parameterHash($original)
+                || LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)
+                    ->whereKey($entry['generation_id'] ?? 0)->doesntExist()) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_PROOF_INVALID');
+            }
+            $archive = (array) ($entry['source_artifact'] ?? []);
+            if (($archive['source_hash'] ?? null) !== $entry['source_hash']
+                || ($archive['python_source_hash'] ?? null) !== $entry['python_source_hash']
+                || (app(ResearchReleaseSealService::class)->verifySourceArtifact($archive)['status'] ?? null) !== 'verified') {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_INVALID');
+            }
+            $previous = $entry['amendment_hash'];
+        }
+        return $entry;
+    }
+
+    private function sourceAmendmentSeal(array $body): string
+    {
+        $key = (string) config('services.internal_api.token');
+        if (strlen($key) < 32) throw new LogicException('COUNCIL_FOLLOWUP_SERVER_SEAL_KEY_UNAVAILABLE');
+        return hash_hmac('sha256', self::SOURCE_AMENDMENT_PROTOCOL."\n".$this->epochs->parameterHash($body), $key);
+    }
+
+    private function unobservedNativeConstructorSnapshot(ResearchExperimentWorkItem $work, array $body, LabGeneration $generation): array
+    {
+        $owned = LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)->pluck('id')->all();
+        $intent = (array) data_get($generation->trigger_context, 'native_specialist_council_intent', []);
+        $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
+        $roles = ['source_scalp', 'source_hour', 'source_day', 'source_swing', 'candidate_carrier', 'ablation_carrier'];
+        if ($owned !== [$generation->id] || ! in_array($generation->status, ['draft', 'technical_quarantine'], true)
+            || ($intent['followup_resolution_hash'] ?? null) !== $body['resolution_hash']
+            || ($intent['creator_id'] ?? null) !== $body['creator_id'] || ($intent['research_question'] ?? null) !== $body['research_question']
+            || ($intent['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+            || ($intent['population_size'] ?? null) !== 6 || ($intent['authority'] ?? null) !== 'research_only'
+            || ($intent['promotion_evidence'] ?? null) !== false || ($intent['independent_evidence_claimed'] ?? null) !== false
+            || ($intent['intent_hash'] ?? null) !== $this->epochs->parameterHash(array_diff_key($intent, ['intent_hash' => true]))
+            || count($plan) !== 6 || ! array_is_list($plan)
+            || data_get($generation->trigger_context, 'specialist_council_preparation') !== null
+            || data_get($generation->trigger_context, 'research_release') !== null
+            || ($work->result && (data_get($work->result, 'stage') !== 'constructed'
+                || data_get($work->result, 'generation_id') !== $generation->id
+                || data_get($work->result, 'resolution_hash') !== $body['resolution_hash']))) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_EXACT_UNOBSERVED_SIX_SEAT_INTENT');
+        }
+        foreach ($plan as $slot => $definition) {
+            $seed = (array) data_get($definition, 'niche.native_specialist_council_seed', []);
+            $role = ['scalp', 'hour', 'day', 'swing', 'day', 'day'][$slot];
+            if (($definition['origin'] ?? null) !== 'native_council_root'
+                || ($seed['slot_role'] ?? null) !== $roles[$slot] || ($seed['intent_hash'] ?? null) !== $intent['intent_hash']
+                || ($seed['followup_work_item_id'] ?? null) !== $work->id
+                || ($seed['followup_resolution_hash'] ?? null) !== $body['resolution_hash']
+                || $this->epochs->parameterHash(data_get($definition, 'niche.native_council_followup_source'))
+                    !== $this->epochs->parameterHash($body['native_source_models'][$role])) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_FROZEN_PLAN_DRIFT');
+            }
+        }
+        foreach ($body['native_source_models'] as $spec) {
+            $source = ModelVersion::find($spec['model_version_id']);
+            if (! $source || $this->contracts->modelHash($source) !== $spec['model_hash']) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_NATIVE_SOURCE_DRIFT');
+            }
+        }
+        $agents = $generation->agents()->with('modelVersion')->orderBy('id')->get();
+        $ids = $agents->pluck('model_version_id')->all();
+        if (LabEvaluationRun::where('lab_generation_id', $generation->id)->orWhereIn('model_version_id', $ids)->exists()
+            || LabAgent::whereIn('model_version_id', $ids)->where('lab_generation_id', '!=', $generation->id)->exists()) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_COHORT_ALREADY_OBSERVED');
+        }
+        $roster = []; $seen = [];
+        foreach ($agents as $agent) {
+            $model = $agent->modelVersion; $seed = (array) data_get($model?->metadata, 'native_specialist_council_seed', []);
+            $slot = array_search($seed['slot_role'] ?? null, $roles, true);
+            $role = $slot === false ? null : ['scalp', 'hour', 'day', 'swing', 'day', 'day'][$slot];
+            if (! $model || $slot === false || isset($seen[$slot]) || $agent->origin !== 'native_council_root'
+                || $agent->parent_a_model_version_id !== null || $agent->parent_b_model_version_id !== null
+                || ($seed['lab_generation_id'] ?? null) !== $generation->id
+                || ($seed['intent_hash'] ?? null) !== $intent['intent_hash']
+                || ($seed['followup_work_item_id'] ?? null) !== $work->id
+                || ($seed['followup_resolution_hash'] ?? null) !== $body['resolution_hash']
+                || ! in_array($agent->lifecycle_status, ['draft', 'technical_quarantine'], true)
+                || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($model->parameters, $body['native_source_models'][$role]['parameters'])
+                || data_get($model->metadata, 'strategy_architecture') !== $body['native_source_models'][$role]['strategy_architecture']
+                || data_get($model->metadata, 'base_strategy') !== $body['native_source_models'][$role]['base_strategy']
+                || $agent->strategy_family !== $body['native_source_models'][$role]['family']) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_CONSTRUCTED_NATIVE_VECTOR_DRIFT');
+            }
+            $seen[$slot] = true;
+            $roster[] = ['agent_id' => $agent->id, 'model_version_id' => $model->id, 'slot_role' => $roles[$slot],
+                'model_hash' => $this->contracts->modelHash($model)];
+        }
+        return ['generation_id' => $generation->id, 'intent_hash' => $intent['intent_hash'],
+            'plan_hash' => $this->epochs->parameterHash($plan), 'planned_slots' => 6,
+            'existing_roster' => $roster, 'original_native_vectors_hash' => $this->epochs->parameterHash($body['native_source_models']),
+            'run_count' => 0, 'prepared' => false, 'scientific_outcomes_observed' => false];
     }
 
     private function followupOriginal(ResearchExperimentWorkItem $work): array

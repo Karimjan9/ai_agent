@@ -92,6 +92,9 @@ class InstrumentResearchWindowService
             'independent_evidence' => false,
             'promotion_evidence' => false,
         ];
+        if (data_get($request, 'policy_context.specialist_council_authorized_arm') !== null) {
+            $identity['original_council_arm'] = $this->originalCouncilArm($persisted, $request, $files, $window);
+        }
         $key = (string) config('services.internal_api.token', '');
         if (strlen($key) < 32) throw new RuntimeException('RESEARCH_TRANSPORT_INTERNAL_KEY_UNAVAILABLE');
         $canonical = $this->transportJson($identity);
@@ -101,6 +104,109 @@ class InstrumentResearchWindowService
             'hmac_sha256' => hash_hmac('sha256', self::TRANSPORT_PROTOCOL."\n".$canonical, $key),
         ];
         return $request;
+    }
+
+    /** Only the persisted original plan/roster can issue the full-arm route. */
+    private function originalCouncilArm(LabGeneration $generation, array $request, array $files, array $window): array
+    {
+        $strategies = array_values((array) ($request['strategies'] ?? []));
+        $marker = (array) data_get($generation->trigger_context, 'specialist_council_authorized_panel', []);
+        $binding = $strategies[0]['specialist_council_evaluation'] ?? null;
+        if (count($strategies) !== 1 || ! is_array($binding)
+            || ($marker['protocol'] ?? '') !== SpecialistCouncilAuthorizedArmExecutionService::OWNER_PROTOCOL
+            || (int) ($marker['panel_version_id'] ?? 0) !== (int) ($binding['version_id'] ?? 0)
+            || ($marker['plan_hash'] ?? '') !== ($binding['plan_hash'] ?? null)
+            || ($marker['window_key'] ?? '') !== $window['window_key']) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_COUNCIL_OWNER_REQUIRED');
+        }
+        $unit = collect((array) $marker['arm_units'])->firstWhere('arm_key', $binding['arm_key']);
+        if (! is_array($unit)) throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_COUNCIL_UNIT_REQUIRED');
+        $model = \App\Models\ModelVersion::findOrFail((int) ($unit['model_version_id'] ?? 0));
+        $agent = \App\Models\LabAgent::find((int) ($strategies[0]['lab_agent_id'] ?? 0));
+        $row = \Illuminate\Support\Facades\DB::table('specialist_council_evaluation_plans')
+            ->where('specialist_council_version_id', $binding['version_id'])->first();
+        $plan = $row ? json_decode($row->plan, true, 512, JSON_THROW_ON_ERROR) : [];
+        $arm = $plan['arms'][$binding['arm_key']] ?? [];
+        $epochs = app(ResearchPaperEpochContractService::class);
+        $lifecycle = app(SpecialistCouncilLifecycleService::class);
+        $evidence = app(LabImmutableEvidenceService::class);
+        if (! is_array($unit) || ! $agent || (int) $agent->lab_generation_id !== (int) $generation->id
+            || (int) $agent->model_version_id !== (int) $model->id || (int) $unit['lab_agent_id'] !== (int) $agent->id
+            || ($plan['purpose'] ?? '') !== 'independent' || $row->plan_hash !== $binding['plan_hash']
+            || $epochs->parameterHash($plan) !== $row->plan_hash || $row->evaluator_id !== ($marker['evaluator_id'] ?? '')
+            || ($arm['evaluation_phase'] ?? '') !== 'full_validation' || ($arm['window_key'] ?? '') !== $window['window_key']
+            || ($arm['model_hash'] ?? '') !== app(SpecialistCouncilContractService::class)->modelHash($model)
+            || $arm['model_hash'] !== ($unit['model_hash'] ?? null)
+            || ! $evidence->equivalentJsonValue($binding, $lifecycle->evaluationBindingForModel($model, $window['dataset_sha256']))) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_COUNCIL_PLAN_DRIFT');
+        }
+        if (($strategies[0]['strategy'] ?? null) !== $model->strategy || ($strategies[0]['version'] ?? null) !== $model->version
+            || ! $evidence->equivalentJsonValue((array) ($strategies[0]['parameters'] ?? []), (array) $model->parameters)
+            || ! $evidence->equivalentJsonValue((array) ($strategies[0]['instrument_research_assignment'] ?? []),
+                (array) data_get($model->metadata, 'instrument_research_assignment', []))) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_COUNCIL_PHYSICAL_PROGRAM_DRIFT');
+        }
+        $manifest = (array) ($request['mtf_snapshot_manifest'] ?? []);
+        $bundle = ['bundle_hash' => $manifest['bundle_hash'] ?? null, 'manifest' => $manifest,
+            'entry_dataset_path' => $request['dataset_path'], 'dataset_paths' => (array) ($request['mtf_dataset_paths'] ?? [])];
+        $native = data_get($model->metadata, 'specialist_council');
+        $compiler = app(LabAgentEvaluationService::class);
+        $expectedProgram = $native === null
+            ? $compiler->specialistCouncilMemberPayload($model, $request['timeframe'], $bundle,
+                $window['dataset_sha256'], $request['symbol'])
+            : ['base_strategy' => app(StrategyParameterSchemaService::class)->runtimeBaseStrategy(
+                    $model->strategy, data_get($model->metadata, 'base_strategy'), $agent->strategy_family),
+                'composition_runtime_contract' => $compiler->compositionRuntimeContract($agent,
+                    (array) data_get($model->metadata, 'instrument_research_assignment', []), $request['timeframe'],
+                    $bundle, $window['dataset_sha256']),
+                'specialist_context_contract' => (array) data_get($model->metadata, 'specialist_council_membership.contextual_cell', [])];
+        foreach (['base_strategy', 'composition_runtime_contract', 'specialist_context_contract'] as $key) {
+            // JSON objects and database arrays share the same transported
+            // meaning; do not omit a frozen passport/context while signing.
+            $normalize = static fn (mixed $value): mixed => json_decode(json_encode($value,
+                JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+            if (! $evidence->equivalentJsonValue($normalize($strategies[0][$key] ?? []),
+                $normalize($expectedProgram[$key] ?? []))) {
+                throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_RUNTIME_PROGRAM_DRIFT:'.$key);
+            }
+        }
+        if ($native !== null && ! $evidence->equivalentJsonValue((array) ($strategies[0]['specialist_council_contract'] ?? []),
+            $lifecycle->runtimeContractForModel($model, $request['timeframe'], $window['dataset_sha256'],
+                $plan['execution_hash'], $bundle, $request['symbol']))) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_NATIVE_PROGRAM_DRIFT');
+        }
+        if ($native === null && ! empty($strategies[0]['specialist_council_contract'])) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_SOLO_CANNOT_BECOME_NATIVE_COUNCIL');
+        }
+        // Reapply the original owner: this verifies actual cash, cost/risk and
+        // native account policies, not just caller declarations.
+        $checked = $lifecycle->bindEvaluationRequestForModel($model, $request);
+        if (! $evidence->equivalentJsonValue($checked, $request)) throw new RuntimeException('RESEARCH_TRANSPORT_COUNCIL_RUNTIME_POLICY_DRIFT');
+        $primary = $files[$request['timeframe']] ?? null;
+        $scope = $arm['evaluation_scope'] ?? null;
+        $policy = $plan['full_replay_runtime_policy'] ?? null;
+        $seconds = app(SpecialistCouncilContractService::class)->timeframeSeconds($request['timeframe']);
+        if (! is_array($primary) || ! is_array($scope) || ! is_array($policy)
+            || $scope['rows'] !== $primary['rows'] || $scope['decision_rows'] !== $primary['rows'] - 1
+            || $scope['warmup_rows'] !== 0 || $scope['policy_hash'] !== $epochs->parameterHash($policy)
+            || ! CarbonImmutable::parse($scope['start_inclusive'])->equalTo(CarbonImmutable::parse($primary['start_inclusive']))
+            || ! CarbonImmutable::parse($scope['end_exclusive'])->equalTo(CarbonImmutable::parse($primary['last_candle_at'])->addSeconds($seconds))) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_COUNCIL_ACTUAL_FULL_SCOPE_MISMATCH');
+        }
+        $json = static fn (array $value): string => json_encode($value,
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        return ['protocol' => 'authorized_original_council_arm_v1', 'purpose' => 'independent',
+            'generation_id' => (int) $generation->id, 'work_item_id' => (int) $marker['work_item_id'],
+            'reservation_hash' => $marker['reservation_hash'], 'version_id' => (int) $binding['version_id'],
+            'manifest_hash' => $binding['manifest_hash'], 'plan_hash' => $binding['plan_hash'],
+            'arm_key' => $binding['arm_key'], 'kind' => $arm['kind'], 'window_key' => $window['window_key'],
+            'model_version_id' => (int) $model->id, 'model_hash' => $arm['model_hash'],
+            'strategy_payload_json' => $json($strategies[0]), 'runtime_policy_json' => $json($policy),
+            'evaluation_scope_json' => $json($scope), 'shared_runtime_json' => $json([
+                'initial_balance' => $request['initial_balance'], 'risk_per_trade' => $request['risk_per_trade'],
+                'execution' => $request['execution'], 'execution_contract' => $request['execution_contract'],
+                'volume_context' => (array) ($request['volume_context'] ?? []), 'emit_decision_trace' => $request['emit_decision_trace'],
+            ]), 'independent_evidence' => false, 'promotion_evidence' => false];
     }
 
     /** Read/hash the same bytes; every input, including warmup/related data, is scoped. */
@@ -179,6 +285,35 @@ class InstrumentResearchWindowService
         }
         ksort($files, SORT_STRING);
         return $files;
+    }
+
+    /** Pure pre-construction proof of an original server-registered full MTF window. */
+    public function verifySealedReplayWindow(array $window, array $manifest): array
+    {
+        if (! $this->authorized($window, (string) ($manifest['bundle_hash'] ?? ''))
+            || CarbonImmutable::parse((string) ($window['start_inclusive'] ?? ''))->lessThan('2027-01-01T00:00:00Z')) {
+            throw new RuntimeException('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW');
+        }
+        $registries = array_values(array_filter((array) config('services.instrument_policy.authorized_research_windows', []),
+            fn ($row): bool => is_array($row) && ($row['authorization_id'] ?? null) === $window['authorization_id']));
+        if (count($registries) !== 1 || $manifest === []
+            || $this->transportJson($manifest) !== $this->transportJson($registries[0]['mtf_bundle_manifest'] ?? null)) {
+            throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_SERVER_STREAM_REGISTRY_REQUIRED');
+        }
+        $streams = (array) ($manifest['streams'] ?? []);
+        $paths = [];
+        foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+            if (! is_string($streams[$timeframe]['path'] ?? null)) {
+                throw new RuntimeException('RESEARCH_TRANSPORT_REQUIRED_CLOSED_STREAM_MISSING:'.$timeframe);
+            }
+            $paths[$timeframe] = $streams[$timeframe]['path'];
+        }
+        $files = $this->transportFiles(['timeframe' => 'M5', 'dataset_path' => $paths['M5'],
+            'replay_dataset_hash' => $manifest['bundle_hash'], 'mtf_snapshot_manifest' => $manifest,
+            'mtf_dataset_paths' => $paths], $window);
+        return ['protocol' => 'authorized_panel_original_input_proof_v1', 'window_key' => $window['window_key'],
+            'dataset_hash' => $window['dataset_sha256'], 'files' => $files,
+            'independent_evidence' => false, 'promotion_evidence' => false];
     }
 
     private function transportPath(string $path): string

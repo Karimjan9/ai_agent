@@ -76,6 +76,9 @@ from app.services.research_release import (
     attest as attest_research_release, health_receipt as research_source_health,
     verify_research_transport,
 )
+from app.services.authorized_council_arm import (
+    original_arm_identity, result_scope_current, run_original_full_arm,
+)
 from app.services.statistical_validation import (
     deflated_sharpe_ratio,
     per_trade_sharpe,
@@ -354,7 +357,8 @@ def _candidate_cache_payload(
     # This is a Laravel scheduling/runtime budget envelope, not a strategy
     # execution input. Cohort size changes during bounded recovery must not
     # invalidate an already completed candidate's deterministic replay cache.
-    candidate_policy.pop("full_replay_runtime_policy", None)
+    if candidate_policy.get('specialist_council_authorized_arm') is None:
+        candidate_policy.pop("full_replay_runtime_policy", None)
     return strategy_payload.model_copy(
         update={
             "policy_context": candidate_policy,
@@ -401,6 +405,18 @@ def _candidate_cache_contract_is_current(
     result = cached_item.get("result")
     if not isinstance(result, dict):
         return False
+    transport = verify_research_transport(payload, _internal_api_token())
+    # A candidate cache payload has collapsed strategies; the original batch
+    # identity was verified before cache lookup. Scope still must be current.
+    arm = (transport or {}).get('original_council_arm')
+    if arm is not None:
+        try:
+            expected = {**arm, 'original_scope': json.loads(arm['evaluation_scope_json']),
+                        'primary': transport['files'][payload.timeframe]}
+        except (KeyError, TypeError, ValueError):
+            return False
+        if not result_scope_current(result, expected):
+            return False
     received = result.get("execution_contract")
     if not isinstance(received, dict):
         return False
@@ -706,7 +722,8 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
     # Direct child/standalone paths also authenticate before any checkpoint or
     # candidate-cache return, not just after a cache miss loads source_df.
     _assert_clean_discovery_boundary(payload)
-    verify_research_transport(payload, _internal_api_token())
+    transport = verify_research_transport(payload, _internal_api_token())
+    authorized_arm = original_arm_identity(payload, transport)
     if payload.specialist_council_contract and len(payload.strategies) > 1:
         raise ValueError("SPECIALIST_COUNCIL_BATCH_REQUIRES_PER_CANDIDATE_CONTRACTS")
     timing_started = time.perf_counter()
@@ -1038,7 +1055,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     mode=payload.evaluation_mode,
                     rows=len(source_df),
                 )
-            if strategy_payload.specialist_council_contract:
+            if authorized_arm is not None:
+                analysis = run_original_full_arm(strategy_payload, source_df, authorized_arm, run_timed)
+            elif strategy_payload.specialist_council_contract:
                 # Each candidate seals a complete council. Running the legacy
                 # candidate strategy independently would erase ownership and
                 # alter the common account/decision clock.
@@ -1796,6 +1815,12 @@ def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, ob
 
 def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
     """Return a deadline that is shorter than the Laravel transport budget."""
+    if (payload.policy_context or {}).get('specialist_council_authorized_arm') is not None:
+        signed = verify_research_transport(payload, _internal_api_token())
+        original = original_arm_identity(payload, signed)
+        # One actual arm, not a legacy multi-lane hour-long training replay.
+        # Leave bounded publication/HTTP margin inside the original 600s cap.
+        return min(570, original['original_policy']['maximum_runtime_seconds'])
     runtime_identifiers = [payload.strategy, payload.base_strategy, payload.version]
     for member in [*payload.strategies, *payload.portfolio_members]:
         runtime_identifiers.extend(
@@ -2066,7 +2091,8 @@ def _run_bounded_replay(
     # child. A fresh child cannot attest stale imports in its parent process.
     attest_research_release(payload.research_release, dataset_hash=payload.replay_dataset_hash,
                             execution_hash=payload.execution_contract.get("execution_hash"))
-    verify_research_transport(payload, _internal_api_token())
+    transport = verify_research_transport(payload, _internal_api_token())
+    authorized_arm = original_arm_identity(payload, transport)
 
     # The replay compiler is intentionally content addressed.  It is safe to
     # reuse only an *identical* payload under the same evaluator code digest;
@@ -2077,6 +2103,12 @@ def _run_bounded_replay(
     cached = _load_immutable_replay_cache(cache_key)
     if cached is not None:
         assert_sealed_dataset_cache_sources(payload)
+        if authorized_arm is not None:
+            entries = cached.get("leaderboard") if isinstance(cached, dict) else None
+            if (not isinstance(entries, list) or len(entries) != 1
+                    or not result_scope_current(entries[0].get("result") or {}, authorized_arm)):
+                cached = None
+    if cached is not None:
         _last_replay_stage_timings = {"cache_hit": 1.0}
         _last_replay_finished_at = pd.Timestamp.now(tz="UTC").isoformat()
         _last_replay_termination = "cache_hit"

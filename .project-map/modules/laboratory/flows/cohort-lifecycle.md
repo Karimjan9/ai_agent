@@ -22,14 +22,37 @@ identify one cohort; losing an intent projection cannot permit a second build.
 Ready original follow-up work precedes generic settlement of that unfinished
 draft. Actual queue admission, not a command return code, closes the work item.
 
-Independent/descendant follow-up references are validated separately against
-the original evaluator, windows, native programs and external/scientific policy.
-They remain non-executable without the canonical authorized-window cohort
-producer and original generation-terminal adapter. This is a code prerequisite,
-not just a data wait: ordinary construction cannot produce several fresh drafts
-at once, and finishing immutable runs alone cannot close those drafts. Refusal
-precedes ownership or readiness mutation; the existing historical six-reference
-discovery constructor is not relabelled into independent confirmation.
+Independent follow-up uses a server-owned panel reservation, not caller-shaped
+generation/arm references. Three completed, authorized, unused and disjoint
+windows and their actual M5/H4/H1/M15 bytes must be verified before registration.
+The same canonical constructor reserves one window cohort per bounded delivery,
+then atomically seals all original candidate/champion/solo/retention/ablation
+arms, source, common cost/risk and actual evaluation scopes before any replay.
+That first preparation delivery checkpoints all original requests and returns
+retryably with `COUNCIL_PANEL_ORIGINAL_PREPARATION_SEALED`, without HTTP. The
+next fresh lease revalidates the same preparation before starting the first arm;
+neither renewing an expired lease nor shortening the sealed scope is permitted.
+The existing arbiter resumes the original work, ahead of generic lifecycle;
+one signed full-window arm is executed per delivery. Durable original run
+checkpoints skip terminal arms, never recompute them as independent evidence.
+Only original complete comparisons can close the panel and its cohorts.
+The work owner also re-reads all three canonical cohort closures. An unknown or
+pending owned queue/settlement saves a terminal-projection checkpoint and defers
+completion; retry consumes the same original runs and exam, with no extra HTTP.
+Missing authorized data remains blocked; discovery is not relabelled as
+independent confirmation. Legacy caller-shaped references remain refused.
+Descendant transfer additionally needs a qualified original parent and exact
+P/P+T/P+T+U/P+U program provenance; the legacy reference path alone is not a
+canonical descendant producer.
+
+Initial native-discovery work leases are 2700 seconds only after fresh locked
+server proof; other work retains the 900-second lease. No lease is renewed.
+The constructor may reuse a full proof only inside its same held-lock invocation;
+current source, vectors and lease token/fence are checked again around every
+persistence. A source-only amendment for an unobserved incomplete cohort is
+append-only, archive/HMAC-backed and preserves the original resolution and
+scientific question. Any prior run, preparation, release or vector drift refuses
+that path. Expired workers cannot publish checkpoints or completion.
 
 Learning/evolution support proof uses a separate preregistered native-question
 benchmark, not an upgrade of historical fold evidence. Exact policy-axis

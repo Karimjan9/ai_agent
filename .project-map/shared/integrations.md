@@ -29,6 +29,10 @@ strategy payload. Python's strict object schema stays unchanged: explicit
 null, list or scalar declarations are rejected, and an invalid persisted
 native binding throws before ordinary fallback. A real PHP-serialized payload
 is parsed by the Python schema in the transport regression test.
+On the response side, the schema's empty default council receipt means absence
+only for an original unbound program with no native request declaration.
+Requested/bound native execution still requires its original valid receipt;
+an unsolicited nonempty receipt is refused. This does not relax request types.
 
 Council follow-up proof registration is an existing-owner CLI operation, not
 queue or population creation. Only the server-sealed original work, current
@@ -37,13 +41,42 @@ The conversion kernel rechecks these prerequisites before the sole arbiter
 claims the work. The work consumer delegates to canonical construction,
 preparation and dispatch; an exit-zero CLI without its durable batch witness
 does not complete the work. Original request/response and prior-credit records
-are never rewritten. The separate independent/descendant reference validator
-checks exact original full-window transport, external/scientific policy and
-native control/ablation/retention identities. It refuses registration without
-the canonical authorized-window cohort producer and terminal adapter; no owner
-marker or executable projection is written. These explicit code prerequisites
-are separate from absent authorized datasets. A discovery snapshot or source
-relabel cannot become a post-paper full-window release.
+are never rewritten. The independent server reservation verifies original
+post-paper window registry seals, complete MTF source bytes and non-exposure.
+Canonical reserved cohorts share one global plan and immutable request hashes.
+The initial global preparation is a separate bounded delivery: it seals every
+request and defers without Python HTTP. Only a fresh, current work lease may
+revalidate the saved preparation and start an original arm. Expired preparation
+ownership cannot spend the next delivery's replay budget.
+Each arm uses a signed `original_council_arm` transport suffix derived from the
+actual original model/plan/window/scope, never a caller authority flag. Full
+solo/control and native council routes use the same original source clock and
+common cost/capital/risk policy; ordinary walk-forward behavior is unchanged.
+The native loop emits its actual source-clock decision IDs, closed member
+inputs and contemporaneous veto/fill stages, plus the actual trade ledger.
+Only bounded inspection fields are duplicated in each clock row; full closed
+input hashes and column counts remain sealed for every source/member decision.
+No clock, member or actual stage is sampled away to reduce transport size.
+Laravel reads the original immutable evaluation request to verify the owned
+scope and native trace identity; a producer flag or mutable request projection
+cannot replace that owner. Original full arms start at index 1 with zero warmup;
+native discovery probes retain their actual sealed warmup and decision rows.
+The ordinary 200-candle trace boundary remains unchanged. The typed authorized
+MTF-window bundle also requires the private authenticated original source proof;
+an unsigned future bundle cannot use its protocol name as authorization.
+The original producer must measure its account from actual events; missing
+measurements cannot be zero-filled into a successful comparison. The arbiter's
+fenced work owns one arm per delivery and original terminal settlement.
+Only the already-authenticated original full helper issues the private quote
+calendar proof. Default pre-2026 and literal-2026 restrictions are unchanged;
+exact source rows, including quote columns, must still match the loader witness.
+Future calendar admission proves neither provider observation availability nor
+independence. Signed HTF quote columns remain source-sealed, without a claim of
+separately validated observed HTF liquidity. Unbound strategy payloads omit both
+optional council objects; explicit null/list/scalar declarations stay invalid.
+Legacy reference-only input remains refused, and descendant transfer retains
+its original-parent/four-program proof requirements. A discovery snapshot or
+source relabel cannot become a post-paper full-window release.
 
 The native learning/evolution policy adapter preregisters original question
 references, exact axis ablation and equal resource caps. Original immutable

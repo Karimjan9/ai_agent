@@ -70,7 +70,8 @@ def probe_contract(request, frame, warmup=8):
         "loaded_rows": len(frame), "warmup_rows": warmup, "evaluated_rows": len(frame) - warmup,
         "loaded_start": stamp(frame.iloc[0]["time"]), "loaded_end": stamp(frame.iloc[-1]["time"]),
         "evaluated_start": stamp(frame.iloc[warmup]["time"]), "evaluated_end": stamp(frame.iloc[-1]["time"]),
-        "evaluated_month_counts": {"2025-01": len(frame) - warmup}}
+        "evaluated_month_counts": {key: int(value) for key, value in
+            frame.iloc[warmup:]['time'].dt.strftime('%Y-%m').value_counts().sort_index().items()}}
     return {**body, "contract_hash": hashlib.sha256(json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()}
 
 
@@ -78,6 +79,71 @@ class SpecialistCouncilTest(unittest.TestCase):
     def replay(self, request, frame, strategy=deterministic_strategy):
         with patch("app.services.backtester.get_strategy", return_value=strategy):
             return run_simple_ema_rsi_backtest_on_dataframe(request, frame)
+
+    def test_actual_native_trace_covers_decisions_and_publishes_real_trade_ledger(self):
+        request, frame = fixtures(execution=ExecutionConfig(stop_loss_percent=2, take_profit_percent=5,
+            max_leverage=5, commission_percent=0.1, swap_per_day_percent=0.2))
+        request.emit_decision_trace = True
+        result = self.replay(request, frame)
+        trace = result.decision_trace
+        receipt = result.specialist_council_receipt
+        self.assertEqual([row['candle_index'] for row in trace], list(range(1, len(frame))))
+        self.assertEqual(len(result.trade_ledger), result.total_trades)
+        self.assertGreater(result.total_trades, 0)
+        self.assertGreater(receipt['account']['fees'], 0)
+        self.assertEqual(receipt['decision_trace_identity']['trace_hash'], canonical_hash(trace))
+        fill_ids = {member['position_id'] for row in trace for member in row['member_decisions'] if member['accepted']}
+        self.assertEqual(fill_ids, {row['position_id'] for row in receipt['position_ledger']})
+        self.assertTrue(any(row['state']['owned_positions_at_open'] for row in trace))
+        for row in trace:
+            self.assertEqual(row['decision_id'], canonical_hash(row['source_clock']))
+            self.assertLessEqual(len(row['features']), 6)
+            self.assertEqual(len(row['closed_source_inputs_hash']), 64)
+            self.assertTrue(all(member['closed_inputs']['time'] == row['signal_time'] for member in row['member_decisions']))
+            self.assertTrue(all(len(member['closed_inputs']) <= 8 and len(member['closed_inputs_hash']) == 64
+                and member['closed_input_columns'] > len(member['closed_inputs']) for member in row['member_decisions']))
+
+    def test_bounded_native_inspection_keeps_omitted_closed_inputs_hash_bound(self):
+        from app.services import backtester
+        from app.services.specialist_council import _closed_trace_input, MEMBER_TRACE_FIELDS
+        original = {'time': pd.Timestamp('2025-01-06T00:00:00Z'), 'close': 100.0, 'unshown_input': 1.0}
+        changed = {**original, 'unshown_input': 2.0}
+        before, before_hash, columns = _closed_trace_input(original, MEMBER_TRACE_FIELDS, backtester)
+        after, after_hash, after_columns = _closed_trace_input(changed, MEMBER_TRACE_FIELDS, backtester)
+        self.assertEqual(before, after)
+        self.assertEqual(columns, after_columns)
+        self.assertNotEqual(before_hash, after_hash)
+
+    def test_native_15000_row_probe_trace_uses_actual_512_warmup_clock(self):
+        from app.services.execution_contract import PROTOCOL as EXECUTION_PROTOCOL
+        request, small = fixtures([member('hour')])
+        request.timeframe = 'M5'
+        request.evaluation_mode = 'incremental'
+        request.emit_decision_trace = True
+        request.execution_contract = execution_contract_metadata(request)
+        request.execution_contract['protocol'] = EXECUTION_PROTOCOL
+        request.execution_contract = execution_contract_metadata(request)
+        body = {key: value for key, value in request.specialist_council_contract.items() if key != 'contract_hash'}
+        body.update(execution_timeframe='M5', execution_hash=request.execution_contract['execution_hash'])
+        request.specialist_council_contract = seal_contract(body)
+        frame = pd.concat([small.iloc[[0]]] * 15512, ignore_index=True)
+        frame['time'] = pd.date_range('2025-01-06', periods=15512, freq='5min', tz='UTC')
+        request.policy_context['prospective_probe_window'] = probe_contract(request, frame, warmup=512)
+        def wait(source, parameters):
+            output = source.copy()
+            output['signal'] = 'WAIT'
+            output['signal_confidence'] = 0.0
+            return output
+        result = self.replay(request, frame, wait)
+        scope = result.specialist_council_receipt['evaluated_scope']
+        self.assertEqual(scope['rows'], 15000)
+        self.assertEqual(scope['decision_rows'], 14999)
+        self.assertEqual([row['candle_index'] for row in result.decision_trace], list(range(513, 15512)))
+        self.assertEqual(result.decision_trace[0]['signal_time'], frame.iloc[512]['time'].isoformat())
+        self.assertEqual(result.decision_trace[-1]['execution_time'], frame.iloc[-1]['time'].isoformat())
+        self.assertTrue(result.data_quality['decision_trace']['complete'])
+        self.assertEqual(result.data_quality['decision_trace']['input_candle_count'], 15512)
+        self.assertEqual(result.total_trades, 0)
 
     def test_swing_stays_open_while_short_members_trade_on_shared_account(self):
         request, frame = fixtures()

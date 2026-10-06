@@ -66,6 +66,7 @@ PY;
     {
         $payload = $this->payload($this->sourceAgent());
         $this->assertArrayNotHasKey('specialist_council_contract', $payload);
+        $this->assertArrayNotHasKey('specialist_council_evaluation', $payload);
         $parsed = $this->parse([$payload]);
         $this->assertTrue($parsed['valid']);
         $this->assertSame([[]], $parsed['contracts']);
@@ -105,5 +106,16 @@ PY;
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
         $this->payload($this->sourceAgent(['specialist_council' => ['version_id' => 99999, 'manifest_hash' => str_repeat('a', 64)]]));
+    }
+
+    public function test_null_list_or_scalar_original_evaluation_binding_is_not_an_unbound_source(): void
+    {
+        $payload = $this->payload($this->sourceAgent());
+        foreach ([null, [], 'arm'] as $invalid) {
+            $parsed = $this->parse([[...$payload, 'specialist_council_evaluation' => $invalid]]);
+            $this->assertFalse($parsed['valid']);
+            $this->assertSame(['loc' => ['strategies', 0, 'specialist_council_evaluation'], 'type' => 'dict_type'],
+                $parsed['errors'][0]);
+        }
     }
 }

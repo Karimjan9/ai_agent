@@ -2970,8 +2970,8 @@ class LabAgentEvaluationService
         // The strict Python field accepts an object when declared, not JSON
         // null. Absence is the ordinary source path. Do not cast a missing
         // contract to [] or weaken validation of a declared native council.
-        if ($payload['specialist_council_contract'] === null) {
-            unset($payload['specialist_council_contract']);
+        foreach (['specialist_council_contract', 'specialist_council_evaluation'] as $field) {
+            if ($payload[$field] === null) unset($payload[$field]);
         }
 
         return $payload;

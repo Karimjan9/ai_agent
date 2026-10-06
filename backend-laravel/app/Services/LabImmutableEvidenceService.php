@@ -449,6 +449,26 @@ class LabImmutableEvidenceService
         }
         $expected = is_int($input) && $input >= 0 ? max(0, $input - 200) : null;
         $reasons = [];
+        $firstIndex = 200;
+        $scope = $this->ownedDecisionTraceScope($response, $run);
+        if ($scope !== null) {
+            $reasons = [...$reasons, ...$scope['reason_codes']];
+            $firstIndex = $scope['first_index'];
+            $expected = $scope['decision_rows'];
+            if (($producer['input_candle_count'] ?? null) !== $scope['source_rows']
+                || ($producer['first_candle_index'] ?? null) !== $firstIndex
+                || ($producer['warmup_rows'] ?? null) !== $scope['warmup_rows']
+                || ($producer['scope_owner'] ?? null) !== $scope['owner']) {
+                $reasons[] = 'DECISION_TRACE_OWNED_CLOCK_MISMATCH';
+            }
+            if (! is_string($producer['trace_hash'] ?? null) || $events === null
+                || $producer['trace_hash'] !== app(ResearchPaperEpochContractService::class)->parameterHash($trace)) {
+                $reasons[] = 'DECISION_TRACE_HASH_MISMATCH';
+            }
+            if (! $this->decisionTraceScopesAgree((array) ($producer['evaluated_scope'] ?? []), $scope['scope'])) {
+                $reasons[] = 'DECISION_TRACE_SCOPE_COPY_MISMATCH';
+            }
+        }
         if ($events === null) $reasons[] = 'DECISION_TRACE_NOT_A_LIST';
         if (($producer['protocol'] ?? null) !== 'candle_decision_trace_v1') $reasons[] = 'DECISION_TRACE_PROTOCOL_MISSING_OR_UNSUPPORTED';
         if (($producer['requested'] ?? null) !== true || ($producer['complete'] ?? null) !== true) $reasons[] = 'DECISION_TRACE_PRODUCER_INCOMPLETE';
@@ -465,18 +485,21 @@ class LabImmutableEvidenceService
                     continue;
                 }
                 if (! in_array($event['event_type'] ?? null, ['signal_evaluation', 'position_management'], true)) continue;
-                if (! is_int($event['candle_index'] ?? null) || $event['candle_index'] < 200
+                if (! is_int($event['candle_index'] ?? null) || $event['candle_index'] < $firstIndex
                     || ! is_string($event['candle_time'] ?? null) || $event['candle_time'] === '') {
                     $reasons[] = 'DECISION_TRACE_CANDLE_IDENTITY_MISSING';
                     continue;
+                }
+                if ($scope !== null && ! $this->ownedTraceEventCurrent($event, $scope)) {
+                    $reasons[] = 'DECISION_TRACE_OWNED_EVENT_IDENTITY_MISMATCH';
                 }
                 $covered[$event['candle_index']] = true;
             }
         }
         $coverage = count($covered);
         if (is_int($evaluated) && $evaluated >= 0) {
-            if ($coverage !== $evaluated || ($coverage > 0 && (min(array_keys($covered)) !== 200
-                || max(array_keys($covered)) !== 199 + $evaluated))) {
+            if ($coverage !== $evaluated || ($coverage > 0 && (min(array_keys($covered)) !== $firstIndex
+                || max(array_keys($covered)) !== $firstIndex - 1 + $evaluated))) {
                 $reasons[] = 'DECISION_TRACE_CANDLE_COVERAGE_MISMATCH';
             }
             if ($evaluated === 0 && $events !== 0) $reasons[] = 'DECISION_TRACE_ZERO_COVERAGE_HAS_EVENTS';
@@ -487,8 +510,211 @@ class LabImmutableEvidenceService
             'reason_codes' => $reasons, 'event_count' => $events, 'evaluated_candle_count' => $evaluated,
             'covered_candle_count' => $coverage, 'producer_protocol' => $producer['protocol'] ?? null,
             'expected_evaluated_candle_count' => $expected,
+            'first_candle_index' => $firstIndex, 'scope_owner' => $scope['owner'] ?? 'legacy_200_candle_clock',
             'requested' => $producer['requested'] ?? null, 'producer_complete' => $producer['complete'] ?? null,
             'audit_slice' => ($producer['audit_slice'] ?? false) === true, 'promotion_evidence' => false];
+    }
+
+    /** Scope comes from the original immutable request and native receipt. */
+    private function ownedDecisionTraceScope(array $response, ?LabEvaluationRun $run): ?array
+    {
+        $producer = (array) data_get($response, 'data_quality.decision_trace', []);
+        $native = data_get($response, 'specialist_council_receipt');
+        $qualityNative = data_get($response, 'data_quality.specialist_council_receipt');
+        $marker = data_get($run?->request_meta, 'payload.policy_context.specialist_council_authorized_arm');
+        // Standalone ordinary diagnostics keep the legacy clock. A persisted
+        // run must inspect its one immutable request before selecting legacy;
+        // removing response hints or mutable projections cannot erase an
+        // original native/armed declaration or an unavailable modern owner.
+        if ($run === null && $native === null && $qualityNative === null && $marker === null
+            && ! isset($producer['scope_owner'])) return null;
+        $result = ['reason_codes' => [], 'owner' => is_array($native) ? 'native_specialist_council_v1' : 'authorized_original_council_arm_v1',
+            'first_index' => 1, 'decision_rows' => null, 'source_rows' => null, 'warmup_rows' => null,
+            'scope' => [], 'native' => null, 'timeframe' => ''];
+        try {
+            if ($run === null) throw new RuntimeException('ORIGINAL_REQUEST_REQUIRED');
+            $artifacts = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->limit(2)->get();
+            if ($artifacts->count() !== 1 || data_get($artifacts[0]->metadata, 'request_hash') !== $run->request_hash) {
+                throw new RuntimeException('ORIGINAL_REQUEST_ARTIFACT_REQUIRED');
+            }
+            $request = $this->readArtifactPayload($artifacts[0]);
+            if (! is_array($request)) throw new RuntimeException('ORIGINAL_REQUEST_BYTES_REQUIRED');
+            $contracts = [];
+            $nativeRequested = array_key_exists('specialist_council_contract', $request);
+            if (is_array($request['specialist_council_contract'] ?? null)) $contracts[] = $request['specialist_council_contract'];
+            foreach ((array) ($request['strategies'] ?? []) as $candidate) {
+                if (! is_array($candidate)
+                    || (isset($candidate['lab_agent_id']) && (int) $candidate['lab_agent_id'] !== (int) $run->lab_agent_id)) continue;
+                if (array_key_exists('specialist_council_contract', $candidate)) $nativeRequested = true;
+                if (is_array($candidate['specialist_council_contract'] ?? null)) $contracts[] = $candidate['specialist_council_contract'];
+            }
+            // Optional response dictionaries serialize as {} and decode as [].
+            // Only the original request can establish that this is an absent
+            // native claim; an explicit malformed request declaration still
+            // requires a real native producer and never becomes solo evidence.
+            if (! $nativeRequested && ($native === null || $native === [])
+                && ($qualityNative === null || $qualityNative === [])) {
+                $native = null;
+                $result['owner'] = 'authorized_original_council_arm_v1';
+            } elseif (! $nativeRequested || ! is_array($native) || $native === []) {
+                throw new RuntimeException('NATIVE_REQUEST_RECEIPT_OWNER_MISMATCH');
+            }
+            $epochs = app(ResearchPaperEpochContractService::class);
+            $declared = data_get($request, 'policy_context.specialist_council_authorized_arm');
+            $signed = data_get($request, 'policy_context.authorized_research_transport.original_council_arm');
+            if ($native === null && $declared === null && $signed === null && ! isset($producer['scope_owner'])) return null;
+            $expectedScope = null;
+            $sourceRows = null;
+            if ($declared !== null || $signed !== null) {
+                if (! is_array($declared) || ! is_array($signed) || ($request['evaluation_mode'] ?? null) !== 'full'
+                    || ($signed['protocol'] ?? null) !== 'authorized_original_council_arm_v1'
+                    || ($signed['independent_evidence'] ?? null) !== false || ($signed['promotion_evidence'] ?? null) !== false) {
+                    throw new RuntimeException('ORIGINAL_ARM_OWNER_INVALID');
+                }
+                $expectedScope = json_decode($signed['evaluation_scope_json'] ?? '', true, flags: JSON_THROW_ON_ERROR);
+                $policy = (array) data_get($request, 'policy_context.full_replay_runtime_policy', []);
+                foreach (['plan_hash', 'arm_key', 'window_key', 'model_hash'] as $key) {
+                    if (($declared[$key] ?? null) !== ($signed[$key] ?? null)) throw new RuntimeException('ORIGINAL_ARM_IDENTITY_DRIFT');
+                }
+                if (! is_array($expectedScope) || ! $this->decisionTraceScopesAgree((array) ($declared['evaluation_scope'] ?? []), $expectedScope)
+                    || ($expectedScope['policy_hash'] ?? null) !== $epochs->parameterHash($policy)
+                    || ($expectedScope['warmup_rows'] ?? null) !== 0) throw new RuntimeException('ORIGINAL_ARM_SCOPE_DRIFT');
+                $sourceRows = data_get($request, 'policy_context.authorized_research_transport.files.'.($request['timeframe'] ?? '').'.rows');
+            }
+            if (is_array($native)) {
+                app(SpecialistCouncilLifecycleService::class)->assertReceiptSeal($native);
+                $owned = array_filter($contracts, fn (array $contract): bool =>
+                    ($contract['protocol'] ?? null) === 'specialist_council_runtime_v1'
+                    && ($contract['contract_hash'] ?? null) === ($native['contract_hash'] ?? null));
+                if (count($owned) !== 1 || ($native['protocol'] ?? null) !== 'specialist_council_receipt_v1'
+                    || ($native['dataset_hash'] ?? null) !== ($request['replay_dataset_hash'] ?? null)) {
+                    throw new RuntimeException('NATIVE_REQUEST_RECEIPT_OWNER_MISMATCH');
+                }
+                $nativeScope = (array) ($native['evaluated_scope'] ?? []);
+                if ($expectedScope !== null && ! $this->decisionTraceScopesAgree($nativeScope, $expectedScope)) {
+                    throw new RuntimeException('NATIVE_ORIGINAL_SCOPE_DRIFT');
+                }
+                $expectedScope ??= $nativeScope;
+                $sourceRows ??= $native['source_rows'] ?? null;
+                if ($sourceRows !== ($native['source_rows'] ?? null)) throw new RuntimeException('NATIVE_SOURCE_ROW_DRIFT');
+                $probe = data_get($request, 'policy_context.prospective_probe_window');
+                $policy = is_array($probe) ? $probe : data_get($request, 'policy_context.full_replay_runtime_policy');
+                if (is_array($probe) && (($probe['loaded_rows'] ?? null) !== $sourceRows
+                    || ($probe['warmup_rows'] ?? null) !== ($expectedScope['warmup_rows'] ?? null)
+                    || ($probe['evaluated_rows'] ?? null) !== ($expectedScope['rows'] ?? null))) {
+                    throw new RuntimeException('NATIVE_PROBE_CLOCK_DRIFT');
+                }
+                if (is_array($probe)) {
+                    $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800,
+                        'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$request['timeframe'] ?? ''] ?? null;
+                    if ($seconds === null || ! CarbonImmutable::parse($expectedScope['start_inclusive'])->equalTo(CarbonImmutable::parse($probe['evaluated_start']))
+                        || ! CarbonImmutable::parse($expectedScope['end_exclusive'])->equalTo(CarbonImmutable::parse($probe['evaluated_end'])->addSeconds($seconds))) {
+                        throw new RuntimeException('NATIVE_PROBE_BOUNDS_DRIFT');
+                    }
+                } elseif (($request['evaluation_mode'] ?? 'full') !== 'incremental'
+                    && (($expectedScope['warmup_rows'] ?? null) !== 0 || ($expectedScope['rows'] ?? null) !== $sourceRows)) {
+                    throw new RuntimeException('NATIVE_FULL_CLOCK_DRIFT');
+                }
+                if (! is_array($policy) && ($request['evaluation_mode'] ?? null) === 'incremental') {
+                    $policy = $nativeScope['selector_policy'] ?? null;
+                    $limit = $sourceRows >= 5000 ? 5000 : 2000;
+                    if (($expectedScope['rows'] ?? null) !== min($sourceRows, $limit)
+                        || ($expectedScope['warmup_rows'] ?? null) !== max(0, $sourceRows - $limit)) {
+                        throw new RuntimeException('NATIVE_TAIL_CLOCK_DRIFT');
+                    }
+                }
+                if (($expectedScope['policy_hash'] ?? null) !== (is_array($policy) ? $epochs->parameterHash($policy) : null)) {
+                    throw new RuntimeException('NATIVE_SCOPE_POLICY_DRIFT');
+                }
+                $identity = (array) ($native['decision_trace_identity'] ?? []);
+                if (($identity['protocol'] ?? null) !== 'native_council_decision_trace_v1'
+                    || ($identity['contract_hash'] ?? null) !== $native['contract_hash']
+                    || ($identity['trace_hash'] ?? null) !== ($producer['trace_hash'] ?? null)
+                    || ($identity['decision_rows'] ?? null) !== ($expectedScope['decision_rows'] ?? null)
+                    || ($identity['warmup_rows'] ?? null) !== ($expectedScope['warmup_rows'] ?? null)
+                    || ($identity['source_rows'] ?? null) !== $sourceRows
+                    || ($identity['first_candle_index'] ?? null) !== ($expectedScope['warmup_rows'] ?? 0) + 1
+                    || ($identity['last_candle_index'] ?? null) !== $sourceRows - 1
+                    || ($identity['scope_policy_hash'] ?? null) !== ($expectedScope['policy_hash'] ?? null)) {
+                    throw new RuntimeException('NATIVE_TRACE_RECEIPT_DRIFT');
+                }
+                $result['native'] = $native;
+            }
+            if (! is_array($expectedScope) || ! is_int($sourceRows) || $sourceRows < 2
+                || ! is_int($expectedScope['rows'] ?? null) || $expectedScope['rows'] < 2
+                || ! is_int($expectedScope['warmup_rows'] ?? null) || $expectedScope['warmup_rows'] < 0
+                || $expectedScope['rows'] + $expectedScope['warmup_rows'] !== $sourceRows
+                || ($expectedScope['decision_rows'] ?? null) !== $expectedScope['rows'] - 1) {
+                throw new RuntimeException('OWNED_SCOPE_ROW_BUDGET_INVALID');
+            }
+            if (! $this->decisionTraceScopesAgree((array) data_get($response, 'data_quality.replay_evaluation_scope', []), $expectedScope)) {
+                throw new RuntimeException('OWNED_RESPONSE_SCOPE_DRIFT');
+            }
+            $result = [...$result, 'scope' => $expectedScope, 'source_rows' => $sourceRows,
+                'decision_rows' => $expectedScope['decision_rows'], 'warmup_rows' => $expectedScope['warmup_rows'],
+                'first_index' => $expectedScope['warmup_rows'] + 1, 'timeframe' => $request['timeframe'] ?? ''];
+        } catch (Throwable $error) {
+            $result['reason_codes'][] = 'DECISION_TRACE_OWNED_SCOPE_INVALID:'.$error->getMessage();
+        }
+        return $result;
+    }
+
+    private function decisionTraceScopesAgree(array $left, array $right): bool
+    {
+        foreach (['rows', 'decision_rows', 'warmup_rows', 'policy_hash'] as $key) {
+            if (! array_key_exists($key, $left) || ! array_key_exists($key, $right) || $left[$key] !== $right[$key]) return false;
+        }
+        try {
+            return CarbonImmutable::parse($left['start_inclusive'])->equalTo(CarbonImmutable::parse($right['start_inclusive']))
+                && CarbonImmutable::parse($left['end_exclusive'])->equalTo(CarbonImmutable::parse($right['end_exclusive']));
+        } catch (Throwable) { return false; }
+    }
+
+    private function ownedTraceEventCurrent(array $event, array $owned): bool
+    {
+        try {
+            $scope = $owned['scope'];
+            $time = CarbonImmutable::parse($event['candle_time']);
+            $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800,
+                'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$owned['timeframe']] ?? null;
+            if ($seconds === null || $time->lessThanOrEqualTo(CarbonImmutable::parse($scope['start_inclusive']))
+                || ! $time->lessThan(CarbonImmutable::parse($scope['end_exclusive']))) return false;
+            if ($event['candle_index'] === $owned['first_index'] + $owned['decision_rows'] - 1
+                && ! $time->equalTo(CarbonImmutable::parse($scope['end_exclusive'])->subSeconds($seconds))) return false;
+            if ($owned['native'] === null) return true;
+            $native = $owned['native']; $clock = (array) ($event['source_clock'] ?? []);
+            $epochs = app(ResearchPaperEpochContractService::class);
+            if (! $this->isSha256((string) ($event['closed_source_inputs_hash'] ?? ''))
+                || ! is_int($event['closed_source_input_columns'] ?? null)
+                || $event['closed_source_input_columns'] < count((array) ($event['features'] ?? []))
+                || ($event['decision_id'] ?? null) !== $epochs->parameterHash($clock)
+                || ($clock['contract_hash'] ?? null) !== $native['contract_hash']
+                || ($clock['dataset_hash'] ?? null) !== $native['dataset_hash']
+                || ($clock['source_sha256'] ?? null) !== data_get($native, 'source_attestation.actual_source_sha256', '')
+                || ($clock['candle_index'] ?? null) !== $event['candle_index']
+                || ($clock['execution_time'] ?? null) !== $event['candle_time']
+                || ($event['execution_time'] ?? null) !== $event['candle_time']
+                || ($clock['signal_time'] ?? null) !== ($event['signal_time'] ?? null)
+                || ($clock['decision_at'] ?? null) !== ($event['decision_at'] ?? null)) return false;
+            $signal = CarbonImmutable::parse($event['signal_time']); $decision = CarbonImmutable::parse($event['decision_at']);
+            if (! $signal->addSeconds($seconds)->equalTo($decision) || $decision->greaterThan($time)) return false;
+            if ($event['candle_index'] === $owned['first_index']
+                && ! $signal->equalTo(CarbonImmutable::parse($scope['start_inclusive']))) return false;
+            $members = array_column((array) ($native['members'] ?? []), 'specialist_id', 'member_version_hash');
+            $observed = $event['member_decisions'] ?? null;
+            if (! is_array($observed) || ! array_is_list($observed) || $observed === []) return false;
+            foreach ($observed as $member) {
+                $hash = $member['member_version_hash'] ?? '';
+                if (! $this->isSha256((string) ($member['closed_inputs_hash'] ?? ''))
+                    || ! is_int($member['closed_input_columns'] ?? null)
+                    || $member['closed_input_columns'] < count((array) ($member['closed_inputs'] ?? []))
+                    || ($members[$hash] ?? null) !== ($member['specialist_id'] ?? null)
+                    || ($member['decision_id'] ?? null) !== $epochs->parameterHash([
+                        'account_decision_id' => $event['decision_id'], 'member_version_hash' => $hash])
+                    || data_get($member, 'closed_inputs.time') !== $event['signal_time']) return false;
+            }
+            return true;
+        } catch (Throwable) { return false; }
     }
 
     /**

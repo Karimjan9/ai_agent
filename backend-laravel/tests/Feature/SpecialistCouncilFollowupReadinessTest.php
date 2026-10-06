@@ -20,6 +20,7 @@ use App\Services\SpecialistCouncilPreparationService;
 use App\Services\SpecialistCouncilResearchFeedbackService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 /** Synthetic source facts isolate readiness; no test fixture claims a market qualification. */
@@ -65,6 +66,29 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('COUNCIL_FOLLOWUP_PREREGISTRATION_ALREADY_SEALED');
         $service->registerFollowupProof($work->id, $proposal);
+    }
+
+    public function test_original_server_registration_claims_bounded_discovery_lease_without_caller_authority(): void
+    {
+        $this->freezeTime();
+        [$work, $proposal] = $this->fixture();
+        $original = app(SpecialistCouncilResearchFeedbackService::class)->registerFollowupProof($work->id, $proposal, 'original-creator');
+        $kernel = app(\App\Services\ResearchExperimentConversionKernelService::class);
+        $lease = $kernel->claimForOwner(\App\Services\ResearchLoopArbiterService::class, 1)[0];
+        $this->assertSame($work->id, $lease->id);
+        $this->assertSame(2700, $lease->lease_expires_at->timestamp - now()->timestamp);
+        $this->assertSame($original['resolution_hash'], data_get($lease->payload, 'followup_resolution.resolution_hash'));
+        $this->assertFalse(data_get($lease->payload, 'promotion_evidence'));
+        $this->assertDatabaseCount('lab_generations', 0);
+        $this->assertTrue($kernel->defer($lease, 'ORIGINAL_FIXTURE_WAIT', true));
+        // A modified rehashed projection cannot inherit the longer lease: the
+        // original server signature and all original evidence are rechecked.
+        $payload = $work->fresh()->payload;
+        $payload['followup_resolution']['authority'] = 'economic_parent';
+        $work->fresh()->update(['payload' => $payload]);
+        $this->assertSame([], $kernel->claimForOwner(\App\Services\ResearchLoopArbiterService::class, 1));
+        $this->assertSame(1, $work->fresh()->attempts);
+        $this->assertNull($work->fresh()->lease_token);
     }
 
     public function test_original_assessment_redelivery_and_stale_normalization_preserve_registered_resolution(): void
@@ -138,6 +162,49 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         $result = $service->inspectFollowupReadiness($work->fresh());
         $this->assertFalse($result['executable']);
         $this->assertSame('COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED', $result['reason']);
+    }
+
+    public function test_actual_copied_source_byte_drift_refuses_original_signed_work_without_hash_mocks(): void
+    {
+        [$work, $proposal] = $this->fixture(realRuntimeHashes: true);
+        $service = app(SpecialistCouncilResearchFeedbackService::class);
+        $ready = $service->registerFollowupProof($work->id, $proposal);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $releases = app(ResearchReleaseSealService::class);
+        $originalBackend = base_path();
+        $originalStorage = storage_path();
+        $originalProject = dirname($originalBackend);
+        $mirror = sys_get_temp_dir().'/council-source-guard-'.bin2hex(random_bytes(8));
+        $directories = ['backend-laravel/app', 'backend-laravel/config', 'ai-service-python/app'];
+        try {
+            foreach ($directories as $directory) {
+                File::ensureDirectoryExists($mirror.'/'.$directory);
+                $this->assertTrue(File::copyDirectory($originalProject.'/'.$directory, $mirror.'/'.$directory));
+            }
+            foreach (['backend-laravel/composer.lock', 'backend-laravel/package-lock.json',
+                'ai-service-python/requirements.txt', 'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock'] as $file) {
+                if (is_file($originalProject.'/'.$file)) $this->assertTrue(File::copy($originalProject.'/'.$file, $mirror.'/'.$file));
+            }
+            // Only the source lookup moves. The original evidence storage and
+            // SQLite app stay in place; shared App source is never changed.
+            app()->setBasePath($mirror.'/backend-laravel');
+            app()->useStoragePath($originalStorage);
+            $this->assertSame($ready['current_source_hash'], $evidence->codeHash());
+            $this->assertSame($ready['current_python_source_hash'], $releases->pythonHash());
+            File::append($mirror.'/backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php',
+                "\n// isolated source-byte guard fixture\n");
+            $this->assertNotSame($ready['current_source_hash'], $evidence->codeHash());
+            $result = $service->inspectFollowupReadiness($work->fresh());
+            $this->assertFalse($result['executable']);
+            $this->assertSame('COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED', $result['reason']);
+            $this->assertSame($ready['resolution_hash'], data_get($work->fresh()->payload, 'followup_resolution.resolution_hash'));
+        } finally {
+            app()->setBasePath($originalBackend);
+            app()->useStoragePath($originalStorage);
+            $resolved = realpath($mirror);
+            $allowed = str_replace('\\', '/', (string) realpath(sys_get_temp_dir())).'/council-source-guard-';
+            if ($resolved && str_starts_with(str_replace('\\', '/', $resolved), $allowed)) File::deleteDirectory($resolved);
+        }
     }
 
     public function test_data_readiness_is_rechecked_after_successful_registration(): void
@@ -446,12 +513,145 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         $this->assertNull(data_get($work->fresh()->payload, 'followup_resolution'));
     }
 
+    public function test_source_amendment_appends_original_artifact_without_changing_resolution_or_cohort(): void
+    {
+        [$work, $generation, $body] = $this->sourceAmendmentFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $beforeIds = $generation->agents()->pluck('id')->all();
+        $one = $owner->amendUnobservedFollowupSource($work->id, $generation->id, 'repair-operator', 'Bounded original lease repair');
+        $two = $owner->amendUnobservedFollowupSource($work->id, $generation->id, 'different-operator', 'Redelivery');
+        $this->assertSame('registered', $one['status']);
+        $this->assertSame('already_registered', $two['status']);
+        $this->assertSame($one['amendment_hash'], $two['amendment_hash']);
+        $this->assertSame($body, data_get($work->fresh()->payload, 'followup_resolution'));
+        $this->assertSame($body['resolution_hash'], $one['resolution_hash']);
+        $this->assertSame($beforeIds, $generation->agents()->pluck('id')->all());
+        $this->assertSame(1, \App\Models\LabEvidenceArtifact::where('artifact_type', SpecialistCouncilResearchFeedbackService::SOURCE_AMENDMENT_PROTOCOL)->count());
+        $ready = $owner->inspectFollowupReadiness($work->fresh());
+        $this->assertTrue($ready['executable'], json_encode($ready));
+        $this->assertSame(str_repeat('0', 64), $ready['effective_source_hash']);
+        $this->assertSame(str_repeat('f', 64), $ready['current_source_hash']);
+        $this->assertSame($one['amendment_hash'], $ready['operational_source_amendment_hash']);
+        $this->assertFalse($ready['promotion_evidence']);
+        $this->assertSame(6, data_get($generation->fresh()->trigger_context, 'native_specialist_council_intent.population_size'));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_source_amendment_public_cli_uses_original_owner_and_retains_checkpoint(): void
+    {
+        [$work, $generation, $body] = $this->sourceAmendmentFixture();
+        $before = $work->result;
+        $this->artisan('trading:specialist-council', ['action' => 'amend-followup-source', '--work-id' => $work->id,
+            '--generation-id' => $generation->id, '--actor' => 'original-operator', '--reason' => 'Unobserved constructor lease repair'])
+            ->assertExitCode(0);
+        $this->assertSame($body, data_get($work->fresh()->payload, 'followup_resolution'));
+        $this->assertSame($before, $work->fresh()->result);
+        $this->assertNull($work->fresh()->lease_token);
+        $this->assertSame(3, $work->fresh()->attempts);
+    }
+
+    public function test_source_amendment_refuses_any_original_replay_or_preparation(): void
+    {
+        [$work, $generation] = $this->sourceAmendmentFixture();
+        LabEvaluationRun::create(['run_id' => 'original-first-replay', 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $generation->agents()->first()->id, 'model_version_id' => $generation->agents()->first()->model_version_id,
+            'phase' => 'screening', 'mode' => 'incremental', 'status' => 'started', 'attempt' => 1, 'started_at' => now()]);
+        $this->expectExceptionMessage('COUNCIL_SOURCE_AMENDMENT_COHORT_ALREADY_OBSERVED');
+        app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource($work->id, $generation->id, 'operator', 'Repair');
+    }
+
+    public function test_source_amendment_refuses_frozen_plan_and_constructed_vector_drift(): void
+    {
+        [$work, $generation] = $this->sourceAmendmentFixture();
+        $context = $generation->trigger_context;
+        data_set($context, 'generation_plan.4.niche.native_council_followup_source.parameters.ema_fast', 100);
+        $generation->update(['trigger_context' => $context]);
+        $this->expectExceptionMessage('COUNCIL_SOURCE_AMENDMENT_FROZEN_PLAN_DRIFT');
+        app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource($work->id, $generation->id, 'operator', 'Repair');
+    }
+
+    public function test_source_amendment_refuses_constructed_physical_vector_drift(): void
+    {
+        [$work, $generation] = $this->sourceAmendmentFixture();
+        $generation->agents()->first()->modelVersion->update(['parameters' => ['ema_fast' => 100, 'ema_slow' => 10]]);
+        $this->expectExceptionMessage('COUNCIL_SOURCE_AMENDMENT_CONSTRUCTED_NATIVE_VECTOR_DRIFT');
+        app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource($work->id, $generation->id, 'operator', 'Repair');
+    }
+
+    public function test_source_amendment_tampered_projection_or_archive_cannot_grant_readiness(): void
+    {
+        [$work, $generation] = $this->sourceAmendmentFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $owner->amendUnobservedFollowupSource($work->id, $generation->id, 'operator', 'Repair');
+        $payload = $work->fresh()->payload;
+        $payload['followup_source_amendments'][0]['source_hash'] = str_repeat('9', 64);
+        $work->update(['payload' => $payload]);
+        $ready = $owner->inspectFollowupReadiness($work->fresh());
+        $this->assertFalse($ready['executable']);
+        $this->assertSame('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_PROOF_INVALID', $ready['reason']);
+    }
+
+    public function test_source_amendment_live_lease_does_not_authorize_source_rewrite(): void
+    {
+        [$work, $generation] = $this->sourceAmendmentFixture();
+        $work->update(['status' => 'leased', 'lease_token' => 'original-owner', 'lease_expires_at' => now()->addMinutes(45)]);
+        $this->expectExceptionMessage('COUNCIL_SOURCE_AMENDMENT_REQUIRES_UNLEASED_OPERATIONAL_ATTEMPT');
+        app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource($work->id, $generation->id, 'operator', 'Repair');
+    }
+
+    private function sourceAmendmentFixture(): array
+    {
+        [$work, $proposal] = $this->fixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $ready = $owner->registerFollowupProof($work->id, $proposal, 'original-registrar');
+        $body = data_get($work->fresh()->payload, 'followup_resolution');
+        $epochs = app(ResearchPaperEpochContractService::class);
+        $intent = [...$ready['native_intent'], 'authority' => 'research_only', 'requires_atomic_preparation' => true,
+            'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+        $intent['intent_hash'] = $epochs->parameterHash($intent);
+        $roles = ['source_scalp', 'source_hour', 'source_day', 'source_swing', 'candidate_carrier', 'ablation_carrier'];
+        $plan = [];
+        foreach ($roles as $slot => $role) {
+            $sourceRole = ['scalp', 'hour', 'day', 'swing', 'day', 'day'][$slot];
+            $plan[] = ['family' => $body['native_source_models'][$sourceRole]['family'], 'origin' => 'native_council_root', 'target' => 'portfolio_router',
+                'niche' => ['native_specialist_council_seed' => ['protocol' => \App\Services\LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL,
+                    'intent_hash' => $intent['intent_hash'], 'slot_role' => $role, 'followup_work_item_id' => $work->id,
+                    'followup_resolution_hash' => $body['resolution_hash']], 'native_council_followup_source' => $body['native_source_models'][$sourceRole]]];
+        }
+        $lab = AiLaboratory::create(['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'name' => 'unobserved native repair fixture',
+            'strategy_families' => ['ema_rsi'], 'is_active' => true]);
+        $generation = $lab->generations()->create(['generation' => 259, 'trigger_type' => 'historical_research',
+            'status' => 'technical_quarantine', 'population_size' => 4,
+            'trigger_context' => ['native_specialist_council_intent' => $intent, 'generation_plan' => $plan]]);
+        foreach (array_slice($plan, 0, 4) as $slot => $definition) {
+            $spec = $definition['niche']['native_council_followup_source'];
+            $model = ModelVersion::create(['name' => 'native-unobserved-'.$slot, 'strategy' => $spec['strategy'], 'version' => 'v259',
+                'generation' => 259, 'status' => 'testing', 'parameters' => $spec['parameters'],
+                'metadata' => ['base_strategy' => $spec['base_strategy'], 'strategy_architecture' => $spec['strategy_architecture'],
+                    'native_specialist_council_seed' => [...$definition['niche']['native_specialist_council_seed'], 'lab_generation_id' => $generation->id]]]);
+            $generation->agents()->create(['model_version_id' => $model->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+                'strategy_family' => $spec['family'], 'origin' => 'native_council_root', 'lifecycle_status' => 'technical_quarantine']);
+        }
+        $work->update(['status' => 'blocked', 'attempts' => 3, 'last_error' => 'COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT',
+            'result' => ['protocol' => \App\Services\SpecialistCouncilFollowupExecutionService::PROTOCOL, 'stage' => 'constructed',
+                'generation_id' => $generation->id, 'resolution_hash' => $body['resolution_hash']]]);
+        $this->partialMock(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn(str_repeat('0', 64));
+        $releases = app(ResearchReleaseSealService::class);
+        $releases->shouldReceive('currentSourceArtifact')->andReturn(['protocol' => 'source_archive_fixture',
+            'source_hash' => str_repeat('0', 64), 'python_source_hash' => str_repeat('a', 64)]);
+        $releases->shouldReceive('verifySourceArtifact')->andReturn(['status' => 'verified']);
+        return [$work->fresh(), $generation, $body];
+    }
+
     private function fixture(bool $ready = true, string $observation = 'data_missing', array $extraParameters = [],
-        bool $schemaFailure = false, ?string $errorMessage = null, bool $materializeAssignment = false): array
+        bool $schemaFailure = false, ?string $errorMessage = null, bool $materializeAssignment = false,
+        bool $realRuntimeHashes = false): array
     {
         config(['services.internal_api.token' => str_repeat('fixture-key-', 4)]);
-        $this->partialMock(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn(str_repeat('f', 64));
-        $this->partialMock(ResearchReleaseSealService::class)->shouldReceive('pythonHash')->andReturn(str_repeat('a', 64));
+        if (! $realRuntimeHashes) {
+            $this->partialMock(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn(str_repeat('f', 64));
+            $this->partialMock(ResearchReleaseSealService::class)->shouldReceive('pythonHash')->andReturn(str_repeat('a', 64));
+        }
         if ($ready) $this->mock(SpecialistCouncilPreparationService::class)->shouldReceive('assertProspectiveDiscoveryPlan')->andReturnNull();
         $models = [];
         foreach (['scalp', 'hour', 'day', 'swing', 'candidate', 'ablation'] as $role) {

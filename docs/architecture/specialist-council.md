@@ -145,6 +145,17 @@ saved cohort checkpoint; projection loss cannot renew the experiment budget.
 Unchanged operational prerequisites stay blocked, with at most eight leases
 for this one cohort. An original failed run is never relabelled successful.
 
+Native discovery's initial work lease is 2700 seconds only after fresh,
+server-attested proof under the work lock; ordinary work remains at 900 seconds.
+The constructor may reuse its complete proof within the same held-lock
+invocation only. Live lease token/fence, original vectors and source binding are
+checked around each slot persistence; no expired lease may publish progress.
+For an incomplete cohort with no preparation, release, replay or outcome,
+`amend-followup-source --work-id=ID --generation-id=ID --actor=IDENTITY
+--reason=TEXT` can append an archive-backed operational source amendment.
+It preserves the original resolution, six-slot intent and scientific question.
+It grants neither a new lease nor permission to retune or rewrite old evidence.
+
 Independent-validation and descendant references have a separate original-panel
 validator. It checks original evaluator/plan/window identities, unchanged
 external and scientific policies, exact selected native programs and required
@@ -152,16 +163,39 @@ control/ablation/retention comparisons. Descendant references additionally
 require an original independently qualified research parent and executable
 component removal; a relabelled scalar gene is not an ablation.
 
-This release intentionally refuses registration and execution with
-`CANONICAL_AUTHORIZED_WINDOW_COHORT_PRODUCER_REQUIRED`: a canonical per-window
-reservation/snapshot producer and original generation-terminal adapter are not
-yet available. The ordinary constructor cannot supply several simultaneous
-unused drafts, and a completed run alone does not close those generations.
-The validator writes no ownership or work readiness while this prerequisite is
-missing. No caller flag, manually inserted constructor label, planned dataset
-or old discovery release may bypass it. Authorized unused post-paper data is
-an additional, separate requirement. This limitation must not be presented as
-proof that the complete economic inheritance loop ran.
+The server-owned independent reservation uses
+`specialist_council_panel_reservation_v1` with three authorization IDs, creator,
+independent evaluator and a prospective question. IDs must resolve to completed,
+untouched, disjoint post-paper windows with actual M5/H4/H1/M15 stream bytes.
+No caller supplies target generations, arm outputs or qualification flags.
+The same constructor reserves one original window cohort at a time; all three
+must exist before the global original plan, models, scope and release are
+atomically prepared. The preparation-only delivery seals all original requests,
+checkpoints `original_preparation_sealed` and returns retryably with
+`COUNCIL_PANEL_ORIGINAL_PREPARATION_SEALED`, without replay HTTP. The first arm
+requires a fresh current lease and revalidation of that same checkpoint; expired
+ownership cannot continue and no scope is shortened to fit a spent budget.
+One signed original full arm runs per bounded arbiter
+delivery. Terminal original checkpoints are skipped after restart, never
+recomputed as independent evidence. Common cash, execution cost/risk and actual
+evaluated rows/bounds are enforced for native and solo/control programs.
+Native decision traces are emitted by the actual loop, binding closed member
+inputs, veto/fill stages and the source account clock to the original receipt.
+The trace keeps every clock/member/stage while using bounded inspection fields
+and sealed full-input hashes instead of duplicating every indicator column.
+The evidence consumer derives scope from the immutable request artifact, not
+mutable metadata or a caller warmup flag. Full original arms have zero warmup;
+native discovery keeps its sealed probe clock, and legacy ordinary traces keep
+their 200-candle boundary. Unsigned future MTF bundles remain refused.
+
+The scientific budget is one panel; operational deliveries have a separate
+fixed ceiling for the reserved arms plus construction, settlement and bounded
+recovery. Missing measurements, underpower and technical failure remain distinct.
+Legacy reference-only registration still refuses missing canonical ownership,
+and descendant transfer still requires its original qualified-parent and exact
+four-program producer. Authorized unused post-paper data is a real additional
+requirement, not a planned date or a relabelled discovery snapshot. Conditional
+fixture execution is not proof of market skill or economic inheritance.
 
 ### Support products and original role benchmarks
 

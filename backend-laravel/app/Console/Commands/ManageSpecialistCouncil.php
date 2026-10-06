@@ -17,7 +17,7 @@ use InvalidArgumentException;
 /** Operator entrypoint; native population/dispatcher remains the only generation/queue owner. */
 class ManageSpecialistCouncil extends Command
 {
-    protected $signature = 'trading:specialist-council {action : prepare|register|register-followup|followup-status|plan|attach-arm|status|approve|schedule|rollback}
+    protected $signature = 'trading:specialist-council {action : prepare|register|register-followup|amend-followup-source|followup-status|plan|attach-arm|status|approve|schedule|rollback}
         {--generation-id= : Constructor-complete unused canonical draft ID, for prepare}
         {--preparation= : Workspace JSON prospective manifest and complete research plan}
         {--work-id= : Original immutable council follow-up work ID}
@@ -53,6 +53,11 @@ class ManageSpecialistCouncil extends Command
             } elseif ($action === 'followup-status') {
                 $result = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness(
                     ResearchExperimentWorkItem::findOrFail($this->positiveId('work-id')),
+                );
+            } elseif ($action === 'amend-followup-source') {
+                $result = app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource(
+                    $this->positiveId('work-id'), $this->positiveId('generation-id'),
+                    $this->required('actor'), $this->required('reason'),
                 );
             } elseif ($action === 'register') {
                 $manifest = $this->jsonFile((string) $this->option('manifest'));

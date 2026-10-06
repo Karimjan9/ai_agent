@@ -206,8 +206,13 @@ class ResearchLoopArbiterService
         // A crash between the canonical constructor and atomic preparation is
         // not an ordinary draft. Resume its original fenced work before the
         // generic lifecycle can repeatedly attempt an unprepared admission.
-        if ($latest && (int) data_get($latest->trigger_context, 'native_specialist_council_intent.followup_work_item_id', 0) > 0
-            && ((string) $latest->status === 'draft' || LabPopulationService::constructionIncomplete($latest))) {
+        $pendingCouncilWorkId = $latest ? (int) data_get($latest->trigger_context,
+            'native_specialist_council_intent.followup_work_item_id',
+            data_get($latest->trigger_context, 'specialist_council_authorized_panel.work_item_id', 0)) : 0;
+        $authorizedPanelPending = $latest && data_get($latest->trigger_context, 'specialist_council_authorized_panel') !== null
+            && in_array((string) $latest->status, ['draft', 'research_reserved', 'full_validation'], true);
+        if ($latest && $pendingCouncilWorkId > 0
+            && ((string) $latest->status === 'draft' || $authorizedPanelPending || LabPopulationService::constructionIncomplete($latest))) {
             $work = $dryRun || ! $this->autonomy->enabled($symbol, $timeframe)
                 ? null : $this->conversion->claimCouncilContinuationForGeneration($latest);
             if ($work) {
@@ -218,7 +223,7 @@ class ResearchLoopArbiterService
                     ['generation' => $generation, 'work_item_id' => (int) $work->id,
                         'source_receipt_id' => (int) $work->research_experiment_receipt_id], $dryRun);
             }
-            $pending = \App\Models\ResearchExperimentWorkItem::find((int) data_get($latest->trigger_context, 'native_specialist_council_intent.followup_work_item_id'));
+            $pending = \App\Models\ResearchExperimentWorkItem::find($pendingCouncilWorkId);
             return $this->decide($symbol, $timeframe, 'WAIT_COUNCIL_DURABLE_NEXT_WORK', 100,
                 null, [], null, ['ORIGINAL_COUNCIL_WORK_FENCE_OR_DEPENDENCY_NOT_READY'],
                 ['generation' => $generation, 'work_item_id' => $pending?->id, 'work_status' => $pending?->status,

@@ -14,6 +14,14 @@ class SpecialistCouncilFollowupExecutionService
 {
     public const PROTOCOL = 'specialist_council_followup_execution_v1';
 
+    public const DISCOVERY_TYPES = ['specialist_council_technical_repair', 'specialist_council_data_repair',
+        'specialist_council_power_extension'];
+
+    // A scheduled constructor child is bounded to 2370s. The initial work
+    // lease covers it plus 330s dispatch margin, below the 3000s mutex. It
+    // is never renewed by a checkpoint and confers no research authority.
+    public const WORK_LEASE_SECONDS = 2700;
+
     public function __construct(
         private SpecialistCouncilResearchFeedbackService $feedback,
         private ResearchExperimentConversionKernelService $conversion,
@@ -184,7 +192,7 @@ class SpecialistCouncilFollowupExecutionService
     {
         $current = $item->fresh();
         if (! $current || $current->status !== 'leased' || $current->lease_token !== $item->lease_token
-            || (int) $current->fence_version !== (int) $item->fence_version || ! $current->lease_expires_at || $current->lease_expires_at->isPast()
+            || (int) $current->fence_version !== (int) $item->fence_version || ! $current->lease_expires_at || ! $current->lease_expires_at->isFuture()
             || data_get($current->payload, 'owner') !== ResearchLoopArbiterService::class) throw new LogicException('COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT');
         if (! $this->autonomy->enabled($item->symbol, $item->timeframe)) throw new LogicException('AUTONOMOUS_MODE_STOPPED');
     }
@@ -193,7 +201,7 @@ class SpecialistCouncilFollowupExecutionService
     {
         $this->assertLease($item);
         if (ResearchExperimentWorkItem::whereKey($item->id)->where('status', 'leased')->where('lease_token', $item->lease_token)
-            ->where('fence_version', $item->fence_version)->update(['result' => ['protocol' => self::PROTOCOL, 'stage' => $stage,
+            ->where('fence_version', $item->fence_version)->where('lease_expires_at', '>', now())->update(['result' => ['protocol' => self::PROTOCOL, 'stage' => $stage,
                 'generation_id' => (int) $generation->id, 'resolution_hash' => $proof['resolution_hash'], 'promotion_evidence' => false], 'heartbeat_at' => now()]) !== 1) {
             throw new LogicException('COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT');
         }
@@ -228,7 +236,7 @@ class SpecialistCouncilFollowupExecutionService
             $current = $item->fresh();
             $result = [...(array) $current?->result, 'dependency_hold' => $hold];
             ResearchExperimentWorkItem::whereKey($item->id)->where('status', 'leased')->where('lease_token', $item->lease_token)
-                ->where('fence_version', $item->fence_version)->update(['result' => $result]);
+                ->where('fence_version', $item->fence_version)->where('lease_expires_at', '>', now())->update(['result' => $result]);
         }
         $this->conversion->defer($item, $reason, $retryable);
         return ['protocol' => self::PROTOCOL, 'status' => 'blocked', 'reason' => $reason, 'work_item_id' => (int) $item->id,

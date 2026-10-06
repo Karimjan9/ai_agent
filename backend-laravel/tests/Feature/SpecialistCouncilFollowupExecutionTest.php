@@ -41,7 +41,7 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
     }
 
     /** Actual original constructor; only data/technical readiness infrastructure is a fixture. */
-    private function fixture(): array
+    private function fixture(?callable $readinessHook = null): array
     {
         config()->set('services.xauusd_organism.historical_research_until_champion', true);
         config()->set('services.market_data.provider', 'csv');
@@ -71,6 +71,7 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         foreach (['scalp', 'hour', 'day', 'swing'] as $i => $role) {
             $model = $models[$i];
             $specs[$role] = ['model_version_id' => $model->id, 'family' => $source->agents()->where('model_version_id', $model->id)->value('strategy_family'),
+                'model_hash' => app(\App\Services\SpecialistCouncilContractService::class)->modelHash($model),
                 'strategy' => $model->strategy, 'strategy_architecture' => data_get($model->metadata, 'strategy_architecture'),
                 'base_strategy' => data_get($model->metadata, 'base_strategy'), 'parameters' => $model->parameters,
                 'parameter_hash' => $epochs->parameterHash($model->parameters)];
@@ -110,10 +111,36 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
                     ['arm_key' => 'without-hour', 'kind' => 'ablation', 'removed_id' => 'hour', 'window_key' => 'new-question-window', 'model_version_id' => $models[5]->id]]],
             'discovery_bundle_manifest' => null];
         $feedback = \Mockery::mock(app(SpecialistCouncilResearchFeedbackService::class))->makePartial();
-        $feedback->shouldReceive('inspectFollowupReadiness')->andReturn($proof);
+        $feedback->shouldReceive('inspectFollowupReadiness')->andReturnUsing(function () use ($proof, $readinessHook): array {
+            if ($readinessHook !== null) $readinessHook($proof);
+            return $proof;
+        });
+        // The fixture replaces the original readiness producer, not the
+        // constructor. Its small live-source fence stays explicitly bound.
+        $feedback->shouldReceive('inspectFollowupSourceBinding')->andReturn(['source_hash' => str_repeat('f', 64),
+            'python_source_hash' => str_repeat('a', 64), 'amendment_hash' => null, 'resolution_body_hash' => str_repeat('d', 64)]);
+        $feedback->shouldReceive('assertUnobservedConstructorBinding')->andReturnNull();
         $this->app->instance(SpecialistCouncilResearchFeedbackService::class, $feedback);
+        $work->update(['payload' => [...$work->payload, 'followup_resolution' => ['resolution_hash' => $proof['resolution_hash']]]]);
         $lease = app(ResearchExperimentConversionKernelService::class)->claimForOwner(ResearchLoopArbiterService::class)[0];
         return [$source, $lease, $proof];
+    }
+
+    /** Replace only the archive I/O boundary after the actual slot proof. */
+    private function duringArchiveSync(callable $hook): LabPopulationService
+    {
+        $archive = \Mockery::mock(\App\Services\EvolutionArchiveService::class, [
+            app(\App\Services\StrategySemanticGroupService::class),
+            app(\App\Services\EvolutionGovernorService::class),
+        ])->makePartial();
+        $archive->shouldReceive('sync')->andReturnUsing(function () use ($hook): array {
+            $hook();
+            return [];
+        });
+        $this->app->instance(\App\Services\EvolutionArchiveService::class, $archive);
+        $this->app->forgetInstance(LabPopulationService::class);
+
+        return app(LabPopulationService::class);
     }
 
     public function test_actual_six_constructor_preserves_verified_vectors_with_zero_parent_authority_and_same_generation_resume(): void
@@ -174,6 +201,104 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         $this->assertSame((int) $work->id, data_get($next->fresh()->trigger_context, 'specialist_council_preparation.learning_consumption_receipt.original_followup.work_item_id'));
         $this->assertDatabaseCount('lab_evaluation_runs', 0);
         $this->assertDatabaseCount('specialist_council_versions', 1);
+    }
+
+    public function test_native_constructor_expensive_proof_is_reused_only_inside_one_locked_invocation(): void
+    {
+        $calls = 0;
+        [$source, $work, $proof] = $this->fixture(function () use (&$calls): void {
+            $calls++;
+        });
+        $calls = 0;
+        $owner = app(LabPopulationService::class);
+        config()->set('services.lab_selection.constructor_initial_seat_budget', 3);
+        $intent = ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'purpose' => 'research', 'symbol' => 'XAUUSD',
+            'storage_timeframe' => 'H1', 'population_size' => 6, 'creator_id' => $proof['creator_id'],
+            'research_question' => $proof['research_question'], 'followup_work_item_id' => $work->id,
+            'followup_resolution_hash' => $proof['resolution_hash']];
+        $next = $owner->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, 6, null, false, null, $intent);
+        $this->assertNotNull($next, json_encode($owner->lastBuildOutcome()));
+        $this->assertSame(3, $next->agents()->count());
+        $this->assertSame(2, $calls, 'One pre-lock intent proof and one fresh proof under the constructor lock.');
+        $owner->continueInterruptedConstruction($next->id, 6);
+        $this->assertSame(6, $next->agents()->count());
+        $this->assertSame(3, $calls, 'A later invocation must obtain a new original proof.');
+    }
+
+    public function test_native_constructor_expired_lease_after_expensive_slot_rolls_back_model_and_agent(): void
+    {
+        [$source, $work, $proof] = $this->fixture();
+        $this->freezeTime();
+        $work->update(['lease_expires_at' => now()->addSeconds(30)]);
+        $owner = $this->duringArchiveSync(fn () => $this->travel(31)->seconds());
+        config()->set('services.lab_selection.constructor_initial_seat_budget', 1);
+        $beforeModels = \App\Models\ModelVersion::count();
+        $next = $owner->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, 6, null, false, null,
+            ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'purpose' => 'research', 'symbol' => 'XAUUSD',
+                'storage_timeframe' => 'H1', 'population_size' => 6, 'creator_id' => $proof['creator_id'],
+                'research_question' => $proof['research_question'], 'followup_work_item_id' => $work->id,
+                'followup_resolution_hash' => $proof['resolution_hash']]);
+        $this->assertNotNull($next, json_encode($owner->lastBuildOutcome()));
+        $this->assertSame(0, $next->agents()->count());
+        $this->assertSame($beforeModels, \App\Models\ModelVersion::count());
+        $this->assertSame('technical_quarantine', $next->status);
+        $this->assertStringContainsString('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED',
+            (string) data_get($next->trigger_context, 'constructor_audit.skipped_zero_diff_slots.0.reason'));
+    }
+
+    public function test_native_constructor_changed_original_source_vector_during_slot_cannot_persist_cached_proof(): void
+    {
+        [, $work, $proof] = $this->fixture();
+        $source = \App\Models\ModelVersion::findOrFail($proof['native_source_models']['scalp']['model_version_id']);
+        $originalHash = app(\App\Services\SpecialistCouncilContractService::class)->modelHash($source);
+        $visited = false;
+        $owner = $this->duringArchiveSync(function () use ($source, &$visited): void {
+            $visited = true;
+            $source->update(['parameters' => [...$source->parameters, 'ema_fast' => 3]]);
+        });
+        config()->set('services.lab_selection.constructor_initial_seat_budget', 1);
+        $beforeModels = \App\Models\ModelVersion::count();
+        $next = $owner->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, 6, null, false, null,
+            ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'purpose' => 'research', 'symbol' => 'XAUUSD',
+                'storage_timeframe' => 'H1', 'population_size' => 6, 'creator_id' => $proof['creator_id'],
+                'research_question' => $proof['research_question'], 'followup_work_item_id' => $work->id,
+                'followup_resolution_hash' => $proof['resolution_hash']]);
+        $this->assertTrue($visited, 'The original model changed after this actual slot obtained its proof.');
+        $this->assertNotNull($next, json_encode($owner->lastBuildOutcome()));
+        $this->assertSame(0, $next->agents()->count());
+        $this->assertSame($beforeModels, \App\Models\ModelVersion::count());
+        $this->assertSame($originalHash, app(\App\Services\SpecialistCouncilContractService::class)->modelHash($source->fresh()));
+        $this->assertStringContainsString('NATIVE_COUNCIL_FOLLOWUP_SOURCE_VECTOR_CHANGED_DURING_CONSTRUCTION',
+            (string) data_get($next->trigger_context, 'constructor_audit.skipped_zero_diff_slots.0.reason'));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_native_constructor_changed_live_lease_fence_after_persistence_rolls_back_model_and_agent(): void
+    {
+        [, $work, $proof] = $this->fixture();
+        $persisted = null;
+        \App\Models\LabAgent::created(function (\App\Models\LabAgent $agent) use ($work, &$persisted): void {
+            if (data_get($agent->modelVersion->metadata, 'native_specialist_council_seed.followup_work_item_id') !== $work->id) return;
+            $persisted = ['agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id];
+            $work->update(['lease_token' => 'replacement-lease', 'fence_version' => $work->fence_version + 1]);
+        });
+        $owner = app(LabPopulationService::class);
+        config()->set('services.lab_selection.constructor_initial_seat_budget', 1);
+        $beforeModels = \App\Models\ModelVersion::count();
+        $next = $owner->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, 6, null, false, null,
+            ['protocol' => LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'purpose' => 'research', 'symbol' => 'XAUUSD',
+                'storage_timeframe' => 'H1', 'population_size' => 6, 'creator_id' => $proof['creator_id'],
+                'research_question' => $proof['research_question'], 'followup_work_item_id' => $work->id,
+                'followup_resolution_hash' => $proof['resolution_hash']]);
+        $this->assertNotNull($persisted, 'The work fence changed after the actual model and agent were persisted.');
+        $this->assertNotNull($next, json_encode($owner->lastBuildOutcome()));
+        $this->assertSame(0, $next->agents()->count());
+        $this->assertSame($beforeModels, \App\Models\ModelVersion::count());
+        $this->assertDatabaseMissing('lab_agents', ['id' => $persisted['agent_id']]);
+        $this->assertDatabaseMissing('model_versions', ['id' => $persisted['model_version_id']]);
+        $this->assertStringContainsString('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED',
+            (string) data_get($next->trigger_context, 'constructor_audit.skipped_zero_diff_slots.0.reason'));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
     }
 
     public function test_caller_executable_flag_and_stale_fence_cannot_dispatch_unproved_council_work(): void

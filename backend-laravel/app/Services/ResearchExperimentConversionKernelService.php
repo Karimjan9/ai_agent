@@ -162,7 +162,8 @@ class ResearchExperimentConversionKernelService
     /** Resume only the work which already owns this unfinished canonical cohort. */
     public function claimCouncilContinuationForGeneration(\App\Models\LabGeneration $generation): ?ResearchExperimentWorkItem
     {
-        $id = (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id', 0);
+        $id = (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id',
+            data_get($generation->trigger_context, 'specialist_council_authorized_panel.work_item_id', 0));
         if ($id <= 0 || ! $this->available()) return null;
         $this->reconcileOwnershipAndDependencies();
         return $this->claimMatching(1, ResearchLoopArbiterService::class, $id)[0] ?? null;
@@ -199,8 +200,10 @@ class ResearchExperimentConversionKernelService
                         $item->refresh();
                         if ($before !== (array) $item->payload) $normalized++;
                         $payload = (array) $item->payload;
+                        $councilProof = null;
                         if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
                             $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+                            $councilProof = $proof;
                             $payload['executable'] = ($proof['executable'] ?? false) === true;
                             $payload['retry_condition']['code'] = (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED');
                             $hold = (array) data_get($item->result, 'dependency_hold', []);
@@ -221,7 +224,7 @@ class ResearchExperimentConversionKernelService
                             if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
                         }
                         $executable = (bool) ($payload['executable'] ?? false);
-                        $dependencyReady = $this->dependencyReady($item, $payload);
+                        $dependencyReady = $this->dependencyReady($item, $payload, $councilProof);
                         $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
                         if ((string) $item->status !== $desired) {
                             $item->update([
@@ -245,6 +248,7 @@ class ResearchExperimentConversionKernelService
     {
         return ResearchExperimentWorkItem::query()->whereKey($item->id)->where('status', 'leased')
             ->where('lease_token', $item->lease_token)->where('fence_version', (int) $item->fence_version)
+            ->where('lease_expires_at', '>', now())
             ->update(['status' => $retryable ? 'ready' : 'blocked', 'last_error' => $reason,
                 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null]) === 1;
     }
@@ -266,13 +270,42 @@ class ResearchExperimentConversionKernelService
             }
             $items = $query->orderByDesc('priority')->orderBy('id')
                 ->lockForUpdate()->limit(max(1, min(50, $limit)))->get();
+            $claimed = [];
             foreach ($items as $item) {
+                $leaseSeconds = self::LEASE_SECONDS;
+                if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
+                    // Ready/executable payload flags are only projections. A
+                    // caller cannot extend a lease or claim a stale original
+                    // council proof by setting them. Re-attest under this row
+                    // lock before starting the bounded initial lease clock.
+                    $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+                    if (($proof['executable'] ?? false) !== true) {
+                        $item->update(['status' => 'blocked', 'last_error' => (string) ($proof['reason'] ?? 'COUNCIL_PREREQUISITE_PROOF_REQUIRED')]);
+                        continue;
+                    }
+                    if (in_array((string) $item->work_type, SpecialistCouncilFollowupExecutionService::DISCOVERY_TYPES, true)
+                        && data_get($item->payload, 'owner') === ResearchLoopArbiterService::class
+                        && data_get($item->payload, 'executor') === ResearchExperimentWorkConsumerService::class
+                        && ($proof['protocol'] ?? null) === SpecialistCouncilResearchFeedbackService::FOLLOWUP_PROTOCOL
+                        && ($proof['authority'] ?? null) === 'research_only'
+                        && ($proof['work_item_id'] ?? null) === $item->id
+                        && ($proof['work_key'] ?? null) === $item->work_key
+                        && ($proof['source_receipt_id'] ?? null) === $item->research_experiment_receipt_id
+                        && is_string($proof['resolution_hash'] ?? null)
+                        && preg_match('/^[a-f0-9]{64}$/D', $proof['resolution_hash'])
+                        && hash_equals($proof['resolution_hash'], (string) data_get($item->payload, 'followup_resolution.resolution_hash', ''))
+                        && ($proof['max_experiments'] ?? null) === 1
+                        && ($proof['promotion_evidence'] ?? null) === false) {
+                        $leaseSeconds = SpecialistCouncilFollowupExecutionService::WORK_LEASE_SECONDS;
+                    }
+                }
                 $now = now();
                 $lease = ['status' => 'leased', 'attempts' => (int) $item->attempts + 1, 'lease_token' => (string) Str::uuid(),
-                    'fence_version' => (int) $item->fence_version + 1, 'lease_expires_at' => $now->copy()->addSeconds(self::LEASE_SECONDS), 'heartbeat_at' => $now];
+                    'fence_version' => (int) $item->fence_version + 1, 'lease_expires_at' => $now->copy()->addSeconds($leaseSeconds), 'heartbeat_at' => $now];
                 $item->update($lease); $item->forceFill($lease);
+                $claimed[] = $item;
             }
-            return $items->all();
+            return $claimed;
         });
     }
 
@@ -281,6 +314,7 @@ class ResearchExperimentConversionKernelService
     {
         return ResearchExperimentWorkItem::query()->whereKey($item->id)->where('status', 'leased')
             ->where('lease_token', $item->lease_token)->where('fence_version', (int) $item->fence_version)
+            ->where('lease_expires_at', '>', now())
             ->update(['status' => 'settled', 'result' => ['protocol' => self::PROTOCOL, ...$result, 'promotion_evidence' => false],
                 'completed_at' => now(), 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null]) === 1;
     }
@@ -350,10 +384,15 @@ class ResearchExperimentConversionKernelService
         });
     }
 
-    private function dependencyReady(ResearchExperimentWorkItem $item, array $payload): bool
+    private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null): bool
     {
         if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
-            return (app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item)['executable'] ?? false) === true;
+            // Reconciliation just proved this same locked original work. Only
+            // operational executable/retry projections changed afterwards.
+            // This local value cannot survive the transaction or replace the
+            // next claim, executor, constructor or admission proof.
+            $proof = $lockedCouncilProof ?? app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
+            return ($proof['executable'] ?? false) === true;
         }
         if (! (bool) ($payload['executable'] ?? false)) return false;
         if ((string) $item->work_type !== 'cartridge_confirmation') return true;

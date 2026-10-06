@@ -35,6 +35,9 @@ class SpecialistCouncilIndependentPanelService
     public function register(ResearchExperimentWorkItem $work, array $input, ?string $actor,
         SpecialistCouncilVersion $parent, array $original): array
     {
+        if (($input['protocol'] ?? null) === SpecialistCouncilPanelReservationService::PROTOCOL) {
+            return app(SpecialistCouncilPanelReservationService::class)->register($work, $input, $actor, $parent, $original);
+        }
         if (($input['protocol'] ?? null) !== self::PROTOCOL
             || array_diff(array_keys($input), ['protocol', 'target_version_id', 'window_generation_ids', 'arm_agent_ids', 'descendant_trait']) !== []
             || ! is_int($input['target_version_id'] ?? null) || $input['target_version_id'] <= 0
@@ -53,6 +56,9 @@ class SpecialistCouncilIndependentPanelService
     public function inspect(ResearchExperimentWorkItem $work, SpecialistCouncilVersion $parent): array
     {
         try {
+            if (data_get($work->payload, 'pending_panel_intent.reservation_protocol') === SpecialistCouncilPanelReservationService::PROTOCOL) {
+                return app(SpecialistCouncilPanelReservationService::class)->inspect($work, $parent);
+            }
             $body = data_get($work->payload, 'followup_resolution');
             if (! is_array($body)) {
                 return $this->blocked($this->windows->readiness()['eligible_windows'] === []
@@ -86,12 +92,25 @@ class SpecialistCouncilIndependentPanelService
     {
         try {
             $this->assertLease($item);
+            if (data_get($item->payload, 'pending_panel_intent.reservation_protocol') === SpecialistCouncilPanelReservationService::PROTOCOL) {
+                return app(SpecialistCouncilPanelReservationService::class)->execute($item);
+            }
             $this->assertCanonicalWindowProducer();
         } catch (Throwable $error) {
             // A fenced, unavailable adapter has no operational write authority,
             // especially after the caller's original work lease has expired.
             return $this->blocked($error instanceof LogicException ? $error->getMessage() : 'COUNCIL_PANEL_EXECUTION_DEPENDENCY');
         }
+    }
+
+    public function assertConstructorIntent(array $intent): array
+    {
+        return app(SpecialistCouncilPanelReservationService::class)->assertConstructorIntent($intent);
+    }
+
+    public function assertExecutionUnit(ResearchExperimentWorkItem $work, \App\Models\LabGeneration $cohort, array $unit): void
+    {
+        app(SpecialistCouncilPanelReservationService::class)->assertExecutionUnit($work, $cohort, $unit);
     }
 
     private function owner(SpecialistCouncilVersion $version): array

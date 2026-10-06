@@ -672,6 +672,7 @@ def prepare_replay_feature_context(
 def _assert_closed_mtf_runtime(
     payload: SimpleBacktestRequest,
     mtf_context: PreparedClosedMtfContext | None,
+    *, source_frame: pd.DataFrame | None = None,
 ) -> None:
     """Fail before replay when an autonomous M5 organism lost its bundle."""
 
@@ -687,6 +688,11 @@ def _assert_closed_mtf_runtime(
     # alternative to the full foundation contract.
     assert_clean_discovery_boundary(payload)
     assert_sealed_dataset_transport(payload)
+    window_bundle = (payload.mtf_snapshot_manifest or {}).get('validation_bundle_protocol') == 'authorized_original_council_window_bundle_v1'
+    if window_bundle:
+        from app.services.historical_quotes import original_full_mtf_bundle_current
+        if not original_full_mtf_bundle_current(source_frame, payload):
+            raise ValueError('AUTONOMOUS_MTF_ORIGINAL_WINDOW_AUTHORIZATION_REQUIRED')
     pilot = dict(payload.mtf_pilot or {})
     if not (
         bool(pilot.get("enabled", False))
@@ -709,6 +715,7 @@ def _assert_closed_mtf_runtime(
         or manifest.get("validation_bundle_protocol") not in {
             "agent_owned_mtf_foundation_bundle_v1",
             "prospective_clean_discovery_bundle_v1",
+            "authorized_original_council_window_bundle_v1",
         }
         or len(bundle_hash) != 64
     ):
@@ -947,7 +954,7 @@ def prepare_feature_snapshot(
             payload.parameters,
             _load_related_mtf_streams(payload),
         )
-    _assert_closed_mtf_runtime(payload, mtf_context)
+    _assert_closed_mtf_runtime(payload, mtf_context, source_frame=normalized)
     context_sources = {}
     if regime_source is not None:
         context_sources["REGIME_H1"] = _context_source_attestation(payload, "REGIME_H1", regime_source)
@@ -1348,6 +1355,7 @@ def _run_prepared_simple_backtest(
     lightweight: bool = False,
     prepared_snapshot: PreparedSignalSnapshot | None = None,
     fast_stateful: bool | None = None,
+    original_full_arm: dict | None = None,
 ) -> SimpleBacktestResponse:
     if payload.specialist_council_contract:
         from app.services.specialist_council import run_specialist_council
@@ -1378,6 +1386,12 @@ def _run_prepared_simple_backtest(
     accepted_entry_events: dict[int, dict[str, object]] = {}
     closed_execution_events: list[dict[str, object]] = []
     position: dict[str, object] | None = None
+    original_account = None
+    if original_full_arm is not None:
+        from app.services.authorized_council_arm import OriginalSoloAccountObserver
+        # Only the verified original transport run helper supplies this private
+        # argument; there is no request flag or ordinary-evaluator bypass.
+        original_account = OriginalSoloAccountObserver(payload, original_full_arm)
     gross_profit = 0.0
     gross_loss = 0.0
     # A loss streak is a finite risk-control state, never a permanent entry
@@ -1637,9 +1651,14 @@ def _run_prepared_simple_backtest(
 
     # A signal is only knowable after its candle closes. Execute it at the
     # following candle's open, then include that same candle in exit checks.
-    for index in range(200, len(df)):
+    for index in range(1 if original_account is not None else 200, len(df)):
         candle = row_at(index)
         signal_row = row_at(index - 1)
+        if original_account is not None:
+            original_account.decision(signal_row['time'], candle['time'])
+            original_account.sample(signal_row['close'], pd.Timestamp(signal_row['time'])
+                + pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe)), balance, position)
+            original_account.sample(candle['open'], candle['time'], balance, position)
         # Temporal probes are observational for every ablation arm, including
         # the frozen control. Only the mutation arms may turn their
         # assessment into an entry veto; otherwise the control would have a
@@ -2386,6 +2405,10 @@ def _run_prepared_simple_backtest(
                 "maximum_adverse_excursion": 0.0,
             }
             accepted_decision_indices.add(index - 1)
+            if original_account is not None:
+                original_account.fill(position, balance, execution_payload, _initial_executable_risk_percent(
+                    entry_price, stop_loss, signal, execution_payload, float(position['position_size_multiple'])))
+                original_account.sample(candle['open'], candle['time'], balance, position)
             # Measured at fill, before management mutates stops or closes the
             # position. No future PnL/target outcome may alter upstream identity.
             accepted_entry_events[index - 1] = {
@@ -2679,7 +2702,12 @@ def _run_prepared_simple_backtest(
             confidence_history, position["signal_row"], direction, profit_percent
         )
 
+        if original_account is not None:
+            original_account.close(position, candle['time'], balance, profit_percent, scaled_cost_percent,
+                exit_price, exit_reason)
         balance += balance * (profit_percent / 100)
+        if original_account is not None:
+            original_account.sample(candle['close'], candle['time'], balance, None)
         peak_balance = max(peak_balance, balance)
         drawdown = (
             ((peak_balance - balance) / peak_balance) * 100 if peak_balance else 0
@@ -3349,6 +3377,21 @@ def _run_prepared_simple_backtest(
         response.decision_trace = decision_trace
     if emit_decision_trace or bool(payload.emit_trade_ledger):
         response.trade_ledger = trades
+    if original_account is not None:
+        response.data_quality['original_solo_account'] = original_account.finish(position, row_at(len(df) - 1),
+            balance, pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe)))
+        from app.services.research_program_tasks import canonical_hash
+        from app.services.authorized_council_arm import finite_trace_json
+        decision_trace = finite_trace_json(decision_trace)
+        if emit_decision_trace:
+            response.decision_trace = decision_trace
+        covered = {item['candle_index'] for item in decision_trace
+            if item.get('event_type') in {'signal_evaluation', 'position_management'}}
+        response.data_quality['decision_trace'].update({'evaluated_candle_count': original_account.decisions,
+            'input_candle_count': len(df), 'warmup_rows': 0, 'first_candle_index': 1,
+            'scope_owner': 'authorized_original_council_arm_v1', 'evaluated_scope': original_full_arm['original_scope'],
+            'trace_hash': canonical_hash(decision_trace),
+            'complete': emit_decision_trace and covered == set(range(1, len(df)))})
 
     if (
         differential_lane is None
@@ -4632,6 +4675,15 @@ def _record_instrument_runtime_event(
         exact_definitions[exact_context_key] = dict(context)
 
 
+def _instrument_observed_value(value: object, default: object = "") -> object:
+    """An unavailable closed-context scalar cannot assert an observation."""
+    if value is None or value is pd.NA or value is pd.NaT:
+        return default
+    if isinstance(value, (float, np.floating)) and not math.isfinite(float(value)):
+        return default
+    return value
+
+
 def _record_strategy_instrument_events(
     state: dict[str, object],
     signal_row: object,
@@ -4639,17 +4691,17 @@ def _record_strategy_instrument_events(
     specialist: str,
 ) -> None:
     """Record only an identifiable tactic/router/lens decision, never inventory."""
-    model = str(signal_row.get("entry_contract_model", "") or "").lower()
+    model = str(_instrument_observed_value(signal_row.get("entry_contract_model")) or "").lower()
     specialist = str(
-        specialist or signal_row.get("selected_specialist", "") or ""
+        specialist or _instrument_observed_value(signal_row.get("selected_specialist")) or ""
     ).lower()
     family = str(state.get("strategy_family") or "").lower()
     strategy = str(state.get("strategy") or "").lower()
-    status = str(signal_row.get("entry_contract_status", "") or "").lower()
+    status = str(_instrument_observed_value(signal_row.get("entry_contract_status")) or "").lower()
     actionable = direction in {"BUY", "SELL"}
     setup_observed = (
         actionable
-        or bool(signal_row.get("entry_setup_detected", False))
+        or bool(_instrument_observed_value(signal_row.get("entry_setup_detected"), False))
         or status
         not in {
             "",
@@ -4667,7 +4719,7 @@ def _record_strategy_instrument_events(
         _record_instrument_runtime_event(
             state, key, signal_row, direction, source
         )
-    if bool(signal_row.get("entry_location_valid", False)):
+    if bool(_instrument_observed_value(signal_row.get("entry_location_valid"), False)):
         for key in (
             "dynamic_fibonacci_zone",
             "confirmed_swing",
@@ -4680,7 +4732,7 @@ def _record_strategy_instrument_events(
                 direction,
                 "structure_location_evaluated",
             )
-    if bool(signal_row.get("bos_event", False)):
+    if bool(_instrument_observed_value(signal_row.get("bos_event"), False)):
         _record_instrument_runtime_event(
             state,
             "bos_event",
@@ -4688,7 +4740,7 @@ def _record_strategy_instrument_events(
             direction,
             "bos_event_observed",
         )
-    if bool(signal_row.get("choch_event", False)):
+    if bool(_instrument_observed_value(signal_row.get("choch_event"), False)):
         _record_instrument_runtime_event(
             state,
             "choch_event",
@@ -4697,7 +4749,7 @@ def _record_strategy_instrument_events(
             "choch_event_observed",
             context_overrides={"regime": "transition"},
         )
-    if str(signal_row.get("m15_trap_direction", "") or "").upper() in {"BUY", "SELL"}:
+    if str(_instrument_observed_value(signal_row.get("m15_trap_direction")) or "").upper() in {"BUY", "SELL"}:
         _record_instrument_runtime_event(
             state,
             "liquidity_sweep",

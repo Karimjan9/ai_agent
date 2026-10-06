@@ -24,7 +24,8 @@ class ResearchExperimentWorkConsumerService
         if (! $item
             || (string) $item->status !== 'leased'
             || ! hash_equals((string) $item->lease_token, $leaseToken)
-            || (int) $item->fence_version !== $fenceVersion) {
+            || (int) $item->fence_version !== $fenceVersion
+            || ! $item->lease_expires_at || ! $item->lease_expires_at->isFuture()) {
             return $this->blocked('WORK_LEASE_NOT_CURRENT');
         }
         $payload = (array) $item->payload;
@@ -32,6 +33,16 @@ class ResearchExperimentWorkConsumerService
             $this->conversion->defer($item, 'RESEARCH_LOOP_OWNER_MISMATCH', false);
 
             return $this->blocked('RESEARCH_LOOP_OWNER_MISMATCH');
+        }
+        if (in_array((string) $item->work_type, SpecialistCouncilFollowupExecutionService::DISCOVERY_TYPES, true)) {
+            if (! $this->autonomy->enabled((string) $item->symbol, (string) $item->timeframe)) {
+                $this->conversion->defer($item, 'AUTONOMOUS_MODE_STOPPED', true);
+                return $this->blocked('AUTONOMOUS_MODE_STOPPED');
+            }
+            // This executor owns the discovery lock and a FULL fresh original
+            // readiness proof. Do not repeat that expensive proof outside its
+            // lock; claim and canonical construction/admission still recheck.
+            return app(SpecialistCouncilFollowupExecutionService::class)->execute($item);
         }
         $council = str_starts_with((string) $item->work_type, 'specialist_council_');
         if ($council) {

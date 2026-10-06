@@ -56,3 +56,19 @@ authorized disjoint windows. Original wall duration is never labelled CPU or
 a measured compute advantage. Pure qualification reinspection publishes no new
 evidence. Explicit missing code and authorized data prerequisites never become
 claimed authority.
+
+## Original prospective window reservations
+
+Independent panels reserve all three verified server windows through the same
+constructor before any outcome, rather than accepting caller-shaped cohort IDs.
+One global original plan seals every comparison arm, source/scope and release.
+The existing arbiter executes one bounded original full arm per delivery and
+retains its immutable checkpoint on completion/restart. Native and solo account
+metrics are measured from actual events on the same original source clock.
+Conditional fixture execution is transport/account proof, not market alpha.
+
+A partially constructed, entirely unobserved native cohort may append a bounded
+source-only operational amendment with original archive/HMAC evidence. It cannot
+change its question, parameters, original resolution or scientific history.
+Initial native-discovery leases are separately bounded at 2700 seconds after
+locked original proof; no implicit renewal or expired persistence is permitted.

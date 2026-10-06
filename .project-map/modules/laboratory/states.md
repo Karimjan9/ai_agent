@@ -32,13 +32,34 @@ only an in-memory descriptor removal may reconstruct the old hash. Arbitrary
 model changes, missing witnesses, peer drift or observed outcomes stay blocked.
 This new prospective proof never makes the old preparation valid.
 
-Independent/descendant reference inspection remains
-`blocked: CANONICAL_AUTHORIZED_WINDOW_COHORT_PRODUCER_REQUIRED` until a real
-canonical per-window reservation/snapshot producer and original terminal owner
-exist. Current ordinary and historical native-six drafts cannot satisfy this
-producer contract. Registration writes neither panel ownership nor readiness;
-no fabricated constructor marker, existing discovery release or caller flag
-can wake it. Actual unused authorized data is an additional requirement.
+An independent server panel follows `blocked -> original_window_reservation ->
+leased -> research_reserved (three cohorts) -> atomic_original_preparation ->
+ready (preparation-only checkpoint) -> fresh lease ->
+full_validation (one original arm per delivery) -> canonical_terminal_projection
+-> original_panel_settled`.
+No replay precedes all three reservations and the global original plan/release.
+First preparation saves `original_preparation_sealed` and defers with
+`COUNCIL_PANEL_ORIGINAL_PREPARATION_SEALED`, without HTTP. The next real lease
+revalidates that checkpoint before the first arm; preparation time cannot
+consume the arm's required remaining budget. An expired owner cannot resume it.
+Partial construction resumes the same intent/generation; terminal arm checkpoints
+are not replayed. Scientific budget is one panel, not the bounded operational
+delivery count. After the original exam, every cohort must have a durable
+terminal status and completed timestamp before work completion. Pending/unknown
+owned queue or settlement state saves a retryable terminal-projection checkpoint;
+a fresh lease reuses the original runs and exam rather than repeating replay.
+Missing data, technical refusal and underpowered/negative
+scientific outcomes remain different and grant no approval by themselves.
+Actual unused authorized post-paper data is mandatory. The old caller-shaped
+reference registration remains blocked; descendant transfer cannot borrow a
+discovery cohort or invent a qualified parent.
+
+An unleased, unobserved incomplete native cohort may append up to three
+source-only operational amendments. Every amendment seals its source archive,
+original resolution, immutable six-slot intent and exact existing model vectors.
+The original resolution/history is never replaced. Prior preparation, release,
+run or observed outcome prohibits this amendment. New admission requires a
+current bounded owner lease; source amendment alone does not resume execution.
 
 Support-role qualification is separate from trader and paper qualification.
 An original role-specific producer, component ablation and retention can grant

@@ -94,6 +94,39 @@ class GenerationAdmissionDecisionService
                 ])->exists())
             )
         );
+        $panelIntent = data_get($input, 'authorized_specialist_council_panel_intent');
+        $panelRequested = $panelIntent !== null || $trigger === LabPopulationService::AUTHORIZED_COUNCIL_PANEL_TRIGGER;
+        $panelFailure = null;
+        $reservedPanelPredecessor = false;
+        if ($panelRequested) {
+            try {
+                if (! is_array($panelIntent) || $trigger !== LabPopulationService::AUTHORIZED_COUNCIL_PANEL_TRIGGER
+                    || strtoupper($lab->symbol) !== 'XAUUSD' || strtoupper($lab->timeframe) !== 'H1'
+                    || (bool) data_get($input, 'force') || $historicalRequested || $learningConfirmation
+                    || (bool) data_get($input, 'role_complete') || (bool) data_get($input, 'controlled_rescue')
+                    || (bool) data_get($input, 'operator_approved_successor') || (bool) data_get($input, 'shadow_research')
+                    || (bool) data_get($input, 'coverage_rescue')) {
+                    throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_ADMISSION_OWNER_INVALID');
+                }
+                $verified = app(SpecialistCouncilIndependentPanelService::class)->assertConstructorIntent(
+                    array_diff_key($panelIntent, ['intent_hash' => true]));
+                if (! is_array($verified) || ($verified['protocol'] ?? null) !== LabPopulationService::AUTHORIZED_COUNCIL_PANEL_INTENT_PROTOCOL
+                    || app(ResearchPaperEpochContractService::class)->parameterHash($verified) !== ($panelIntent['intent_hash'] ?? null)) {
+                    throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_ADMISSION_PROOF_DRIFT');
+                }
+                $active = $lab->generations()->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->get();
+                foreach ($active as $generation) {
+                    if (! LabPopulationService::reservedAuthorizedPanelOwnerMatches($generation, $verified)) {
+                        throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_FOREIGN_OR_OBSERVED_ACTIVE_OWNER');
+                    }
+                }
+                if ($active->count() >= 3) throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_WINDOW_BUDGET_EXHAUSTED');
+                $reservedPanelPredecessor = $latest?->status === 'research_reserved' && $active->contains('id', $latest->id);
+                $terminal = $terminal || $reservedPanelPredecessor;
+            } catch (\Throwable $error) {
+                $panelFailure = $error instanceof \LogicException ? $error->getMessage() : 'AUTHORIZED_COUNCIL_PANEL_ORIGINAL_OWNER_UNAVAILABLE';
+            }
+        }
         $special = (bool) data_get($input, 'controlled_rescue')
             || (bool) data_get($input, 'operator_approved_successor')
             || (bool) data_get($input, 'role_complete')
@@ -130,7 +163,11 @@ class GenerationAdmissionDecisionService
             )
             : null;
 
-        if (($edgeOwnership['owned'] ?? false) === true) {
+        if ($panelFailure !== null) {
+            $decision = self::BLOCK_HARD;
+            $allowed = false;
+            $reasons[] = $panelFailure;
+        } elseif (($edgeOwnership['owned'] ?? false) === true) {
             // Edge Genesis is itself the current learning/evolution state
             // machine. Opening a parallel learning-confirmation generation
             // here lets a partial constructor consume the same replay lane
@@ -151,6 +188,10 @@ class GenerationAdmissionDecisionService
             $allowed = false;
             $reasons[] = 'HISTORICAL_RESEARCH_POLICY_NOT_ADMITTED';
         } elseif ($historicalRequested && $safetyPaused) {
+            $decision = self::BLOCK_HARD;
+            $allowed = false;
+            $reasons[] = 'GENERATION_CREATION_SAFETY_PAUSED';
+        } elseif ($panelRequested && $safetyPaused) {
             $decision = self::BLOCK_HARD;
             $allowed = false;
             $reasons[] = 'GENERATION_CREATION_SAFETY_PAUSED';
@@ -236,6 +277,7 @@ class GenerationAdmissionDecisionService
             $reasons[] = 'CAUSAL_CONFIRMATION_SATISFIES_LEARNING_DISPATCH';
         }
         if ($special
+            && ! $panelRequested
             && $terminal
             && ! $allowed
             && $decision === self::BLOCK_HARD
@@ -277,6 +319,7 @@ class GenerationAdmissionDecisionService
                 'research_only' => true,
                 'promotion_evidence' => false,
             ],
+            'authorized_panel_reserved_predecessor' => $reservedPanelPredecessor,
             'edge_research_lane' => $edgeOwnership,
             'promotion_evidence' => false,
         ];

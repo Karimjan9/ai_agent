@@ -2,12 +2,16 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-05T12:28:51.882Z",
-  "source_digest": "4f0711b43924cca8e9dbf1f4a52646f828534905baa608d2315927f6cd13f75a",
-  "source_file_count": 1523,
-  "git_head": "133cf4ffd1f2a0d2998d49364bf0887da4cc9b56",
+  "generated_at": "2026-10-06T09:09:34.780Z",
+  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
+  "source_file_count": 1532,
+  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
+    {
+      "path": "ai-service-python/tests/support/authorized_council_arm_fixture.py",
+      "tests": []
+    },
     {
       "path": "ai-service-python/tests/support/authorized_research_transport_fixture.py",
       "tests": []
@@ -21,6 +25,25 @@
       "tests": [
         "test_aggregation_sums_measured_segments_not_only_last_fold",
         "test_legacy_missing_negative_nonfinite_and_fake_measurements_stay_unknown"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_authorized_council_arm.py",
+      "tests": [
+        "test_actual_signed_full_solo_runs_original_engine_once_never_walkforward",
+        "test_only_actual_signed_original_identity_selects_full_route",
+        "test_truncated_consumed_frame_is_not_a_successful_original_arm",
+        "test_aggregate_result_without_measured_original_costs_is_refused",
+        "test_real_signed_solo_engine_account_reconciles_actual_fills_costs_and_scope",
+        "test_normalized_drop_or_native_wrong_scope_never_gets_original_scope_receipt",
+        "test_unsigned_historical_route_unchanged",
+        "test_unavailable_closed_instrument_scalars_never_assert_an_observation",
+        "test_ordinary_single_strategy_keeps_legacy_clock_without_original_account",
+        "test_signed_declared_mtf_confirmation_keeps_unclosed_context_wait",
+        "test_signed_original_window_bundle_requires_private_owner_at_direct_context_entry",
+        "test_real_signed_native_window_publishes_actual_zero_warmup_clock_and_closed_member_inputs",
+        "test_actual_signed_future_quotes_activate_original_liquidity_scope_without_calendar_flags",
+        "test_default_quote_calendar_still_refuses_paper_and_unsigned_future"
       ]
     },
     {
@@ -519,6 +542,9 @@
     {
       "path": "ai-service-python/tests/test_specialist_council.py",
       "tests": [
+        "test_actual_native_trace_covers_decisions_and_publishes_real_trade_ledger",
+        "test_bounded_native_inspection_keeps_omitted_closed_inputs_hash_bound",
+        "test_native_15000_row_probe_trace_uses_actual_512_warmup_clock",
         "test_swing_stays_open_while_short_members_trade_on_shared_account",
         "test_simultaneous_requests_cannot_spend_capital_twice",
         "test_hard_risk_veto_has_role_reason",
@@ -985,6 +1011,21 @@
         "test_primary_source_cannot_be_hidden_by_duplicate_mtf_key",
         "test_path_escape_cannot_receive_server_signature_even_if_bytes_match",
         "fixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php",
+      "tests": [
+        "ready",
+        "source",
+        "intent",
+        "issuer",
+        "build",
+        "test_real_public_constructor_reserves_three_exact_unobserved_window_cohorts_and_retry_reuses_owner",
+        "test_partial_original_strategy_clone_resumes_same_generation_by_verified_slot_marker",
+        "test_foreign_reserved_work_or_any_original_outcome_cannot_open_another_window",
+        "test_source_drift_2026_and_unverified_flags_fail_before_creating_models",
+        "test_shared_admission_cannot_promote_an_invalid_panel_into_special_escape_or_ignore_foreign_active_work"
       ]
     },
     {
@@ -2450,6 +2491,26 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_actual_python_native_trace_keeps_its_float_types_across_the_transport_boundary",
+        "test_original_full_zero_warmup_uses_its_actual_next_open_clock",
+        "test_empty_response_defaults_are_not_native_claims_for_an_unbound_original_solo",
+        "test_a_requested_native_council_cannot_use_an_empty_response_default_as_solo_evidence",
+        "test_erasing_all_response_hints_cannot_downgrade_the_immutable_original_scope_to_legacy",
+        "test_genuine_unbound_original_request_keeps_the_ordinary_legacy_clock",
+        "test_sealed_native_probe_uses_512_warmup_and_14999_actual_clock_rows",
+        "test_original_artifact_not_mutable_request_projection_owns_the_scope",
+        "test_corrupt_scope_hash_rows_or_clock_cannot_become_complete",
+        "test_ordinary_legacy_clock_still_starts_at_200",
+        "scopedFixture",
+        "persistOriginalRequest",
+        "resealTrace"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
       "tests": [
         "intent",
@@ -2954,6 +3015,22 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ResearchWorkLeaseBudgetTest.php",
+      "tests": [
+        "work",
+        "proof",
+        "test_ordinary_initial_lease_remains_900_seconds_regardless_of_caller_budget",
+        "test_server_attested_discovery_initial_lease_covers_scheduled_child_but_not_constructor_mutex",
+        "test_expensive_claim_proof_finishes_before_initial_lease_clock_starts",
+        "test_forged_executable_payload_cannot_claim_or_extend_a_council_lease",
+        "test_reconcile_uses_one_original_proof_per_locked_work_and_claim_takes_a_fresh_proof",
+        "test_wrong_owner_or_resolution_and_independent_panel_do_not_receive_discovery_budget",
+        "test_expired_token_and_fence_cannot_write_completion_or_defer_before_reclaim",
+        "test_discovery_consumer_delegates_one_fresh_proof_to_the_lock_owning_executor",
+        "test_checkpoint_preserves_bounded_deadline_and_expired_consumer_never_executes"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/RiskBoundedEvolutionTest.php",
       "tests": [
         "test_governor_emits_controlled_exploration_modes_after_history_exists",
@@ -3164,7 +3241,12 @@
       "tests": [
         "work",
         "fixture",
+        "duringArchiveSync",
         "test_actual_six_constructor_preserves_verified_vectors_with_zero_parent_authority_and_same_generation_resume",
+        "test_native_constructor_expensive_proof_is_reused_only_inside_one_locked_invocation",
+        "test_native_constructor_expired_lease_after_expensive_slot_rolls_back_model_and_agent",
+        "test_native_constructor_changed_original_source_vector_during_slot_cannot_persist_cached_proof",
+        "test_native_constructor_changed_live_lease_fence_after_persistence_rolls_back_model_and_agent",
         "test_caller_executable_flag_and_stale_fence_cannot_dispatch_unproved_council_work",
         "test_actual_cohort_projection_loss_cannot_create_a_second_cohort_from_the_same_work",
         "test_specific_generation_resume_claim_cannot_take_another_higher_priority_work",
@@ -3177,10 +3259,12 @@
         "test_missing_server_resolution_stays_blocked_despite_caller_executable_flag",
         "test_one_prospective_research_resolution_freezes_real_old_new_vectors_and_is_idempotent",
         "test_previously_sealed_question_cannot_be_tuned_after_registration",
+        "test_original_server_registration_claims_bounded_discovery_lease_without_caller_authority",
         "test_original_assessment_redelivery_and_stale_normalization_preserve_registered_resolution",
         "test_rehashed_forged_work_proof_does_not_replace_server_registration",
         "test_changed_original_native_model_invalidates_even_the_server_signed_resolution",
         "test_new_source_after_registration_cannot_mix_followup_evaluator_versions",
+        "test_actual_copied_source_byte_drift_refuses_original_signed_work_without_hash_mocks",
         "test_data_readiness_is_rechecked_after_successful_registration",
         "test_completed_and_exhausted_work_does_not_reopen_one_scientific_attempt",
         "test_caller_executable_or_authority_fields_are_not_accepted_as_preregistration",
@@ -3206,6 +3290,14 @@
         "test_external_risk_and_capital_cannot_change_under_same_followup_proof",
         "test_data_owner_failure_rolls_back_registration_instead_of_waking_work",
         "test_independent_and_descendant_claims_do_not_become_discovery_executable",
+        "test_source_amendment_appends_original_artifact_without_changing_resolution_or_cohort",
+        "test_source_amendment_public_cli_uses_original_owner_and_retains_checkpoint",
+        "test_source_amendment_refuses_any_original_replay_or_preparation",
+        "test_source_amendment_refuses_frozen_plan_and_constructed_vector_drift",
+        "test_source_amendment_refuses_constructed_physical_vector_drift",
+        "test_source_amendment_tampered_projection_or_archive_cannot_grant_readiness",
+        "test_source_amendment_live_lease_does_not_authorize_source_rewrite",
+        "sourceAmendmentFixture",
         "fixture",
         "recordOriginalSchemaFailure"
       ]
@@ -3241,6 +3333,27 @@
         "candles",
         "python",
         "canonicalize"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_real_registration_reserves_three_canonical_cohorts_then_seals_original_full_signed_units",
+        "test_public_preparation_seals_all_original_requests_then_uses_a_fresh_real_budget_for_native_and_solo",
+        "originalPanelAcceptance",
+        "panelTestProgress",
+        "advanceFixtureClock",
+        "originalRunDiagnostic",
+        "preserveOriginalFailureArtifacts",
+        "test_real_owned_queue_backlog_cannot_be_discarded_by_the_panel_terminal_guard",
+        "test_original_source_schema_is_rejected_before_an_executable_reservation_is_sealed",
+        "test_original_shared_account_policy_is_rejected_before_any_canonical_reservation",
+        "test_an_untyped_registered_bundle_cannot_become_an_executable_panel_window",
+        "test_caller_window_labels_or_changed_original_file_never_create_a_canonical_cohort",
+        "test_actual_registered_windows_may_not_overlap_the_same_market_events",
+        "fixture"
       ]
     },
     {
@@ -3360,7 +3473,8 @@
         "test_real_unbound_source_payload_omits_council_and_parses_as_ordinary_strategy",
         "test_declared_native_object_is_preserved_in_a_mixed_transport_not_cast_or_dropped",
         "test_explicit_null_list_or_scalar_council_stays_rejected_by_strict_python_schema",
-        "test_declared_invalid_native_binding_is_rejected_before_payload_fallback"
+        "test_declared_invalid_native_binding_is_rejected_before_payload_fallback",
+        "test_null_list_or_scalar_original_evaluation_binding_is_not_an_unbound_source"
       ]
     },
     {

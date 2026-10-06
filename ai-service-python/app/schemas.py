@@ -90,6 +90,9 @@ class StrategyRuntimeConfig(BaseModel):
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
     research_release: dict[str, Any] = Field(default_factory=dict)
     specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
+    # Original PHP plan binding survives validation, but grants no authority
+    # without the server-signed full-window transport and immutable exam.
+    specialist_council_evaluation: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionConfig(BaseModel):
