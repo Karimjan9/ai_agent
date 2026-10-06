@@ -1078,6 +1078,11 @@ class LabPopulationService
                     : ($populationLimit !== null
                         ? max(1, (int) $populationLimit)
                         : $this->configuredPopulationSize());
+                // Warm the original full proof while the mutex/transaction is
+                // held, before this new row can appear as an owned cohort.
+                if (isset($nativeCouncilIntent['followup_work_item_id'])) {
+                    $this->nativeCouncilFollowupResolution($nativeCouncilIntent, true);
+                }
                 $generation = $lockedLab->generations()->create([
                     'generation' => $number, 'trigger_type' => $trigger,
                     'trigger_context' => ['previous_generation' => $latestInTransaction?->generation, 'created_by' => 'learning_trigger',
@@ -5656,6 +5661,9 @@ class LabPopulationService
             $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($work->fresh());
             $memo = ['proof' => $proof, 'work_id' => $work->id, 'lease_token' => $work->lease_token,
                 'fence_version' => (int) $work->fence_version, 'source_binding' => $binding];
+            if ($this->nativeFollowupConstructorInvocation && ! ($proof['owned_generation_id'] ?? null)) {
+                $memo['pristine_unbuilt_start'] = app(SpecialistCouncilResearchFeedbackService::class)->pristineUnbuiltFollowupSnapshot($work->fresh());
+            }
             $this->assertNativeFollowupInvocationCurrent($intent, $memo, $generationId);
             if ($this->nativeFollowupConstructorInvocation) $this->nativeFollowupInvocationProof = $memo;
         }
@@ -5678,7 +5686,8 @@ class LabPopulationService
         $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($current);
         if ($binding !== $memo['source_binding']) throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_CHANGED_DURING_CONSTRUCTION');
         if ($ownedId = $generationId ?? (int) ($memo['proof']['owned_generation_id'] ?? 0)) {
-            app(SpecialistCouncilResearchFeedbackService::class)->assertUnobservedConstructorBinding($current, $ownedId);
+            app(SpecialistCouncilResearchFeedbackService::class)->assertUnobservedConstructorBinding($current, $ownedId,
+                $memo['pristine_unbuilt_start'] ?? null);
         }
         foreach ((array) ($memo['proof']['native_source_models'] ?? []) as $spec) {
             $source = ModelVersion::find($spec['model_version_id']);

@@ -13,6 +13,17 @@ needs verified pre-execution absence of scientific outcomes; generic transport
 failure/timeout is not that proof. Unsupported independent or descendant
 executors stay explicitly blocked, not silently described as data-only waits.
 
+Cold construction captures an invocation-local signed pristine-target witness
+before creating its row, then requires the full original six-slot plan before
+each model persist. A canonical result-only dependency hold is retained during
+constructive checkpoints and dispatch completion, not mistaken for an existing
+cohort. Empty/lost plans and contradictory pointers remain refusals.
+`blocked_unbuilt -> source_amendment_appended -> fresh_arbiter_lease` requires
+zero owned rows, markers, target artifacts and outcomes, original vectors and
+unique verified old/new source archives. Up to three source amendments share the
+same immutable resolution, observed auxiliary history and attempt/scientific
+budgets; amendment alone does not resume execution.
+
 ## Research meta-learning (ADR-028)
 
 New causal questions: `preregistered -> local_target_calibrated | underpowered`.

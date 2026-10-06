@@ -261,6 +261,23 @@ class ResearchReleaseSealService
         return $reference;
     }
 
+    /** Bounded discovery only; addresses are not proof until sourceArtifactReference verifies them. */
+    public function retainedSourceArtifactAddresses(int $limit = 128): array
+    {
+        if ($limit < 1 || $limit > 128) throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_LOOKUP_LIMIT_INVALID');
+        $directory = $this->artifactDirectory();
+        if (! is_dir($directory)) return [];
+        $addresses = [];
+        foreach (new \DirectoryIterator($directory) as $entry) {
+            if (! preg_match('/^([a-f0-9]{64})\.json$/D', $entry->getFilename(), $match)) continue;
+            if ($entry->isLink() || ! $entry->isFile()) throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_INVALID');
+            $addresses[] = $match[1];
+            if (count($addresses) > $limit) throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_LOOKUP_BUDGET_EXCEEDED');
+        }
+        sort($addresses, SORT_STRING);
+        return $addresses;
+    }
+
     public function currentSourceArtifact(): ?array
     {
         $path = $this->artifactDirectory().'/current.json';

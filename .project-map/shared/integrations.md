@@ -49,6 +49,13 @@ only for an original unbound program with no native request declaration.
 Requested/bound native execution still requires its original valid receipt;
 an unsolicited nonempty receipt is refused. This does not relax request types.
 
+Council source amendment uses the existing owner CLI with explicit `--unbuilt`
+only for a target with no constructed rows, model markers or target outcomes.
+Source references are enumerated under a server-owned 128-address bound and
+individually verified; missing, ambiguous or overflowed old-source matches do
+not authorize repair. The same signed body and observed auxiliary source remain
+historical facts. This operation adds no lease, queue or scientific attempt.
+
 Council follow-up proof registration is an existing-owner CLI operation, not
 queue or population creation. Only the server-sealed original work, current
 source/native vectors and verified clean-MTF plan can become executable.

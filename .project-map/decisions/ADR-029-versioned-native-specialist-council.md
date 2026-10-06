@@ -110,3 +110,17 @@ Only this server-proven, changed-source branch may retain the unexecuted
 comparison's physical question; it explicitly claims no scientific novelty,
 independence or replenished question budget.
 Old models, work, seals and scientific budgets are never repaired or reopened.
+
+Cold follow-up construction warms its full proof inside the held transaction
+before inserting the new row, captures a signed pristine-start witness and
+requires the original six-slot plan before each model persist. A canonical
+result-only dependency hold survives constructive checkpoints and completion;
+lost plans or contradictory pointers remain invalid.
+
+For an unleased target that has never owned a row, model marker or outcome,
+the same owner may append a bounded pristine-unbuilt source-only amendment.
+Its original and current archives are verified separately, and ambiguous or
+overflowed old-archive lookup refuses. The HMAC/artifact chain retains the
+original signed resolution, native vectors, literal hold, operational attempts
+and any acknowledged auxiliary observation. It grants no lease, new scientific
+attempt or independent authority. Existing built-cohort repair stays strict.

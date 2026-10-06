@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-06T12:48:56.106Z",
-  "source_digest": "d40401ee252133983e8d78c178cfebb535fdd4443d430cbb27831df8364060c1",
+  "generated_at": "2026-10-06T17:37:46.309Z",
+  "source_digest": "eaf7c99b4c83295f47532f83049055adf9c015a06edd198fc52f74b88dd6b96e",
   "source_file_count": 1538,
-  "git_head": "37d776af03c7ca923d1865c857c959b1dc783d5a",
+  "git_head": "03e5ea292f250520afdc7af208ed6f9cfc34279a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -6797,19 +6797,19 @@
       "symbol": "admitted",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
-      "line": 210
+      "line": 213
     },
     {
       "symbol": "complete",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
-      "line": 217
+      "line": 220
     },
     {
       "symbol": "defer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
-      "line": 227
+      "line": 231
     },
     {
       "symbol": "__construct",
@@ -6944,76 +6944,82 @@
       "line": 92
     },
     {
-      "symbol": "originalDescriptorMaterialization",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1000
-    },
-    {
-      "symbol": "followupBlocked",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1041
-    },
-    {
-      "symbol": "followupServerSeal",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1048
-    },
-    {
-      "symbol": "priorObservations",
+      "symbol": "unobservedTechnicalProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
       "line": 1056
     },
     {
+      "symbol": "originalDescriptorMaterialization",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1180
+    },
+    {
+      "symbol": "followupBlocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1221
+    },
+    {
+      "symbol": "followupServerSeal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1228
+    },
+    {
+      "symbol": "priorObservations",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1236
+    },
+    {
       "symbol": "assertPriorObservations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1066
+      "line": 1246
     },
     {
       "symbol": "completedQuestionForSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1084
+      "line": 1264
     },
     {
       "symbol": "observationFromReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1117
-    },
-    {
-      "symbol": "questionFingerprint",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1132
-    },
-    {
-      "symbol": "priorReceiptValid",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1154
-    },
-    {
-      "symbol": "closure",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1183
-    },
-    {
-      "symbol": "economicDirection",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1221
+      "line": 1297
     },
     {
       "symbol": "registerFollowupProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
       "line": 131
+    },
+    {
+      "symbol": "questionFingerprint",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1312
+    },
+    {
+      "symbol": "priorReceiptValid",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1334
+    },
+    {
+      "symbol": "closure",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1363
+    },
+    {
+      "symbol": "economicDirection",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1401
     },
     {
       "symbol": "SpecialistCouncilResearchFeedbackService",
@@ -7046,76 +7052,94 @@
       "line": 41
     },
     {
+      "symbol": "amendUnbuiltFollowupSource",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 447
+    },
+    {
       "symbol": "inspectFollowupSourceBinding",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 446
+      "line": 529
+    },
+    {
+      "symbol": "pristineUnbuiltFollowupSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 546
+    },
+    {
+      "symbol": "canonicalNonconstructiveResult",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 579
     },
     {
       "symbol": "assertUnobservedConstructorBinding",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 463
+      "line": 591
     },
     {
       "symbol": "assertSignedFollowupResolution",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 485
+      "line": 621
     },
     {
       "symbol": "assertSourceAmendmentChain",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 501
+      "line": 637
     },
     {
       "symbol": "sourceAmendmentSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 543
+      "line": 694
+    },
+    {
+      "symbol": "assertPristineStartProof",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 701
     },
     {
       "symbol": "unobservedNativeConstructorSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 550
+      "line": 720
     },
     {
       "symbol": "followupOriginal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 623
+      "line": 803
     },
     {
       "symbol": "projectOriginalNativeSources",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 642
+      "line": 822
     },
     {
       "symbol": "projectNativeSources",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 656
+      "line": 836
     },
     {
       "symbol": "assertFollowupDesign",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 721
+      "line": 901
     },
     {
       "symbol": "observedAuxiliarySourceProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 756
-    },
-    {
-      "symbol": "unobservedTechnicalProof",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 876
+      "line": 936
     },
     {
       "symbol": "TacticCatalogueService",
@@ -10422,6 +10446,16 @@
         "test_source_amendment_live_lease_does_not_authorize_source_rewrite",
         "sourceAmendmentFixture",
         "test_observed_execution_snapshot_copies_only_the_original_declaration_to_a_new_discovery",
+        "unbuiltSourceAmendmentFixture",
+        "test_unbuilt_source_amendment_verifies_actual_old_new_zips_and_preserves_the_original_question_and_hold",
+        "unbuiltAmendmentPoisons",
+        "test_unbuilt_source_amendment_refuses_rewritten_question_owned_targets_and_unverified_archives",
+        "test_unbuilt_source_amendment_retains_the_three_entry_bound_without_renewing_work_budget",
+        "test_unbuilt_source_amendment_poisoned_pristine_snapshot_cannot_grant_fresh_binding",
+        "coldFollowupStarts",
+        "test_public_cold_followup_build_warms_proof_before_fresh_row_and_retains_nonconstructive_hold",
+        "coldPlanPoisons",
+        "test_cold_start_witness_never_waives_an_empty_lost_plan_or_contradictory_checkpoint",
         "test_observed_execution_snapshot_continuation_refuses_a_changed_new_model_without_rewriting_old_source",
         "observedExecutionCopyPoisons",
         "test_observed_execution_snapshot_refuses_missing_poisoned_or_retuned_originals",

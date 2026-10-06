@@ -21,6 +21,7 @@ class ManageSpecialistCouncil extends Command
         {--generation-id= : Constructor-complete unused canonical draft ID, for prepare}
         {--preparation= : Workspace JSON prospective manifest and complete research plan}
         {--work-id= : Original immutable council follow-up work ID}
+        {--unbuilt : Source amendment for original work with no constructed generation or replay}
         {--followup-plan= : Bounded workspace JSON prospective prerequisite plan}
         {--version-id= : Persisted council version ID}
         {--manifest= : Workspace JSON manifest, for register}
@@ -39,6 +40,9 @@ class ManageSpecialistCouncil extends Command
     {
         try {
             $action = (string) $this->argument('action');
+            if ($this->option('unbuilt') && $action !== 'amend-followup-source') {
+                throw new InvalidArgumentException('COUNCIL_SOURCE_AMENDMENT_MODE_INVALID');
+            }
             if ($action === 'prepare') {
                 $result = app(SpecialistCouncilPreparationService::class)->prepare(
                     LabGeneration::findOrFail($this->positiveId('generation-id')),
@@ -55,10 +59,7 @@ class ManageSpecialistCouncil extends Command
                     ResearchExperimentWorkItem::findOrFail($this->positiveId('work-id')),
                 );
             } elseif ($action === 'amend-followup-source') {
-                $result = app(SpecialistCouncilResearchFeedbackService::class)->amendUnobservedFollowupSource(
-                    $this->positiveId('work-id'), $this->positiveId('generation-id'),
-                    $this->required('actor'), $this->required('reason'),
-                );
+                $result = $this->amendFollowupSource();
             } elseif ($action === 'register') {
                 $manifest = $this->jsonFile((string) $this->option('manifest'));
                 $carrier = ModelVersion::findOrFail($this->positiveId('carrier-model'));
@@ -96,6 +97,32 @@ class ManageSpecialistCouncil extends Command
         $model = $owner->attachEvaluationArm($version, $this->required('arm'), ModelVersion::findOrFail($this->positiveId('model')));
         return ['status' => 'original_evaluation_arm_attached', 'version_id' => $version->id,
             'model_version_id' => $model->id, 'next_owner' => 'canonical_lab_dispatcher', 'promotion_evidence' => false];
+    }
+
+    /** CLI mode selection only; the original Feedback owner proves all amendment eligibility. */
+    private function amendFollowupSource(): array
+    {
+        $workId = $this->positiveId('work-id');
+        $unbuilt = (bool) $this->option('unbuilt');
+        if ($unbuilt && (string) $this->option('generation-id') !== '') {
+            throw new InvalidArgumentException('COUNCIL_SOURCE_AMENDMENT_GENERATION_MODE_CONFLICT');
+        }
+        if ($unbuilt) {
+            foreach (['preparation', 'followup-plan', 'manifest', 'evaluation-plan'] as $option) {
+                if ((string) $this->option($option) !== '') {
+                    throw new InvalidArgumentException('COUNCIL_SOURCE_AMENDMENT_FILE_INPUT_FORBIDDEN');
+                }
+            }
+        }
+        $generationId = $unbuilt ? null : $this->positiveId('generation-id');
+        $actor = $this->required('actor'); $reason = $this->required('reason');
+        if (! preg_match('/^[A-Za-z0-9_.:-]{1,120}$/D', $actor)
+            || trim($reason) === '' || strlen($reason) > 500 || trim($reason) !== $reason) {
+            throw new InvalidArgumentException('COUNCIL_SOURCE_AMENDMENT_ATTRIBUTION_REQUIRED');
+        }
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        return $unbuilt ? $owner->amendUnbuiltFollowupSource($workId, $actor, $reason)
+            : $owner->amendUnobservedFollowupSource($workId, $generationId, $actor, $reason);
     }
 
     private function status(SpecialistCouncilLifecycleService $owner, SpecialistCouncilVersion $version): array

@@ -407,7 +407,8 @@ class SpecialistCouncilResearchFeedbackService
                 throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_BOUNDED_CHANGED_VERIFIED_SOURCE');
             }
             $releases = app(ResearchReleaseSealService::class);
-            $sourceArtifact = $releases->currentSourceArtifact() ?? $releases->buildSourceArtifact();
+            $sourceArtifact = $releases->currentSourceArtifact();
+            if ($sourceArtifact === null) $sourceArtifact = $releases->buildSourceArtifact()['reference'];
             $sourceVerified = $releases->verifySourceArtifact($sourceArtifact, true);
             if (($sourceVerified['status'] ?? null) !== 'verified'
                 || ($sourceArtifact['source_hash'] ?? null) !== $source
@@ -442,6 +443,88 @@ class SpecialistCouncilResearchFeedbackService
         });
     }
 
+    /** Append-only source repair of a target that has never owned a constructor row. */
+    public function amendUnbuiltFollowupSource(int $workItemId, string $actor, string $reason): array
+    {
+        if (! preg_match('/^[A-Za-z0-9_.:-]{1,120}$/D', $actor)
+            || trim($reason) === '' || strlen($reason) > 500 || trim($reason) !== $reason) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ATTRIBUTION_REQUIRED');
+        }
+        return DB::transaction(function () use ($workItemId, $actor, $reason): array {
+            $work = ResearchExperimentWorkItem::whereKey($workItemId)->lockForUpdate()->firstOrFail();
+            [$receipt] = $this->followupOriginal($work);
+            $body = $this->assertSignedFollowupResolution($work);
+            if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)
+                || ! in_array($work->status, ['blocked', 'ready'], true) || $work->lease_token !== null
+                || $work->completed_at !== null || (int) $work->attempts >= 8
+                || ! in_array($work->last_error, ['COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT',
+                    'COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED',
+                    'COUNCIL_SOURCE_AMENDMENT_REQUIRES_EXACT_UNOBSERVED_SIX_SEAT_INTENT'], true)) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_UNLEASED_OPERATIONAL_ATTEMPT');
+            }
+            $snapshot = $this->pristineUnbuiltFollowupSnapshot($work);
+            $source = app(LabImmutableEvidenceService::class)->codeHash();
+            $releases = app(ResearchReleaseSealService::class);
+            $python = $releases->pythonHash();
+            $amendments = (array) data_get($work->payload, 'followup_source_amendments', []);
+            $prior = $amendments === [] ? null : $this->assertSourceAmendmentChain($work, $body, $amendments);
+            if ($prior !== null && ($prior['source_hash'] ?? null) === $source
+                && ($prior['python_source_hash'] ?? null) === $python) {
+                return ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'status' => 'already_registered',
+                    'work_item_id' => $work->id, 'generation_id' => null,
+                    'resolution_hash' => $body['resolution_hash'], 'amendment_hash' => $prior['amendment_hash'],
+                    'promotion_evidence' => false];
+            }
+            if (count($amendments) >= 3 || ! preg_match('/^[a-f0-9]{64}$/D', $source)
+                || ! preg_match('/^[a-f0-9]{64}$/D', $python)
+                || ($source === $body['current_source_hash'] && $python === $body['current_python_source_hash'])) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_BOUNDED_CHANGED_VERIFIED_SOURCE');
+            }
+            $originalArchives = [];
+            foreach ($releases->retainedSourceArtifactAddresses(128) as $address) {
+                $reference = $releases->sourceArtifactReference($address);
+                if ($reference !== null && ($reference['source_hash'] ?? null) === $body['current_source_hash']
+                    && ($reference['python_source_hash'] ?? null) === $body['current_python_source_hash']) {
+                    $originalArchives[] = $reference;
+                }
+            }
+            if (count($originalArchives) !== 1) {
+                throw new LogicException(count($originalArchives) === 0
+                    ? 'COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_MISSING' : 'COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_AMBIGUOUS');
+            }
+            $sourceArtifact = $releases->currentSourceArtifact();
+            if ($sourceArtifact === null) $sourceArtifact = $releases->buildSourceArtifact()['reference'];
+            if (($releases->verifySourceArtifact($sourceArtifact, true)['status'] ?? null) !== 'verified'
+                || ($sourceArtifact['source_hash'] ?? null) !== $source
+                || ($sourceArtifact['python_source_hash'] ?? null) !== $python) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_CURRENT_ARCHIVE_REQUIRED');
+            }
+            $amendment = ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'work_item_id' => $work->id,
+                'work_key' => $work->work_key, 'source_receipt_id' => $receipt->id, 'generation_id' => null,
+                'original_resolution_hash' => $body['resolution_hash'],
+                'original_resolution_body_hash' => $this->epochs->parameterHash($body),
+                'previous_amendment_hash' => $prior['amendment_hash'] ?? null,
+                'original_source_hash' => $body['current_source_hash'],
+                'original_python_source_hash' => $body['current_python_source_hash'],
+                'source_hash' => $source, 'python_source_hash' => $python,
+                'original_source_artifact' => $originalArchives[0], 'source_artifact' => $sourceArtifact,
+                'pristine_target_snapshot' => $snapshot, 'native_constructor_snapshot' => null,
+                'registered_at' => now()->utc()->toIso8601String(), 'registered_by' => $actor, 'reason' => $reason,
+                'operation' => 'bounded_pristine_unbuilt_native_source_repair', 'authority' => 'research_only',
+                'new_scientific_attempt' => false, 'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+            $amendment['amendment_hash'] = $this->epochs->parameterHash($amendment);
+            $amendment['server_seal'] = $this->sourceAmendmentSeal($amendment);
+            $artifact = app(LabImmutableEvidenceService::class)->recordArtifact(null, self::SOURCE_AMENDMENT_PROTOCOL,
+                $amendment, ['generation_id' => null, 'work_item_id' => $work->id, 'promotion_evidence' => false]);
+            $amendments[] = [...$amendment, 'artifact_id' => $artifact->artifact_id, 'artifact_sha256' => $artifact->sha256];
+            $work->update(['payload' => [...(array) $work->payload, 'followup_source_amendments' => $amendments]]);
+            return ['protocol' => self::SOURCE_AMENDMENT_PROTOCOL, 'status' => 'registered',
+                'work_item_id' => $work->id, 'generation_id' => null, 'resolution_hash' => $body['resolution_hash'],
+                'amendment_hash' => $amendment['amendment_hash'], 'artifact_id' => $artifact->artifact_id,
+                'promotion_evidence' => false];
+        });
+    }
+
     /** Cheap original source fence; never substitutes for full readiness/admission. */
     public function inspectFollowupSourceBinding(ResearchExperimentWorkItem $work): array
     {
@@ -459,13 +542,66 @@ class SpecialistCouncilResearchFeedbackService
             'resolution_body_hash' => $this->epochs->parameterHash($body)];
     }
 
+    /** Pure target-only proof: original observed auxiliary sources are not target outcomes. */
+    public function pristineUnbuiltFollowupSnapshot(ResearchExperimentWorkItem $work): array
+    {
+        $body = $this->assertSignedFollowupResolution($work);
+        $result = (array) $work->result;
+        if (! $this->canonicalNonconstructiveResult($result)
+            || LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)
+                ->orWhere('trigger_context->native_specialist_council_intent->followup_resolution_hash', $body['resolution_hash'])->exists()
+            || ModelVersion::where('metadata->native_specialist_council_seed->followup_work_item_id', $work->id)
+                ->orWhere('metadata->native_specialist_council_seed->followup_resolution_hash', $body['resolution_hash'])->exists()
+            || LabEvidenceArtifact::where('metadata->work_item_id', $work->id)->where('artifact_type', '!=', self::SOURCE_AMENDMENT_PROTOCOL)->exists()
+            || LabEvaluationRun::where('metadata->followup_work_item_id', $work->id)
+                ->orWhere('metadata->council_panel->work_item_id', $work->id)->exists()) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_PRISTINE_UNBUILT_TARGET');
+        }
+        foreach ($body['native_source_models'] as $spec) {
+            $source = ModelVersion::find($spec['model_version_id']);
+            if (! $source || $this->contracts->modelHash($source) !== $spec['model_hash']) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_NATIVE_SOURCE_DRIFT');
+            }
+        }
+        $snapshot = ['protocol' => 'specialist_council_pristine_unbuilt_target_v1', 'work_item_id' => (int) $work->id,
+            'work_key' => $work->work_key, 'resolution_hash' => $body['resolution_hash'],
+            'resolution_body_hash' => $this->epochs->parameterHash($body), 'result_hash' => $this->epochs->parameterHash($result),
+            'nonconstructive_result' => $result,
+            'native_vectors_hash' => $this->epochs->parameterHash($body['native_source_models']),
+            'original_observed_source_hash' => $this->epochs->parameterHash($body['original_observed_source_proof'] ?? null),
+            'owned_generations' => 0, 'owned_model_markers' => 0, 'target_outcomes' => 0,
+            'captured_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'), 'target_unbuilt' => true,
+            'original_auxiliary_outcome_still_observed' => ($body['original_observed_source_proof'] ?? null) !== null,
+            'promotion_evidence' => false];
+        return [...$snapshot, 'server_seal' => $this->sourceAmendmentSeal($snapshot)];
+    }
+
+    private function canonicalNonconstructiveResult(array $result): bool
+    {
+        if ($result === []) return true;
+        if (array_keys($result) !== ['dependency_hold']) return false;
+        $hold = $result['dependency_hold'];
+        return is_array($hold) && array_diff(array_keys($hold), ['reason', 'prerequisite_hash', 'promotion_evidence']) === []
+            && is_string($hold['reason'] ?? null) && $hold['reason'] !== ''
+            && preg_match('/^[a-f0-9]{64}$/D', (string) ($hold['prerequisite_hash'] ?? '')) === 1
+            && ($hold['promotion_evidence'] ?? null) === false;
+    }
+
     /** Constructor-only fence before preparation; checks cheap original rows, never data replay readiness. */
-    public function assertUnobservedConstructorBinding(ResearchExperimentWorkItem $work, int $generationId): void
+    public function assertUnobservedConstructorBinding(ResearchExperimentWorkItem $work, int $generationId, ?array $pristineStart = null): void
     {
         $body = $this->assertSignedFollowupResolution($work);
         $generation = LabGeneration::findOrFail($generationId);
-        $current = $this->unobservedNativeConstructorSnapshot($work, $body, $generation);
-        foreach ((array) data_get($work->payload, 'followup_source_amendments', []) as $amendment) {
+        $current = $this->unobservedNativeConstructorSnapshot($work, $body, $generation, $pristineStart);
+        $amendments = (array) data_get($work->payload, 'followup_source_amendments', []);
+        if ($amendments !== []) $this->assertSourceAmendmentChain($work, $body, $amendments);
+        foreach ($amendments as $amendment) {
+            if (($amendment['operation'] ?? null) === 'bounded_pristine_unbuilt_native_source_repair') {
+                if ($generation->created_at->lt(CarbonImmutable::parse($amendment['registered_at'], 'UTC'))) {
+                    throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_CONSTRUCTOR_DRIFT');
+                }
+                continue;
+            }
             $frozen = $amendment['native_constructor_snapshot'] ?? [];
             if (($amendment['generation_id'] ?? null) !== $generationId
                 || ($frozen['intent_hash'] ?? null) !== $current['intent_hash']
@@ -515,7 +651,8 @@ class SpecialistCouncilResearchFeedbackService
                 || ($entry['previous_amendment_hash'] ?? null) !== $previous
                 || ($entry['original_source_hash'] ?? null) !== $body['current_source_hash']
                 || ($entry['original_python_source_hash'] ?? null) !== $body['current_python_source_hash']
-                || ($entry['operation'] ?? null) !== 'bounded_unobserved_native_constructor_repair'
+                || ! in_array($entry['operation'] ?? null, ['bounded_unobserved_native_constructor_repair',
+                    'bounded_pristine_unbuilt_native_source_repair'], true)
                 || ($entry['authority'] ?? null) !== 'research_only' || ($entry['new_scientific_attempt'] ?? null) !== false
                 || ($entry['independent_evidence_claimed'] ?? null) !== false || ($entry['promotion_evidence'] ?? null) !== false
                 || ($entry['amendment_hash'] ?? null) !== $this->epochs->parameterHash($unsigned)
@@ -524,9 +661,23 @@ class SpecialistCouncilResearchFeedbackService
                 || ! $artifact || $artifact->artifact_type !== self::SOURCE_AMENDMENT_PROTOCOL
                 || $artifact->sha256 !== ($entry['artifact_sha256'] ?? null)
                 || $this->epochs->parameterHash(app(LabImmutableEvidenceService::class)->readArtifactPayload($artifact))
-                    !== $this->epochs->parameterHash($original)
-                || LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)
-                    ->whereKey($entry['generation_id'] ?? 0)->doesntExist()) {
+                    !== $this->epochs->parameterHash($original)) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_PROOF_INVALID');
+            }
+            if ($entry['operation'] === 'bounded_pristine_unbuilt_native_source_repair') {
+                if (! array_key_exists('generation_id', $entry) || $entry['generation_id'] !== null
+                    || ! array_key_exists('native_constructor_snapshot', $entry) || $entry['native_constructor_snapshot'] !== null) {
+                    throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_PROOF_INVALID');
+                }
+                $this->assertPristineStartProof($work, $body, (array) ($entry['pristine_target_snapshot'] ?? []));
+                $oldArchive = (array) ($entry['original_source_artifact'] ?? []);
+                if (($oldArchive['source_hash'] ?? null) !== $body['current_source_hash']
+                    || ($oldArchive['python_source_hash'] ?? null) !== $body['current_python_source_hash']
+                    || (app(ResearchReleaseSealService::class)->verifySourceArtifact($oldArchive)['status'] ?? null) !== 'verified') {
+                    throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_INVALID');
+                }
+            } elseif (LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)
+                ->whereKey($entry['generation_id'] ?? 0)->doesntExist()) {
                 throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_PROOF_INVALID');
             }
             $archive = (array) ($entry['source_artifact'] ?? []);
@@ -547,8 +698,37 @@ class SpecialistCouncilResearchFeedbackService
         return hash_hmac('sha256', self::SOURCE_AMENDMENT_PROTOCOL."\n".$this->epochs->parameterHash($body), $key);
     }
 
-    private function unobservedNativeConstructorSnapshot(ResearchExperimentWorkItem $work, array $body, LabGeneration $generation): array
+    private function assertPristineStartProof(ResearchExperimentWorkItem $work, array $body, array $snapshot): void
     {
+        $unsigned = array_diff_key($snapshot, ['server_seal' => true]);
+        if (($unsigned['protocol'] ?? null) !== 'specialist_council_pristine_unbuilt_target_v1'
+            || ($unsigned['work_item_id'] ?? null) !== (int) $work->id || ($unsigned['work_key'] ?? null) !== $work->work_key
+            || ($unsigned['resolution_hash'] ?? null) !== $body['resolution_hash']
+            || ($unsigned['resolution_body_hash'] ?? null) !== $this->epochs->parameterHash($body)
+            || ($unsigned['native_vectors_hash'] ?? null) !== $this->epochs->parameterHash($body['native_source_models'])
+            || ($unsigned['original_observed_source_hash'] ?? null) !== $this->epochs->parameterHash($body['original_observed_source_proof'] ?? null)
+            || ($unsigned['result_hash'] ?? null) !== $this->epochs->parameterHash($unsigned['nonconstructive_result'] ?? null)
+            || ! $this->canonicalNonconstructiveResult((array) ($unsigned['nonconstructive_result'] ?? []))
+            || ($unsigned['owned_generations'] ?? null) !== 0 || ($unsigned['owned_model_markers'] ?? null) !== 0
+            || ($unsigned['target_outcomes'] ?? null) !== 0 || ($unsigned['target_unbuilt'] ?? null) !== true
+            || ! is_string($unsigned['captured_at'] ?? null) || ! is_string($snapshot['server_seal'] ?? null)
+            || ! hash_equals($snapshot['server_seal'], $this->sourceAmendmentSeal($unsigned))) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_PRISTINE_START_PROOF_INVALID');
+        }
+    }
+
+    private function unobservedNativeConstructorSnapshot(ResearchExperimentWorkItem $work, array $body, LabGeneration $generation, ?array $pristineStart = null): array
+    {
+        $nonconstructiveStart = false;
+        if ($pristineStart !== null) {
+            $this->assertPristineStartProof($work, $body, $pristineStart);
+            $unsigned = array_diff_key($pristineStart, ['server_seal' => true]);
+            if (! $generation->created_at || $generation->created_at->lt(CarbonImmutable::parse($unsigned['captured_at'], 'UTC'))) {
+                throw new LogicException('COUNCIL_SOURCE_AMENDMENT_PRISTINE_START_PROOF_INVALID');
+            }
+            $nonconstructiveStart = $this->canonicalNonconstructiveResult((array) $work->result)
+                && ($unsigned['result_hash'] ?? null) === $this->epochs->parameterHash((array) $work->result);
+        }
         $owned = LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)->pluck('id')->all();
         $intent = (array) data_get($generation->trigger_context, 'native_specialist_council_intent', []);
         $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
@@ -563,7 +743,7 @@ class SpecialistCouncilResearchFeedbackService
             || count($plan) !== 6 || ! array_is_list($plan)
             || data_get($generation->trigger_context, 'specialist_council_preparation') !== null
             || data_get($generation->trigger_context, 'research_release') !== null
-            || ($work->result && (data_get($work->result, 'stage') !== 'constructed'
+            || ($work->result && ! $nonconstructiveStart && (data_get($work->result, 'stage') !== 'constructed'
                 || data_get($work->result, 'generation_id') !== $generation->id
                 || data_get($work->result, 'resolution_hash') !== $body['resolution_hash']))) {
             throw new LogicException('COUNCIL_SOURCE_AMENDMENT_REQUIRES_EXACT_UNOBSERVED_SIX_SEAT_INTENT');

@@ -79,6 +79,15 @@ The original resolution/history is never replaced. Prior preparation, release,
 run or observed outcome prohibits this amendment. New admission requires a
 current bounded owner lease; source amendment alone does not resume execution.
 
+An entirely unbuilt target uses the explicit `--unbuilt` mode instead of a
+generation ID. Its locked proof refuses any generation/model marker, target
+artifact/run or constructive checkpoint. A retained canonical dependency hold
+is history, not a constructed cohort. Both archive identities, unchanged native
+vectors and the pristine snapshot are HMAC/artifact-bound; the original signed
+resolution, attempt count and observed auxiliary outcome remain unchanged.
+Cold construction proves this start before inserting the row, persists its full
+six-slot plan before any model, and retains the hold in subsequent checkpoints.
+
 Support-role qualification is separate from trader and paper qualification.
 An original role-specific producer, component ablation and retention can grant
 only scoped research component use after authorized nonoverlapping windows and

@@ -156,6 +156,22 @@ For an incomplete cohort with no preparation, release, replay or outcome,
 It preserves the original resolution, six-slot intent and scientific question.
 It grants neither a new lease nor permission to retune or rewrite old evidence.
 
+If the target has never constructed a generation, the explicit alternative is
+`amend-followup-source --work-id=ID --unbuilt --actor=IDENTITY --reason=TEXT`.
+No generation ID or proposal file is accepted in this mode. The existing owner
+proves zero owned rows/markers/target outcomes, unchanged original native vectors,
+the original signed resolution and one unique verified old-source archive under
+a fixed lookup bound. It appends the actual current verified archive plus a
+signed pristine-target snapshot to the same at-most-three amendment chain.
+Original result/hold, attempt count and acknowledged auxiliary outcomes stay
+unchanged; this is not a new discovery or independent sample.
+
+Fresh construction warms the complete proof before its draft row exists, within
+the same held lock/transaction. The signed invocation-local start distinguishes
+a prior nonconstructive hold from a constructive checkpoint. The exact six-slot
+plan is still required before every model persists; continuation reuses the same
+cohort, and later checkpoints/completion retain the original dependency hold.
+
 Independent-validation and descendant references have a separate original-panel
 validator. It checks original evaluator/plan/window identities, unchanged
 external and scientific policies, exact selected native programs and required

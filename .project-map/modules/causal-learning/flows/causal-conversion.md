@@ -6,6 +6,13 @@ and legal parameter delta are verified before the conversion kernel exposes
 ready work. The sole arbiter leases it; its work consumer invokes canonical
 construction, same-cohort continuation, atomic preparation and witnessed queue
 admission. A stable operational hold does not mint another scientific attempt.
+For a fresh council target, full proof is warmed inside the constructor lock
+and transaction before its draft row exists. The invocation seals that pristine
+start, then requires the exact six-slot plan before any model persists. Retry
+checkpoints and dispatch completion retain the original dependency hold.
+An unleased, entirely unbuilt target may append a verified old/new archive-backed
+source-only amendment through the same owner; its resolution, attempt count,
+observed auxiliary history and scientific cap are not replaced.
 Support-role producer trials and original same-budget Portfolio comparisons
 remain distinct from confirmed skill, qualification and economic inheritance.
 

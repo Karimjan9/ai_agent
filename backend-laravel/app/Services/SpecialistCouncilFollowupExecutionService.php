@@ -200,8 +200,11 @@ class SpecialistCouncilFollowupExecutionService
     private function checkpoint(ResearchExperimentWorkItem $item, LabGeneration $generation, array $proof, string $stage): void
     {
         $this->assertLease($item);
+        // Keep the original dependency refusal visible after a legitimate
+        // retry. A constructive pointer is added, not a replacement history.
+        $priorResult = (array) $item->fresh()->result;
         if (ResearchExperimentWorkItem::whereKey($item->id)->where('status', 'leased')->where('lease_token', $item->lease_token)
-            ->where('fence_version', $item->fence_version)->where('lease_expires_at', '>', now())->update(['result' => ['protocol' => self::PROTOCOL, 'stage' => $stage,
+            ->where('fence_version', $item->fence_version)->where('lease_expires_at', '>', now())->update(['result' => [...$priorResult, 'protocol' => self::PROTOCOL, 'stage' => $stage,
                 'generation_id' => (int) $generation->id, 'resolution_hash' => $proof['resolution_hash'], 'promotion_evidence' => false], 'heartbeat_at' => now()]) !== 1) {
             throw new LogicException('COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT');
         }
@@ -216,7 +219,8 @@ class SpecialistCouncilFollowupExecutionService
 
     private function complete(ResearchExperimentWorkItem $item, LabGeneration $generation, array $proof): array
     {
-        $result = ['protocol' => self::PROTOCOL, 'status' => 'canonical_dispatch_admitted', 'generation_id' => (int) $generation->id,
+        $this->assertLease($item);
+        $result = [...(array) $item->fresh()->result, 'protocol' => self::PROTOCOL, 'status' => 'canonical_dispatch_admitted', 'generation_id' => (int) $generation->id,
             'work_item_id' => (int) $item->id, 'source_receipt_id' => (int) $item->research_experiment_receipt_id,
             'resolution_hash' => $proof['resolution_hash'], 'preparation_receipt_hash' => data_get($generation->trigger_context, 'specialist_council_preparation.receipt_hash'),
             'next_owner' => 'canonical_lab_lifecycle', 'causal_claim_still_requires_settlement' => true, 'promotion_evidence' => false];

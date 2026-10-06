@@ -120,6 +120,12 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         $feedback->shouldReceive('inspectFollowupSourceBinding')->andReturn(['source_hash' => str_repeat('f', 64),
             'python_source_hash' => str_repeat('a', 64), 'amendment_hash' => null, 'resolution_body_hash' => str_repeat('d', 64)]);
         $feedback->shouldReceive('assertUnobservedConstructorBinding')->andReturnNull();
+        // This fixture already replaces the original signed readiness owner;
+        // its unsigned placeholder is not a genuine pristine-target proof.
+        // Real cold-start registration/snapshot/build coverage lives in
+        // SpecialistCouncilFollowupReadinessTest and does not use this stub.
+        $feedback->shouldReceive('pristineUnbuiltFollowupSnapshot')->andReturn([
+            'protocol' => 'conditional_original_readiness_fixture_not_owner_authority']);
         $this->app->instance(SpecialistCouncilResearchFeedbackService::class, $feedback);
         $work->update(['payload' => [...$work->payload, 'followup_resolution' => ['resolution_hash' => $proof['resolution_hash']]]]);
         $lease = app(ResearchExperimentConversionKernelService::class)->claimForOwner(ResearchLoopArbiterService::class)[0];
@@ -181,6 +187,8 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         $executor = app(SpecialistCouncilFollowupExecutionService::class);
         $refused = $executor->execute($work);
         $this->assertSame('COUNCIL_FOLLOWUP_CANONICAL_DISPATCH_NOT_ADMITTED', $refused['reason'], json_encode($refused));
+        $originalHold = data_get($work->fresh()->result, 'dependency_hold');
+        $this->assertSame($refused['reason'], $originalHold['reason'] ?? null);
         $this->assertSame('blocked', $work->fresh()->status);
         $this->assertSame([], app(ResearchExperimentConversionKernelService::class)->claimForOwner(ResearchLoopArbiterService::class));
         $this->assertSame($before, \App\Models\LabGeneration::count());
@@ -197,6 +205,8 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         $this->assertSame($next->id, $execution['generation_id']);
         $this->assertSame($before, \App\Models\LabGeneration::count());
         $this->assertSame('settled', $work->fresh()->status);
+        $this->assertSame($originalHold, data_get($work->fresh()->result, 'dependency_hold'));
+        $this->assertSame($originalHold, $execution['dependency_hold'] ?? null);
         $this->assertFalse($execution['promotion_evidence']);
         $this->assertSame((int) $work->id, data_get($next->fresh()->trigger_context, 'specialist_council_preparation.learning_consumption_receipt.original_followup.work_item_id'));
         $this->assertDatabaseCount('lab_evaluation_runs', 0);

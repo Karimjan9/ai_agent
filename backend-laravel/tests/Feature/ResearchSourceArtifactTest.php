@@ -80,6 +80,46 @@ class ResearchSourceArtifactTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_retained_address_lookup_is_read_only_bounded_and_excludes_non_address_projections(): void
+    {
+        $directory = $this->root.'/.runtime/research-source-artifacts';
+        $this->assertSame([], $this->owner->retainedSourceArtifactAddresses());
+        $this->assertDirectoryDoesNotExist($directory);
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        File::put($directory.'/ignored.json', '{}');
+        $before = File::get($directory.'/current.json');
+        $this->assertSame([$reference['artifact_hash']], $this->owner->retainedSourceArtifactAddresses());
+        $this->assertSame($before, File::get($directory.'/current.json'));
+        $this->assertSame($reference, $this->owner->sourceArtifactReference($reference['artifact_hash']));
+    }
+
+    public function test_retained_address_lookup_overflow_is_not_a_sampled_source_proof(): void
+    {
+        $this->owner->buildSourceArtifact();
+        File::put($this->root.'/backend-laravel/app/Example.php', '<?php return "second source";');
+        $this->owner->buildSourceArtifact();
+        $this->assertCount(2, $this->owner->retainedSourceArtifactAddresses());
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_REFERENCE_LOOKUP_BUDGET_EXCEEDED');
+        $this->owner->retainedSourceArtifactAddresses(1);
+    }
+
+    public function test_retained_address_is_not_trusted_without_original_archive_validation(): void
+    {
+        $directory = $this->root.'/.runtime/research-source-artifacts';
+        File::ensureDirectoryExists($directory);
+        $address = str_repeat('b', 64);
+        File::put($directory.'/'.$address.'.json', '{}');
+        $this->assertSame([$address], $this->owner->retainedSourceArtifactAddresses());
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_REFERENCE_INVALID');
+        $this->owner->sourceArtifactReference($address);
+    }
+
+    public function test_retained_lookup_cannot_raise_its_code_owned_budget(): void
+    {
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_REFERENCE_LOOKUP_LIMIT_INVALID');
+        $this->owner->retainedSourceArtifactAddresses(129);
+    }
+
     public function test_actual_source_bytes_have_a_reproducible_idempotent_content_address_not_fake_git_or_worker_proof(): void
     {
         $first = $this->owner->buildSourceArtifact();
