@@ -432,12 +432,18 @@ class ResearchKnowledgePortfolioService
         $owner = app(SpecialistCouncilLifecycleService::class); $panels = [];
         foreach ($challenge['panels'] as $windowKey => $panel) {
             $window = $panel['window'];
-            if (! app(InstrumentResearchWindowService::class)->authorized(array_diff_key($window, ['evaluation_scope' => true]), $window['dataset_sha256'])) return $this->metaBlocked('AUTHORIZED_UNUSED_NATIVE_POLICY_WINDOW_REQUIRED');
+            // New cases are admitted against the live registry before the
+            // original challenge is sealed. Historical revalidation belongs
+            // to each original outcome owner: archived issuer/worker/source
+            // and consumed bytes, not today's removable registry projection.
             $scores = []; $outcomes = [];
             foreach (['target_cases', 'retention_cases'] as $kind) {
                 foreach ($panel[$kind]['cases'] as $question => $spec) {
                     $outcome = $owner->nativePolicyQuestionOutcome($spec, $challenge['preregistered_at'], $challenge['evaluator_id']);
                     if (($outcome['status'] ?? '') !== 'original_independent_question_observed') return $this->metaBlocked($outcome['reason'] ?? 'ORIGINAL_NATIVE_POLICY_QUESTION_OUTCOMES_REQUIRED');
+                    if (! is_array($outcome['original_sources'] ?? null) || $outcome['original_sources'] === []) {
+                        return $this->metaBlocked('ORIGINAL_NATIVE_POLICY_QUESTION_SOURCES_REQUIRED');
+                    }
                     $outcomes[$kind][$question] = $outcome;
                 }
                 foreach ($panel[$kind]['rankings'] as $policy => $ranking) {

@@ -96,6 +96,11 @@ class LabReplayRecoveryService
         // frozen cohort with today's evaluator. Check before costly data restore.
         app(ResearchReleaseSealService::class)->assertCurrent($generation);
 
+        // A matching source/cost subset is not enough: a sealed council member
+        // may have drifted while its execution parameter hash stayed equal.
+        // Reuse the original preparation owner before restoring or requeueing.
+        app(SpecialistCouncilPreparationService::class)->isResearchGeneration($generation);
+
         $includeVolume = $this->volumeEnabled($agent);
         $context = (array) $generation->trigger_context;
         $priceKey = $includeVolume ? 'volume' : 'price';
@@ -181,6 +186,7 @@ class LabReplayRecoveryService
         }
         app(ResearchReleaseSealService::class)->assertCurrent($generation);
 
+        app(SpecialistCouncilPreparationService::class)->isResearchGeneration($generation);
         $this->assertContractSnapshots($generation, $contract);
     }
 

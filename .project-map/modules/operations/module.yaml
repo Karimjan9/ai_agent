@@ -17,6 +17,7 @@ paths:
   - ai-service-python/app/services/research_release.py
   - backend-laravel/app/Services/MarketHealthService.php
   - backend-laravel/app/Services/ResearchLoopArbiterService.php
+  - backend-laravel/app/Console/Commands/RunResearchLoop.php
   - backend-laravel/app/Services/AutonomousModeService.php
   - backend-laravel/app/Services/LabLifecycleWatchdogService.php
   - backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php

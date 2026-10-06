@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-06T09:09:34.780Z",
-  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
-  "source_file_count": 1532,
-  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
+  "generated_at": "2026-10-06T12:48:56.106Z",
+  "source_digest": "d40401ee252133983e8d78c178cfebb535fdd4443d430cbb27831df8364060c1",
+  "source_file_count": 1538,
+  "git_head": "37d776af03c7ca923d1865c857c959b1dc783d5a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -70,6 +70,9 @@
         "backend-laravel/app/Services/TradingInstrumentOperatingSystemService.php",
         "backend-laravel/app/Services/LearningLaneService.php",
         "backend-laravel/app/Services/LearningConsolidationService.php",
+        "backend-laravel/app/Services/LearningKernelService.php",
+        "backend-laravel/app/Services/LearningOutcomeSettlementService.php",
+        "backend-laravel/app/Services/LearningRewardService.php",
         "backend-laravel/app/Services/LearningRetrievalService.php",
         "backend-laravel/app/Services/AgentKnowledgeService.php",
         "backend-laravel/app/Services/AgentProfessionalExamService.php",
@@ -136,6 +139,7 @@
         "ai-service-python/app/services/prospective_probe_window.py"
       ],
       "entry_points": [
+        "LearningKernelService::settleOutcome",
         "SpecialistCouncilResearchFeedbackService::registerFollowupProof",
         "SpecialistCouncilResearchFeedbackService::inspectFollowupReadiness",
         "ResearchExperimentConversionKernelService::claimCouncilContinuationForGeneration",
@@ -295,7 +299,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 110,
+      "source_file_count": 113,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -384,6 +388,12 @@
         "backend-laravel/app/Services/SpecialistCouncilAuthorizedArmExecutionService.php",
         "backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilDescendantProducerTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilHistoricalProofTest.php",
+        "backend-laravel/tests/Feature/QualifiedResearchPolicyConsumptionTest.php",
+        "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
+        "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
+        "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
         "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
         "backend-laravel/app/Models/SpecialistCouncilVersion.php",
         "backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php",
@@ -458,6 +468,9 @@
         "SpecialistCouncilPanelReservationService::register",
         "SpecialistCouncilPanelReservationService::execute",
         "SpecialistCouncilAuthorizedArmExecutionService::execute",
+        "SpecialistCouncilLifecycleService::executedOriginalTraitProof",
+        "SpecialistCouncilPanelReservationService::pendingNativePanelQuestionCases",
+        "ResearchExperimentConversionKernelService::verifiedNativePolicySelection",
         "GenerationSnapshotAdmissionService::historicalDatasetReadiness",
         "trading:lab-generation --trigger=historical_research",
         "LabPopulationService",
@@ -575,7 +588,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 67,
+      "source_file_count": 73,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -836,6 +849,7 @@
         "ai-service-python/app/services/research_release.py",
         "backend-laravel/app/Services/MarketHealthService.php",
         "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+        "backend-laravel/app/Console/Commands/RunResearchLoop.php",
         "backend-laravel/app/Services/AutonomousModeService.php",
         "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
         "backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php",
@@ -950,7 +964,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 47,
+      "source_file_count": 48,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {

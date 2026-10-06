@@ -29,6 +29,12 @@ paths:
   - backend-laravel/app/Services/SpecialistCouncilAuthorizedArmExecutionService.php
   - backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilDescendantProducerTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilHistoricalProofTest.php
+  - backend-laravel/tests/Feature/QualifiedResearchPolicyConsumptionTest.php
+  - backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php
+  - backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php
+  - backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php
   - backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php
   - backend-laravel/app/Models/SpecialistCouncilVersion.php
   - backend-laravel/database/migrations/2026_10_05_120000_create_specialist_council_contracts.php
@@ -102,6 +108,9 @@ entry_points:
   - SpecialistCouncilPanelReservationService::register
   - SpecialistCouncilPanelReservationService::execute
   - SpecialistCouncilAuthorizedArmExecutionService::execute
+  - SpecialistCouncilLifecycleService::executedOriginalTraitProof
+  - SpecialistCouncilPanelReservationService::pendingNativePanelQuestionCases
+  - ResearchExperimentConversionKernelService::verifiedNativePolicySelection
   - GenerationSnapshotAdmissionService::historicalDatasetReadiness
   - trading:lab-generation --trigger=historical_research
   - LabPopulationService

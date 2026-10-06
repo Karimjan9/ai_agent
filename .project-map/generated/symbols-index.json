@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-06T09:09:34.780Z",
-  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
-  "source_file_count": 1532,
-  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
+  "generated_at": "2026-10-06T12:48:56.106Z",
+  "source_digest": "d40401ee252133983e8d78c178cfebb535fdd4443d430cbb27831df8364060c1",
+  "source_file_count": 1538,
+  "git_head": "37d776af03c7ca923d1865c857c959b1dc783d5a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -5611,7 +5611,7 @@
       "symbol": "ResearchExperimentConversionKernelService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 20
+      "line": 23
     },
     {
       "symbol": "ResearchExperimentWorkConsumerService",
@@ -5635,7 +5635,7 @@
       "symbol": "ResearchLoopArbiterService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 31
+      "line": 32
     },
     {
       "symbol": "ResearchPaperEpochContractService",
@@ -5833,7 +5833,7 @@
       "symbol": "SpecialistCouncilIndependentPanelService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
-      "line": 18
+      "line": 19
     },
     {
       "symbol": "SpecialistCouncilLifecycleService",
@@ -8086,6 +8086,12 @@
       "line": 22
     },
     {
+      "symbol": "NativePolicyPhysicalExposureTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
+      "line": 20
+    },
+    {
       "symbol": "NativeSpecialistCouncilConstructorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
@@ -8216,6 +8222,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ProvisionalCartridgeReadinessTest.php",
       "line": 18
+    },
+    {
+      "symbol": "QualifiedResearchPolicyConsumptionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/QualifiedResearchPolicyConsumptionTest.php",
+      "line": 28
     },
     {
       "symbol": "QualityDiversityEvolutionOperatingSystemTest",
@@ -8356,6 +8368,12 @@
       "line": 15
     },
     {
+      "symbol": "ScreeningExecutionDefinitionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
+      "line": 35
+    },
+    {
       "symbol": "ScreeningLearningProjectionReconciliationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ScreeningLearningProjectionReconciliationTest.php",
@@ -8404,6 +8422,12 @@
       "line": 24
     },
     {
+      "symbol": "SpecialistCouncilDescendantProducerTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilDescendantProducerTest.php",
+      "line": 23
+    },
+    {
       "symbol": "SpecialistCouncilFollowupCommandTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php",
@@ -8419,7 +8443,13 @@
       "symbol": "SpecialistCouncilFollowupReadinessTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
-      "line": 27
+      "line": 29
+    },
+    {
+      "symbol": "SpecialistCouncilHistoricalProofTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilHistoricalProofTest.php",
+      "line": 19
     },
     {
       "symbol": "SpecialistCouncilIndependentPanelTest",
@@ -8443,7 +8473,7 @@
       "symbol": "OriginalCouncilPanelReservationFixture",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
-      "line": 579
+      "line": 674
     },
     {
       "symbol": "SpecialistCouncilPaperAdoptionTest",
@@ -8455,7 +8485,7 @@
       "symbol": "SpecialistCouncilPreparationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 33
+      "line": 34
     },
     {
       "symbol": "SpecialistCouncilResearchFeedbackTest",
@@ -8636,6 +8666,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/XauusdEdgeFormationAcademyServiceTest.php",
       "line": 12
+    },
+    {
+      "symbol": "ConditionalQualifiedNativePolicyFixture",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
+      "line": 20
     },
     {
       "symbol": "InstrumentValidationFixture",

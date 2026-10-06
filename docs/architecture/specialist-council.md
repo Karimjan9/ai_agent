@@ -197,6 +197,30 @@ four-program producer. Authorized unused post-paper data is a real additional
 requirement, not a planned date or a relabelled discovery snapshot. Conditional
 fixture execution is not proof of market skill or economic inheritance.
 
+The typed descendant producer derives four physical programs: PTU candidate,
+unchanged PT champion, P with only original T removed, and target PU T-ablation.
+It retains every other required ablation and retention. For four traders plus
+one T this is nine real arms per window, 27 across three authorized windows.
+Its first canonical cohort owns four derived member references plus nine arms;
+the references settle zero-authority episodes rather than orphan queued agents.
+Parent qualification and actual original T calls/behavior are prerequisites;
+descendant assessment also requires powered contrasts and PT/PTU T activation.
+The old caller-shaped contrast-registration route remains fenced.
+
+Historical scientific re-verification uses original archived source, immutable
+requests/responses and the sealed original rubric. It does not require a settled
+work item to recover a live lease or match a later source release. This separation
+does not relax new descendant request/data/source/lease admission.
+
+The sole arbiter's existing locked kernel claim can consume qualified native
+learning/evolution support for prepared, unobserved panel-window ordering.
+The full original case/ranking snapshot is sealed before outcomes and retained
+on retry; actual first-unit execution records its original question/run/request.
+No control or required window is dropped, ordinary work priority is unchanged,
+and equal resource proxies yield a stable tie without a benefit claim. This
+production consumer is not a qualifying native challenge producer: the latter
+still needs at least two distinct matched questions per independent window.
+
 ### Support products and original role benchmarks
 
 Optional `support_role_trials` binds each exact component to its registered
@@ -324,3 +348,28 @@ calendar. Missing producer scope cannot be filled in from the CSV hash later.
 The old Laravel metadata cache is not reused for declared councils or their
 evaluation arms; Python's full-request cache retains exact contract/window
 identity and verifies original receipt bytes.
+
+Screening persists returned costs/receipts as `execution_observation` and
+`last_screen_result`, not a new `execution_contract`. Recovery revalidates the
+entire original council preparation, not only its source and cost subset.
+An invalid original member remains technical history; the cohort can close
+through canonical quarantine and zero-credit technical settlement without
+altering its completed baseline or old model hashes.
+
+An observed auxiliary baseline requires a fresh comparison, never an unobserved
+retry. Its unique immutable pre-run identity and request authenticate the old
+declared execution descriptor; the response authenticates the current observed
+descriptor. Replacing only that descriptor in an in-memory clone must reproduce
+the complete original member hash. A server-sealed snapshot may then copy the
+old declaration into fresh models; caller retuning, extra drift, reused old
+comparison outcomes and restoration of the old DB model are forbidden.
+The changed-source, server-proven branch can retain the original unexecuted
+physical question only with explicit no-novelty/no-independence/no-budget-reset
+semantics. Ordinary new discovery still requires its own prospective question.
+
+Fresh independent policy cases check authenticated prior symbol/UTC exposure.
+Changing a model, program, provider, path or SHA label cannot make seen events
+untouched. Bounded lookup overflow leaves a dependency. Historical policy
+revalidation instead follows the original signed issuer, archived source and
+actual consumption; deleting today's registry is neither a historical veto nor
+permission to issue a new live authorization.

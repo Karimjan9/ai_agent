@@ -1323,9 +1323,11 @@ class LabAgentEvaluationService
         // the candidate in `screening` or erase its evidence.
         $this->shadowVetoLedger->record($agent, $screenProjection, 'screening');
         $screenDecision = $this->gateDecisions->recordScreening($agent, $screenProjection);
-        $model->update(['metadata' => array_merge($model->metadata ?? [], [
+        // Returned execution observations are evidence, not a replacement for
+        // the frozen executable definition shared by the remaining arms.
+        $model->update(['metadata' => $this->mergeRefreshedModelMetadata($model, [
             'last_screen_result' => $screenProjection,
-            'execution_contract' => $screenResult['execution_contract'],
+            'execution_observation' => $screenResult['execution_contract'],
         ])]);
         $screenedAttributes = [
             'train_score' => $item['train_score'] ?? $item['score'] ?? 0,
@@ -2165,9 +2167,11 @@ class LabAgentEvaluationService
 
         $this->shadowVetoLedger->record($agent, $screenProjection, 'screening');
         $screenDecision = $this->gateDecisions->recordScreening($agent, $screenProjection);
-        $model->update(['metadata' => array_merge($model->metadata ?? [], [
+        // A completed baseline must not mutate the sealed model identity used
+        // by later council/control arms. Keep the returned receipt separate.
+        $model->update(['metadata' => $this->mergeRefreshedModelMetadata($model, [
             'last_screen_result' => $screenProjection,
-            'execution_contract' => $screenResult['execution_contract'],
+            'execution_observation' => $screenResult['execution_contract'],
         ])]);
         $screenedAttributes = [
             'train_score' => $item['train_score'] ?? $item['score'] ?? 0,

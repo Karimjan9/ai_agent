@@ -58,6 +58,9 @@ paths:
   - backend-laravel/app/Services/TradingInstrumentOperatingSystemService.php
   - backend-laravel/app/Services/LearningLaneService.php
   - backend-laravel/app/Services/LearningConsolidationService.php
+  - backend-laravel/app/Services/LearningKernelService.php
+  - backend-laravel/app/Services/LearningOutcomeSettlementService.php
+  - backend-laravel/app/Services/LearningRewardService.php
   - backend-laravel/app/Services/LearningRetrievalService.php
   - backend-laravel/app/Services/AgentKnowledgeService.php
   - backend-laravel/app/Services/AgentProfessionalExamService.php
@@ -123,6 +126,7 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - LearningKernelService::settleOutcome
   - SpecialistCouncilResearchFeedbackService::registerFollowupProof
   - SpecialistCouncilResearchFeedbackService::inspectFollowupReadiness
   - ResearchExperimentConversionKernelService::claimCouncilContinuationForGeneration

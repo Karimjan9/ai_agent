@@ -14,6 +14,7 @@ use App\Models\MarketDriftSnapshot;
 use App\Models\ModelMarketPerformance;
 use App\Models\MtfStrategyResearchRun;
 use App\Models\ResearchLoopDecision;
+use App\Models\ResearchExperimentWorkItem;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -221,7 +222,8 @@ class ResearchLoopArbiterService
                         '--lease-token' => (string) $work->lease_token, '--fence' => (int) $work->fence_version,
                         '--json' => true], 'scheduler-constructor', ['ORIGINAL_COUNCIL_WORK_OWNS_PENDING_INTAKE'],
                     ['generation' => $generation, 'work_item_id' => (int) $work->id,
-                        'source_receipt_id' => (int) $work->research_experiment_receipt_id], $dryRun);
+                        'source_receipt_id' => (int) $work->research_experiment_receipt_id,
+                        ...$this->researchPolicyEvidence($work)], $dryRun);
             }
             $pending = \App\Models\ResearchExperimentWorkItem::find($pendingCouncilWorkId);
             return $this->decide($symbol, $timeframe, 'WAIT_COUNCIL_DURABLE_NEXT_WORK', 100,
@@ -419,6 +421,7 @@ class ResearchLoopArbiterService
                     'closure' => $this->compactClosure($closure),
                     'work_item' => ['id' => (int) $work->id, 'type' => (string) $work->work_type,
                         'priority' => (int) $work->priority, 'receipt_id' => (int) $work->research_experiment_receipt_id],
+                    ...$this->researchPolicyEvidence($work),
                 ], false);
         }
 
@@ -699,6 +702,15 @@ class ResearchLoopArbiterService
                 'generation' => $generation, 'closure' => $this->compactClosure($closure),
                 'director' => $this->compactDirector($director), 'mtf' => $mtf,
             ], $dryRun);
+    }
+
+    /** Selection is planning evidence; consumption is recorded only by the actual unit owner. */
+    private function researchPolicyEvidence(ResearchExperimentWorkItem $work): array
+    {
+        return array_filter([
+            'research_policy_selection' => data_get($work->result, 'research_policy_selection'),
+            'research_policy_consumption' => data_get($work->result, 'research_policy_consumption'),
+        ], fn ($value): bool => $value !== null);
     }
 
     private function openCausalReplay(string $symbol, string $timeframe, ?int $latestGenerationId): ?AgentLearningCausalExperiment

@@ -72,3 +72,41 @@ source-only operational amendment with original archive/HMAC evidence. It cannot
 change its question, parameters, original resolution or scientific history.
 Initial native-discovery leases are separately bounded at 2700 seconds after
 locked original proof; no implicit renewal or expired persistence is permitted.
+
+## Historical proof, actual policy consumption and descendants
+
+Historical qualification revalidates the original archived release, signed
+window, original request/response and actual file consumption. It does not
+require an expired work lease or today's registry to equal the original issuer
+decision. Fresh admission still requires current source, registry, data and
+lease guards. Native context witnesses come from every authenticated member
+receipt; ordinary replay keeps its own top-level witness contract.
+
+A qualified learning/evolution component may rank the exact unobserved window
+cases of an already-selected panel work item. The existing arbiter/kernel still
+owns work selection. The plan seals the rank and source qualification; actual
+unit execution records consumption. A planned ranking or repeated window of
+one question is not a native policy benchmark or compute-benefit proof.
+
+A descendant trial derives P, P+T, P+T+U and P+U from the qualified parent's
+actual original trait dispatch and a bounded legal U. It reserves the full
+member/component ablation and retention comparison before outcomes: nine arms
+per window, twenty-seven across three original windows. Reference-only models
+are not replay evidence or authority. The constructor's existing checkpoint
+cap remains bounded; no incomplete comparison earns transfer credit.
+
+Screening observations are separate from the frozen execution definition.
+Neither a replay result nor later historical inspection rewrites a sealed
+model, original plan, prior outcome or source archive.
+
+A completed auxiliary source replay prevents an unobserved-repair claim. If
+unique immutable pre-run identity, request, response and archived source prove
+that only the declared execution descriptor was replaced by its observed
+response, a new prospective discovery may copy the authenticated original
+descriptor into new models. The full cloned original model hash must match its
+old member seal; any additional drift refuses. The new resolution acknowledges
+the observed outcome, forbids retuning and keeps all comparison arms fresh.
+Only this server-proven, changed-source branch may retain the unexecuted
+comparison's physical question; it explicitly claims no scientific novelty,
+independence or replenished question budget.
+Old models, work, seals and scientific budgets are never repaired or reopened.

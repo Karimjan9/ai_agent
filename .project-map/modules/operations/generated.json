@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-06T09:09:34.780Z",
-  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
-  "source_file_count": 1532,
-  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
+  "generated_at": "2026-10-06T12:48:56.106Z",
+  "source_digest": "d40401ee252133983e8d78c178cfebb535fdd4443d430cbb27831df8364060c1",
+  "source_file_count": 1538,
+  "git_head": "37d776af03c7ca923d1865c857c959b1dc783d5a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -17,6 +17,7 @@
     "ai-service-python/app/services/research_release.py",
     "backend-laravel/app/Services/MarketHealthService.php",
     "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+    "backend-laravel/app/Console/Commands/RunResearchLoop.php",
     "backend-laravel/app/Services/AutonomousModeService.php",
     "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
     "backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php",
@@ -68,6 +69,7 @@
     "backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php",
     "backend-laravel/app/Console/Commands/ResumeAutonomousMode.php",
     "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+    "backend-laravel/app/Console/Commands/RunResearchLoop.php",
     "backend-laravel/app/Console/Commands/RunSystemHealthCheck.php",
     "backend-laravel/app/Console/Commands/RuntimeReloadPreflight.php",
     "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
@@ -359,6 +361,18 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
       "line": 338
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunResearchLoop.php",
+      "line": 17
+    },
+    {
+      "symbol": "RunResearchLoop",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/RunResearchLoop.php",
+      "line": 8
     },
     {
       "symbol": "RunSystemHealthCheck",
@@ -868,139 +882,145 @@
       "symbol": "hasLiveScheduledCommandLock",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1013
+      "line": 1025
     },
     {
       "symbol": "canonicalArguments",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1039
+      "line": 1051
     },
     {
       "symbol": "operationalStateSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1054
+      "line": 1066
     },
     {
       "symbol": "mtfAllocation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1237
+      "line": 1249
     },
     {
       "symbol": "driftAlreadyConsumed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1282
+      "line": 1294
     },
     {
       "symbol": "latestHasZeroPassScreening",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1295
+      "line": 1307
     },
     {
       "symbol": "latestCanAutonomouslyRecordDataEdgeAudit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1313
+      "line": 1325
     },
     {
       "symbol": "directorPriority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1326
+      "line": 1338
     },
     {
       "symbol": "recentAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1338
+      "line": 1350
     },
     {
       "symbol": "learningCurriculum",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1347
+      "line": 1359
     },
     {
       "symbol": "compactClosure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1369
+      "line": 1381
     },
     {
       "symbol": "compactDirector",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1379
+      "line": 1391
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1393
+      "line": 1405
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1399
+      "line": 1411
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1404
+      "line": 1416
     },
     {
       "symbol": "tickLocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 153
+      "line": 154
     },
     {
       "symbol": "ResearchLoopArbiterService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 31
+      "line": 32
+    },
+    {
+      "symbol": "researchPolicyEvidence",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 708
     },
     {
       "symbol": "openCausalReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 704
+      "line": 716
     },
     {
       "symbol": "freshDatasetContinuityReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 729
+      "line": 741
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 79
+      "line": 80
     },
     {
       "symbol": "decide",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 793
+      "line": 805
     },
     {
       "symbol": "tick",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 91
+      "line": 92
     },
     {
       "symbol": "fidelityPlanForAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 980
+      "line": 992
     },
     {
       "symbol": "ResearchReleaseSealService",
@@ -1012,151 +1032,151 @@
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 160
+      "line": 169
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 244
+      "line": 253
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 255
+      "line": 264
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 270
+      "line": 279
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 272
+      "line": 281
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 285
+      "line": 294
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 293
+      "line": 302
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 304
+      "line": 313
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 322
+      "line": 331
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 332
+      "line": 341
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 353
+      "line": 362
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 367
+      "line": 376
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 387
+      "line": 396
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 399
+      "line": 408
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 410
+      "line": 419
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 417
+      "line": 426
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 439
+      "line": 448
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 445
+      "line": 454
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 462
+      "line": 471
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 499
+      "line": 508
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 529
+      "line": 538
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 537
+      "line": 546
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 559
+      "line": 568
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 568
+      "line": 577
     },
     {
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 88
+      "line": 97
     },
     {
       "symbol": "queueCheck",

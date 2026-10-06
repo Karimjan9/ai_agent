@@ -19,6 +19,16 @@ preserve retry identity. Support components use original role-specific
 producer evidence and scoped research consumption, distinct from trader,
 economic and paper qualification. See ADR-029.
 
+## 2026-10-06 - Original proof and bounded successor ownership
+
+Historical qualification now authenticates the original archived source and
+signed consumption instead of today's live work lease or mutable registry.
+Qualified native learning/evolution policies can order real unobserved panel
+cases through the existing selector and record actual unit consumption.
+The same bounded constructor can derive the four descendant programs and
+reserve their complete three-window ablation/retention comparison. Screening
+observations no longer overwrite frozen executable definitions. See ADR-029.
+
 ## 2026-10-05 - Native specialist council
 
 Typed horizon passports and a stored version lifecycle now bind declared native

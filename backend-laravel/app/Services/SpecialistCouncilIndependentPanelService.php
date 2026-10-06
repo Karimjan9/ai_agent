@@ -3,17 +3,18 @@
 namespace App\Services;
 
 use App\Models\ModelVersion;
+use App\Models\LabEvaluationRun;
 use App\Models\ResearchExperimentWorkItem;
 use App\Models\SpecialistCouncilVersion;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use Throwable;
 
 /**
- * Strict original-panel reference and scientific-policy validator.
- * Signed full transport exists, but the canonical multi-window cohort producer
- * and terminal lifecycle owner are not yet available. No context label or
- * reference alone enables execution, qualification, paper admission or credit.
+ * Strict scientific-policy validator and canonical reservation adapter.
+ * Legacy caller-shaped references remain refused. Only the server producer
+ * may reserve original cohorts; no context label grants result or authority.
  */
 class SpecialistCouncilIndependentPanelService
 {
@@ -21,6 +22,7 @@ class SpecialistCouncilIndependentPanelService
     public const TYPES = ['specialist_council_independent_validation', 'specialist_council_descendant_transfer'];
     public const MAX_WINDOWS = 3;
     public const MAX_ARMS = 36;
+    private const MAX_EXPOSURE_OWNERS = 256;
 
     public function __construct(
         private ResearchPaperEpochContractService $epochs,
@@ -47,8 +49,7 @@ class SpecialistCouncilIndependentPanelService
         $target = SpecialistCouncilVersion::findOrFail($input['target_version_id']);
         $owner = $this->owner($target);
         $this->assertParent($work, $parent, $target, $owner['plan'], (array) ($input['descendant_trait'] ?? []));
-        // Do not reserve caller-shaped drafts or write a dormant resolution.
-        // The original public window reservation AND terminal owner are absent.
+        // A caller-shaped draft is not the server-owned window reservation.
         $this->assertCanonicalWindowProducer();
     }
 
@@ -113,6 +114,90 @@ class SpecialistCouncilIndependentPanelService
         app(SpecialistCouncilPanelReservationService::class)->assertExecutionUnit($work, $cohort, $unit);
     }
 
+    /** Fresh independent cases only; sealed continuation/outcome verification has its own original owner. */
+    public function assertUnobservedOriginalPhysicalQuestion(SpecialistCouncilVersion $version, array $plan, string $windowKey): void
+    {
+        $owner = $this->owner($version);
+        $window = $plan['windows'][$windowKey] ?? null;
+        if ($this->epochs->parameterHash($plan) !== $owner['hash'] || ! is_array($window)) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_OWNER_REQUIRED');
+        }
+        $scope = $window['evaluation_scope'] ?? $window;
+        $start = CarbonImmutable::parse($scope['start_inclusive'], 'UTC')->utc();
+        $end = CarbonImmutable::parse($scope['end_exclusive'], 'UTC')->utc();
+        if (! $end->greaterThan($start)) throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_SCOPE_INVALID');
+        $symbols = array_values(array_unique(array_map('strtoupper', array_merge(...array_column(
+            array_column($version->manifest['members'], 'scope'), 'symbols')))));
+        $candidates = $this->physicalExposureOwners($symbols, $start, $end);
+        if ($candidates->count() > self::MAX_EXPOSURE_OWNERS) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_LOOKUP_BUDGET_EXCEEDED');
+        }
+        foreach ($candidates as $candidate) {
+            $prior = SpecialistCouncilVersion::findOrFail($candidate->specialist_council_version_id);
+            $priorOwner = $this->owner($prior);
+            $modelIds = array_column($priorOwner['plan']['arms'], 'model_version_id');
+            $runs = LabEvaluationRun::whereIn('model_version_id', $modelIds)->where('status', 'completed')
+                ->whereNotNull('request_hash')->whereNotNull('response_hash')->orderBy('id')->limit(self::MAX_ARMS + 1)->get();
+            if ($runs->count() > self::MAX_ARMS) throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_RUN_BUDGET_EXCEEDED');
+            foreach ($runs as $run) {
+                $proof = $this->lifecycle->originalIndependentRunObservation($prior, $run);
+                if (! is_array($proof)) throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_PROOF_UNAVAILABLE');
+                if (! in_array(strtoupper((string) ($proof['symbol'] ?? '')), $symbols, true)) continue;
+                $from = CarbonImmutable::parse($proof['start_inclusive'], 'UTC')->utc();
+                $until = CarbonImmutable::parse($proof['end_exclusive'], 'UTC')->utc();
+                if ($from->lessThan($end) && $until->greaterThan($start)) {
+                    throw new LogicException('OBSERVED_NATIVE_POLICY_WINDOW_CANNOT_BE_PREREGISTERED');
+                }
+            }
+        }
+    }
+
+    /** Bounded immutable-plan lookup; mutable generation/request projections cannot hide old exposure. */
+    private function physicalExposureOwners(array $symbols, CarbonImmutable $start, CarbonImmutable $end)
+    {
+        $query = DB::table('specialist_council_evaluation_plans as plans')
+            ->join('specialist_council_versions as versions', 'versions.id', '=', 'plans.specialist_council_version_id')
+            ->select('plans.*')
+            ->where('plans.plan->purpose', 'independent');
+        $symbolSlots = implode(',', array_fill(0, count($symbols), '?'));
+        $driver = DB::connection()->getDriverName();
+        if ($driver === 'sqlite') {
+            $query->whereRaw("EXISTS (SELECT 1 FROM json_each(plans.plan, '$.arms') AS arm_rows
+                JOIN lab_evaluation_runs AS runs ON runs.model_version_id = json_extract(arm_rows.value, '$.model_version_id')
+                WHERE runs.status = 'completed' AND runs.request_hash IS NOT NULL AND runs.response_hash IS NOT NULL)");
+            $query->whereRaw("EXISTS (SELECT 1 FROM json_tree(versions.manifest, '$.members') AS scope_rows
+                WHERE scope_rows.fullkey LIKE '$.members[%].scope.symbols[%]' AND UPPER(scope_rows.value) IN ({$symbolSlots}))", $symbols);
+            $query->whereRaw("EXISTS (SELECT 1 FROM json_each(plans.plan, '$.windows') AS window_rows
+                WHERE substr(json_extract(window_rows.value, '$.start_inclusive'), 1, 19) < ?
+                AND substr(json_extract(window_rows.value, '$.end_exclusive'), 1, 19) > ?)",
+                [$end->format('Y-m-d\TH:i:s'), $start->format('Y-m-d\TH:i:s')]);
+        } elseif ($driver === 'mysql') {
+            // MariaDB 10.4 has no JSON_TABLE. Original panel owners have at
+            // most three windows; extra slots are a dependency, never a tail
+            // silently omitted from freshness checks.
+            $query->whereRaw("EXISTS (SELECT 1 FROM lab_evaluation_runs AS runs
+                WHERE JSON_CONTAINS(JSON_EXTRACT(plans.plan, '$.arms.*.model_version_id'), CAST(runs.model_version_id AS CHAR))
+                AND runs.status = 'completed' AND runs.request_hash IS NOT NULL AND runs.response_hash IS NOT NULL)");
+            $query->where(function ($scope) use ($symbols): void {
+                foreach ($symbols as $symbol) $scope->orWhereRaw(
+                    "JSON_SEARCH(LOWER(JSON_EXTRACT(versions.manifest, '$.members[*].scope.symbols')), 'one', ?) IS NOT NULL", [strtolower($symbol)]);
+            });
+            $query->where(function ($overlap) use ($start, $end): void {
+                $overlap->whereRaw("JSON_LENGTH(JSON_EXTRACT(plans.plan, '$.windows')) > ?", [self::MAX_WINDOWS]);
+                for ($index = 0; $index < self::MAX_WINDOWS; $index++) {
+                    $key = "JSON_UNQUOTE(JSON_EXTRACT(JSON_KEYS(JSON_EXTRACT(plans.plan, '$.windows')), '$[{$index}]'))";
+                    $from = "JSON_UNQUOTE(JSON_EXTRACT(plans.plan, CONCAT('$.windows.\"', {$key}, '\".start_inclusive')))";
+                    $until = "JSON_UNQUOTE(JSON_EXTRACT(plans.plan, CONCAT('$.windows.\"', {$key}, '\".end_exclusive')))";
+                    $overlap->orWhereRaw("LEFT({$from}, 19) < ? AND LEFT({$until}, 19) > ?",
+                        [$end->format('Y-m-d\TH:i:s'), $start->format('Y-m-d\TH:i:s')]);
+                }
+            });
+        } else {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_EXPOSURE_DATABASE_UNSUPPORTED');
+        }
+        return $query->orderBy('plans.id')->limit(self::MAX_EXPOSURE_OWNERS + 1)->get();
+    }
+
     private function owner(SpecialistCouncilVersion $version): array
     {
         $row = DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $version->id)->first();
@@ -127,7 +212,7 @@ class SpecialistCouncilIndependentPanelService
         return ['plan' => $plan, 'hash' => $row->plan_hash, 'sealed_at' => $row->sealed_at, 'evaluator_id' => $row->evaluator_id];
     }
 
-    private function assertParent(ResearchExperimentWorkItem $work, SpecialistCouncilVersion $parent,
+    public function assertParent(ResearchExperimentWorkItem $work, SpecialistCouncilVersion $parent,
         SpecialistCouncilVersion $target, array $plan, array $trait): void
     {
         if (! in_array($work->work_type, self::TYPES, true) || $target->id === $parent->id || $target->council_id !== $parent->council_id) {
@@ -234,6 +319,41 @@ class SpecialistCouncilIndependentPanelService
             $expected = $arm['kind'] === 'champion' ? $traitContrast : $parentContrast;
             if (! $bound || $bound->id !== $expected->id) throw new LogicException('COUNCIL_DESCENDANT_ORIGINAL_FOUR_PROGRAM_BINDINGS_REQUIRED');
         }
+    }
+
+    /** Pure legal projection; registration separately requires the original whole-council exam. */
+    public function projectDescendantSources(SpecialistCouncilVersion $parent, string $componentId, array $deltas): array
+    {
+        if (! $this->contracts->manifestValid($parent->manifest)
+            || ! in_array($componentId, $parent->manifest['evaluation_policy']['required_ablations'], true)
+            || ! collect($parent->manifest['components'])->contains('id', $componentId)
+            || ! collect($parent->manifest['members'])->contains(fn ($member) => data_get($member, 'operator_contract.component_id') === $componentId)) {
+            throw new LogicException('COUNCIL_DESCENDANT_EXACT_QUALIFIED_EXECUTABLE_TRAIT_REQUIRED');
+        }
+        $ids = array_column($parent->manifest['members'], 'model_version_id', 'role');
+        $specs = app(SpecialistCouncilResearchFeedbackService::class)->projectOriginalNativeSources($parent, $deltas);
+        if (array_sum(array_map(fn ($spec) => count($spec['parameter_deltas']), $specs)) < 1) {
+            throw new LogicException('COUNCIL_DESCENDANT_U_REQUIRES_ONE_BOUNDED_LEGAL_INTERVENTION');
+        }
+        $targets = [...array_column($parent->manifest['members'], 'specialist_id'), $componentId];
+        $required = $parent->manifest['evaluation_policy']['required_ablations']; sort($targets); sort($required);
+        if (count($ids) !== 4 || $targets !== $required) throw new LogicException('COUNCIL_DESCENDANT_EXACT_FOUR_MEMBER_AND_TRAIT_ABLATIONS_REQUIRED');
+        return $specs;
+    }
+
+    /** A support-role exam or a caller's qualified flag cannot be a genetic parent. */
+    public function assertDescendantOriginalParent(SpecialistCouncilVersion $parent, string $componentId): array
+    {
+        $proof = $this->lifecycle->qualifiedOriginalResearchProof($parent);
+        if (($proof['allowed'] ?? false) !== true) throw new LogicException('COUNCIL_DESCENDANT_ORIGINAL_QUALIFIED_PARENT_REQUIRED');
+        $plan = $this->owner($parent)['plan'];
+        foreach ($plan['windows'] as $windowKey => $window) {
+            $arms = array_filter($plan['arms'], fn ($arm) => $arm['window_key'] === $windowKey);
+            if (! collect($arms)->contains(fn ($arm) => $arm['kind'] === 'ablation' && ($arm['removed_id'] ?? '') === $componentId)) {
+                throw new LogicException('COUNCIL_DESCENDANT_ORIGINAL_PARENT_AND_TRAIT_ABLATION_REQUIRED');
+            }
+        }
+        return [...$proof, 'executed_trait_proof' => $this->lifecycle->executedOriginalTraitProof($parent, $componentId)];
     }
 
     private function assertOriginalComparators(SpecialistCouncilVersion $parent, array $plan): void

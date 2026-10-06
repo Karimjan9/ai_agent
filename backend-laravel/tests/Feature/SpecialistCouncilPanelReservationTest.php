@@ -39,6 +39,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
 {
     use RefreshDatabase;
     use OriginalCouncilPanelReservationFixture;
+    use \Tests\Support\ConditionalQualifiedNativePolicyFixture;
 
     private string $root;
     private string $originalStorage;
@@ -93,7 +94,16 @@ class SpecialistCouncilPanelReservationTest extends TestCase
         $this->originalPanelAcceptance(2);
     }
 
-    private function originalPanelAcceptance(int $originalUnitLimit = 24): void
+    /** Only teacher qualification/benchmark are conditional; target and first original replay stay real. */
+    public function test_real_prepared_questions_freeze_policy_order_and_publish_first_original_consumption(): void
+    {
+        $this->monotonicClockStart = hrtime(true);
+        $this->travelTo(fn () => CarbonImmutable::parse('2028-01-01T00:00:00Z')
+            ->addMicroseconds(intdiv(hrtime(true) - $this->monotonicClockStart, 1000))->addSeconds($this->monotonicClockOffset));
+        $this->originalPanelAcceptance(1, true);
+    }
+
+    private function originalPanelAcceptance(int $originalUnitLimit = 24, bool $conditionalPolicy = false): void
     {
         [$work, $input, $parent, $sourceModels] = $this->fixture();
         $this->panelTestProgress('original source and three authorized windows created');
@@ -193,6 +203,22 @@ class SpecialistCouncilPanelReservationTest extends TestCase
             $this->assertSame('full_validation', $cohort->status);
             $this->assertCount(8, data_get($cohort->trigger_context, 'specialist_council_authorized_panel.arm_units'));
         }
+        $policyFixture = null; $policyProjection = null;
+        if ($conditionalPolicy) {
+            $policyProjection = $owner->pendingNativePanelQuestionCases($work->fresh());
+            $this->assertCount(3, $policyProjection['cases']);
+            $this->assertSame($prepared['plan_hash'], $policyProjection['plan_hash']);
+            $policyFixture = $this->installConditionalQualifiedNativePolicy($policyProjection);
+            $refs = array_map(fn ($case) => ['version_id' => $case['version_id'], 'window_key' => $case['window_key']], $policyProjection['cases']);
+            $rank = app(SpecialistCouncilLifecycleService::class)->rankQualifiedResearchQuestions($policyFixture['source'],
+                $policyFixture['component_id'], $refs, 'pure-policy-fixture-validation');
+            $this->assertCount(3, $rank['ranking']);
+            $this->assertSame(array_map(fn ($case) => array_diff_key($case, ['arm_keys' => true]), $policyProjection['cases']), $rank['original_question_cases']);
+            $this->assertTrue($policyFixture['qualification_is_conditional_not_market_evidence']);
+            $this->assertNull(data_get($work->fresh()->result, 'research_policy_selection'));
+            $this->assertNull(data_get($work->fresh()->result, 'research_policy_consumption'));
+            $this->panelTestProgress('actual prepared native cases and real rank API validated against conditional teacher boundary');
+        }
         $unit = array_diff_key($prepared['units'][0], ['generation_id' => true]);
         $cohort = LabGeneration::findOrFail($prepared['units'][0]['generation_id']);
         if ($this->monotonicClockStart !== null) {
@@ -209,6 +235,15 @@ class SpecialistCouncilPanelReservationTest extends TestCase
         $leased = $kernel->claimForOwner(ResearchLoopArbiterService::class, 1);
         $this->assertCount(1, $leased, json_encode($feedback->inspectFollowupReadiness($work->fresh())));
         $this->assertGreaterThan($preparationLease->fence_version, $leased[0]->fence_version);
+        $frozenSelection = null;
+        if ($conditionalPolicy) {
+            $frozenSelection = data_get($work->fresh()->result, 'research_policy_selection');
+            $this->assertIsArray($frozenSelection, json_encode($work->fresh()->result));
+            $selectedCase = collect($frozenSelection['case_snapshot'])->firstWhere('question_hash', $frozenSelection['selected_question_hash']);
+            $selectedUnit = collect($prepared['units'])->firstWhere('window_key', $selectedCase['window_key']);
+            $unit = array_diff_key($selectedUnit, ['generation_id' => true]); $cohort = LabGeneration::findOrFail($selectedUnit['generation_id']);
+            $this->assertNull(data_get($work->fresh()->result, 'research_policy_consumption'));
+        }
         $request = app(SpecialistCouncilAuthorizedArmExecutionService::class)->compileRequest($cohort, $unit, $leased[0]);
         $this->assertSame($sourceModels['candidate']->metadata['instrument_research_assignment'],
             $request['strategies'][0]['instrument_research_assignment']);
@@ -249,7 +284,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
 
         $posts = 0;
         $replayTransportEnabled = true;
-        Http::fake(function ($httpRequest) use (&$posts) {
+        Http::fake(function ($httpRequest) use (&$posts, $conditionalPolicy) {
             if (str_ends_with($httpRequest->url(), '/api/replay-status')) {
                 $health = new Process(['python', '-c',
                     'import json; from app.services.research_release import health_receipt; print(json.dumps(health_receipt()))'],
@@ -267,6 +302,10 @@ class SpecialistCouncilPanelReservationTest extends TestCase
             $runner->mustRun();
             $originalJson = $runner->getOutput();
             json_decode($originalJson, true, flags: JSON_THROW_ON_ERROR);
+            if ($conditionalPolicy) {
+                $originalDirectory = $this->preserveOriginalFailureArtifacts(LabEvaluationRun::sole());
+                File::put($originalDirectory.'/actual-python-response.json', $originalJson);
+            }
             // The real HTTP boundary transports these original JSON bytes.
             // Re-encoding an array without preserving 10000.0 as a float
             // corrupts the producer-bound trace hash before PHP receives it.
@@ -288,6 +327,50 @@ class SpecialistCouncilPanelReservationTest extends TestCase
         $this->assertSame($unit['request_hash'], $run->request_hash);
         $this->assertSame($unit['window_key'], data_get($run->metadata, 'council_panel.window_key'));
         $this->assertSame($run->run_id, data_get($work->fresh()->result, 'panel_units.'.$unit['arm_key'].'.run_id'));
+        if ($conditionalPolicy) {
+            $consumption = data_get($work->fresh()->result, 'research_policy_consumption');
+            $this->assertSame($frozenSelection['selection_hash'], $consumption['selection_hash']);
+            $this->assertSame($frozenSelection['rank_receipt_hash'], $consumption['rank_receipt_hash']);
+            $this->assertSame($frozenSelection['selected_question_hash'], $consumption['consumed_question_hash']);
+            $this->assertSame($run->run_id, $consumption['first_original_run_id']);
+            $this->assertSame($run->request_hash, $consumption['first_request_hash']);
+            $historicalOwner = app(SpecialistCouncilLifecycleService::class);
+            $rawOriginal = app(LabImmutableEvidenceService::class)->latestArtifactPayload($run, 'evaluation_request');
+            $originalResponse = app(LabImmutableEvidenceService::class)->latestArtifactPayload($run, 'evaluation_response');
+            $historicalRequest = (new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'requestForRun'))->invoke($historicalOwner, $run, $rawOriginal);
+            $originalPlan = json_decode(DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $target->id)->sole()->plan, true, flags: JSON_THROW_ON_ERROR);
+            // Keep original completed bytes before any historical/continuation
+            // assertion and before disposable fixture storage is removed.
+            $originalDirectory = $this->preserveOriginalFailureArtifacts($run);
+            File::put($originalDirectory.'/original-plan.json', json_encode($originalPlan,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            File::put($originalDirectory.'/original-owner-rows.json', json_encode([
+                'version' => $target->fresh()->getAttributes(), 'model' => $run->modelVersion->getAttributes(),
+                'members' => ModelVersion::whereIn('id', array_column($target->manifest['members'], 'model_version_id'))->get()->map->getAttributes()->all(),
+                'generation' => $cohort->fresh()->getAttributes(), 'agent' => $run->agent->getAttributes(),
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+            $this->panelTestProgress('actual completed original bytes retained at '.$originalDirectory);
+            $originalArchive = (new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'assertArchivedOriginalRelease'))->invoke($historicalOwner,
+                $run, $historicalRequest, $originalResponse, $originalPlan);
+            $originalRegistry = config('services.instrument_policy.authorized_research_windows');
+            config(['services.instrument_policy.authorized_research_windows' => []]);
+            try {
+                $originalWindow = $originalPlan['windows'][$unit['window_key']];
+                $this->assertFalse(app(InstrumentResearchWindowService::class)->authorized(array_diff_key($originalWindow, ['evaluation_scope' => true]), $run->data_hash));
+                $this->assertTrue((new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'authorizedOriginalPlanWindow'))->invoke($historicalOwner,
+                    $originalWindow, $run, $historicalRequest, $originalResponse, $originalPlan, $originalArchive));
+                $observation = $historicalOwner->originalIndependentRunObservation($target->fresh(), $run->fresh());
+                $this->assertSame($run->run_id, $observation['run_id']);
+                $this->assertSame($unit['window_key'], $observation['window_key']);
+                $this->assertSame($run->request_hash, $observation['request_hash']);
+                $this->assertFalse($observation['qualified']);
+                $historicalCase = $historicalOwner->nativePolicyQuestionSpec((int) $target->id, $unit['window_key'], $input['evaluator_id'], false);
+                $this->assertSame($frozenSelection['selected_question_hash'], $historicalCase['question_hash']);
+            } finally { config(['services.instrument_policy.authorized_research_windows' => $originalRegistry]); }
+            $this->assertSame($policyProjection, $owner->pendingNativePanelQuestionCases($work->fresh(), false));
+            try { $owner->pendingNativePanelQuestionCases($work->fresh()); $this->fail('Observed original questions were reopened for ranking.'); }
+            catch (\LogicException $error) { $this->assertSame('OBSERVED_NATIVE_POLICY_QUESTION_CANNOT_BE_PREREGISTERED', $error->getMessage()); }
+        }
         $this->panelTestProgress('observed original arm 1');
         $this->advanceFixtureClock(30);
         $nextLease = $kernel->claimForOwner(ResearchLoopArbiterService::class, 1);
@@ -302,6 +385,18 @@ class SpecialistCouncilPanelReservationTest extends TestCase
         $this->assertSame(1, $posts);
         $this->assertDatabaseCount('lab_evaluation_runs', 1);
         $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+
+        if ($originalUnitLimit === 1) {
+            $this->assertSame($frozenSelection, data_get($work->fresh()->result, 'research_policy_selection'));
+            $this->assertSame($prepared, data_get($work->fresh()->result, 'panel_preparation'));
+            $policyFixture['state']->revoked = true;
+            $denied = $owner->execute($nextLease[0]);
+            $this->assertSame('CONDITIONAL_ORIGINAL_POLICY_QUALIFICATION_REVOKED', $denied['reason']);
+            $this->assertSame(1, $posts); $this->assertDatabaseCount('lab_evaluation_runs', 1);
+            $this->assertNotSame('settled', $work->fresh()->status); $this->assertNull($work->fresh()->completed_at);
+            $this->assertSame($run->run_id, data_get($work->fresh()->result, 'research_policy_consumption.first_original_run_id'));
+            return;
+        }
 
         // Resume through the public original owner. Each delivery consumes
         // one new preregistered arm and reuses every earlier terminal unit.

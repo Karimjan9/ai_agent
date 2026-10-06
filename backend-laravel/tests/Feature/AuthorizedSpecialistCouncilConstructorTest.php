@@ -135,6 +135,71 @@ class AuthorizedSpecialistCouncilConstructorTest extends TestCase
         $this->assertDatabaseCount('lab_evaluation_runs', 0);
     }
 
+    /** Conditional issuer isolates constructor ownership; never a qualified-parent/admission claim. */
+    public function test_descendant_first_cohort_reserves_thirteen_owned_slots_and_resumes_three_to_twelve_to_thirteen(): void
+    {
+        $this->ready(); $source = $this->source(); $this->issuer();
+        config(['services.lab_selection.constructor_initial_seat_budget' => 3]);
+        $intent = $this->intent($source);
+        $arms = [];
+        foreach (['candidate', 'champion', 'solo', 'retention'] as $kind) $arms[] = [...$intent['arm_roots'][0], 'arm_key' => $kind, 'kind' => $kind];
+        foreach (['scalp', 'hour', 'day', 'swing', 'trait'] as $target) $arms[] = [...$intent['arm_roots'][0],
+            'arm_key' => 'ablation:'.$target, 'kind' => 'ablation', 'removed_id' => $target];
+        $intent['arm_roots'] = $arms; $members = [];
+        foreach (['scalp', 'hour', 'day', 'swing'] as $role) {
+            $metadata = (array) $source->metadata; unset($metadata['specialist_council']);
+            $member = ModelVersion::create(['name' => 'conditional-derived-source-'.$role, 'strategy' => $source->strategy,
+                'version' => 'v1', 'status' => 'testing', 'parameters' => (array) $source->parameters, 'metadata' => $metadata]);
+            $parameters = (array) $member->parameters; $deltas = [];
+            if ($role === 'hour') { $deltas[] = ['gene' => 'trend_weight', 'old' => $parameters['trend_weight'], 'new' => .9]; $parameters['trend_weight'] = .9; }
+            $members[] = ['arm_key' => 'member:'.$role, 'kind' => 'member_source', 'derived_member_role' => $role,
+                'source_model_version_id' => $member->id, 'source_model_hash' => app(SpecialistCouncilContractService::class)->modelHash($member),
+                'strategy' => $member->strategy, 'family' => 'hybrid', 'parameters' => $parameters, 'parameter_deltas' => $deltas];
+        }
+        $intent['member_roots'] = $members;
+        $generation = $this->build($intent);
+        $this->assertNotNull($generation, json_encode(app(LabPopulationService::class)->lastBuildOutcome()));
+        $this->assertCount(13, LabPopulationService::authorizedPanelConstructionRoots(data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent')));
+        $this->assertSame(3, $generation->population_size); $this->assertSame(3, $generation->agents()->count());
+        $firstIds = $generation->agents()->orderBy('id')->pluck('id')->all();
+        // Canonical continuations retain their four-seat delivery ceiling.
+        foreach ([4, 4, 1] as $budget) $middle = app(LabPopulationService::class)->continueInterruptedConstruction($generation->id, $budget);
+        $this->assertSame(12, $generation->agents()->count(), json_encode([$middle['status'], $middle['failures']]));
+        $this->assertTrue(LabPopulationService::constructionIncomplete($generation->fresh()));
+        $last = app(LabPopulationService::class)->continueInterruptedConstruction($generation->id, 1);
+        $this->assertSame('complete', $last['status'], json_encode([$last['status'], $last['failures']]));
+        $this->assertSame(13, $generation->agents()->count()); $this->assertSame('research_reserved', $generation->fresh()->status);
+        $this->assertSame($firstIds, $generation->agents()->orderBy('id')->limit(3)->pluck('id')->all());
+        $agents = $generation->agents()->with('modelVersion')->get();
+        $this->assertCount(4, $agents->filter(fn ($agent) => data_get($agent->modelVersion->metadata, 'authorized_specialist_council_panel_seed.kind') === 'member_source'));
+        foreach ($agents as $agent) {
+            $slot = data_get($agent->modelVersion->metadata, 'authorized_specialist_council_panel_seed.construction_slot');
+            $root = LabPopulationService::authorizedPanelConstructionRoots($intent)[$slot - 1];
+            $this->assertTrue(app(LabImmutableEvidenceService::class)->equivalentJsonValue($root['parameters'], $agent->modelVersion->parameters));
+            $this->assertSame('draft', $agent->lifecycle_status); $this->assertNull($agent->parent_a_model_version_id);
+        }
+        foreach ([2, 3] as $ordinal) {
+            $next = $this->intent($source, $ordinal); $next['arm_roots'] = $arms;
+            $sibling = $this->build($next);
+            $this->assertNotNull($sibling, json_encode(app(LabPopulationService::class)->lastBuildOutcome()));
+            foreach ([4, 2] as $budget) $result = app(LabPopulationService::class)->continueInterruptedConstruction($sibling->id, $budget);
+            $this->assertSame('complete', $result['status']); $this->assertSame(9, $sibling->agents()->count());
+            $this->assertSame(9, $sibling->fresh()->population_size);
+        }
+        $work = new \App\Models\ResearchExperimentWorkItem; $work->forceFill(['id' => 31]);
+        $settler = new \ReflectionMethod(\App\Services\SpecialistCouncilPanelReservationService::class, 'settleMemberReferences');
+        $settler->invoke(app(\App\Services\SpecialistCouncilPanelReservationService::class), $generation->fresh(), $work, ['ptu_version_id' => 999]);
+        $this->assertSame(4, $generation->agents()->where('lifecycle_status', 'completed')->count());
+        $this->assertSame(9, $generation->agents()->where('lifecycle_status', 'draft')->count());
+        $this->assertDatabaseCount('agent_learning_settlements', 4);
+        foreach (\App\Models\AgentLearningSettlement::all() as $settlement) {
+            $this->assertSame('insufficient_evidence', $settlement->evidence_state);
+            $this->assertEquals(0, $settlement->selection_reward);
+        }
+        $this->assertDatabaseCount('lab_generations', 3); $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_foreign_reserved_work_or_any_original_outcome_cannot_open_another_window(): void
     {
         $this->ready(); $source = $this->source(); $this->issuer();

@@ -588,7 +588,7 @@ class LabPopulationService
                     throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_REQUIRES_EXACT_UNFORCED_OWNER');
                 }
                 $authorizedCouncilPanelIntent = $this->authorizedCouncilPanelProof($authorizedCouncilPanelIntent);
-                $size = count($authorizedCouncilPanelIntent['arm_roots']);
+                $size = count(self::authorizedPanelConstructionRoots($authorizedCouncilPanelIntent));
                 if ($populationLimit !== null && $populationLimit !== $size) {
                     throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_EXACT_ARM_BUDGET_REQUIRED');
                 }
@@ -2233,13 +2233,13 @@ class LabPopulationService
             || ($seed['intent_hash'] ?? null) !== $intent['intent_hash'] || ! is_int($seed['construction_slot'] ?? null)) {
             throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_PERSISTED_SLOT_OWNER_INVALID');
         }
-        $slot = $seed['construction_slot']; $arm = array_values($intent['arm_roots'])[$slot - 1] ?? null;
+        $slot = $seed['construction_slot']; $arm = self::authorizedPanelConstructionRoots($intent)[$slot - 1] ?? null;
         if (! is_array($arm) || ($seed['arm_key'] ?? null) !== $arm['arm_key'] || ($seed['source_model_hash'] ?? null) !== $arm['source_model_hash']
             || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($agent->modelVersion->parameters, $arm['parameters'])) {
             throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_PERSISTED_SLOT_VECTOR_DRIFT');
         }
         $source = $this->authorizedCouncilPanelSource($arm);
-        $this->assertAuthorizedCouncilPanelPhysicalClone($agent->modelVersion, $source);
+        $this->assertAuthorizedCouncilPanelPhysicalClone($agent->modelVersion, $source, $arm['parameters']);
         return $slot;
     }
 
@@ -5457,9 +5457,18 @@ class LabPopulationService
             throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_POST_PAPER_WINDOW_REQUIRED');
         }
         $keys = [];
-        foreach ($proof['arm_roots'] as $arm) {
+        if (isset($proof['member_roots']) && (! is_array($proof['member_roots']) || ! array_is_list($proof['member_roots'])
+            || count($proof['member_roots']) !== 4 || count($proof['arm_roots']) !== 9 || $proof['window_ordinal'] !== 1
+            || count(array_unique(array_column($proof['member_roots'], 'derived_member_role'))) !== 4
+            || count(self::authorizedPanelConstructionRoots($proof)) !== 13)) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_DERIVED_MEMBER_ROOTS_INVALID');
+        }
+        foreach ($proof['arm_roots'] as $arm) if (($arm['kind'] ?? null) === 'member_source') {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_SOURCE_REFERENCE_CANNOT_BE_REPLAY_ARM');
+        }
+        foreach (self::authorizedPanelConstructionRoots($proof) as $arm) {
             if (! is_array($arm) || ! is_string($arm['arm_key'] ?? null) || $arm['arm_key'] === ''
-                || isset($keys[$arm['arm_key']]) || ! in_array($arm['kind'] ?? null, ['candidate', 'champion', 'solo', 'ablation', 'retention'], true)) {
+                || isset($keys[$arm['arm_key']]) || ! in_array($arm['kind'] ?? null, ['candidate', 'champion', 'solo', 'ablation', 'retention', 'member_source'], true)) {
                 throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_EXACT_ARM_ROOTS_REQUIRED');
             }
             $keys[$arm['arm_key']] = true;
@@ -5477,14 +5486,38 @@ class LabPopulationService
         $source = ModelVersion::find($arm['source_model_version_id'] ?? 0);
         if (! $source || ($arm['source_model_hash'] ?? null) !== app(SpecialistCouncilContractService::class)->modelHash($source)
             || ($arm['strategy'] ?? null) !== $source->strategy || ($arm['family'] ?? null) !== $this->schemas->family($source->strategy)
-            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($arm['parameters'] ?? null, (array) $source->parameters)) {
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($arm['parameters'] ?? null, $this->authorizedPanelProjectedParameters($arm, $source))) {
             throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_ORIGINAL_ARM_MODEL_DRIFT');
         }
-        $validated = $this->schemas->validate($source->strategy, (array) $source->parameters);
-        if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($validated, (array) $source->parameters)) {
+        $validated = $this->schemas->validate($source->strategy, $arm['parameters']);
+        if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($validated, $arm['parameters'])) {
             throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_CLONE_REQUIRES_PARAMETER_RENORMALIZATION');
         }
         return $source;
+    }
+
+    public static function authorizedPanelConstructionRoots(array $intent): array
+    {
+        return array_values([...(array) ($intent['arm_roots'] ?? []), ...(array) ($intent['member_roots'] ?? [])]);
+    }
+
+    private function authorizedPanelProjectedParameters(array $arm, ModelVersion $source): array
+    {
+        $parameters = (array) $source->parameters;
+        if (($arm['kind'] ?? '') !== 'member_source') return $parameters;
+        if (! in_array($arm['derived_member_role'] ?? null, ['scalp', 'hour', 'day', 'swing'], true)
+            || ! is_array($arm['parameter_deltas'] ?? null) || count($arm['parameter_deltas']) > 4) {
+            throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_DERIVED_MEMBER_VECTOR_INVALID');
+        }
+        $seen = [];
+        foreach ($arm['parameter_deltas'] as $delta) {
+            $gene = $delta['gene'] ?? null;
+            if (! is_string($gene) || isset($seen[$gene]) || ! array_key_exists($gene, $parameters)
+                || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($delta['old'] ?? null, $parameters[$gene])
+                || ! array_key_exists('new', $delta)) throw new \LogicException('AUTHORIZED_COUNCIL_PANEL_DERIVED_MEMBER_VECTOR_INVALID');
+            $seen[$gene] = true; $parameters[$gene] = $delta['new'];
+        }
+        return $parameters;
     }
 
     private function authorizedCouncilPanelMarker(array $intent): array
@@ -5513,7 +5546,7 @@ class LabPopulationService
             || ($stored['current_source_hash'] ?? null) !== ($intent['current_source_hash'] ?? null)
             || ($stored['current_python_source_hash'] ?? null) !== ($intent['current_python_source_hash'] ?? null)
             || ($owner['intent_hash'] ?? null) !== $stored['intent_hash']
-            || (int) $generation->population_size !== count($stored['arm_roots'])
+            || (int) $generation->population_size !== count(self::authorizedPanelConstructionRoots($stored))
             || ($owner['work_item_id'] ?? null) !== $intent['work_item_id']
             || ($stored['work_item_id'] ?? null) !== $intent['work_item_id']
             || ($stored['work_key'] ?? null) !== $intent['work_key']
@@ -5527,18 +5560,18 @@ class LabPopulationService
             && ! \App\Models\LabEvaluationRun::where('lab_generation_id', $generation->id)->exists();
         if (! $valid) return false;
         $agents = $generation->agents()->with('modelVersion')->get();
-        if ($agents->count() !== count($stored['arm_roots'])) return false;
+        if ($agents->count() !== count(self::authorizedPanelConstructionRoots($stored))) return false;
         $slots = []; $evidence = app(LabImmutableEvidenceService::class);
         foreach ($agents as $agent) {
             $seed = data_get($agent->modelVersion?->metadata, 'authorized_specialist_council_panel_seed');
             $slot = is_array($seed) ? ($seed['construction_slot'] ?? null) : null;
-            $arm = is_int($slot) ? (array_values($stored['arm_roots'])[$slot - 1] ?? null) : null;
+            $arm = is_int($slot) ? (self::authorizedPanelConstructionRoots($stored)[$slot - 1] ?? null) : null;
             if (! is_array($arm) || isset($slots[$slot]) || $agent->origin !== 'authorized_council_panel_root'
                 || ($seed['lab_generation_id'] ?? null) !== $generation->id || ($seed['intent_hash'] ?? null) !== $stored['intent_hash']
                 || ($seed['arm_key'] ?? null) !== $arm['arm_key'] || ($seed['source_model_hash'] ?? null) !== $arm['source_model_hash']) return false;
             $source = ModelVersion::find($arm['source_model_version_id'] ?? 0);
             if (! $source || ($arm['source_model_hash'] ?? null) !== app(SpecialistCouncilContractService::class)->modelHash($source)
-                || ! $evidence->equivalentJsonValue($source->parameters, $agent->modelVersion->parameters)
+                || ! $evidence->equivalentJsonValue($arm['parameters'], $agent->modelVersion->parameters)
                 || ! $evidence->equivalentJsonValue($evidence->modelRuntimeBasis($source), $evidence->modelRuntimeBasis($agent->modelVersion))
                 || ! $evidence->equivalentJsonValue(data_get($source->metadata, 'instrument_research_assignment'), data_get($agent->modelVersion->metadata, 'instrument_research_assignment'))) return false;
             $slots[$slot] = true;
@@ -5555,7 +5588,7 @@ class LabPopulationService
                 'authorized_specialist_council_panel_seed' => [...$this->authorizedCouncilPanelMarker($intent),
                     'construction_slot' => $index + 1, 'arm_key' => $arm['arm_key'], 'kind' => $arm['kind'],
                     'source_model_version_id' => $arm['source_model_version_id'], 'source_model_hash' => $arm['source_model_hash']]],
-        ], array_values($intent['arm_roots']), array_keys(array_values($intent['arm_roots'])));
+        ], self::authorizedPanelConstructionRoots($intent), array_keys(self::authorizedPanelConstructionRoots($intent)));
     }
 
     /** Six unused references for one future atomic council question, not six qualified specialists. */
@@ -6950,7 +6983,7 @@ class LabPopulationService
         int $slot, string $target, array $niche): bool
     {
         $intent = $this->authorizedCouncilPanelProof((array) data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent', []));
-        $arm = array_values($intent['arm_roots'])[$slot - 1] ?? null;
+        $arm = self::authorizedPanelConstructionRoots($intent)[$slot - 1] ?? null;
         $seed = (array) data_get($niche, 'authorized_specialist_council_panel_seed', []);
         if ($origin !== 'authorized_council_panel_root' || $target !== 'portfolio_router' || ! is_array($arm)
             || $family !== $arm['family'] || ($seed['construction_slot'] ?? null) !== $slot
@@ -6983,20 +7016,20 @@ class LabPopulationService
             'parent_tier' => 'no_parent', 'authority' => 'research_only', 'promotion_evidence' => false];
         $metadata['mutation_constructor_invariant'] = ['protocol' => 'agent_constructor_invariant_v1',
             'kind' => 'exact_preregistered_panel_arm', 'source_model_version_id' => $source->id,
-            'source_model_hash' => $arm['source_model_hash'], 'zero_diff_expected' => true,
+            'source_model_hash' => $arm['source_model_hash'], 'zero_diff_expected' => ($arm['parameter_deltas'] ?? []) === [],
             'causal_baseline_is_genetic_parent' => false, 'promotion_evidence' => false];
         $this->publishConstructorStage($generation, $slot, 'model_persistence');
         $model = ModelVersion::create(['name' => 'authorized_panel_g'.$generation->generation.'_a'.str_pad((string) $slot, 2, '0', STR_PAD_LEFT),
             'strategy' => $source->strategy, 'version' => 'panel_g'.$generation->generation.'_a'.$slot,
-            'generation' => $generation->generation, 'status' => 'testing', 'parameters' => (array) $source->parameters,
+            'generation' => $generation->generation, 'status' => 'testing', 'parameters' => $arm['parameters'],
             'description' => 'Prospective original native arm; no inherited outcome or authority.', 'metadata' => $metadata]);
         $this->sealParameterIntegrity($model, $family);
         $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
             'parent_a_model_version_id' => null, 'parent_b_model_version_id' => null,
             'symbol' => $generation->laboratory->symbol, 'timeframe' => $generation->laboratory->timeframe,
-            'strategy_family' => $family, 'origin' => $origin, 'lifecycle_status' => 'draft', 'parameter_diff' => []]);
+            'strategy_family' => $family, 'origin' => $origin, 'lifecycle_status' => 'draft', 'parameter_diff' => $arm['parameter_deltas'] ?? []]);
         $model->refresh();
-        $this->assertAuthorizedCouncilPanelPhysicalClone($model, $source);
+        $this->assertAuthorizedCouncilPanelPhysicalClone($model, $source, $arm['parameters']);
         app(LearningKernelService::class)->openEpisode($agent, ['decision_key' => 'generation:'.$generation->id.':agent:'.$agent->id,
             'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $family,
             'stage' => 'mutation_selection', 'decision' => 'CONTROL',
@@ -7007,10 +7040,10 @@ class LabPopulationService
         return true;
     }
 
-    private function assertAuthorizedCouncilPanelPhysicalClone(ModelVersion $model, ModelVersion $source): void
+    private function assertAuthorizedCouncilPanelPhysicalClone(ModelVersion $model, ModelVersion $source, ?array $parameters = null): void
     {
         $evidence = app(LabImmutableEvidenceService::class);
-        if (! $evidence->equivalentJsonValue($model->parameters, $source->parameters)
+        if (! $evidence->equivalentJsonValue($model->parameters, $parameters ?? $source->parameters)
             || ! $evidence->equivalentJsonValue($evidence->modelRuntimeBasis($model), $evidence->modelRuntimeBasis($source))
             || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'instrument_research_assignment'), data_get($source->metadata, 'instrument_research_assignment'))
             || ! $evidence->equivalentJsonValue(data_get($model->metadata, 'specialist_council_membership.contextual_cell'), data_get($source->metadata, 'specialist_council_membership.contextual_cell'))
@@ -9904,10 +9937,13 @@ class LabPopulationService
                 // lane. The old differential protocol string was not an
                 // execution hash and made an otherwise valid FX cohort fail
                 // the later full-validation preflight.
-                'execution_contract' => $this->executionContracts->for(
+                'execution_contract' => $this->nativeFollowupExecutionContract($nativeFollowupSource,
                     $lab->symbol,
                     app(MultiTimeframePilotService::class)->replayTimeframe($lab->symbol, $lab->timeframe),
                 ),
+                'original_source_execution_snapshot' => data_get($nativeFollowupSource, 'original_descriptor_materialization.protocol')
+                    === SpecialistCouncilResearchFeedbackService::OBSERVED_SOURCE_SNAPSHOT_PROTOCOL
+                    ? data_get($nativeFollowupSource, 'original_descriptor_materialization') : null,
                 'differential_router_contract' => $family === 'differential_router' && $parentA ? [
                     'parent_model_version_id' => $parentA->id,
                     'parent_frozen_hash' => hash('sha256', json_encode(data_get($parentA->metadata, 'last_screen_result', []), JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES)),
@@ -10154,6 +10190,25 @@ class LabPopulationService
         $this->publishConstructorStage($generation, $slot, 'seat_complete');
 
         return true;
+    }
+
+    /** The resolution is revalidated before this copy; the old source is never saved. */
+    private function nativeFollowupExecutionContract(?array $source, string $symbol, string $timeframe): array
+    {
+        $snapshot = data_get($source, 'original_descriptor_materialization');
+        if (! is_array($snapshot) || ($snapshot['protocol'] ?? null) !== SpecialistCouncilResearchFeedbackService::OBSERVED_SOURCE_SNAPSHOT_PROTOCOL) {
+            return $this->executionContracts->for($symbol, $timeframe);
+        }
+        $value = $snapshot['original_value'] ?? null;
+        if (($snapshot['descriptor_field'] ?? null) !== 'execution_contract' || ! is_array($value) || $value === []
+            || ($snapshot['model_version_id'] ?? null) !== ($source['model_version_id'] ?? null)
+            || ($snapshot['current_model_hash'] ?? null) !== ($source['model_hash'] ?? null)
+            || app(ResearchPaperEpochContractService::class)->parameterHash($value) !== ($snapshot['original_declared_execution_hash'] ?? null)
+            || ($snapshot['scientific_outcomes_observed'] ?? null) !== true || ($snapshot['observed_auxiliary_only'] ?? null) !== true
+            || ($snapshot['original_preparation_remains_invalid'] ?? null) !== true || ($snapshot['promotion_evidence'] ?? null) !== false) {
+            throw new \LogicException('NATIVE_COUNCIL_OBSERVED_SOURCE_COPY_PROOF_INVALID');
+        }
+        return $value;
     }
 
     /**

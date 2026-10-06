@@ -33,9 +33,11 @@ class SpecialistCouncilPanelReservationService
     public function register(ResearchExperimentWorkItem $work, array $input, ?string $actor,
         SpecialistCouncilVersion $parent, array $original): array
     {
+        $descendant = $work->work_type === 'specialist_council_descendant_transfer';
         if (($input['protocol'] ?? null) !== self::PROTOCOL
-            || array_diff(array_keys($input), ['protocol', 'authorization_ids', 'creator_id', 'evaluator_id', 'research_question']) !== []
-            || $work->work_type !== 'specialist_council_independent_validation'
+            || array_diff(array_keys($input), ['protocol', 'authorization_ids', 'creator_id', 'evaluator_id', 'research_question',
+                ...($descendant ? ['trait_component_id', 'parameter_deltas'] : [])]) !== []
+            || ! in_array($work->work_type, SpecialistCouncilIndependentPanelService::TYPES, true)
             || ! is_array($input['authorization_ids'] ?? null) || ! array_is_list($input['authorization_ids'])
             || count($input['authorization_ids']) !== SpecialistCouncilIndependentPanelService::MAX_WINDOWS
             || count(array_unique($input['authorization_ids'], SORT_STRING)) !== count($input['authorization_ids'])) {
@@ -61,6 +63,19 @@ class SpecialistCouncilPanelReservationService
             throw new LogicException('COUNCIL_PANEL_ORIGINAL_ASSESSED_SOURCE_REQUIRED');
         }
         $this->assertOriginalComparisonPolicy($work, $parent, $original);
+        $derived = null;
+        if ($descendant) {
+            if (! is_string($input['trait_component_id'] ?? null) || ! is_array($input['parameter_deltas'] ?? null)
+                || $input['parameter_deltas'] === [] || array_is_list($input['parameter_deltas'])
+                || collect($input['parameter_deltas'])->contains(fn ($delta) => ! is_array($delta) || $delta === [] || array_is_list($delta))) {
+                throw new LogicException('COUNCIL_DESCENDANT_TYPED_TRAIT_AND_INTERVENTION_REQUIRED');
+            }
+            $panels = app(SpecialistCouncilIndependentPanelService::class);
+            $proof = $panels->assertDescendantOriginalParent($parent, $input['trait_component_id']);
+            $specs = $panels->projectDescendantSources($parent, $input['trait_component_id'], $input['parameter_deltas']);
+            $derived = ['protocol' => 'specialist_council_descendant_programs_v1', 'trait_component_id' => $input['trait_component_id'],
+                'parameter_deltas' => $input['parameter_deltas'], 'member_sources' => $specs, 'qualified_parent_proof' => $proof];
+        }
         $records = [];
         foreach ($input['authorization_ids'] as $id) {
             if (! is_string($id) || $id === '') throw new LogicException('COUNCIL_PANEL_SERVER_WINDOW_RESERVATION_REQUIRED');
@@ -102,12 +117,21 @@ class SpecialistCouncilPanelReservationService
             }
             $source[$kind] = $this->sourceModel($model);
         }
+        if ($descendant) $source['champion'] = $source['solo'] = $source['candidate'];
         $roots = [];
         foreach (['candidate', 'champion', 'solo', 'retention'] as $kind) {
             $roots[] = ['arm_key' => $kind, 'kind' => $kind, ...$source[$kind === 'retention' ? 'candidate' : $kind]];
         }
         foreach ($parent->manifest['evaluation_policy']['required_ablations'] as $removed) {
             $roots[] = ['arm_key' => 'ablation:'.$removed, 'kind' => 'ablation', 'removed_id' => $removed, ...$source['candidate']];
+        }
+        $memberRoots = [];
+        if ($descendant) {
+            foreach ($derived['member_sources'] as $role => $spec) {
+                $memberRoots[] = ['arm_key' => 'member:'.$role, 'kind' => 'member_source', 'derived_member_role' => $role,
+                    ...$this->sourceModel(ModelVersion::findOrFail($spec['model_version_id'])),
+                    'parameters' => $spec['parameters'], 'parameter_deltas' => $spec['parameter_deltas']];
+            }
         }
         if (count($roots) < 5 || count($roots) > 12
             || count($roots) * count($records) > SpecialistCouncilIndependentPanelService::MAX_ARMS) {
@@ -121,11 +145,12 @@ class SpecialistCouncilPanelReservationService
             'source_assessment_hash' => $parent->assessment_hash, 'source_plan_hash' => $this->epochs->parameterHash($original),
             'input_hash' => $this->epochs->parameterHash($input), 'manifest_template' => $parent->manifest,
             'original_plan' => $original, 'windows' => $records, 'arm_roots' => $roots,
+            ...($descendant ? ['descendant_programs' => $derived, 'member_roots' => $memberRoots] : []),
             'creator_id' => $input['creator_id'], 'evaluator_id' => $input['evaluator_id'],
             'research_question' => $input['research_question'], 'registered_by' => $actor ?? $input['creator_id'],
             'current_source_hash' => $this->evidence->codeHash(), 'current_python_source_hash' => $this->releases->pythonHash(),
             'registered_at' => now()->utc()->toIso8601String(), 'authority' => 'research_only', 'max_experiments' => 1,
-            'max_window_cohorts' => 3, 'max_lease_deliveries' => count($roots) * count($records) + count($records) + 2 + 8,
+            'max_window_cohorts' => 3, 'max_lease_deliveries' => count($roots) * count($records) + count($records) + 2 + 8 + ($descendant ? 7 : 0),
             'independent_evidence_claimed' => false, 'promotion_evidence' => false];
         // The model's JSON cast persists 1.0 as 1. Seal the exact persisted
         // representation, not an ephemeral PHP float representation.
@@ -142,7 +167,8 @@ class SpecialistCouncilPanelReservationService
     public function inspect(ResearchExperimentWorkItem $work, SpecialistCouncilVersion $parent): array
     {
         $body = $this->body($work);
-        if ((int) $work->attempts >= $body['max_lease_deliveries']) {
+        if ((int) $work->attempts > $body['max_lease_deliveries']
+            || ((int) $work->attempts === $body['max_lease_deliveries'] && $work->status !== 'leased')) {
             throw new LogicException('COUNCIL_PANEL_OPERATIONAL_DELIVERY_BUDGET_EXHAUSTED');
         }
         if ($body['source_version_id'] !== (int) $parent->id || $body['source_manifest_hash'] !== $parent->manifest_hash
@@ -150,6 +176,17 @@ class SpecialistCouncilPanelReservationService
             throw new LogicException('COUNCIL_PANEL_ORIGINAL_PARENT_CHANGED');
         }
         $this->assertOriginalComparisonPolicy($work, $parent, $body['original_plan']);
+        if (isset($body['descendant_programs'])) {
+            $derived = $body['descendant_programs']; $panels = app(SpecialistCouncilIndependentPanelService::class);
+            if ($work->work_type !== 'specialist_council_descendant_transfer'
+                || ! $this->evidence->equivalentJsonValue($panels->assertDescendantOriginalParent($parent, $derived['trait_component_id']), $derived['qualified_parent_proof'])
+                || ! $this->evidence->equivalentJsonValue($panels->projectDescendantSources($parent, $derived['trait_component_id'], $derived['parameter_deltas']), $derived['member_sources'])
+                || count($body['arm_roots']) !== 9 || count($body['member_roots'] ?? []) !== 4) {
+                throw new LogicException('COUNCIL_DESCENDANT_ORIGINAL_PROGRAM_PROOF_CHANGED');
+            }
+        } elseif ($work->work_type === 'specialist_council_descendant_transfer') {
+            throw new LogicException('COUNCIL_DESCENDANT_ORIGINAL_PROGRAM_PROOF_REQUIRED');
+        }
         foreach ($body['windows'] as $record) {
             $this->assertWindowBundleContract($record['mtf_bundle_manifest']);
             $proof = $this->windows->verifySealedReplayWindow($record['window'], $record['mtf_bundle_manifest']);
@@ -214,6 +251,7 @@ class SpecialistCouncilPanelReservationService
             'evaluator_id' => $body['evaluator_id'], 'research_question' => $body['research_question'],
             'current_source_hash' => $body['current_source_hash'], 'current_python_source_hash' => $body['current_python_source_hash'],
             'authorized_window' => $record['window'], 'arm_roots' => $body['arm_roots'],
+            ...($index === 0 && isset($body['member_roots']) ? ['member_roots' => $body['member_roots']] : []),
             'authority' => 'research_only', 'promotion_evidence' => false, 'independent_evidence_claimed' => false];
     }
 
@@ -235,8 +273,9 @@ class SpecialistCouncilPanelReservationService
                 if ($cohort === null) {
                     $this->assertCurrentLease($item);
                     $population = app(LabPopulationService::class);
+                    $intent = $this->constructorIntent($item, $body, $index);
                     $cohort = $population->build((string) $item->symbol, 'specialist_council_independent_panel', false,
-                        (string) $item->timeframe, [], false, false, count($body['arm_roots']), null, false, null, null,
+                        (string) $item->timeframe, [], false, false, count(LabPopulationService::authorizedPanelConstructionRoots($intent)), null, false, null, null,
                         $this->constructorIntent($item, $body, $index));
                     if (! $cohort) return $this->defer($item,
                         (string) ($population->lastBuildOutcome()['reason_code'] ?? 'COUNCIL_PANEL_CANONICAL_RESERVATION_DEFERRED'), false);
@@ -244,7 +283,8 @@ class SpecialistCouncilPanelReservationService
                     return $this->defer($item, 'COUNCIL_PANEL_NEXT_PREREGISTERED_RESERVATION', true);
                 }
                 if (LabPopulationService::constructionIncomplete($cohort)) {
-                    app(LabPopulationService::class)->continueInterruptedConstruction((int) $cohort->id, count($body['arm_roots']));
+                    app(LabPopulationService::class)->continueInterruptedConstruction((int) $cohort->id,
+                        count(LabPopulationService::authorizedPanelConstructionRoots($this->constructorIntent($item, $body, $index))));
                     $this->assertCurrentLease($item);
                     return $this->defer($item, 'COUNCIL_PANEL_ORIGINAL_CONSTRUCTION_CONTINUATION', true);
                 }
@@ -259,11 +299,27 @@ class SpecialistCouncilPanelReservationService
                 $this->checkpoint($item, ['phase' => 'original_preparation_sealed']);
                 return $this->defer($item, 'COUNCIL_PANEL_ORIGINAL_PREPARATION_SEALED', true);
             }
-            foreach ($prepared['units'] as $unit) {
+            $selection = data_get($item->fresh()->result, 'research_policy_selection') === null ? null
+                : app(ResearchExperimentConversionKernelService::class)->verifiedNativePolicySelection($item->fresh(), $this->pendingNativePanelQuestionCases($item->fresh(), false));
+            $orderedUnits = $prepared['units'];
+            if ($selection) {
+                $ranks = array_column($selection['ranking'], null, 'question_id'); $order = [];
+                foreach ($selection['case_snapshot'] as $case) $order[$case['window_key']] = array_search($case['question_hash'], array_keys($ranks), true);
+                usort($orderedUnits, fn ($a, $b) => $order[$a['window_key']] <=> $order[$b['window_key']]);
+            }
+            foreach ($orderedUnits as $unit) {
                 $cohort = LabGeneration::findOrFail($unit['generation_id']);
                 $unit = array_diff_key($unit, ['generation_id' => true]);
                 $result = app(SpecialistCouncilAuthorizedArmExecutionService::class)->execute(
                     $cohort, $unit, $item, 'research_loop_arbiter', (string) $item->lease_token, (int) $item->fence_version);
+                if ($selection && ! data_get($item->fresh()->result, 'research_policy_consumption')) {
+                    $run = LabEvaluationRun::where('model_version_id', $unit['model_version_id'])->where('lab_generation_id', $cohort->id)->first();
+                    $case = collect($selection['case_snapshot'])->firstWhere('window_key', $unit['window_key']);
+                    if ($run && filled($run->request_hash)) $this->checkpoint($item, ['research_policy_consumption' => [
+                        'selection_hash' => $selection['selection_hash'], 'rank_receipt_hash' => $selection['rank_receipt_hash'],
+                        'consumed_question_hash' => $case['question_hash'], 'first_original_run_id' => $run->run_id,
+                        'first_request_hash' => $run->request_hash]]);
+                }
                 if (($result['status'] ?? null) === 'blocked') return $this->defer($item,
                     (string) ($result['reason'] ?? 'COUNCIL_PANEL_ORIGINAL_UNIT_DEPENDENCY'), false);
                 if (($result['already_terminal'] ?? false) !== true) {
@@ -318,6 +374,41 @@ class SpecialistCouncilPanelReservationService
             'generation_receipts' => $receipts, 'promotion_evidence' => false];
     }
 
+    /** Pure exact pending question projection, usable before the next genuine work lease. */
+    public function pendingNativePanelQuestionCases(ResearchExperimentWorkItem $work, bool $requireUnobserved = true): array
+    {
+        $body = $this->body($work); $readiness = $this->inspect($work, SpecialistCouncilVersion::findOrFail($body['source_version_id']));
+        if (($readiness['executable'] ?? false) !== true) throw new LogicException('COUNCIL_PANEL_ORIGINAL_POLICY_READINESS_REQUIRED');
+        $saved = data_get($work->result, 'panel_preparation');
+        if (! is_array($saved) || ($saved['reservation_hash'] ?? null) !== $body['reservation_hash']
+            || count($saved['units'] ?? []) !== count($body['arm_roots']) * 3) throw new LogicException('COUNCIL_PANEL_ORIGINAL_PREPARATION_REQUIRED_FOR_POLICY');
+        $row = DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $saved['panel_version_id'])->sole();
+        $plan = json_decode($row->plan, true, 512, JSON_THROW_ON_ERROR);
+        if ($row->plan_hash !== $saved['plan_hash'] || $row->plan_hash !== $this->epochs->parameterHash($plan)
+            || ($plan['panel_reservation_hash'] ?? null) !== $body['reservation_hash']) throw new LogicException('COUNCIL_PANEL_ORIGINAL_POLICY_PLAN_DRIFT');
+        $cases = [];
+        foreach ($body['windows'] as $record) {
+            $windowKey = $record['window']['window_key'];
+            $units = array_values(array_filter($saved['units'], fn ($unit) => $unit['window_key'] === $windowKey));
+            foreach ($units as $unit) {
+                $cohort = LabGeneration::findOrFail($unit['generation_id']); $agent = LabAgent::findOrFail($unit['lab_agent_id']);
+                if (($plan['arms'][$unit['arm_key']]['model_hash'] ?? null) !== $unit['model_hash']
+                    || $this->contracts->modelHash($agent->modelVersion) !== $unit['model_hash']
+                    || $agent->lab_generation_id !== $cohort->id
+                    || ! in_array(array_diff_key($unit, ['generation_id' => true]), (array) data_get($cohort->trigger_context, 'specialist_council_authorized_panel.arm_units'), true)) {
+                    throw new LogicException('COUNCIL_PANEL_ORIGINAL_POLICY_ARM_DRIFT');
+                }
+                $this->releases->assertCurrent($cohort);
+            }
+            $spec = app(SpecialistCouncilLifecycleService::class)->nativePolicyQuestionSpec($saved['panel_version_id'], $windowKey, $row->evaluator_id, $requireUnobserved);
+            $cases[] = [...\Illuminate\Support\Arr::only($spec, ['version_id', 'window_key', 'question_hash', 'manifest_hash',
+                'plan_hash', 'physical_hash', 'source_hash', 'scope', 'evaluator_id']), 'arm_keys' => array_column($units, 'arm_key')];
+        }
+        return ['protocol' => 'specialist_council_pending_native_panel_questions_v1', 'work_item_id' => (int) $work->id,
+            'work_key' => $work->work_key, 'reservation_hash' => $body['reservation_hash'], 'panel_version_id' => $saved['panel_version_id'],
+            'plan_hash' => $saved['plan_hash'], 'current_source_hash' => $body['current_source_hash'], 'cases' => $cases];
+    }
+
     /** Seal every cohort, carrier, original arm and window before the first HTTP. */
     private function prepareAll(ResearchExperimentWorkItem $item, array $body): array
     {
@@ -346,7 +437,7 @@ class SpecialistCouncilPanelReservationService
                     || $windowIndex === false
                     || ! LabPopulationService::reservedAuthorizedPanelOwnerMatches($cohort,
                         $this->constructorIntent($item, $body, $windowIndex))
-                    || $agents->count() !== count($body['arm_roots'])
+                    || $agents->count() !== count(LabPopulationService::authorizedPanelConstructionRoots($this->constructorIntent($item, $body, $windowIndex)))
                     || $agents->contains(fn ($a): bool => $a->lifecycle_status !== 'draft')
                     || LabEvaluationRun::where('lab_generation_id', $cohort->id)->exists()) {
                     throw new LogicException('COUNCIL_PANEL_ORIGINAL_UNUSED_RESERVATION_REQUIRED');
@@ -366,7 +457,9 @@ class SpecialistCouncilPanelReservationService
             $manifest['evaluation_policy']['solo_model_version_id'] = $first['solo']->model_version_id;
             foreach (['champion_model_version_id_hash', 'solo_model_version_id_hash'] as $key) unset($manifest['evaluation_policy'][$key]);
             $lifecycle = app(SpecialistCouncilLifecycleService::class);
-            $version = $lifecycle->registerDraft($manifest, $body['creator_id']);
+            $programs = isset($body['descendant_programs']) ? $this->prepareDescendantVersions($body, $manifest, $first) : null;
+            $version = $programs ? SpecialistCouncilVersion::findOrFail($programs['ptu_version_id'])
+                : $lifecycle->registerDraft($manifest, $body['creator_id']);
             $units = []; $arms = []; $windowRecords = [];
             $fullPolicy = ['protocol' => 'specialist_council_original_full_source_v1', 'evaluation_mode' => 'full',
                 'selection' => 'entire_authorized_source', 'maximum_source_rows' => 200000,
@@ -400,11 +493,14 @@ class SpecialistCouncilPanelReservationService
                     // the frozen source. Rebind only the aggregate council
                     // reference to the same frozen native program, before the
                     // new model/plan/release seal. Old sources are untouched.
-                    if (in_array($root['kind'], ['candidate', 'retention', 'ablation'], true)
+                    if (($programs !== null || in_array($root['kind'], ['candidate', 'retention', 'ablation'], true))
                         && data_get($source->metadata, 'specialist_council') !== null) {
                         $metadata = (array) $model->metadata; unset($metadata['specialist_council']);
                         $model->forceFill(['metadata' => $metadata])->save();
-                        $model = $lifecycle->attachResearchModel($version, $model->fresh());
+                        $runtimeVersion = $programs ? SpecialistCouncilVersion::findOrFail(match ($root['kind']) {
+                            'solo' => $programs['p_version_id'], 'champion' => $programs['pt_version_id'], default => $version->id,
+                        }) : $version;
+                        $model = $lifecycle->attachResearchModel($runtimeVersion, $model->fresh());
                     }
                     $armKey = 'w'.($index + 1).':'.$root['arm_key'];
                     $arm = ['arm_key' => $armKey, 'kind' => $root['kind'], 'window_key' => $windowKey,
@@ -422,14 +518,29 @@ class SpecialistCouncilPanelReservationService
             $plan = [...$plan, 'purpose' => 'independent', 'evaluation_phase' => 'full_validation', 'windows' => $windowRecords,
                 'arms' => $arms, 'preparation_source_hash' => $body['current_source_hash'],
                 'full_replay_runtime_policy' => $fullPolicy,
+                ...($programs ? ['descendant_programs' => $programs] : []),
                 'panel_reservation_hash' => $body['reservation_hash'], 'panel_work_item_id' => (int) $work->id];
+            if ($programs) {
+                $parent = SpecialistCouncilVersion::findOrFail($body['source_version_id']);
+                app(SpecialistCouncilIndependentPanelService::class)->assertParent($work, $parent, $version, $plan, $programs['trait']);
+            }
             $sealed = $lifecycle->sealEvaluationPlan($version, $body['evaluator_id'], $plan);
+            foreach (array_keys($sealed['windows']) as $windowKey) {
+                app(SpecialistCouncilIndependentPanelService::class)->assertUnobservedOriginalPhysicalQuestion(
+                    $version->fresh(), array_diff_key($sealed, ['plan_hash' => true]), $windowKey);
+            }
             foreach ($units as &$unit) {
                 $model = ModelVersion::findOrFail($unit['model_version_id']);
                 $lifecycle->attachEvaluationArm($version->fresh(), $unit['arm_key'], $model);
                 $unit['plan_hash'] = $sealed['plan_hash'];
             }
             unset($unit);
+            // Prospective original evidence cannot depend on a later,
+            // retroactively built archive. Capture the real current source
+            // and authority-registry digest before any release/request seal.
+            $archive = $this->releases->currentSourceArtifact() ?? $this->releases->buildSourceArtifact()['reference'];
+            $this->releases->verifySourceArtifact($archive, true);
+            $this->assertCurrentLease($item, $work->fresh());
             foreach ($cohorts as $cohort) {
                 $context = (array) $cohort->trigger_context; $marker = $context['specialist_council_authorized_panel'];
                 $record = collect($body['windows'])->first(fn ($r): bool => $r['window']['window_key'] === $marker['window_key']);
@@ -443,7 +554,8 @@ class SpecialistCouncilPanelReservationService
                 $this->releases->seal($cohort->fresh());
                 $cohort->refresh();
                 $cohort->update(['status' => 'full_validation']);
-                $cohort->agents()->update(['lifecycle_status' => 'full_queued']);
+                $cohort->agents()->whereIn('model_version_id', array_column($units, 'model_version_id'))->update(['lifecycle_status' => 'full_queued']);
+                if ($programs) $this->settleMemberReferences($cohort, $work, $programs);
             }
             foreach ($units as &$unit) {
                 $cohort = LabGeneration::findOrFail($unit['generation_id']);
@@ -465,6 +577,57 @@ class SpecialistCouncilPanelReservationService
             $this->assertCurrentLease($item, $work->fresh());
             return $saved;
         });
+    }
+
+    /** All program versions and derived native sources are owned, unobserved constructor outputs. */
+    private function prepareDescendantVersions(array $body, array $manifest, array $first): array
+    {
+        $lifecycle = app(SpecialistCouncilLifecycleService::class); $derived = $body['descendant_programs'];
+        $prefix = $manifest['version']; $pt = $manifest; $pt['version'] = $prefix.'-pt';
+        $ptVersion = $lifecycle->registerDraft($pt, $body['creator_id']);
+        $p = $manifest; $p['version'] = $prefix.'-p';
+        $p['components'] = array_values(array_filter($p['components'], fn ($component) => $component['id'] !== $derived['trait_component_id']));
+        foreach ($p['members'] as &$member) if (data_get($member, 'operator_contract.component_id') === $derived['trait_component_id']) unset($member['operator_contract']);
+        unset($member);
+        $pVersion = $lifecycle->registerDraft($p, $body['creator_id']);
+        foreach ($manifest['members'] as &$member) {
+            $agent = $first['member:'.$member['role']] ?? null;
+            $spec = $derived['member_sources'][$member['role']] ?? null;
+            if (! $agent || ! $spec || ! $this->evidence->equivalentJsonValue($agent->modelVersion->parameters, $spec['parameters'])) {
+                throw new LogicException('COUNCIL_DESCENDANT_OWNED_DERIVED_MEMBER_REFERENCE_REQUIRED');
+            }
+            $member['model_version_id'] = (int) $agent->model_version_id;
+            foreach (['passport_hash', 'source_model_hash', 'parameters', 'qualified', 'qualified_evidence'] as $field) unset($member[$field]);
+        }
+        unset($member);
+        $version = $lifecycle->registerDraft($manifest, $body['creator_id']);
+        $candidate = collect($body['original_plan']['arms'])->firstWhere('kind', 'candidate');
+        $ablation = collect($body['original_plan']['arms'])->first(fn ($arm) => $arm['kind'] === 'ablation' && ($arm['removed_id'] ?? '') === $derived['trait_component_id']);
+        return ['protocol' => $derived['protocol'], 'source_version_id' => $body['source_version_id'],
+            'source_assessment_hash' => $body['source_assessment_hash'], 'p_version_id' => (int) $pVersion->id,
+            'pt_version_id' => (int) $ptVersion->id, 'ptu_version_id' => (int) $version->id,
+            'p_manifest_hash' => $pVersion->manifest_hash, 'pt_manifest_hash' => $ptVersion->manifest_hash,
+            'ptu_manifest_hash' => $version->manifest_hash, 'member_sources' => $derived['member_sources'],
+            'trait' => ['component_id' => $derived['trait_component_id'],
+                'parent_candidate_model_version_id' => $candidate['model_version_id'],
+                'parent_ablation_model_version_id' => $ablation['model_version_id'],
+                'contrast_parent_version_id' => (int) $pVersion->id, 'contrast_trait_version_id' => (int) $ptVersion->id]];
+    }
+
+    /** Sources are not evaluator arms: close their constructor episodes with zero outcome/authority. */
+    private function settleMemberReferences(LabGeneration $cohort, ResearchExperimentWorkItem $work, array $programs): void
+    {
+        foreach ($cohort->agents()->with('modelVersion')->get() as $agent) {
+            if (data_get($agent->modelVersion->metadata, 'authorized_specialist_council_panel_seed.kind') !== 'member_source') continue;
+            $episode = \App\Models\AgentLearningEpisode::where('lab_agent_id', $agent->id)->sole();
+            app(LearningKernelService::class)->settleOutcome($episode, [
+                'source_key' => 'descendant_member_reference|'.$work->id.'|'.$agent->id,
+                'source_type' => self::class, 'source_id' => (int) $agent->id, 'outcome_status' => 'source_reference_reserved',
+                'evidence_state' => 'insufficient_evidence', 'metrics' => [], 'failure_class' => 'source_only_reference',
+                'panel_version_id' => $programs['ptu_version_id'], 'research_only' => true,
+                'selection_reward_authorized' => false, 'causal_skill_credit' => false, 'promotion_evidence' => false]);
+            $agent->update(['lifecycle_status' => 'completed', 'decision_reason' => 'Owned derived source reference; not an evaluator outcome or authority.']);
+        }
     }
 
     private function checkpoint(ResearchExperimentWorkItem $item, array $data): void
@@ -517,7 +680,7 @@ class SpecialistCouncilPanelReservationService
         app(ResearchReleaseSealService::class)->assertCurrent($cohort);
     }
 
-    public function body(ResearchExperimentWorkItem $work): array
+    public function body(ResearchExperimentWorkItem $work, bool $requireCurrentSource = true): array
     {
         $body = data_get($work->payload, 'pending_panel_intent');
         if (! is_array($body) || ($body['reservation_protocol'] ?? null) !== self::PROTOCOL
@@ -525,7 +688,7 @@ class SpecialistCouncilPanelReservationService
             || ($body['work_type'] ?? null) !== $work->work_type || $body !== data_get($work->payload, 'followup_resolution')
             || ($body['max_experiments'] ?? null) !== 1 || ($body['max_window_cohorts'] ?? null) !== 3
             || ($body['max_lease_deliveries'] ?? null) !== count($body['arm_roots'] ?? []) * count($body['windows'] ?? [])
-                + count($body['windows'] ?? []) + 2 + 8
+                + count($body['windows'] ?? []) + 2 + 8 + (isset($body['descendant_programs']) ? 7 : 0)
             || ($body['authority'] ?? null) !== 'research_only' || ($body['promotion_evidence'] ?? null) !== false
             || ($body['independent_evidence_claimed'] ?? null) !== false
             || ($body['resolution_hash'] ?? null) !== $this->epochs->parameterHash(array_diff_key($body,
@@ -535,8 +698,8 @@ class SpecialistCouncilPanelReservationService
             || ! hash_equals($body['server_seal'], $this->seal(array_diff_key($body, ['server_seal' => true])))) {
             throw new LogicException('COUNCIL_PANEL_SERVER_RESERVATION_SEAL_INVALID');
         }
-        if (($body['current_source_hash'] ?? null) !== $this->evidence->codeHash()
-            || ($body['current_python_source_hash'] ?? null) !== $this->releases->pythonHash()) {
+        if ($requireCurrentSource && (($body['current_source_hash'] ?? null) !== $this->evidence->codeHash()
+            || ($body['current_python_source_hash'] ?? null) !== $this->releases->pythonHash())) {
             throw new LogicException('COUNCIL_PANEL_PREREGISTERED_SOURCE_CHANGED');
         }
         return $body;
@@ -598,6 +761,20 @@ class SpecialistCouncilPanelReservationService
     {
         $work = ResearchExperimentWorkItem::findOrFail($plan['panel_work_item_id'] ?? 0);
         $this->assertCurrentLease($work); $body = $this->body($work);
+        $this->assertComparatorProgram($body, $plan, $arm, $model);
+    }
+
+    /** Historical comparison is pure: immutable original run, never a live admission override. */
+    public function assertHistoricalWindowComparator(array $plan, array $arm, ModelVersion $model, LabEvaluationRun $run): void
+    {
+        if ($run->status !== 'completed' || (int) $run->model_version_id !== (int) $model->id
+            || ! filled($run->request_hash) || ! filled($run->response_hash)) throw new LogicException('COUNCIL_PANEL_ORIGINAL_COMPLETED_COMPARATOR_REQUIRED');
+        $work = ResearchExperimentWorkItem::findOrFail($plan['panel_work_item_id'] ?? 0);
+        $this->assertComparatorProgram($this->body($work, false), $plan, $arm, $model);
+    }
+
+    private function assertComparatorProgram(array $body, array $plan, array $arm, ModelVersion $model): void
+    {
         if (($plan['panel_reservation_hash'] ?? null) !== $body['reservation_hash']
             || ! in_array($arm['kind'] ?? null, ['solo', 'champion'], true)) {
             throw new LogicException('COUNCIL_PANEL_ORIGINAL_COMPARATOR_RESERVATION_REQUIRED');
@@ -610,10 +787,48 @@ class SpecialistCouncilPanelReservationService
             || ($marker['reservation_hash'] ?? null) !== $body['reservation_hash']
             || ($marker['window_key'] ?? null) !== ($arm['window_key'] ?? null)
             || data_get($model->metadata, 'authorized_specialist_council_panel_seed.arm_key') !== $root['arm_key']
-            || ! $this->evidence->equivalentJsonValue((array) $source->parameters, (array) $model->parameters)
-            || ! $this->evidence->equivalentJsonValue($this->evidence->modelRuntimeBasis($source), $this->evidence->modelRuntimeBasis($model))) {
+            || ! $this->evidence->equivalentJsonValue((array) $source->parameters, (array) $model->parameters)) {
             throw new LogicException('COUNCIL_PANEL_ORIGINAL_COMPARATOR_PHYSICAL_PROGRAM_CHANGED');
         }
+        if (isset($body['descendant_programs'])) {
+            $programs = $plan['descendant_programs'] ?? [];
+            $bound = app(SpecialistCouncilLifecycleService::class)->researchVersionForModel($model);
+            $expectedId = $arm['kind'] === 'solo' ? ($programs['p_version_id'] ?? null) : ($programs['pt_version_id'] ?? null);
+            $expectedHash = $arm['kind'] === 'solo' ? ($programs['p_manifest_hash'] ?? null) : ($programs['pt_manifest_hash'] ?? null);
+            $parent = SpecialistCouncilVersion::findOrFail($body['source_version_id']);
+            $expected = array_diff_key($parent->manifest, array_flip(['manifest_hash', 'epoch_contract', 'promotion_evidence']));
+            if ($arm['kind'] === 'solo') {
+                $expected['components'] = array_values(array_filter($expected['components'], fn ($component) => $component['id'] !== $body['descendant_programs']['trait_component_id']));
+                foreach ($expected['members'] as &$member) if (data_get($member, 'operator_contract.component_id') === $body['descendant_programs']['trait_component_id']) unset($member['operator_contract']);
+                unset($member);
+            }
+            if (! $bound || $bound->id !== $expectedId || $bound->manifest_hash !== $expectedHash
+                || ! $this->evidence->equivalentJsonValue($this->semanticCouncilProgram($bound->manifest), $this->semanticCouncilProgram($expected))
+                || ! $this->evidence->equivalentJsonValue($this->carrierBasisWithoutCouncil($source), $this->carrierBasisWithoutCouncil($model))) {
+                throw new LogicException('COUNCIL_DESCENDANT_ATTESTED_P_PT_COMPARATOR_PROGRAM_CHANGED');
+            }
+        } elseif (! $this->evidence->equivalentJsonValue($this->evidence->modelRuntimeBasis($source), $this->evidence->modelRuntimeBasis($model))) {
+            throw new LogicException('COUNCIL_PANEL_ORIGINAL_COMPARATOR_PHYSICAL_PROGRAM_CHANGED');
+        }
+    }
+
+    /** Only the aggregate council reference may change, every other carrier basis stays exact. */
+    private function carrierBasisWithoutCouncil(ModelVersion $model): array
+    {
+        $basis = $this->evidence->modelRuntimeBasis($model); unset($basis['components']['specialist_council']);
+        return ['runtime_basis' => $basis, 'contextual_cell' => data_get($model->metadata, 'specialist_council_membership.contextual_cell'),
+            'prospective_owner' => data_get($model->metadata, 'causal_learning_cohort'),
+            'composition_owner' => data_get($model->metadata, 'smart_composition.composition_passport'),
+            'instrument_owner' => data_get($model->metadata, 'instrument_research_assignment')];
+    }
+
+    private function semanticCouncilProgram(array $manifest): array
+    {
+        $policy = array_diff_key($manifest['evaluation_policy'], array_flip(['champion_model_version_id', 'solo_model_version_id',
+            'champion_model_version_id_hash', 'solo_model_version_id_hash', 'required_ablations']));
+        $members = array_map(fn ($member) => array_diff_key($member, array_flip(['passport_hash', 'qualified', 'qualified_evidence'])), $manifest['members']);
+        return ['members' => $members, 'components' => $manifest['components'], 'routing' => $manifest['routing'],
+            'allocation' => $manifest['allocation'], 'risk' => $manifest['risk'], 'execution' => $manifest['execution'], 'evaluation_policy' => $policy];
     }
 
     private function assertLease(ResearchExperimentWorkItem $work): void

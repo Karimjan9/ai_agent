@@ -9,9 +9,12 @@ use App\Models\LabLearningLanePair;
 use App\Models\LabMutationResponseMap;
 use App\Models\ResearchExperimentReceipt;
 use App\Models\ResearchExperimentWorkItem;
+use App\Models\SpecialistCouncilVersion;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use LogicException;
+use Throwable;
 
 /**
  * The conversion kernel owns only experiment identity, terminal receipts and
@@ -22,6 +25,8 @@ class ResearchExperimentConversionKernelService
     public const PROTOCOL = 'research_experiment_conversion_kernel_v1';
     public const CONTRACT_VERSION = 'research_experiment_v1';
     public const RULE_VERSION = 'research_conversion_rules_v1';
+    public const POLICY_SELECTION_PROTOCOL = 'qualified_native_panel_policy_selection_v1';
+    private const MAX_POLICY_SOURCES = 8;
     private const LEASE_SECONDS = 900;
     private const CLASSIFICATIONS = ['POSITIVE_CANDIDATE', 'BEHAVIORAL_ACTIVATION_HYPOTHESIS', 'INCONCLUSIVE', 'UNDERPOWERED', 'UNREACHABLE', 'TECHNICAL_QUARANTINE', 'BUDGET_EXHAUSTED', 'HARMFUL'];
 
@@ -299,6 +304,7 @@ class ResearchExperimentConversionKernelService
                         $leaseSeconds = SpecialistCouncilFollowupExecutionService::WORK_LEASE_SECONDS;
                     }
                 }
+                $this->selectPreparedResearchPolicy($item);
                 $now = now();
                 $lease = ['status' => 'leased', 'attempts' => (int) $item->attempts + 1, 'lease_token' => (string) Str::uuid(),
                     'fence_version' => (int) $item->fence_version + 1, 'lease_expires_at' => $now->copy()->addSeconds($leaseSeconds), 'heartbeat_at' => $now];
@@ -307,6 +313,127 @@ class ResearchExperimentConversionKernelService
             }
             return $claimed;
         });
+    }
+
+    /** Original prepared questions only; this never changes ready-work priority or admission. */
+    private function selectPreparedResearchPolicy(ResearchExperimentWorkItem $item): void
+    {
+        if (data_get($item->payload, 'owner') !== ResearchLoopArbiterService::class
+            || data_get($item->payload, 'executor') !== ResearchExperimentWorkConsumerService::class
+            || ! in_array($item->work_type, SpecialistCouncilIndependentPanelService::TYPES, true)
+            || ! is_array(data_get($item->result, 'panel_preparation'))
+            || data_get($item->result, 'research_policy_selection') !== null) return;
+        try {
+            $projection = app(SpecialistCouncilPanelReservationService::class)->pendingNativePanelQuestionCases($item);
+            $cases = $projection['cases'] ?? null;
+            if (! is_array($cases) || ! array_is_list($cases) || count($cases) < 2 || count($cases) > 16) return;
+            $key = (string) config('services.internal_api.token');
+            if (strlen($key) < 32) return;
+            $refs = array_map(fn (array $case): array => ['version_id' => $case['version_id'], 'window_key' => $case['window_key']], $cases);
+            $specs = array_map(fn (array $case): array => array_diff_key($case, ['arm_keys' => true]), $cases);
+            $epochs = app(ResearchPaperEpochContractService::class);
+            $owner = app(SpecialistCouncilLifecycleService::class);
+            $sources = SpecialistCouncilVersion::query()->whereIn('state', ['evaluated', 'approved', 'scheduled', 'active', 'retired', 'rolled_back'])
+                ->whereNotNull('assessment->support_role_qualifications')
+                ->orderByDesc('id')->limit(self::MAX_POLICY_SOURCES)->get();
+            foreach ($sources as $source) {
+                foreach ((array) ($source->manifest['components'] ?? []) as $component) {
+                    $id = $component['id'] ?? null;
+                    $proof = is_string($id) ? (($source->assessment['support_role_qualifications'] ?? [])[$id] ?? []) : [];
+                    // The stored projection only narrows the bounded lookup.
+                    // The rank API independently re-attests the original exam,
+                    // native benchmark, component, scope and fresh questions.
+                    if (! is_string($id) || ! in_array($component['role'] ?? null, ['learning', 'evolution'], true)
+                        || ($proof['status'] ?? null) !== 'research_role_qualified') continue;
+                    try {
+                        $seed = $epochs->parameterHash([$item->work_key, $projection['plan_hash'], $source->id, $id]);
+                        $rank = $owner->rankQualifiedResearchQuestions($source, $id, $refs, $seed);
+                        $binding = $rank['original_qualification_binding'] ?? [];
+                        $benchmark = $rank['native_benchmark_reference'] ?? [];
+                        if (($rank['status'] ?? null) !== 'research_ranking' || ($rank['actual_policy_consumed'] ?? null) !== true
+                            || ($rank['research_only'] ?? null) !== true || ($rank['promotion_evidence'] ?? null) !== false
+                            || ($rank['paper_authority_granted'] ?? null) !== false
+                            || ($binding['source_version_id'] ?? null) !== (int) $source->id || ($binding['component_id'] ?? null) !== $id
+                            || ! in_array($binding['role'] ?? null, ['learning', 'evolution'], true)
+                            || ($binding['authority'] ?? null) !== 'scoped_research_component_only'
+                            || ! $this->policySha($rank['source_plan_hash'] ?? null)
+                            || ! $this->policySha($benchmark['challenge_hash'] ?? null) || ! $this->policySha($benchmark['policy_hash'] ?? null)
+                            || ($benchmark['policy_key'] ?? null) !== $id
+                            || $epochs->parameterHash($rank['original_question_cases'] ?? []) !== $epochs->parameterHash($specs)) continue;
+                        $ranking = $rank['ranking'] ?? [];
+                        $questions = array_column($cases, 'question_hash');
+                        $ranked = is_array($ranking) ? array_column($ranking, 'question_id') : [];
+                        $expected = $questions; $actual = $ranked; sort($expected); sort($actual);
+                        if (count($ranked) !== count($cases) || count(array_unique($ranked)) !== count($ranked) || $expected !== $actual) continue;
+                        $body = ['protocol' => self::POLICY_SELECTION_PROTOCOL, 'work_item_id' => (int) $item->id,
+                            'work_key' => $item->work_key, 'reservation_hash' => $projection['reservation_hash'],
+                            'panel_version_id' => $projection['panel_version_id'], 'plan_hash' => $projection['plan_hash'],
+                            'current_source_hash' => $projection['current_source_hash'], 'policy_source_version_id' => (int) $source->id,
+                            'component_id' => $id, 'original_qualification_binding' => $binding,
+                            'source_plan_hash' => $rank['source_plan_hash'], 'native_benchmark_reference' => $benchmark,
+                            'case_snapshot' => $cases, 'rank_receipt' => $rank, 'ranking' => $ranking,
+                            'selected_question_hash' => $ranked[0], 'selected_at' => now()->utc()->toIso8601String(),
+                            'authority' => 'scoped_research_component_only', 'paper_authority_granted' => false, 'promotion_evidence' => false];
+                        // Seal the JSON cast's exact persisted representation.
+                        $body = json_decode(json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), true, flags: JSON_THROW_ON_ERROR);
+                        $body['rank_receipt_hash'] = $epochs->parameterHash($body['rank_receipt']);
+                        $body['selection_hash'] = $epochs->parameterHash($body);
+                        $body['server_seal'] = hash_hmac('sha256', self::POLICY_SELECTION_PROTOCOL."\n".$body['selection_hash'], $key);
+                        $item->update(['result' => [...(array) $item->result, 'research_policy_selection' => $body]]);
+                        return;
+                    } catch (Throwable) { /* Invalid support never blocks ordinary ready work. */ }
+                }
+            }
+        } catch (Throwable) { /* Missing prepared cases retain the normal owner selection. */ }
+    }
+
+    /** Retry/consumer check of one frozen selection; it never calls the ranker again. */
+    public function verifiedNativePolicySelection(ResearchExperimentWorkItem $item, array $projection): ?array
+    {
+        $body = data_get($item->result, 'research_policy_selection');
+        if ($body === null) return null;
+        $epochs = app(ResearchPaperEpochContractService::class);
+        $key = (string) config('services.internal_api.token');
+        if (! is_array($body) || strlen($key) < 32 || ($body['protocol'] ?? null) !== self::POLICY_SELECTION_PROTOCOL
+            || ($body['work_item_id'] ?? null) !== (int) $item->id || ($body['work_key'] ?? null) !== $item->work_key
+            || ($body['authority'] ?? null) !== 'scoped_research_component_only'
+            || ($body['paper_authority_granted'] ?? null) !== false || ($body['promotion_evidence'] ?? null) !== false
+            || ! $this->policySha($body['selection_hash'] ?? null) || ! is_string($body['server_seal'] ?? null)
+            || $epochs->parameterHash(array_diff_key($body, ['selection_hash' => true, 'server_seal' => true])) !== $body['selection_hash']
+            || ! hash_equals(hash_hmac('sha256', self::POLICY_SELECTION_PROTOCOL."\n".$body['selection_hash'], $key), $body['server_seal'])
+            || ($body['rank_receipt_hash'] ?? null) !== $epochs->parameterHash($body['rank_receipt'] ?? [])) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_SELECTION_SEAL_INVALID');
+        }
+        foreach (['reservation_hash', 'panel_version_id', 'plan_hash', 'current_source_hash'] as $field) {
+            if (($body[$field] ?? null) !== ($projection[$field] ?? null)) throw new LogicException('ORIGINAL_NATIVE_POLICY_SELECTION_OWNER_DRIFT');
+        }
+        // Numeric spelling may differ before and after a model JSON cast.
+        $cases = json_decode(json_encode($projection['cases'] ?? [], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), true, flags: JSON_THROW_ON_ERROR);
+        if ($epochs->parameterHash($body['case_snapshot'] ?? []) !== $epochs->parameterHash($cases)
+            || ($body['ranking'] ?? null) !== ($body['rank_receipt']['ranking'] ?? null)
+            || ($body['selected_question_hash'] ?? null) !== data_get($body, 'ranking.0.question_id')) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_SELECTION_CASE_DRIFT');
+        }
+        $source = SpecialistCouncilVersion::find($body['policy_source_version_id'] ?? 0);
+        if (! $source || ! is_string($body['component_id'] ?? null)) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_QUALIFICATION_REQUIRED');
+        }
+        $binding = app(SpecialistCouncilLifecycleService::class)->researchSupportBinding($source, $body['component_id']);
+        $plan = DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $source->id)->first();
+        $component = collect($source->manifest['components'] ?? [])->firstWhere('id', $body['component_id']);
+        $benchmark = $component ? app(SpecialistCouncilContractService::class)->supportNativePolicyBenchmarkReference(
+            $component, (string) data_get($body, 'native_benchmark_reference.challenge_key', '')) : null;
+        if ($epochs->parameterHash($binding) !== $epochs->parameterHash($body['original_qualification_binding'] ?? [])
+            || ($plan->plan_hash ?? null) !== ($body['source_plan_hash'] ?? null)
+            || $epochs->parameterHash($benchmark) !== $epochs->parameterHash($body['native_benchmark_reference'] ?? [])) {
+            throw new LogicException('ORIGINAL_NATIVE_POLICY_QUALIFICATION_DRIFT');
+        }
+        return $body;
+    }
+
+    private function policySha(mixed $value): bool
+    {
+        return is_string($value) && preg_match('/^[a-f0-9]{64}$/D', $value) === 1;
     }
 
     /** Fenced completion: a superseded worker is a no-op. */

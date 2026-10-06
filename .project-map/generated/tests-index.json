@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-06T09:09:34.780Z",
-  "source_digest": "e7f2ae39aebdd7466564d0d113a8c3269778fe55030cd9c6d02b70593bd9d09c",
-  "source_file_count": 1532,
-  "git_head": "2d0fb2e1af97b992a7469e5524f498ddb71ba70c",
+  "generated_at": "2026-10-06T12:48:56.106Z",
+  "source_digest": "d40401ee252133983e8d78c178cfebb535fdd4443d430cbb27831df8364060c1",
+  "source_file_count": 1538,
+  "git_head": "37d776af03c7ca923d1865c857c959b1dc783d5a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1023,6 +1023,7 @@
         "build",
         "test_real_public_constructor_reserves_three_exact_unobserved_window_cohorts_and_retry_reuses_owner",
         "test_partial_original_strategy_clone_resumes_same_generation_by_verified_slot_marker",
+        "test_descendant_first_cohort_reserves_thirteen_owned_slots_and_resumes_three_to_twelve_to_thirteen",
         "test_foreign_reserved_work_or_any_original_outcome_cannot_open_another_window",
         "test_source_drift_2026_and_unverified_flags_fail_before_creating_models",
         "test_shared_admission_cannot_promote_an_invalid_panel_into_special_escape_or_ignore_foreign_active_work"
@@ -2511,6 +2512,24 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
+      "tests": [
+        "setUp",
+        "test_seen_window_is_not_fresh_after_model_program_dataset_or_path_relabelling",
+        "test_plan_preparation_and_request_only_are_not_actual_observation",
+        "test_disjoint_utc_or_market_data_remains_fresh_and_discovery_is_not_an_independent_exposure",
+        "test_true_utc_overlap_is_rechecked_from_authenticated_owner_not_a_mutable_projection",
+        "test_missing_original_observation_proof_is_dependency_not_untouched_or_qualified",
+        "test_unobserved_other_window_in_an_existing_plan_is_not_a_returned_outcome",
+        "test_original_run_lookup_overflow_is_dependency_not_a_sampled_no_exposure_result",
+        "test_bounded_owner_overflow_refuses_without_sampling_or_claiming_observations",
+        "guard",
+        "program",
+        "savePlan",
+        "observationRun"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
       "tests": [
         "intent",
@@ -2777,6 +2796,18 @@
         "test_debt_and_director_share_exact_observation_delta_and_frozen_baseline_readiness",
         "test_nested_requested_stage_is_not_mastery_without_a_controllable_identity_proof",
         "test_prospective_foundry_packets_use_distinct_catalogue_backed_tactic_semantics"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/QualifiedResearchPolicyConsumptionTest.php",
+      "tests": [
+        "fixture",
+        "test_real_sole_arbiter_claim_persists_rank_and_decision_without_claiming_replay_consumption",
+        "test_absent_support_keeps_normal_ready_work_and_creates_no_policy_receipt",
+        "test_invalid_support_falls_back_without_blocking_or_starving_ready_work",
+        "test_fresh_retry_reuses_the_exact_original_receipt_without_calling_ranker_again",
+        "test_forged_selection_and_changed_actual_case_owner_are_refused",
+        "test_current_qualification_revocation_refuses_consumption_without_reselection"
       ]
     },
     {
@@ -3105,6 +3136,20 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
+      "tests": [
+        "test_batch_screen_observation_preserves_original_council_definition_and_remaining_runtime_guards",
+        "test_public_single_screen_keeps_original_definition_and_persists_actual_response_separately",
+        "test_genuine_parameter_execution_definition_and_assignment_changes_still_refuse_the_original_council",
+        "fixture",
+        "assertPersistedObservation",
+        "request",
+        "replayItem",
+        "runtime",
+        "passport"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ScreeningLearningProjectionReconciliationTest.php",
       "tests": [
         "test_completed_run_with_lost_projection_is_redispatched_without_replay",
@@ -3228,6 +3273,19 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilDescendantProducerTest.php",
+      "tests": [
+        "test_typed_public_registration_refuses_unqualified_original_and_caller_owned_results",
+        "test_legal_projection_changes_only_one_declared_original_member_gene",
+        "test_noop_unknown_risk_and_renormalized_interventions_are_refused",
+        "test_server_program_projection_preserves_roster_cost_risk_and_exact_trait_removal",
+        "test_four_derived_programs_cross_the_actual_native_consumer_without_qualification",
+        "test_descendant_comparator_rebind_preserves_every_other_carrier_basis_and_exact_p_pt",
+        "fixture",
+        "model"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php",
       "tests": [
         "test_followup_registration_delivers_bounded_prospective_contract_and_actor_to_original_owner",
@@ -3256,6 +3314,7 @@
     {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
       "tests": [
+        "tearDown",
         "test_missing_server_resolution_stays_blocked_despite_caller_executable_flag",
         "test_one_prospective_research_resolution_freezes_real_old_new_vectors_and_is_idempotent",
         "test_previously_sealed_question_cannot_be_tuned_after_registration",
@@ -3298,8 +3357,25 @@
         "test_source_amendment_tampered_projection_or_archive_cannot_grant_readiness",
         "test_source_amendment_live_lease_does_not_authorize_source_rewrite",
         "sourceAmendmentFixture",
+        "test_observed_execution_snapshot_copies_only_the_original_declaration_to_a_new_discovery",
+        "test_observed_execution_snapshot_continuation_refuses_a_changed_new_model_without_rewriting_old_source",
+        "observedExecutionCopyPoisons",
+        "test_observed_execution_snapshot_refuses_missing_poisoned_or_retuned_originals",
+        "observedExecutionCopyFixture",
         "fixture",
         "recordOriginalSchemaFailure"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilHistoricalProofTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_original_archived_release_and_request_survive_later_source_bytes_without_live_admission",
+        "test_missing_or_tampered_archive_and_original_request_are_refused",
+        "test_signed_original_authorization_survives_registry_removal_but_unsigned_and_mismatched_proofs_refuse",
+        "test_native_context_witness_requires_every_member_to_match_the_original_signed_source",
+        "original"
       ]
     },
     {
@@ -3342,6 +3418,7 @@
         "tearDown",
         "test_real_registration_reserves_three_canonical_cohorts_then_seals_original_full_signed_units",
         "test_public_preparation_seals_all_original_requests_then_uses_a_fresh_real_budget_for_native_and_solo",
+        "test_real_prepared_questions_freeze_policy_order_and_publish_first_original_consumption",
         "originalPanelAcceptance",
         "panelTestProgress",
         "advanceFixtureClock",
@@ -3403,6 +3480,7 @@
         "test_prepared_native_council_dispatches_singletons_and_oversized_direct_batch_is_rejected_before_evidence",
         "test_clean_plan_dataset_calendar_or_claim_mismatch_rolls_back_before_registration",
         "test_new_nonarm_model_or_native_parameter_drift_cannot_reuse_original_generation_owner",
+        "test_recovery_refuses_original_member_drift_before_any_dataset_restore_or_queue",
         "discoveryFixture",
         "test_cli_prepares_one_existing_draft_and_never_creates_generation",
         "test_creator_and_evaluator_separation_and_2026_paper_boundary_are_preserved",
@@ -3451,6 +3529,7 @@
         "test_native_policy_panel_adapter_qualifies_role_and_consumes_real_ranker_without_paper_or_cpu_claims",
         "test_native_policy_null_and_retention_regression_are_not_qualified",
         "test_native_policy_poisoned_original_outcomes_refuse_settlement_and_authority",
+        "test_native_policy_historical_outcomes_do_not_borrow_todays_registry_or_accept_missing_original_sources",
         "test_native_policy_no_effect_or_asserted_inputs_are_rejected_before_outcomes",
         "test_independent_authority_suffix_is_not_sent_as_a_new_authorization_receipt",
         "test_original_research_parent_and_native_policy_question_reject_flags_without_original_independent_producers",
@@ -3797,6 +3876,12 @@
         "test_entry_and_management_curricula_use_bounded_executable_numeric_axes",
         "test_actual_python_diagnostic_and_runtime_policies_cross_the_laravel_boundary",
         "oracle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
+      "tests": [
+        "installConditionalQualifiedNativePolicy"
       ]
     },
     {

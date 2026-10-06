@@ -19,6 +19,7 @@ use LogicException;
 class SpecialistCouncilResearchFeedbackService
 {
     public const PROTOCOL = 'specialist_council_research_feedback_v1';
+    public const OBSERVED_SOURCE_SNAPSHOT_PROTOCOL = 'specialist_council_observed_execution_snapshot_v1';
 
     public const FOLLOWUP_PROTOCOL = 'specialist_council_followup_resolution_v1';
 
@@ -163,13 +164,18 @@ class SpecialistCouncilResearchFeedbackService
                 || ($kind === 'same_question_source_repair' && $work->work_type !== 'specialist_council_technical_repair')) {
                 throw new LogicException('COUNCIL_FOLLOWUP_SCIENTIFIC_PURPOSE_INVALID');
             }
-            // Only this new, unchanged-question repair can consume a proven
-            // pre-execution descriptor materialization. The old seal stays
-            // invalid; all other discoveries require the exact old model hash.
+            // An unobserved repair and an observed auxiliary-source copy are
+            // distinct proofs. Neither repairs the old model or preparation.
             $unobservedProof = $kind === 'same_question_source_repair'
                 ? $this->unobservedTechnicalProof($receipt, $version, $original) : null;
+            $observedProof = $kind === 'new_discovery' && $work->work_type === 'specialist_council_technical_repair'
+                ? $this->observedAuxiliarySourceProof($receipt, $version, $original) : null;
+            if ($observedProof !== null && (array) ($proposed['parameter_deltas'] ?? []) !== []) {
+                throw new LogicException('COUNCIL_OBSERVED_SOURCE_COPY_FORBIDS_RETUNING');
+            }
             $specs = $this->projectNativeSources($version, (array) ($proposed['native_source_model_ids'] ?? []),
-                (array) ($proposed['parameter_deltas'] ?? []), (array) ($unobservedProof['descriptor_materializations'] ?? []));
+                (array) ($proposed['parameter_deltas'] ?? []), (array) ($unobservedProof['descriptor_materializations']
+                    ?? $observedProof['descriptor_materializations'] ?? []));
             $plan = (array) ($proposed['evaluation_plan'] ?? []);
             $bundle = (array) ($proposed['discovery_bundle_manifest'] ?? []);
             $this->assertFollowupDesign($original, $plan, $version);
@@ -178,6 +184,9 @@ class SpecialistCouncilResearchFeedbackService
             $currentPython = app(ResearchReleaseSealService::class)->pythonHash();
             if (! preg_match('/^[a-f0-9]{64}$/D', $currentSource) || ! preg_match('/^[a-f0-9]{64}$/D', $currentPython)) {
                 throw new LogicException('COUNCIL_FOLLOWUP_CURRENT_SOURCE_UNVERIFIABLE');
+            }
+            if ($observedProof !== null && $currentSource === ($original['preparation_source_hash'] ?? null)) {
+                throw new LogicException('COUNCIL_OBSERVED_SOURCE_COMPLETION_REQUIRES_CHANGED_SOURCE');
             }
             $template = array_diff_key($version->manifest, array_flip(['manifest_hash', 'epoch_contract', 'promotion_evidence']));
             foreach ($template['members'] as &$member) {
@@ -203,8 +212,9 @@ class SpecialistCouncilResearchFeedbackService
                     throw new LogicException('COUNCIL_POWER_EXTENSION_REQUIRES_NEW_PROSPECTIVE_EVENT_SCOPE');
                 }
             }
-            if ($kind === 'new_discovery' && $work->work_type === 'specialist_council_technical_repair'
-                && $this->questionFingerprint($template, $plan) === $this->questionFingerprint($version->manifest, $original)) {
+            $samePhysicalQuestion = $this->questionFingerprint($template, $plan) === $this->questionFingerprint($version->manifest, $original);
+            if ($kind === 'new_discovery' && $work->work_type === 'specialist_council_technical_repair' && $observedProof === null
+                && $samePhysicalQuestion) {
                 throw new LogicException('COUNCIL_FOLLOWUP_NEW_DISCOVERY_REQUIRES_NEW_PHYSICAL_QUESTION');
             }
             if ($work->work_type === 'specialist_council_data_repair'
@@ -226,8 +236,12 @@ class SpecialistCouncilResearchFeedbackService
                 'registered_by' => $actor === null ? $proposed['creator_id'] : trim($actor),
                 'prospective_question_fingerprint' => $this->questionFingerprint($template, $plan),
                 'scientific_question_kind' => $kind === 'same_question_source_repair'
-                    ? 'unobserved_same_question_source_repair' : 'new_prospective_discovery_informed_by_original_observation',
+                    ? 'unobserved_same_question_source_repair' : ($observedProof !== null
+                        ? 'source_repair_completion_after_observed_auxiliary_source' : 'new_prospective_discovery_informed_by_original_observation'),
                 'original_unobserved_technical_proof' => $unobservedProof,
+                'original_observed_source_proof' => $observedProof,
+                'same_physical_question_acknowledged' => $observedProof !== null && $samePhysicalQuestion,
+                'scientific_novelty_claimed' => false,
                 'authority' => 'research_only', 'max_experiments' => 1, 'independent_evidence_claimed' => false,
                 'fresh_model_attestation_required' => true, 'promotion_evidence' => false];
             if ($body['registered_by'] === '' || strlen($body['registered_by']) > 255) throw new LogicException('COUNCIL_FOLLOWUP_REGISTRAR_REQUIRED');
@@ -268,9 +282,19 @@ class SpecialistCouncilResearchFeedbackService
             $sourceBinding = $this->inspectFollowupSourceBinding($work);
             $unobservedProof = ($body['scientific_question_kind'] ?? null) === 'unobserved_same_question_source_repair'
                 ? $this->unobservedTechnicalProof($receipt, $version, $original) : null;
+            $observedProof = ($body['scientific_question_kind'] ?? null) === 'source_repair_completion_after_observed_auxiliary_source'
+                ? $this->observedAuxiliarySourceProof($receipt, $version, $original) : null;
             if ($unobservedProof !== null && $this->epochs->parameterHash($unobservedProof)
                 !== $this->epochs->parameterHash($body['original_unobserved_technical_proof'] ?? null)) {
                 throw new LogicException('COUNCIL_FOLLOWUP_ORIGINAL_PREEXECUTION_PROOF_CHANGED');
+            }
+            if (($body['scientific_question_kind'] ?? null) === 'source_repair_completion_after_observed_auxiliary_source'
+                && ($observedProof === null || $this->epochs->parameterHash($observedProof)
+                    !== $this->epochs->parameterHash($body['original_observed_source_proof'] ?? null)
+                    || ($body['same_physical_question_acknowledged'] ?? null) !== ($this->questionFingerprint($body['manifest_template'], $body['evaluation_plan']) === $this->questionFingerprint($version->manifest, $original))
+                    || ($body['scientific_novelty_claimed'] ?? null) !== false
+                    || ($body['current_source_hash'] ?? null) === ($original['preparation_source_hash'] ?? null))) {
+                throw new LogicException('COUNCIL_FOLLOWUP_ORIGINAL_OBSERVED_SOURCE_PROOF_CHANGED');
             }
             foreach ($body['native_source_models'] as $role => $spec) {
                 $model = ModelVersion::find($spec['model_version_id']);
@@ -284,7 +308,7 @@ class SpecialistCouncilResearchFeedbackService
                 if ($spec['parameter_deltas'] !== []) $deltas[$role] = array_column($spec['parameter_deltas'], 'new', 'gene');
             }
             if ($this->epochs->parameterHash($this->projectNativeSources($version, $sourceIds, $deltas,
-                (array) ($unobservedProof['descriptor_materializations'] ?? [])))
+                (array) ($unobservedProof['descriptor_materializations'] ?? $observedProof['descriptor_materializations'] ?? [])))
                 !== $this->epochs->parameterHash($body['native_source_models'])) {
                 throw new LogicException('COUNCIL_FOLLOWUP_PROJECTED_PARAMETER_DELTA_DRIFT');
             }
@@ -302,6 +326,22 @@ class SpecialistCouncilResearchFeedbackService
                 || in_array($generation->status, ['failed', 'abandoned'], true)
                 || ($generation->status === 'technical_quarantine' && ! LabPopulationService::constructionIncomplete($generation)))) {
                 return $this->followupBlocked('COUNCIL_FOLLOWUP_NEEDS_NEW_PREREGISTERED_ATTEMPT');
+            }
+            if ($generation && $observedProof !== null) {
+                $roles = ['source_scalp' => 'scalp', 'source_hour' => 'hour', 'source_day' => 'day', 'source_swing' => 'swing',
+                    'candidate_carrier' => 'day', 'ablation_carrier' => 'day'];
+                $agents = $generation->agents()->with('modelVersion')->limit(7)->get();
+                if ($agents->count() > 6) throw new LogicException('COUNCIL_OBSERVED_SOURCE_CONSTRUCTED_ROSTER_DRIFT');
+                foreach ($agents as $agent) {
+                    $model = $agent->modelVersion; $role = $roles[data_get($model?->metadata, 'native_specialist_council_seed.slot_role')] ?? null;
+                    if (! $model || $role === null) throw new LogicException('COUNCIL_OBSERVED_SOURCE_CONSTRUCTED_ROSTER_DRIFT');
+                    $snapshot = data_get($body, 'native_source_models.'.$role.'.original_descriptor_materialization');
+                    if (is_array($snapshot) && ($snapshot['protocol'] ?? null) === self::OBSERVED_SOURCE_SNAPSHOT_PROTOCOL
+                        && (! $model || $this->epochs->parameterHash(data_get($model->metadata, 'execution_contract')) !== $snapshot['original_declared_execution_hash']
+                            || $this->epochs->parameterHash(data_get($model->metadata, 'original_source_execution_snapshot')) !== $this->epochs->parameterHash($snapshot))) {
+                        throw new LogicException('COUNCIL_OBSERVED_SOURCE_CONSTRUCTED_DECLARATION_DRIFT');
+                    }
+                }
             }
             $currentEighthLease = (int) $work->attempts === 8 && $work->status === 'leased'
                 && is_string($work->lease_token) && $work->lease_token !== '' && $work->lease_expires_at?->isFuture();
@@ -598,6 +638,21 @@ class SpecialistCouncilResearchFeedbackService
         return [$receipt, $version, json_decode($stored->plan, true, 512, JSON_THROW_ON_ERROR)];
     }
 
+    /** Descendants derive IDs from the original manifest; no caller can supply hash overrides. */
+    public function projectOriginalNativeSources(SpecialistCouncilVersion $version, array $deltas): array
+    {
+        foreach ($deltas as $changes) if (! is_array($changes) || $changes === [] || array_is_list($changes)) {
+            throw new LogicException('COUNCIL_DESCENDANT_TYPED_TRAIT_AND_INTERVENTION_REQUIRED');
+        }
+        $specs = $this->projectNativeSources($version, array_column($version->manifest['members'], 'model_version_id', 'role'), $deltas);
+        foreach ($specs as $spec) foreach ($spec['parameter_deltas'] as $delta) {
+            if (app(LabImmutableEvidenceService::class)->equivalentJsonValue($delta['old'], $delta['new'])) {
+                throw new LogicException('COUNCIL_FOLLOWUP_DECLARED_DELTA_IS_NO_EFFECT');
+            }
+        }
+        return $specs;
+    }
+
     private function projectNativeSources(SpecialistCouncilVersion $version, array $ids, array $deltas,
         array $materializations = []): array
     {
@@ -697,6 +752,127 @@ class SpecialistCouncilResearchFeedbackService
      * Any timeout, scientific payload, live/duplicate arm or missing artifact
      * remains an explicit dependency, never an unobserved replacement license.
      */
+    /** An observed auxiliary run is never an unobserved repair or a comparative outcome. */
+    private function observedAuxiliarySourceProof(ResearchExperimentReceipt $receipt, SpecialistCouncilVersion $version, array $plan): ?array
+    {
+        $drifted = [];
+        foreach ($version->manifest['members'] as $member) {
+            $model = ModelVersion::find($member['model_version_id']);
+            if (! $model || $this->contracts->modelHash($model) !== $member['source_model_hash']) $drifted[] = $member;
+        }
+        // Preserve the ordinary exact-source refusal for unrelated drift.
+        if (count($drifted) !== 1) return null;
+        $member = $drifted[0]; $comparativeIds = array_column($plan['arms'], 'model_version_id');
+        if (count($plan['arms']) !== 3) return null;
+        if (in_array($member['model_version_id'], $comparativeIds, true)) return null;
+        $owner = DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $version->id)->sole();
+        $completed = LabEvaluationRun::whereIn('model_version_id', array_column($version->manifest['members'], 'model_version_id'))
+            ->whereNotIn('model_version_id', $comparativeIds)->where('started_at', '>=', $owner->sealed_at)
+            ->where('status', 'completed')->orderBy('id')->limit(2)->get();
+        if ($completed->count() !== 1 || (int) $completed[0]->model_version_id !== (int) $member['model_version_id']) return null;
+        if (data_get($receipt->payload, 'evidence.original_sources', []) !== []
+            || data_get($receipt->payload, 'evidence.comparisons', []) !== []
+            || data_get($receipt->payload, 'evidence.original_run_ids', []) !== []
+            || LabEvaluationRun::whereIn('model_version_id', $comparativeIds)->where('started_at', '>=', $owner->sealed_at)->exists()) {
+            throw new LogicException('COUNCIL_OBSERVED_SOURCE_REQUIRES_UNEXECUTED_COMPARATIVE_ARMS');
+        }
+        $run = $completed[0]; $model = $run->modelVersion; $agent = $run->agent;
+        $seed = data_get($model?->metadata, 'native_specialist_council_seed');
+        if (! $model || ! $agent || ! $run->started_at || ! $run->finished_at || $run->finished_at->lt($run->started_at)
+            || $run->phase !== 'screening'
+            || $run->mode !== 'incremental' || (int) $agent->model_version_id !== (int) $model->id
+            || (int) $agent->lab_generation_id !== (int) $run->lab_generation_id
+            || $agent->origin !== 'native_council_root' || ! is_array($seed)
+            || ($seed['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+            || ($seed['slot_role'] ?? null) !== 'source_'.$member['role']
+            || ($seed['lab_generation_id'] ?? null) !== (int) $run->lab_generation_id
+            || ! is_string($seed['intent_hash'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $seed['intent_hash'])
+            || data_get($agent->generation->trigger_context, 'native_specialist_council_intent.intent_hash') !== $seed['intent_hash']
+            || $run->code_hash !== ($plan['preparation_source_hash'] ?? null)) {
+            throw new LogicException('COUNCIL_OBSERVED_SOURCE_ORIGINAL_OWNER_INVALID');
+        }
+        $evidence = app(LabImmutableEvidenceService::class); $artifacts = [];
+        foreach (['evaluation_request', 'evaluation_response', 'model_runtime_identity'] as $type) {
+            $rows = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', $type)->get();
+            $artifact = $rows->count() === 1 ? $rows[0] : null;
+            if (! $artifact || ! $artifact->storage_path
+                || data_get($artifact->metadata, 'storage_protocol') !== 'compressed_artifact_v2'
+                || ! $artifact->created_at || $artifact->created_at->greaterThan($run->finished_at)) {
+                throw new LogicException('COUNCIL_OBSERVED_SOURCE_IMMUTABLE_ARTIFACT_REQUIRED');
+            }
+            $artifacts[$type] = $artifact;
+        }
+        $requestArtifact = $artifacts['evaluation_request']; $responseArtifact = $artifacts['evaluation_response'];
+        $identityArtifact = $artifacts['model_runtime_identity'];
+        $request = $evidence->readArtifactPayload($requestArtifact); $response = $evidence->readArtifactPayload($responseArtifact);
+        $identity = $evidence->readArtifactPayload($identityArtifact);
+        if (! is_array($request) || ! is_array($response) || ! is_array($identity)
+            || data_get($requestArtifact->metadata, 'request_hash') !== $run->request_hash
+            || $responseArtifact->sha256 !== $run->response_hash
+            || ($identity['protocol'] ?? null) !== 'original_model_runtime_identity_v1'
+            || ($identity['run_id'] ?? null) !== $run->run_id
+            || ($identity['model_version_id'] ?? null) !== (int) $model->id
+            || ($identity['lab_agent_id'] ?? null) !== (int) $agent->id
+            || ($identity['raw_request_hash'] ?? null) !== $run->request_hash
+            || ($identity['request_artifact_hash'] ?? null) !== $requestArtifact->sha256
+            || ! is_string($identity['raw_payload_hash'] ?? null)
+            || $identity['raw_payload_hash'] !== data_get($requestArtifact->metadata, 'raw_payload_hash')
+            || ($identity['compiled_runtime_contract_hash'] ?? null) !== $this->epochs->parameterHash((array) ($request['composition_runtime_contract'] ?? []))
+            || ($identity['evidence_parameter_hash'] ?? null) !== $run->parameter_hash
+            || ($identity['parameter_hash'] ?? null) !== $this->epochs->parameterHash((array) $model->parameters)) {
+            throw new LogicException('COUNCIL_OBSERVED_SOURCE_IMMUTABLE_OWNER_MISMATCH');
+        }
+        $strategies = array_values(array_filter((array) ($request['strategies'] ?? []), fn ($strategy): bool => is_array($strategy)
+            && ($strategy['lab_agent_id'] ?? null) === (int) $run->lab_agent_id));
+        if (count($strategies) !== 1) throw new LogicException('COUNCIL_OBSERVED_SOURCE_ORIGINAL_REQUEST_AMBIGUOUS');
+        $strategy = $strategies[0]; $effective = [...$request, ...$strategy];
+        if (($request['replay_dataset_hash'] ?? null) !== $run->data_hash
+            || ! in_array($run->data_hash, array_column($plan['windows'], 'dataset_sha256'), true)) {
+            throw new LogicException('COUNCIL_OBSERVED_SOURCE_ORIGINAL_DATA_OWNER_INVALID');
+        }
+        $declared = data_get($identity, 'runtime_basis.components.execution_contract');
+        $current = data_get($model->metadata, 'execution_contract'); $observed = $response['execution_contract'] ?? null;
+        $original = clone $model;
+        $original->metadata = [...(array) $model->metadata, 'execution_contract' => $declared];
+        if (! is_array($declared) || $declared === [] || ! is_array($current) || $current === []
+            || ! is_array($observed) || $observed === []
+            || ! $evidence->equivalentJsonValue($declared, $effective['execution_contract'] ?? null)
+            || ! $evidence->equivalentJsonValue($current, $observed)
+            || $evidence->equivalentJsonValue($declared, $current)
+            || ($strategy['strategy'] ?? null) !== $model->strategy || ($strategy['version'] ?? null) !== $model->version
+            || ! $evidence->equivalentJsonValue($strategy['parameters'] ?? null, (array) $model->parameters)
+            || ! $evidence->equivalentJsonValue($identity['runtime_basis'] ?? null, $evidence->modelRuntimeBasis($original))
+            || $this->contracts->modelHash($original) !== $member['source_model_hash']) {
+            throw new LogicException('COUNCIL_OBSERVED_SOURCE_EXECUTION_ONLY_SNAPSHOT_NOT_PROVEN');
+        }
+        $archive = app(SpecialistCouncilLifecycleService::class)->assertArchivedOriginalRelease($run, $request, $response, $plan);
+        // Match the model/resolution JSON persistence domain without losing
+        // the separately pinned original archived declaration/hash.
+        $copy = json_decode(json_encode($declared, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), true, 512, JSON_THROW_ON_ERROR);
+        if (! $evidence->equivalentJsonValue($copy, $declared)) throw new LogicException('COUNCIL_OBSERVED_SOURCE_DECLARATION_COPY_CHANGED');
+        $materialization = ['protocol' => self::OBSERVED_SOURCE_SNAPSHOT_PROTOCOL, 'descriptor_field' => 'execution_contract',
+            'original_value' => $copy, 'original_declared_execution_hash' => $this->epochs->parameterHash($copy),
+            'original_archived_declaration_hash' => $this->epochs->parameterHash($declared),
+            'observed_execution_hash' => $this->epochs->parameterHash($current), 'model_version_id' => (int) $model->id,
+            'specialist_id' => $member['specialist_id'], 'original_member_hash' => $member['source_model_hash'],
+            'current_model_hash' => $this->contracts->modelHash($model), 'original_run_id' => $run->run_id,
+            'original_generation_id' => (int) $run->lab_generation_id, 'original_agent_id' => (int) $run->lab_agent_id,
+            'original_request_hash' => $run->request_hash, 'request_artifact_hash' => $requestArtifact->sha256,
+            'response_artifact_hash' => $responseArtifact->sha256, 'model_runtime_identity_artifact_hash' => $identityArtifact->sha256,
+            'original_archive_hash' => data_get($request, 'research_release.source_artifact.artifact_hash'),
+            'original_archive_sha256' => data_get($request, 'research_release.source_artifact.archive_sha256'),
+            'original_source_hash' => data_get($archive, 'manifest.source_identity.source_hash'),
+            'original_parameter_hash' => $run->parameter_hash, 'runtime_parameter_hash' => $identity['parameter_hash'],
+            'runtime_basis_hash' => $this->epochs->parameterHash($identity['runtime_basis']), 'equivalence' => 'verified_numerical_json_value',
+            'original_preparation_remains_invalid' => true, 'scientific_outcomes_observed' => true,
+            'observed_auxiliary_only' => true, 'promotion_evidence' => false];
+        return ['protocol' => 'specialist_council_original_observed_auxiliary_source_v1', 'original_plan_hash' => $owner->plan_hash,
+            'original_version_id' => (int) $version->id, 'original_auxiliary_run_id' => $run->run_id,
+            'descriptor_materializations' => [$member['role'] => $materialization], 'comparative_run_ids' => [],
+            'scientific_outcomes_observed' => true, 'observed_auxiliary_only' => true,
+            'independent_evidence_claimed' => false, 'promotion_evidence' => false];
+    }
+
     private function unobservedTechnicalProof(ResearchExperimentReceipt $receipt, SpecialistCouncilVersion $version, array $plan): array
     {
         if (data_get($receipt->payload, 'evidence.original_sources', []) !== []

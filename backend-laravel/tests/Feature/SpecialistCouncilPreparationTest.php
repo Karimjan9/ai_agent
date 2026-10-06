@@ -14,6 +14,7 @@ use App\Services\AutonomousModeService;
 use App\Services\GenerationSnapshotAdmissionService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
+use App\Services\LabReplayRecoveryService;
 use App\Services\LearningVelocityGateService;
 use App\Services\LabAgentEvaluationService;
 use App\Services\MultiTimeframeSnapshotService;
@@ -481,6 +482,41 @@ class SpecialistCouncilPreparationTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('CANONICAL_COUNCIL_PREPARATION_ORIGINAL_MODEL_DRIFT');
         $owner->isResearchGeneration($generation->fresh());
+    }
+
+    public function test_recovery_refuses_original_member_drift_before_any_dataset_restore_or_queue(): void
+    {
+        [$generation, $request, $models] = $this->fixture();
+        app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $models[1]->refresh();
+        $metadata = $models[1]->metadata;
+        $metadata['execution_contract']['observed_costs'] = ['commission_cash' => 12];
+        $models[1]->update(['metadata' => $metadata]);
+        $this->mock(LabDatasetExportService::class, function ($mock): void {
+            $mock->shouldNotReceive('ensureGenerationSnapshot');
+            $mock->shouldNotReceive('ensureGenerationFoundationSnapshot');
+        });
+        Queue::fake();
+        $agent = $generation->agents()->orderBy('id')->firstOrFail();
+        $before = $models[1]->fresh()->getAttributes();
+        $owner = app(LabReplayRecoveryService::class);
+        foreach (['prepare', 'assertContract'] as $boundary) {
+            try {
+                if ($boundary === 'prepare') {
+                    $owner->prepare($agent, 'screen');
+                } else {
+                    $owner->assertContract($agent, ['protocol' => LabReplayRecoveryService::PROTOCOL,
+                        'generation_id' => $generation->id, 'agent_id' => $agent->id,
+                        'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'research_release_hash' => null]);
+                }
+                $this->fail('Recovery accepted a changed original member at '.$boundary);
+            } catch (\LogicException $error) {
+                $this->assertSame('CANONICAL_COUNCIL_PREPARATION_ORIGINAL_MODEL_DRIFT', $error->getMessage());
+            }
+        }
+        $this->assertSame($before, $models[1]->fresh()->getAttributes());
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        Queue::assertNothingPushed();
     }
 
     private function discoveryFixture(bool $nativeConstructor = false): array

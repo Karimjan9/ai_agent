@@ -24,6 +24,21 @@ The additive
 paper account remains opt-in and uses the original E3/E4 intake/execution owner;
 native deployment grants no paper or live authority.
 
+Screening stores returned execution observations separately from the frozen
+execution definition. A source-repair continuation after an observed auxiliary
+baseline authenticates its unique immutable pre-run/request/response and
+archive; only a complete original-hash reconstruction may supply the declaration
+for new models. The old rows and outcomes stay unchanged, all comparative arms
+remain fresh, and the same physical question is acknowledged without novelty,
+independent authority or a renewed scientific budget.
+
+Historical native context consumption is verified from every authenticated
+member's H1/H4/M15 witnesses against original signed file SHA, row count, UTC
+bounds and consumed hash. Those witnesses have no path/member-status fields;
+the original signed request binds the paths. Ordinary replay retains its own
+top-level context witness contract. Mutable current registry state controls
+fresh admission, not the already authenticated historical issuer decision.
+
 An unbound native source omits `specialist_council_contract` in the Laravel
 strategy payload. Python's strict object schema stays unchanged: explicit
 null, list or scalar declarations are rejected, and an invalid persisted
@@ -78,6 +93,14 @@ Legacy reference-only input remains refused, and descendant transfer retains
 its original-parent/four-program proof requirements. A discovery snapshot or
 source relabel cannot become a post-paper full-window release.
 
+Typed descendant reservations derive the unchanged PT control, its genuine P
+component removal, legal PTU intervention and target PU ablation server-side.
+Original T calls/behavior and whole-council parent qualification are mandatory.
+Historical parent evidence binds archived source and immutable requests/results;
+new PHP/Python requests retain current-release and lease admission. Aggregate
+control rebinding is descendant-only and verifies every remaining physical
+program/policy field; ordinary exact comparator equality is unchanged.
+
 The native learning/evolution policy adapter preregisters original question
 references, exact axis ablation and equal resource caps. Original immutable
 native exams supply outcomes and actual end-to-end wall duration. Authorized
@@ -86,6 +109,12 @@ sealed evaluation-scope suffix is removed for authorization verification;
 unknown fields and altered window keys are rejected. Role qualification and
 subsequent research ranking recheck original evidence without publishing new
 assessments or granting economic/paper authority.
+The existing arbiter/kernel can seal a qualified policy's original prepared-case
+ranking before replay. The actual unit owner consumes that frozen window order
+and records the first original question/run/request identity. Retry never
+reranks outcomes or replaces immutable requests. Unavailable policy support
+falls back to ordinary selection; case ordering is not a native benchmark
+producer or a claim of market/search improvement.
 
 `SpecialistCouncilPreparationService` binds a complete prospective research
 manifest and original candidate/solo/ablation plan inside an unused canonical

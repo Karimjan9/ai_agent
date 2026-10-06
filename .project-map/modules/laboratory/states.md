@@ -54,6 +54,24 @@ Actual unused authorized post-paper data is mandatory. The old caller-shaped
 reference registration remains blocked; descendant transfer cannot borrow a
 discovery cohort or invent a qualified parent.
 
+A descendant reservation follows the same durable pipeline, but requires an
+original independently qualified whole-council parent and actual original T
+operator calls/behavior. Its server derives P, PT, PTU and PU under unchanged
+external policies. Source-reference slots reach a zero-reward reference terminal
+disposition; they cannot become `full_queued` or counterfeit replay outcomes.
+The descendant exam requires powered four-program comparisons, actual T
+activation in PT/PTU and retained benefit; no parent flag creates authority.
+Historical qualification reads original archived release/request/response seals
+without a live work lease or current-source equality. This is not a bypass for
+new requests, which still require current source, data and lease proofs.
+
+Prepared native policy cases may acquire one sealed `research_policy_selection`
+before outcomes. A real original unit later records `research_policy_consumption`.
+Selection is planning evidence, not execution. Retries retain the case/order and
+revalidate qualification/benchmark provenance; they never rank seen outcomes.
+Three windows of one program are not two distinct matched benchmark questions
+per window and cannot qualify the policy themselves.
+
 An unleased, unobserved incomplete native cohort may append up to three
 source-only operational amendments. Every amendment seals its source archive,
 original resolution, immutable six-slot intent and exact existing model vectors.
@@ -246,6 +264,11 @@ not keep the generation-admission state blocked indefinitely.
 An immutable composition identity, required-node or aggregate-authority
 mismatch is terminal construction/configuration failure for that candidate; it
 must not be retried as a transient replay transport error.
+Council recovery also refuses a changed protected member even when its cost
+subset hash still matches. Observations do not replace frozen execution
+definitions. A verified observed-auxiliary snapshot can seed only new discovery
+models and an acknowledged prospective comparison; the old preparation stays
+invalid and its completed outcome remains unchanged.
 
 Creating a later generation cannot retroactively seal an earlier attempted
 generation's release.

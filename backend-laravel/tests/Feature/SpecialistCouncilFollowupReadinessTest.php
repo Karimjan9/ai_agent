@@ -23,10 +23,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
+require_once __DIR__.'/ResearchSourceArtifactTest.php';
+
 /** Synthetic source facts isolate readiness; no test fixture claims a market qualification. */
 class SpecialistCouncilFollowupReadinessTest extends TestCase
 {
     use RefreshDatabase;
+    private array $observedSourceFixtureRoots = [];
+    private ?string $observedOriginalStorage = null;
+
+    protected function tearDown(): void
+    {
+        if ($this->observedOriginalStorage !== null) app()->useStoragePath($this->observedOriginalStorage);
+        foreach ($this->observedSourceFixtureRoots as $root) {
+            $resolved = realpath($root); $prefix = str_replace('\\', '/', realpath(sys_get_temp_dir())).'/observed-source-snapshot-';
+            if ($resolved && str_starts_with(str_replace('\\', '/', $resolved), $prefix)) File::deleteDirectory($resolved);
+        }
+        parent::tearDown();
+    }
 
     public function test_missing_server_resolution_stays_blocked_despite_caller_executable_flag(): void
     {
@@ -643,9 +657,172 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         return [$work->fresh(), $generation, $body];
     }
 
+    /** Conditional original-owner unit: no actual worker/market/qualification is claimed. */
+    public function test_observed_execution_snapshot_copies_only_the_original_declaration_to_a_new_discovery(): void
+    {
+        [$work, $proposal, $version, $models, $run, $declared, $observed] = $this->observedExecutionCopyFixture();
+        $oldManifest = $version->manifest_hash; $oldResponse = $run->response_hash;
+        $service = app(SpecialistCouncilResearchFeedbackService::class);
+        $ready = $service->registerFollowupProof($work->id, $proposal);
+        $this->assertTrue($ready['executable'], json_encode($ready));
+        $this->assertSame('source_repair_completion_after_observed_auxiliary_source', $ready['scientific_question_kind']);
+        $this->assertTrue($ready['same_physical_question_acknowledged']); $this->assertFalse($ready['scientific_novelty_claimed']);
+        $proof = $ready['original_observed_source_proof']; $snapshot = $proof['descriptor_materializations']['scalp'];
+        $this->assertTrue($proof['scientific_outcomes_observed']); $this->assertTrue($proof['observed_auxiliary_only']);
+        $this->assertSame([], $proof['comparative_run_ids']); $this->assertFalse($ready['independent_evidence_claimed']);
+        $this->assertNull($ready['original_unobserved_technical_proof']);
+        $this->assertSame($run->run_id, $snapshot['original_run_id']);
+        $this->assertSame($snapshot, $ready['native_source_models']['scalp']['original_descriptor_materialization']);
+        $this->assertTrue(app(LabImmutableEvidenceService::class)->equivalentJsonValue($declared, $snapshot['original_value']));
+        $this->assertNotSame($snapshot['original_member_hash'], $snapshot['current_model_hash']);
+        $this->assertNull(app(LabImmutableEvidenceService::class)->verifiedModelRuntimeIdentity($run->fresh()));
+        $population = (new \ReflectionClass(\App\Services\LabPopulationService::class))->newInstanceWithoutConstructor();
+        $copy = (new \ReflectionMethod(\App\Services\LabPopulationService::class, 'nativeFollowupExecutionContract'))
+            ->invoke($population, $ready['native_source_models']['scalp'], 'XAUUSD', 'M5');
+        $this->assertSame($snapshot['original_value'], $copy);
+        $bad = $ready['native_source_models']['scalp'];
+        $bad['original_descriptor_materialization']['original_value']['counterfeit'] = true;
+        try { (new \ReflectionMethod(\App\Services\LabPopulationService::class, 'nativeFollowupExecutionContract'))->invoke($population, $bad, 'XAUUSD', 'M5');
+            $this->fail('Poisoned new-model copy value was accepted.'); }
+        catch (\LogicException $error) { $this->assertSame('NATIVE_COUNCIL_OBSERVED_SOURCE_COPY_PROOF_INVALID', $error->getMessage()); }
+        $this->assertTrue($service->inspectFollowupReadiness($work->fresh())['executable']);
+        $this->assertSame($observed, data_get($models['scalp']->fresh()->metadata, 'execution_contract'));
+        $this->assertSame($oldManifest, $version->fresh()->manifest_hash);
+        $this->assertSame($oldResponse, $run->fresh()->response_hash);
+        $this->assertSame('completed', $run->fresh()->status);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    /** Conditional constructor checkpoint owner; never a completed native cohort/worker claim. */
+    public function test_observed_execution_snapshot_continuation_refuses_a_changed_new_model_without_rewriting_old_source(): void
+    {
+        [$work, $proposal, , $models, $run] = $this->observedExecutionCopyFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class); $ready = $owner->registerFollowupProof($work->id, $proposal);
+        $snapshot = $ready['native_source_models']['scalp']['original_descriptor_materialization'];
+        $old = $models['scalp']->fresh()->getAttributes(); $originalResponse = $run->response_hash;
+        $originalGeneration = $run->agent->generation;
+        $generation = LabGeneration::create(['ai_laboratory_id' => $originalGeneration->ai_laboratory_id, 'generation' => 2, 'status' => 'creating',
+            'trigger_context' => ['native_specialist_council_intent' => ['followup_work_item_id' => $work->id, 'followup_resolution_hash' => $ready['resolution_hash']]]]);
+        $copy = ModelVersion::create(['name' => 'conditional copied slot checkpoint', 'strategy' => $models['scalp']->strategy, 'version' => 'v2',
+            'parameters' => $ready['native_source_models']['scalp']['parameters'], 'status' => 'testing', 'metadata' => [
+                'execution_contract' => $snapshot['original_value'], 'original_source_execution_snapshot' => $snapshot,
+                'native_specialist_council_seed' => ['slot_role' => 'source_scalp']]]);
+        LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $copy->id, 'origin' => 'native_council_root',
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'ema_rsi', 'lifecycle_status' => 'draft']);
+        $this->assertTrue($owner->inspectFollowupReadiness($work->fresh())['executable']);
+        $copy->update(['metadata' => [...$copy->metadata, 'execution_contract' => ['changed' => 'not-original-declaration']]]);
+        $blocked = $owner->inspectFollowupReadiness($work->fresh());
+        $this->assertFalse($blocked['executable']); $this->assertSame('COUNCIL_OBSERVED_SOURCE_CONSTRUCTED_DECLARATION_DRIFT', $blocked['reason']);
+        $this->assertSame($ready['resolution_hash'], data_get($work->fresh()->payload, 'followup_resolution.resolution_hash'));
+        $this->assertSame($old, $models['scalp']->fresh()->getAttributes()); $this->assertSame($originalResponse, $run->fresh()->response_hash);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public static function observedExecutionCopyPoisons(): array
+    {
+        return array_map(fn ($value) => [$value], ['missing_identity', 'poisoned_identity', 'wrong_owner', 'changed_parameter',
+            'extra_basis_drift', 'wrong_observation', 'wrong_request_declaration', 'wrong_original_hash', 'missing_archive', 'caller_retuning',
+            'unchanged_source', 'comparative_run']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('observedExecutionCopyPoisons')]
+    public function test_observed_execution_snapshot_refuses_missing_poisoned_or_retuned_originals(string $poison): void
+    {
+        [$work, $proposal, , $models, $run] = $this->observedExecutionCopyFixture();
+        $model = $models['scalp']->fresh(); $before = $model->getAttributes();
+        if ($poison === 'missing_identity') \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'model_runtime_identity')->delete();
+        elseif ($poison === 'poisoned_identity') {
+            $artifact = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'model_runtime_identity')->sole();
+            $artifact->update(['sha256' => str_repeat('0', 64)]);
+        } elseif ($poison === 'wrong_owner') {
+            $original = $run->agent->generation;
+            $other = LabGeneration::create(['ai_laboratory_id' => $original->ai_laboratory_id, 'generation' => 2, 'status' => 'completed']);
+            $run->update(['lab_generation_id' => $other->id]);
+        }
+        elseif ($poison === 'changed_parameter') $model->update(['parameters' => [...$model->parameters, 'ema_fast' => 5]]);
+        elseif ($poison === 'extra_basis_drift') $model->update(['metadata' => [...$model->metadata, 'risk_governor' => ['extra' => 'not-original']]]);
+        elseif ($poison === 'wrong_observation') $model->update(['metadata' => [...$model->metadata, 'execution_contract' => ['counterfeit' => 'not-original-response']]]);
+        elseif ($poison === 'wrong_request_declaration') {
+            $artifact = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->sole();
+            $artifact->update(['metadata' => [...$artifact->metadata, 'request_hash' => str_repeat('0', 64)]]);
+        } elseif ($poison === 'wrong_original_hash') {
+            $identity = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'model_runtime_identity')->sole();
+            $payload = app(LabImmutableEvidenceService::class)->readArtifactPayload($identity);
+            $payload['runtime_basis']['components']['execution_contract'] = ['wrong' => 'old-declaration'];
+            $path = storage_path('app/'.$identity->storage_path); $bytes = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+            File::put($path, gzencode($bytes)); $identity->update(['sha256' => hash('sha256', $bytes)]);
+        } elseif ($poison === 'missing_archive') {
+            $request = app(LabImmutableEvidenceService::class)->latestArtifactPayload($run, 'evaluation_request');
+            $archive = $this->observedSourceFixtureRoots[0].'/'.$request['research_release']['source_artifact']['archive_path'];
+            File::delete($archive);
+        } elseif ($poison === 'caller_retuning') $proposal['parameter_deltas'] = ['hour' => ['ema_fast' => 5]];
+        elseif ($poison === 'unchanged_source') $this->partialMock(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn($run->code_hash);
+        elseif ($poison === 'comparative_run') {
+            LabEvaluationRun::create(['run_id' => 'conditional-forbidden-comparative-run', 'model_version_id' => $models['candidate']->id,
+                'phase' => 'full_validation', 'mode' => 'full', 'status' => 'started', 'started_at' => now(),
+                'code_hash' => $run->code_hash, 'data_hash' => $run->data_hash]);
+        }
+        try {
+            app(SpecialistCouncilResearchFeedbackService::class)->registerFollowupProof($work->id, $proposal);
+            $this->fail('Missing, poisoned, additional-drift or caller-retuned source was accepted.');
+        } catch (\LogicException|\RuntimeException $error) { $this->assertNotSame('', $error->getMessage()); }
+        $this->assertNull(data_get($work->fresh()->payload, 'followup_resolution'));
+        $this->assertDatabaseCount('lab_evaluation_runs', $poison === 'comparative_run' ? 2 : 1); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        if (! in_array($poison, ['changed_parameter', 'extra_basis_drift', 'wrong_observation'])) $this->assertSame($before, $model->fresh()->getAttributes());
+    }
+
+    /** Actual file/archive/owner validators; worker observation is explicitly conditional unit input. */
+    private function observedExecutionCopyFixture(): array
+    {
+        $root = sys_get_temp_dir().'/observed-source-snapshot-'.bin2hex(random_bytes(8)); $this->observedSourceFixtureRoots[] = $root;
+        $this->observedOriginalStorage = storage_path(); app()->useStoragePath($root.'/storage');
+        foreach (['backend-laravel/app/Example.php' => '<?php return "original snapshot";', 'backend-laravel/config/example.php' => '<?php return [];',
+            'backend-laravel/composer.json' => '{}', 'backend-laravel/composer.lock' => '{}', 'backend-laravel/package-lock.json' => '{}',
+            'ai-service-python/requirements.txt' => 'pandas==2.2.3', 'ai-service-python/app/main.py' => '# conditional snapshot archive unit'] as $path => $bytes) {
+            File::ensureDirectoryExists(dirname($root.'/'.$path)); File::put($root.'/'.$path, $bytes);
+        }
+        $archiveOwner = new FixtureResearchSourceArtifactOwner($root); $reference = $archiveOwner->buildSourceArtifact()['reference'];
+        $declared = app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'M5');
+        [$work, $proposal, $version, $models] = $this->fixture(true, 'technical_unassessable', [], false, null, false, false,
+            $reference['source_hash'], ['scalp' => $declared]);
+        app()->instance(ResearchReleaseSealService::class, $archiveOwner);
+        $proposal['continuation_kind'] = 'new_discovery'; $proposal['parameter_deltas'] = [];
+        $lab = AiLaboratory::create(['name' => 'conditional observed source owner unit', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_families' => ['ema_rsi']]);
+        $intentHash = hash('sha256', 'conditional actual constructor owner identity');
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'status' => 'screening',
+            'trigger_context' => ['native_specialist_council_intent' => ['intent_hash' => $intentHash]]]);
+        $model = $models['scalp']->fresh();
+        $model->update(['metadata' => [...$model->metadata, 'native_specialist_council_seed' => [
+            'protocol' => \App\Services\LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL, 'slot_role' => 'source_scalp',
+            'lab_generation_id' => (int) $generation->id, 'intent_hash' => $intentHash]]]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'ema_rsi', 'origin' => 'native_council_root', 'lifecycle_status' => 'screened']);
+        $model->refresh(); $declared = data_get($model->metadata, 'execution_contract');
+        $evidence = app(LabImmutableEvidenceService::class);
+        $run = LabEvaluationRun::create(['run_id' => 'conditional-observed-'.bin2hex(random_bytes(8)), 'lab_generation_id' => $generation->id,
+            'lab_agent_id' => $agent->id, 'model_version_id' => $model->id, 'phase' => 'screening', 'mode' => 'incremental',
+            'status' => 'started', 'started_at' => now(), 'code_hash' => $reference['source_hash'], 'data_hash' => str_repeat('c', 64),
+            'parameter_hash' => $evidence->parameterHash($agent), 'metadata' => ['source' => 'bounded_screening_batch']]);
+        $identity = ['protocol' => ResearchReleaseSealService::PROTOCOL, 'source_hash' => $reference['source_hash'], 'python_source_hash' => $reference['python_source_hash'],
+            'php_version' => PHP_VERSION, 'dataset_hash' => $run->data_hash, 'execution_hash' => str_repeat('d', 64), 'cost_model_protocol' => 'conditional-original-unit',
+            'symbol' => 'XAUUSD', 'timeframe' => 'M5', 'agent_execution_hashes' => [], 'source_artifact' => $reference];
+        $release = [...$identity, 'release_hash' => app(\App\Services\ExecutionContractService::class)->hashParameters($identity),
+            'sealed_at' => now()->toIso8601String(), 'promotion_evidence' => false];
+        $request = ['research_release' => $release, 'replay_dataset_hash' => $run->data_hash, 'execution_contract' => $declared,
+            'strategies' => [['lab_agent_id' => (int) $agent->id, 'strategy' => $model->strategy, 'version' => $model->version, 'parameters' => $model->parameters]]];
+        $evidence->attachRequest($run, $request);
+        $observed = [...$declared, 'conditional_observation_not_market_proof' => true];
+        $response = ['execution_contract' => $observed, 'total_trades' => 0, 'data_quality' => ['research_release_receipt' => [
+            'protocol' => 'research_worker_release_receipt_v1', 'loaded_code_attested' => true, 'release_hash' => $release['release_hash'],
+            'source_hash' => $release['python_source_hash'], 'boot_source_hash' => $release['python_source_hash']]]];
+        $evidence->finishRun($run, 'completed', $response, [], ['source_snapshot_unit_not_worker_or_market_proof' => true]);
+        $model->update(['metadata' => [...$model->fresh()->metadata, 'execution_contract' => $observed]]);
+        return [$work, $proposal, $version, $models, $run->fresh(), $declared, $observed];
+    }
+
     private function fixture(bool $ready = true, string $observation = 'data_missing', array $extraParameters = [],
         bool $schemaFailure = false, ?string $errorMessage = null, bool $materializeAssignment = false,
-        bool $realRuntimeHashes = false): array
+        bool $realRuntimeHashes = false, ?string $originalSourceHash = null, array $sourceExecutionDeclarations = []): array
     {
         config(['services.internal_api.token' => str_repeat('fixture-key-', 4)]);
         if (! $realRuntimeHashes) {
@@ -657,7 +834,8 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         foreach (['scalp', 'hour', 'day', 'swing', 'candidate', 'ablation'] as $role) {
             $models[$role] = ModelVersion::create(['name' => 'Synthetic '.$role, 'strategy' => 'ema_rsi_v1', 'version' => 'v1',
                 'generation' => 1, 'status' => 'testing', 'parameters' => ['ema_fast' => 4, 'ema_slow' => 10, ...$extraParameters],
-                'metadata' => ['base_strategy' => 'ema_rsi', 'strategy_architecture' => 'ema_rsi']]);
+                'metadata' => ['base_strategy' => 'ema_rsi', 'strategy_architecture' => 'ema_rsi',
+                    ...(isset($sourceExecutionDeclarations[$role]) ? ['execution_contract' => $sourceExecutionDeclarations[$role]] : [])]]);
         }
         $members = [];
         foreach (['scalp', 'hour', 'day', 'swing'] as $role) {
@@ -681,7 +859,7 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
                 'max_daily_loss_percent' => 3, 'max_expected_cost_percent' => 1],
             'evaluation_policy' => ['objective' => 'net_return_at_equal_risk', 'champion_model_version_id' => $models['hour']->id,
                 'solo_model_version_id' => $models['hour']->id]], 'original-creator');
-        $plan = ['purpose' => 'research', 'preparation_source_hash' => str_repeat('e', 64), 'execution_hash' => str_repeat('d', 64),
+        $plan = ['purpose' => 'research', 'preparation_source_hash' => $originalSourceHash ?? str_repeat('e', 64), 'execution_hash' => str_repeat('d', 64),
             'execution_timeframe' => 'M5', 'initial_capital' => 10000, 'cost_model' => ['commission_percent' => .1],
             'risk_policy' => ['max_risk' => 2, 'risk_per_trade_percent' => .5],
             'windows' => [['window_key' => 'original', 'start_inclusive' => '2025-01-01T00:00:00Z',

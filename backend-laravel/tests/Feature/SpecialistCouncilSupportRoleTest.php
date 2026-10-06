@@ -321,6 +321,24 @@ class SpecialistCouncilSupportRoleTest extends TestCase
             ->where('subject_type', \App\Services\ResearchKnowledgePortfolioService::META_PROTOCOL.':native_policy_challenge_result')->count());
     }
 
+    /** Conditional original-owner proof tests the adapter, never market qualification. */
+    public function test_native_policy_historical_outcomes_do_not_borrow_todays_registry_or_accept_missing_original_sources(): void
+    {
+        [, , , , $key] = $this->nativePolicyFixture();
+        $portfolio = app(\App\Services\ResearchKnowledgePortfolioService::class);
+        $original = $portfolio->inspectNativePolicyChallenge($key);
+        $this->assertSame('original_independent_native_question_comparison', $original['status']);
+        config(['services.instrument_policy.authorized_research_windows' => []]);
+        $this->assertSame($original, $portfolio->inspectNativePolicyChallenge($key));
+        $this->assertFalse($original['economic_authority']);
+        [, , , , $missingKey] = $this->nativePolicyFixture('missing_original_sources');
+        config(['services.instrument_policy.authorized_research_windows' => []]);
+        $missing = $portfolio->settleNativePolicyChallenge($missingKey);
+        $this->assertSame('blocked', $missing['status']);
+        $this->assertSame('ORIGINAL_NATIVE_POLICY_QUESTION_SOURCES_REQUIRED', $missing['reason']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_native_policy_no_effect_or_asserted_inputs_are_rejected_before_outcomes(): void
     {
         [, $trial, , , , $refs] = $this->nativePolicyFixture();
@@ -414,7 +432,19 @@ class SpecialistCouncilSupportRoleTest extends TestCase
                 'end_exclusive' => '2027-'.sprintf('%02d', $month).'-10T00:00:00Z', 'dataset_sha256' => hash('sha256', 'native-'.$month)];
             $windows[$window['window_key']] = $window; $panel = [];
             foreach (['target_cases', 'retention_cases'] as $kind) {
-                $ids = [++$offset, ++$offset];
+                // Conditional producer outcomes still use real persisted case
+                // owners; the rank API now derives each original evaluator.
+                $ids = [];
+                for ($caseIndex = 0; $caseIndex < 2; $caseIndex++) {
+                    $caseManifest = $manifest; $caseManifest['version'] = 'native-case-'.$variant.'-'.(++$offset);
+                    $caseVersion = app(SpecialistCouncilLifecycleService::class)->registerDraft($caseManifest, 'native-case-creator');
+                    $casePlan = ['manifest_hash' => $caseVersion->manifest_hash, 'purpose' => 'independent', 'windows' => [$window['window_key'] => $window]];
+                    DB::table('specialist_council_evaluation_plans')->insert(['specialist_council_version_id' => $caseVersion->id,
+                        'evaluator_id' => 'actual-case-examiner', 'plan' => json_encode($casePlan),
+                        'plan_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($casePlan),
+                        'sealed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+                    $ids[] = $caseVersion->id;
+                }
                 $questions = array_map(fn ($id) => hash('sha256', 'original-question-'.$id), $ids);
                 $first = strcmp($questions[0], $questions[1]) < 0 ? 0 : 1;
                 foreach ($ids as $i => $id) {
@@ -441,7 +471,8 @@ class SpecialistCouncilSupportRoleTest extends TestCase
                 $positive = $variant !== 'null' && $spec['cheap'];
                 if ($variant === 'retention_regression' && $spec['kind'] === 'retention_cases') $positive = ! $spec['cheap'];
                 return ['status' => 'original_independent_question_observed', 'powered' => true, 'positive' => $positive,
-                    'end_to_end_wall_seconds' => 1.5, 'original_sources' => [['run_id' => 'conditional-native-'.$spec['version_id']]]];
+                    'end_to_end_wall_seconds' => 1.5, 'original_sources' => $variant === 'missing_original_sources'
+                        ? [] : [['run_id' => 'conditional-native-'.$spec['version_id']]]];
             });
         });
         $owner->__construct(app(SpecialistCouncilContractService::class), app(ResearchPaperEpochContractService::class), app(LabImmutableEvidenceService::class));

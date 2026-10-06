@@ -10,6 +10,12 @@ Missing or invalid proof leaves an explicit dependency. Each actual retirement
 changes the arbiter's target watermark so older debt cannot be stranded behind
 an already-reconciled lineage head or a completed no-op decision.
 
+Replay recovery also revalidates the original native council preparation before
+dataset restoration and again before a queued recovery can execute. Matching
+source and cost-parameter hashes cannot conceal a changed protected member
+definition. Such refusal is a technical admission failure, not a new strategy
+loss or permission to resubmit the same invalid arm.
+
 ## Declared native specialist council
 
 A council conversion dependency can become runnable only after original-owner
@@ -42,8 +48,26 @@ completion; retry consumes the same original runs and exam, with no extra HTTP.
 Missing authorized data remains blocked; discovery is not relabelled as
 independent confirmation. Legacy caller-shaped references remain refused.
 Descendant transfer additionally needs a qualified original parent and exact
-P/P+T/P+T+U/P+U program provenance; the legacy reference path alone is not a
-canonical descendant producer.
+P/P+T/P+T+U/P+U program provenance. Its typed server reservation accepts the
+original component T and bounded legal member deltas U, never caller results
+or contrast versions. Four derived source references belong only to the first
+cohort; they settle as zero-authority references, not queued replay arms.
+With four trader members and one T, the original comparison keeps all member/T
+ablations and retention: nine arms per window, 27 across three windows.
+The first cohort has 13 owned slots and the other two have nine; ordinary
+independent-panel bounds are unchanged. The descendant delivery ceiling is 47,
+including seven bounded continuation deliveries, preparation/final closure and
+eight recovery deliveries. A last already-issued current lease may finish at
+that ceiling, but another ready claim cannot replenish it.
+
+After global preparation, the sole arbiter's locked kernel claim may consume a
+qualified native learning/evolution policy to order original unobserved window
+cases. The full case snapshot and ranking receive a server seal before outcomes.
+Retry revalidates the same selection without reranking; the real first original
+unit records question/run/request consumption. All controls, requests and
+windows remain mandatory. Missing or invalid policy support preserves ordinary
+ready-work priority/order; equal features give a stable tie, not evidence of
+policy value. This case consumer does not create the qualifying native benchmark.
 
 Initial native-discovery work leases are 2700 seconds only after fresh locked
 server proof; other work retains the 900-second lease. No lease is renewed.
