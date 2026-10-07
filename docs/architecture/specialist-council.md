@@ -172,6 +172,14 @@ a prior nonconstructive hold from a constructive checkpoint. The exact six-slot
 plan is still required before every model persists; continuation reuses the same
 cohort, and later checkpoints/completion retain the original dependency hold.
 
+Archive entry verification is reused only inside that held constructor scope,
+with a bounded owner memo and freshly hashed actual ZIP/reference bytes.
+Current source, original vectors, HMAC and lease fencing remain live around
+every persistence; each full readiness call still verifies archives afresh.
+Discovery preparation resolves its exact MTF bundle with one owner proof rather
+than repeating the same readiness check during restoration. No persistent
+cache, caller-supplied approval, shortened replay or extra authority is added.
+
 Independent-validation and descendant references have a separate original-panel
 validator. It checks original evaluator/plan/window identities, unchanged
 external and scientific policies, exact selected native programs and required

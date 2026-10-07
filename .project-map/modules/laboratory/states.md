@@ -88,6 +88,13 @@ resolution, attempt count and observed auxiliary outcome remain unchanged.
 Cold construction proves this start before inserting the row, persists its full
 six-slot plan before any model, and retains the hold in subsequent checkpoints.
 
+Within that one held constructor invocation, an owner-scoped bounded archive
+memo may retain an already complete ZIP proof only while actual ZIP and persisted
+reference bytes remain unchanged. Source/HMAC/vector/lease guards stay fresh at
+every slot. Every full readiness call bypasses the memo; nested scope entry is
+refused and exit clears the memo even on failed construction. No persistent
+cache or caller-provided validated flag is accepted.
+
 Support-role qualification is separate from trader and paper qualification.
 An original role-specific producer, component ablation and retention can grant
 only scoped research component use after authorized nonoverlapping windows and

@@ -31,6 +31,25 @@ class SpecialistCouncilResearchFeedbackService
     private const DISCOVERY_FOLLOWUPS = ['specialist_council_technical_repair', 'specialist_council_data_repair',
         'specialist_council_power_extension'];
 
+    private ?object $constructorSourceFenceScope = null;
+    private array $constructorVerifiedArchives = [];
+    private int $fullReadinessDepth = 0;
+
+    /** No proof is supplied by the caller; only this owner can populate the bounded memo. */
+    public function beginConstructorSourceFenceScope(): object
+    {
+        if ($this->constructorSourceFenceScope !== null) throw new LogicException('COUNCIL_SOURCE_FENCE_SCOPE_ALREADY_HELD');
+        $this->constructorVerifiedArchives = [];
+        return $this->constructorSourceFenceScope = new \stdClass;
+    }
+
+    public function endConstructorSourceFenceScope(object $scope): void
+    {
+        if ($this->constructorSourceFenceScope !== $scope) throw new LogicException('COUNCIL_SOURCE_FENCE_SCOPE_OWNER_MISMATCH');
+        $this->constructorVerifiedArchives = [];
+        $this->constructorSourceFenceScope = null;
+    }
+
     public function __construct(
         private ResearchExperimentConversionKernelService $conversion,
         private ResearchPaperEpochContractService $epochs,
@@ -255,6 +274,7 @@ class SpecialistCouncilResearchFeedbackService
     /** Pure readiness, rechecked at claim, construction and execution; no stored flag can grant it. */
     public function inspectFollowupReadiness(ResearchExperimentWorkItem $work): array
     {
+        $this->fullReadinessDepth++;
         try {
             [$receipt, $version, $original] = $this->followupOriginal($work);
             if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)) {
@@ -361,6 +381,8 @@ class SpecialistCouncilResearchFeedbackService
                 'promotion_evidence' => false];
         } catch (\Throwable $error) {
             return $this->followupBlocked($error instanceof LogicException ? $error->getMessage() : 'COUNCIL_FOLLOWUP_OWNER_PROOF_UNAVAILABLE');
+        } finally {
+            $this->fullReadinessDepth--;
         }
     }
 
@@ -673,7 +695,7 @@ class SpecialistCouncilResearchFeedbackService
                 $oldArchive = (array) ($entry['original_source_artifact'] ?? []);
                 if (($oldArchive['source_hash'] ?? null) !== $body['current_source_hash']
                     || ($oldArchive['python_source_hash'] ?? null) !== $body['current_python_source_hash']
-                    || (app(ResearchReleaseSealService::class)->verifySourceArtifact($oldArchive)['status'] ?? null) !== 'verified') {
+                    || ($this->verifyConstructorArchive($oldArchive)['status'] ?? null) !== 'verified') {
                     throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_INVALID');
                 }
             } elseif (LabGeneration::where('trigger_context->native_specialist_council_intent->followup_work_item_id', $work->id)
@@ -683,12 +705,38 @@ class SpecialistCouncilResearchFeedbackService
             $archive = (array) ($entry['source_artifact'] ?? []);
             if (($archive['source_hash'] ?? null) !== $entry['source_hash']
                 || ($archive['python_source_hash'] ?? null) !== $entry['python_source_hash']
-                || (app(ResearchReleaseSealService::class)->verifySourceArtifact($archive)['status'] ?? null) !== 'verified') {
+                || ($this->verifyConstructorArchive($archive)['status'] ?? null) !== 'verified') {
                 throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_ARCHIVE_INVALID');
             }
             $previous = $entry['amendment_hash'];
         }
         return $entry;
+    }
+
+    /** Per-entry proof is retained only inside one held constructor, never across full readiness. */
+    private function verifyConstructorArchive(array $reference): array
+    {
+        $owner = app(ResearchReleaseSealService::class);
+        $key = $this->epochs->parameterHash($reference);
+        $scoped = $this->constructorSourceFenceScope !== null && $this->fullReadinessDepth === 0;
+        if ($scoped && isset($this->constructorVerifiedArchives[$key])) {
+            $original = $this->constructorVerifiedArchives[$key];
+            try {
+                if ($owner->sourceArtifactByteFence($reference) !== $original['byte_fence']) {
+                    throw new LogicException('COUNCIL_SOURCE_ARCHIVE_BYTES_CHANGED_DURING_CONSTRUCTION');
+                }
+                return $original['proof'];
+            } catch (\Throwable $error) {
+                $this->constructorVerifiedArchives = [];
+                throw $error;
+            }
+        }
+        $proof = $owner->verifySourceArtifact($reference);
+        if ($scoped && ($proof['status'] ?? null) === 'verified') {
+            if (count($this->constructorVerifiedArchives) >= 6) throw new LogicException('COUNCIL_SOURCE_FENCE_ARCHIVE_BUDGET_EXCEEDED');
+            $this->constructorVerifiedArchives[$key] = ['proof' => $proof, 'byte_fence' => $owner->sourceArtifactByteFence($reference)];
+        }
+        return $proof;
     }
 
     private function sourceAmendmentSeal(array $body): string

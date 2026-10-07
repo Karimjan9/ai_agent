@@ -31,6 +31,13 @@ than manually changing agent status or rewriting immutable evidence. After
 repair, an explicit `ai:start` acknowledges and clears the halt; `ai:resume`
 cannot clear it.
 
+Expired durable work leases are reconciled by the existing conversion owner
+before the mutable closure guard: at most 100 per pass, with row-lock and
+token/fence/expiry rechecks. Recovery preserves the original attempt, result,
+question and scientific budget; fresh readiness and a new canonical claim are
+still required. Live or undated leases are not released, and old queued tokens
+cannot execute or publish. Read-only/dry-run closure does not perform recovery.
+
 ## Archive-first research before champion
 
 `XAUUSD_HISTORICAL_RESEARCH_UNTIL_CHAMPION=true` (default) lets the existing

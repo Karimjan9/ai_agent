@@ -250,6 +250,42 @@ class ResearchReleaseSealService
         } finally { $zip->close(); }
     }
 
+    /**
+     * Live byte fence for an already fully verified archive. This is not an
+     * archive verification and cannot establish trust on its own: it only
+     * permits one held invocation to retain its original full proof while
+     * both original reference bytes and actual ZIP bytes remain unchanged.
+     */
+    public function sourceArtifactByteFence(array $reference): array
+    {
+        $address = (string) ($reference['artifact_hash'] ?? '');
+        if (($reference['protocol'] ?? null) !== 'research_source_artifact_reference_v1'
+            || ! preg_match('/^[a-f0-9]{64}$/D', $address)
+            || ! preg_match('/^[a-f0-9]{64}$/D', (string) ($reference['archive_sha256'] ?? ''))
+            || ($reference['archive_path'] ?? null) !== self::SOURCE_ARTIFACT_DIRECTORY.'/'.$address.'.zip') {
+            throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_INVALID');
+        }
+        $directory = $this->artifactDirectory();
+        $referencePath = $directory.'/'.$address.'.json';
+        $archivePath = $directory.'/'.$address.'.zip';
+        clearstatcache(true, $referencePath);
+        clearstatcache(true, $archivePath);
+        if (! is_file($referencePath) || is_link($referencePath)) throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_MISSING');
+        if (filesize($referencePath) > 4194304) throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_INVALID');
+        $referenceBytes = file_get_contents($referencePath);
+        if (! is_string($referenceBytes)
+            || $this->artifactJson(json_decode($referenceBytes, true, 512, JSON_THROW_ON_ERROR)) !== $this->artifactJson($reference)) {
+            throw new RuntimeException('SOURCE_ARTIFACT_REFERENCE_INVALID');
+        }
+        if (! is_file($archivePath)) throw new RuntimeException('SOURCE_ARTIFACT_ARCHIVE_MISSING');
+        if (filesize($archivePath) > self::SOURCE_ARTIFACT_MAX_BYTES + 8388608) throw new RuntimeException('SOURCE_ARTIFACT_BYTE_LIMIT');
+        if (is_link($archivePath) || ! hash_equals($reference['archive_sha256'], (string) hash_file('sha256', $archivePath))) {
+            throw new RuntimeException('SOURCE_ARTIFACT_ARCHIVE_HASH_MISMATCH');
+        }
+        return ['artifact_hash' => $address, 'reference_sha256' => hash('sha256', $referenceBytes),
+            'archive_sha256' => $reference['archive_sha256']];
+    }
+
     public function sourceArtifactReference(string $address): array
     {
         if (! preg_match('/^[a-f0-9]{64}$/D', $address)) throw new RuntimeException('SOURCE_ARTIFACT_ADDRESS_INVALID');

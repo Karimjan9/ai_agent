@@ -16,6 +16,8 @@ use ZipArchive;
 class FixtureResearchSourceArtifactOwner extends ResearchReleaseSealService
 {
     public $afterCapture;
+    public int $fullArchiveVerifications = 0;
+    public int $archiveByteFences = 0;
     public function __construct(public string $root) {}
     protected function artifactProjectRoot(): string { return $this->root; }
     protected function artifactGitProvenance(): array
@@ -35,6 +37,16 @@ class FixtureResearchSourceArtifactOwner extends ResearchReleaseSealService
     }
     public function identities(): array { return $this->artifactCurrentIdentity(); }
     public function pythonHash(): string { return $this->identities()['python_source_hash']; }
+    public function verifySourceArtifact(array $reference, bool $requireCurrent = false): array
+    {
+        $this->fullArchiveVerifications++;
+        return parent::verifySourceArtifact($reference, $requireCurrent);
+    }
+    public function sourceArtifactByteFence(array $reference): array
+    {
+        $this->archiveByteFences++;
+        return parent::sourceArtifactByteFence($reference);
+    }
 }
 
 class ResearchSourceArtifactTest extends TestCase
@@ -78,6 +90,32 @@ class ResearchSourceArtifactTest extends TestCase
             if ($resolved && str_starts_with(str_replace('\\', '/', $resolved), $allowed)) File::deleteDirectory($resolved);
         }
         parent::tearDown();
+    }
+
+    public function test_archive_byte_fence_rehashes_actual_bytes_and_original_reference_without_claiming_full_verification(): void
+    {
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        $calls = $this->owner->fullArchiveVerifications;
+        $first = $this->owner->sourceArtifactByteFence($reference);
+        $this->assertSame($first, $this->owner->sourceArtifactByteFence($reference));
+        $this->assertSame($calls, $this->owner->fullArchiveVerifications);
+        $path = $this->root.'/'.$reference['archive_path'];
+        $bytes = File::get($path);
+        $bytes[100] = chr(ord($bytes[100]) ^ 1);
+        File::put($path, $bytes);
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_ARCHIVE_HASH_MISMATCH');
+        $this->owner->sourceArtifactByteFence($reference);
+    }
+
+    public function test_archive_byte_fence_refuses_changed_reference_bytes_even_with_original_zip(): void
+    {
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        $this->owner->sourceArtifactByteFence($reference);
+        $path = dirname($this->root.'/'.$reference['archive_path']).'/'.$reference['artifact_hash'].'.json';
+        $changed = [...$reference, 'extra_projection' => true];
+        File::put($path, json_encode($changed, JSON_THROW_ON_ERROR));
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_REFERENCE_INVALID');
+        $this->owner->sourceArtifactByteFence($reference);
     }
 
     public function test_retained_address_lookup_is_read_only_bounded_and_excludes_non_address_projections(): void

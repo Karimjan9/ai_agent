@@ -55,6 +55,132 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
         $this->assertDatabaseCount('research_experiment_receipts', 0);
     }
 
+    public function test_canonical_closure_recovers_expired_ownership_before_selection_and_fences_old_delivery(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $kernel->record($this->contract(), ['settlement_id' => 19], 'INCONCLUSIVE',
+            ['type' => 'academy_repair', 'identity' => 'expired-closure']);
+        $old = $kernel->claimForOwner(ResearchLoopArbiterService::class, 1)[0];
+        $originalResult = ['dependency_hold' => ['reason' => 'ORIGINAL_OPERATIONAL_HOLD',
+            'prerequisite_hash' => str_repeat('a', 64), 'promotion_evidence' => false]];
+        $old->update(['lease_expires_at' => now()->subSecond(), 'result' => $originalResult]);
+        $originalPayload = $old->payload;
+        $closure = app(ResearchClosureInvariantService::class);
+
+        $dry = $closure->inspect('XAUUSD', 'H1', false);
+        $this->assertFalse($dry['healthy']);
+        $this->assertSame([$old->id], $dry['expired_lease_work_ids']);
+        $this->assertSame('leased', $old->fresh()->status);
+
+        $repaired = $closure->inspect('XAUUSD', 'H1', true);
+        $current = $old->fresh();
+        $this->assertTrue($repaired['healthy']);
+        $this->assertSame([], $repaired['expired_lease_work_ids']);
+        $this->assertSame(1, data_get($repaired, 'metadata_reconciliation.expired_leases_recovered'));
+        $this->assertSame('ready', $current->status);
+        $this->assertSame($old->attempts, $current->attempts);
+        $this->assertSame($old->fence_version, $current->fence_version);
+        $this->assertSame($originalPayload, $current->payload);
+        $this->assertSame($originalResult, $current->result);
+        $this->assertNull($current->lease_token);
+        $this->assertNull($current->lease_expires_at);
+        $this->assertNull($current->heartbeat_at);
+        $this->assertSame('LEASE_EXPIRED', $current->last_error);
+        $this->assertSame(0, $kernel->reconcileOwnershipAndDependencies()['expired_leases_recovered']);
+
+        $consumer = app(\App\Services\ResearchExperimentWorkConsumerService::class);
+        $stale = $consumer->execute($old->id, $old->lease_token, $old->fence_version);
+        $this->assertSame('WORK_LEASE_NOT_CURRENT', $stale['reason']);
+        $fresh = $kernel->claimForOwner(ResearchLoopArbiterService::class, 1)[0];
+        $this->assertSame($old->id, $fresh->id);
+        $this->assertSame($old->attempts + 1, $fresh->attempts);
+        $this->assertSame($old->fence_version + 1, $fresh->fence_version);
+        $this->assertNotSame($old->lease_token, $fresh->lease_token);
+        $this->assertSame($originalResult, $fresh->result);
+        $this->assertSame('WORK_LEASE_NOT_CURRENT', $consumer->execute($old->id, $old->lease_token, $old->fence_version)['reason']);
+        $this->assertFalse($kernel->complete($old, ['forged_stale_completion' => true]));
+        $this->assertDatabaseCount('research_experiment_receipts', 1);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_expired_recovery_does_not_change_live_settled_or_undated_lease_rows(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        foreach (['live', 'settled', 'undated'] as $index => $kind) {
+            $contract = $this->contract(); $contract['source']['id'] = 801 + $index;
+            $row = $kernel->record($contract, ['kind' => $kind], 'INCONCLUSIVE',
+                ['type' => 'academy_repair', 'identity' => 'untouched-'.$kind]);
+            $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+            $work->update(['status' => $kind === 'settled' ? 'settled' : 'leased',
+                'attempts' => 4, 'fence_version' => 7, 'lease_token' => 'existing-'.$kind,
+                'lease_expires_at' => $kind === 'undated' ? null : ($kind === 'live' ? now()->addHour() : now()->subHour()),
+                'heartbeat_at' => now(), 'result' => ['original_checkpoint' => $kind],
+                'completed_at' => $kind === 'settled' ? now() : null]);
+            $before = $work->fresh()->getRawOriginal();
+            $this->assertSame(0, $kernel->reconcileOwnershipAndDependencies()['expired_leases_recovered']);
+            $this->assertSame($before, $work->fresh()->getRawOriginal());
+        }
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_expired_recovery_rechecks_a_concurrently_renewed_lease(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $row = $kernel->record($this->contract(), ['settlement_id' => 29], 'INCONCLUSIVE',
+            ['type' => 'academy_repair', 'identity' => 'renewed-lease']);
+        $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+        $work->update(['status' => 'leased', 'attempts' => 2, 'fence_version' => 2,
+            'lease_token' => 'old-token', 'lease_expires_at' => now()->subMinute(),
+            'result' => ['untouched' => true]]);
+        $renewedAt = now()->addHour()->startOfSecond();
+        $injected = false;
+        ResearchExperimentWorkItem::retrieved(function ($snapshot) use ($work, $renewedAt, &$injected): void {
+            if ($injected || $snapshot->id !== $work->id) return;
+            $injected = true;
+            // Test-only interleaving after discovery/locked hydration: the
+            // conditional update must still refuse a newer ownership fence.
+            DB::table('research_experiment_work_items')->where('id', $work->id)->update([
+                'lease_expires_at' => $renewedAt, 'lease_token' => 'renewed-token', 'fence_version' => 3,
+            ]);
+        });
+        try { $result = $kernel->reconcileOwnershipAndDependencies(); }
+        finally { Event::forget('eloquent.retrieved: '.ResearchExperimentWorkItem::class); }
+        $current = $work->fresh();
+        $this->assertTrue($injected);
+        $this->assertSame(0, $result['expired_leases_recovered']);
+        $this->assertSame('leased', $current->status);
+        $this->assertSame('renewed-token', $current->lease_token);
+        $this->assertSame(3, $current->fence_version);
+        $this->assertTrue($current->lease_expires_at->equalTo($renewedAt));
+        $this->assertSame(2, $current->attempts);
+        $this->assertSame(['untouched' => true], $current->result);
+    }
+
+    public function test_expired_recovery_is_bounded_and_keeps_attempt_and_scientific_budget_history(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $row = $kernel->record($this->contract(), ['settlement_id' => 39], 'INCONCLUSIVE',
+            ['type' => 'academy_repair', 'identity' => 'bounded-expiry']);
+        $original = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+        $original->update(['status' => 'leased', 'attempts' => 8, 'fence_version' => 12,
+            'lease_token' => 'original-token', 'lease_expires_at' => now()->subMinute(),
+            'result' => ['scientific_attempts_already_used' => 1]]);
+        for ($i = 1; $i <= 100; ++$i) {
+            $copy = $original->replicate();
+            $copy->work_key = hash('sha256', 'bounded-expired-work-'.$i);
+            $copy->save();
+        }
+        $result = $kernel->reconcileOwnershipAndDependencies();
+        $this->assertSame(100, $result['expired_leases_recovered']);
+        $this->assertSame(1, ResearchExperimentWorkItem::where('status', 'leased')->count());
+        $this->assertSame(101, ResearchExperimentWorkItem::where('attempts', 8)->where('fence_version', 12)->count());
+        $this->assertSame(101, ResearchExperimentWorkItem::where('result->scientific_attempts_already_used', 1)->count());
+        $this->assertSame(1, $kernel->reconcileOwnershipAndDependencies()['expired_leases_recovered']);
+        $this->assertSame(0, $kernel->reconcileOwnershipAndDependencies()['expired_leases_recovered']);
+        $this->assertDatabaseCount('research_experiment_receipts', 1);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_activation_continuation_requires_the_preregistered_plan_hash(): void
     {
         $kernel = app(ResearchExperimentConversionKernelService::class);

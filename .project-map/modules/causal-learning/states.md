@@ -24,6 +24,14 @@ unique verified old/new source archives. Up to three source amendments share the
 same immutable resolution, observed auxiliary history and attempt/scientific
 budgets; amendment alone does not resume execution.
 
+Before validating closure, the existing conversion reconciliation owner returns
+at most 100 genuinely expired leases per pass to `ready`, under row locks and
+an exact token/fence/expiry recheck. Attempts, results, question identity and
+scientific budgets remain unchanged; current or undated leases and terminal
+work are untouched. Read-only inspection performs no recovery. Subsequent
+readiness may block the work again; only a fresh canonical claim issues a new
+token and increments the attempt/fence. Old queued workers cannot publish.
+
 ## Research meta-learning (ADR-028)
 
 New causal questions: `preregistered -> local_target_calibrated | underpowered`.

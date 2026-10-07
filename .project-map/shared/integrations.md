@@ -142,6 +142,12 @@ current source before research-only screening/full-selection guards. A declared
 invalid owner throws instead of falling through to ordinary authority. No
 full replay or independent evidence is created by this clean-discovery route.
 
+MTF discovery inspection and stream resolution share one live owner call at
+that boundary. Another boundary or retry performs a new proof; full-validation
+discovery refusal and all underlying data/content/provenance guards remain.
+Constructor archive proof reuse is limited to the held invocation and bounded
+by actual ZIP/reference-byte fences; full readiness always verifies afresh.
+
 The evaluation-delivery consumer publishes original council assessment and
 `specialist_council_research_feedback_v1` atomically through the existing
 research conversion kernel. Receipt/knowledge closure distinguishes invalid

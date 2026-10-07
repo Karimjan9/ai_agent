@@ -6,6 +6,11 @@ and legal parameter delta are verified before the conversion kernel exposes
 ready work. The sole arbiter leases it; its work consumer invokes canonical
 construction, same-cohort continuation, atomic preparation and witnessed queue
 admission. A stable operational hold does not mint another scientific attempt.
+On recovery, the same kernel reconciles a bounded expired-lease set before the
+closure guard. It rechecks each locked token/fence/expiry, preserves the original
+attempt/result/question and leaves live leases untouched. A read-only closure
+does not reconcile. Fresh admission still requires all readiness proofs; this
+operational recovery creates no receipt, credit or independent market evidence.
 For a fresh council target, full proof is warmed inside the constructor lock
 and transaction before its draft row exists. The invocation seals that pristine
 start, then requires the exact six-slot plan before any model persists. Retry

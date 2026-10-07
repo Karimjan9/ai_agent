@@ -28,6 +28,7 @@ class ResearchExperimentConversionKernelService
     public const POLICY_SELECTION_PROTOCOL = 'qualified_native_panel_policy_selection_v1';
     private const MAX_POLICY_SOURCES = 8;
     private const LEASE_SECONDS = 900;
+    private const MAX_EXPIRED_LEASE_RECOVERY = 100;
     private const CLASSIFICATIONS = ['POSITIVE_CANDIDATE', 'BEHAVIORAL_ACTIVATION_HYPOTHESIS', 'INCONCLUSIVE', 'UNDERPOWERED', 'UNREACHABLE', 'TECHNICAL_QUARANTINE', 'BUDGET_EXHAUSTED', 'HARMFUL'];
 
     /** @return array<string,mixed> */
@@ -152,6 +153,7 @@ class ResearchExperimentConversionKernelService
     public function claim(int $limit = 10): array
     {
         if (! $this->available()) return [];
+        $this->recoverExpiredLeases();
         return $this->claimMatching($limit);
     }
 
@@ -184,8 +186,12 @@ class ResearchExperimentConversionKernelService
     public function reconcileOwnershipAndDependencies(): array
     {
         if (! $this->available()) {
-            return ['protocol' => self::PROTOCOL, 'normalized' => 0, 'released' => 0, 'blocked' => 0, 'promotion_evidence' => false];
+            return ['protocol' => self::PROTOCOL, 'normalized' => 0, 'released' => 0, 'blocked' => 0, 'expired_leases_recovered' => 0, 'promotion_evidence' => false];
         }
+        // Closure inspection runs before the arbiter can claim a continuation.
+        // Recover only expired operational ownership here, otherwise that
+        // boundary permanently rejects the very claim which could recover it.
+        $expiredRecovered = $this->recoverExpiredLeases();
         $normalized = 0;
         $released = 0;
         $blocked = 0;
@@ -245,7 +251,38 @@ class ResearchExperimentConversionKernelService
             });
 
         return ['protocol' => self::PROTOCOL, 'normalized' => $normalized, 'released' => $released,
-            'blocked' => $blocked, 'promotion_evidence' => false];
+            'blocked' => $blocked, 'expired_leases_recovered' => $expiredRecovered, 'promotion_evidence' => false];
+    }
+
+    /** Return a bounded expired lease set to dependency revalidation, not execution. */
+    private function recoverExpiredLeases(): int
+    {
+        $cutoff = now();
+        $ids = ResearchExperimentWorkItem::query()->where('status', 'leased')
+            ->whereNull('completed_at')->where('lease_expires_at', '<=', $cutoff)
+            ->orderBy('id')->limit(self::MAX_EXPIRED_LEASE_RECOVERY)->pluck('id');
+        $recovered = 0;
+        foreach ($ids as $id) {
+            $recovered += DB::transaction(function () use ($id, $cutoff): int {
+                $item = ResearchExperimentWorkItem::whereKey($id)->lockForUpdate()->first();
+                if (! $item || $item->status !== 'leased' || $item->completed_at !== null
+                    || ! $item->lease_expires_at || $item->lease_expires_at->gt($cutoff)) return 0;
+
+                // Keep the compare-and-set even under the lock: a stale read
+                // must not release a renewed lease or overwrite a newer fence.
+                $query = ResearchExperimentWorkItem::whereKey($id)->where('status', 'leased')
+                    ->whereNull('completed_at')->where('fence_version', (int) $item->fence_version)
+                    ->where('lease_expires_at', '<=', $cutoff);
+                $item->lease_token === null ? $query->whereNull('lease_token')
+                    : $query->where('lease_token', $item->lease_token);
+
+                return $query->update(['status' => 'ready', 'lease_token' => null,
+                    'lease_expires_at' => null, 'heartbeat_at' => null,
+                    'last_error' => 'LEASE_EXPIRED', 'updated_at' => $cutoff]);
+            });
+        }
+
+        return $recovered;
     }
 
     /** Fenced defer: preserves the work and makes its retry state explicit. */
@@ -262,9 +299,6 @@ class ResearchExperimentConversionKernelService
     private function claimMatching(int $limit, ?string $owner = null, ?int $workItemId = null): array
     {
         return DB::transaction(function () use ($limit, $owner, $workItemId): array {
-            ResearchExperimentWorkItem::query()->where('status', 'leased')->where('lease_expires_at', '<=', now())
-                ->update(['status' => 'ready', 'lease_token' => null, 'lease_expires_at' => null, 'heartbeat_at' => null,
-                    'last_error' => 'LEASE_EXPIRED', 'updated_at' => now()]);
             $query = ResearchExperimentWorkItem::query()->where('status', 'ready');
             if ($workItemId !== null) $query->whereKey($workItemId);
             if ($owner !== null) {

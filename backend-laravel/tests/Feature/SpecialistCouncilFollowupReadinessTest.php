@@ -736,6 +736,73 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         $this->assertFalse($entry['promotion_evidence']); $this->assertFalse($entry['independent_evidence_claimed']);
     }
 
+    public function test_held_constructor_archive_fences_reuse_only_full_original_proofs_with_fresh_readiness_and_scope_reset(): void
+    {
+        [$work] = $this->unbuiltSourceAmendmentFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $owner->amendUnbuiltFollowupSource($work->id, 'operator', 'Conditional bounded source fence fixture');
+        $archives = app(ResearchReleaseSealService::class);
+        $before = $archives->fullArchiveVerifications;
+        $scope = $owner->beginConstructorSourceFenceScope();
+        try {
+            $first = $owner->inspectFollowupSourceBinding($work->fresh());
+            $this->assertSame($before + 2, $archives->fullArchiveVerifications);
+            for ($i = 0; $i < 18; $i++) $this->assertSame($first, $owner->inspectFollowupSourceBinding($work->fresh()));
+            $this->assertSame($before + 2, $archives->fullArchiveVerifications);
+            $this->assertGreaterThanOrEqual(38, $archives->archiveByteFences);
+            $freshBefore = $archives->fullArchiveVerifications;
+            $this->assertTrue($owner->inspectFollowupReadiness($work->fresh())['executable']);
+            $this->assertGreaterThanOrEqual($freshBefore + 3, $archives->fullArchiveVerifications);
+            $freshAfter = $archives->fullArchiveVerifications;
+            $this->assertSame($first, $owner->inspectFollowupSourceBinding($work->fresh()));
+            $this->assertSame($freshAfter, $archives->fullArchiveVerifications);
+            try { $owner->beginConstructorSourceFenceScope(); $this->fail('Nested scope replaced its owner.'); }
+            catch (\LogicException $error) { $this->assertSame('COUNCIL_SOURCE_FENCE_SCOPE_ALREADY_HELD', $error->getMessage()); }
+        } finally { $owner->endConstructorSourceFenceScope($scope); }
+        $after = $archives->fullArchiveVerifications;
+        $owner->inspectFollowupSourceBinding($work->fresh());
+        $this->assertSame($after + 2, $archives->fullArchiveVerifications);
+        $scope = $owner->beginConstructorSourceFenceScope();
+        try {
+            $owner->inspectFollowupSourceBinding($work->fresh());
+            $this->assertSame($after + 4, $archives->fullArchiveVerifications);
+        } finally { $owner->endConstructorSourceFenceScope($scope); }
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_constructor_archive_fence_refuses_same_length_zip_mutation_instead_of_trusting_file_metadata(): void
+    {
+        [$work, , , $current] = $this->unbuiltSourceAmendmentFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $owner->amendUnbuiltFollowupSource($work->id, 'operator', 'Conditional bounded source fence fixture');
+        $scope = $owner->beginConstructorSourceFenceScope();
+        try {
+            $owner->inspectFollowupSourceBinding($work->fresh());
+            $path = $this->observedSourceFixtureRoots[0].'/'.$current['archive_path'];
+            $bytes = File::get($path); $length = strlen($bytes); $modified = filemtime($path);
+            $bytes[100] = chr(ord($bytes[100]) ^ 1);
+            File::put($path, $bytes); touch($path, $modified);
+            $this->assertSame($length, filesize($path));
+            $this->expectExceptionMessage('SOURCE_ARTIFACT_ARCHIVE_HASH_MISMATCH');
+            $owner->inspectFollowupSourceBinding($work->fresh());
+        } finally { $owner->endConstructorSourceFenceScope($scope); }
+    }
+
+    public function test_held_archive_memo_never_replaces_the_actual_current_python_source_fence(): void
+    {
+        [$work] = $this->unbuiltSourceAmendmentFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $owner->amendUnbuiltFollowupSource($work->id, 'operator', 'Conditional bounded source fence fixture');
+        $scope = $owner->beginConstructorSourceFenceScope();
+        try {
+            $owner->inspectFollowupSourceBinding($work->fresh());
+            File::append($this->observedSourceFixtureRoots[0].'/ai-service-python/app/main.py', "\n# changed current source during held invocation");
+            $this->expectExceptionMessage('COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED');
+            $owner->inspectFollowupSourceBinding($work->fresh());
+        } finally { $owner->endConstructorSourceFenceScope($scope); }
+    }
+
     public static function unbuiltAmendmentPoisons(): array
     {
         return array_map(fn ($value) => [$value], ['owned_generation', 'model_marker', 'resolution_generation', 'resolution_model_marker',
@@ -892,6 +959,9 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
         (new \ReflectionMethod(\App\Services\SpecialistCouncilFollowupExecutionService::class, 'checkpoint'))
             ->invoke(app(\App\Services\SpecialistCouncilFollowupExecutionService::class), $lease, $generation, $ready, 'constructed');
         $continuation = $population->continueInterruptedConstruction($generation->id, 2);
+        foreach (['nativeFollowupFeedbackOwner', 'nativeFollowupSourceFenceScope', 'nativeFollowupInvocationProof'] as $field) {
+            $this->assertNull((new \ReflectionProperty($population, $field))->getValue($population), 'Constructor scope leaked across invocation: '.$field);
+        }
         $this->assertSame([], $continuation['failures'] ?? null, json_encode($continuation));
         $this->assertCount(2, $continuation['created_slots'] ?? []);
         $this->assertSame(6, $generation->agents()->count());

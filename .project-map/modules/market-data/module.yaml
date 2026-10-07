@@ -46,6 +46,7 @@ entry_points:
   - MultiTimeframeSnapshotService::agentValidationReadiness
   - MultiTimeframeSnapshotService::forProspectiveCleanDiscovery
   - MultiTimeframeSnapshotService::discoveryBundleReadiness
+  - MultiTimeframeSnapshotService::inspectAndRestoreDiscoveryBundle
   - FrozenM5GapRecoveryOperation::batchProof
   - FrozenM5GapRecoveryOperation::forkMany
   - FrozenM5GapRecoveryOperation::collectBatch

@@ -834,9 +834,10 @@ class MultiTimeframeSnapshotService
     {
         if (($manifest['validation_bundle_protocol'] ?? null) === self::DISCOVERY_BUNDLE_PROTOCOL) {
             if (! $allowDiscovery) throw new RuntimeException('DISCOVERY_BUNDLE_CANNOT_SATISFY_FULL_VALIDATION');
-            $ready = $this->discoveryBundleReadiness($manifest);
+            $resolved = $this->inspectAndRestoreDiscoveryBundle($manifest);
+            $ready = $resolved['readiness'];
             if (! $ready['allowed']) throw new RuntimeException('MTF discovery resume refused: '.$ready['reason']);
-            return [...$this->result($manifest, storage_path('app/lab-datasets/mtf/'.$manifest['bundle_hash'])), 'restored_from_sealed_retry' => true];
+            return $resolved['bundle'];
         }
         if ((string) data_get($manifest, 'validation_bundle_protocol') !== 'agent_owned_mtf_foundation_bundle_v1'
             || (string) data_get($manifest, 'data_role') !== 'pre_2026_foundation_training_only'
@@ -872,6 +873,17 @@ class MultiTimeframeSnapshotService
         }
 
         return [...$this->result($diskManifest, $directory), 'restored_from_sealed_retry' => true];
+    }
+
+    /** One live owner proof, one exact resolved result; never a caller-supplied readiness flag. */
+    public function inspectAndRestoreDiscoveryBundle(array $manifest): array
+    {
+        $ready = $this->discoveryBundleReadiness($manifest);
+        if (($ready['allowed'] ?? false) !== true) return ['readiness' => $ready, 'bundle' => null];
+        return ['readiness' => $ready, 'bundle' => [
+            ...$this->result($manifest, storage_path('app/lab-datasets/mtf/'.$manifest['bundle_hash'])),
+            'restored_from_sealed_retry' => true,
+        ]];
     }
 
     /** @param array<string,mixed> $manifest @return array<string,mixed> */

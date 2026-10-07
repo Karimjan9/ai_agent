@@ -403,11 +403,11 @@ class SpecialistCouncilPreparationService
             throw new LogicException('CANONICAL_COUNCIL_DISCOVERY_PLAN_SCOPE_INVALID');
         }
         $owner = app(MultiTimeframeSnapshotService::class);
-        $readiness = $owner->discoveryBundleReadiness($manifest);
+        $resolved = $owner->inspectAndRestoreDiscoveryBundle($manifest);
+        $readiness = $resolved['readiness'];
         if (($readiness['allowed'] ?? false) !== true) {
             throw new LogicException('CANONICAL_COUNCIL_DISCOVERY_BUNDLE_NOT_READY:'.($readiness['reason'] ?? 'unknown'));
         }
-        $owner->restoreAgentOwnedConfirmationValidationBundle($manifest, true);
         $window = array_values($plan['windows'])[0];
         $probe = (array) ($window['prospective_probe_window'] ?? []);
         $scope = (array) ($window['evaluation_scope'] ?? []);

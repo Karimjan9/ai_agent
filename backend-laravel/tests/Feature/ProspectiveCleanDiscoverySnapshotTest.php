@@ -11,6 +11,16 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
+class CountingDiscoverySnapshotOwner extends MultiTimeframeSnapshotService
+{
+    public int $discoveryChecks = 0;
+    public function discoveryBundleReadiness(array $manifest): array
+    {
+        $this->discoveryChecks++;
+        return parent::discoveryBundleReadiness($manifest);
+    }
+}
+
 /** Synthetic native-provider rows exercise the actual calendar/SQL/freeze owners, not market edge. */
 class ProspectiveCleanDiscoverySnapshotTest extends TestCase
 {
@@ -72,6 +82,33 @@ class ProspectiveCleanDiscoverySnapshotTest extends TestCase
         $this->assertRealPythonLoader($quoted);
         $this->assertSame('HISTORICAL_M5_CONTINUITY_SCOPE_UNRESOLVED', $owner->agentValidationReadiness('XAUUSD')['reason']);
         $this->assertDatabaseCount('edge_academy_trials', 0);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_discovery_resolution_runs_one_actual_owner_proof_and_rejects_changed_bytes_without_reusing_prior_readiness(): void
+    {
+        [$dataset, $price] = $this->nativeFixture();
+        $owner = app(CountingDiscoverySnapshotOwner::class);
+        $bundle = $owner->forProspectiveCleanDiscovery('XAUUSD', $dataset);
+        $this->directories[] = dirname($bundle['manifest_path']);
+        $owner->discoveryChecks = 0;
+        $resolved = $owner->inspectAndRestoreDiscoveryBundle($bundle['manifest']);
+        $this->assertSame(1, $owner->discoveryChecks);
+        $this->assertTrue($resolved['readiness']['allowed']);
+        $this->assertSame($bundle['bundle_hash'], $resolved['bundle']['bundle_hash']);
+        $this->assertSame($bundle['entry_dataset_path'], $resolved['bundle']['entry_dataset_path']);
+        $restored = $owner->restoreAgentOwnedConfirmationValidationBundle($bundle['manifest'], true);
+        $this->assertSame(2, $owner->discoveryChecks);
+        $this->assertSame($resolved['bundle'], $restored);
+        try { $owner->restoreAgentOwnedConfirmationValidationBundle($bundle['manifest']); $this->fail('Discovery became full-validation evidence.'); }
+        catch (\RuntimeException $error) { $this->assertSame('DISCOVERY_BUNDLE_CANNOT_SATISFY_FULL_VALIDATION', $error->getMessage()); }
+        $this->assertSame(2, $owner->discoveryChecks);
+        File::append($price, "\n");
+        $poisoned = $owner->inspectAndRestoreDiscoveryBundle($bundle['manifest']);
+        $this->assertSame(3, $owner->discoveryChecks);
+        $this->assertFalse($poisoned['readiness']['allowed']);
+        $this->assertNull($poisoned['bundle']);
+        $this->assertSame('DISCOVERY_PARENT_OR_SELECTED_SCOPE_CHANGED', $poisoned['readiness']['reason']);
         $this->assertDatabaseCount('lab_evaluation_runs', 0);
     }
 

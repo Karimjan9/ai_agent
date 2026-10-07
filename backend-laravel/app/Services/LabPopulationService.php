@@ -35,6 +35,8 @@ class LabPopulationService
     /** Read-only proof reuse is confined to one invocation holding this constructor's mutex. */
     private bool $nativeFollowupConstructorInvocation = false;
     private ?array $nativeFollowupInvocationProof = null;
+    private ?SpecialistCouncilResearchFeedbackService $nativeFollowupFeedbackOwner = null;
+    private ?object $nativeFollowupSourceFenceScope = null;
 
     /** @var array{status: string, reason_code: string, retryable: bool, context: array<string, mixed>} */
     private array $lastBuildOutcome = [
@@ -638,6 +640,10 @@ class LabPopulationService
         $this->nativeFollowupConstructorInvocation = true;
         $this->nativeFollowupInvocationProof = null;
         try {
+            if (isset($nativeCouncilIntent['followup_work_item_id'])) {
+                $this->nativeFollowupFeedbackOwner = app(SpecialistCouncilResearchFeedbackService::class);
+                $this->nativeFollowupSourceFenceScope = $this->nativeFollowupFeedbackOwner->beginConstructorSourceFenceScope();
+            }
             Cache::put($this->constructorOwnerKey($symbol, $timeframe), $this->constructorOwner('build', $trigger), now()->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS));
             // Existing queued jobs stay intact.  This only prevents creation of a
             // new population while an execution-contract rollout is being audited.
@@ -1811,10 +1817,18 @@ class LabPopulationService
 
             return $freshGeneration;
         } finally {
-            $this->nativeFollowupInvocationProof = null;
-            $this->nativeFollowupConstructorInvocation = false;
-            optional($constructorLock)->release();
-            Cache::forget($this->constructorOwnerKey($symbol, $timeframe));
+            try {
+                if ($this->nativeFollowupSourceFenceScope !== null) {
+                    $this->nativeFollowupFeedbackOwner->endConstructorSourceFenceScope($this->nativeFollowupSourceFenceScope);
+                }
+            } finally {
+                $this->nativeFollowupSourceFenceScope = null;
+                $this->nativeFollowupFeedbackOwner = null;
+                $this->nativeFollowupInvocationProof = null;
+                $this->nativeFollowupConstructorInvocation = false;
+                optional($constructorLock)->release();
+                Cache::forget($this->constructorOwnerKey($symbol, $timeframe));
+            }
         }
     }
 
@@ -1870,6 +1884,10 @@ class LabPopulationService
         $constructorSymbol = (string) $generation->laboratory->symbol;
         $constructorTimeframe = (string) $generation->laboratory->timeframe;
         try {
+            if (data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id')) {
+                $this->nativeFollowupFeedbackOwner = app(SpecialistCouncilResearchFeedbackService::class);
+                $this->nativeFollowupSourceFenceScope = $this->nativeFollowupFeedbackOwner->beginConstructorSourceFenceScope();
+            }
             Cache::put(
                 $this->constructorOwnerKey($constructorSymbol, $constructorTimeframe),
                 $this->constructorOwner('continuation', (string) $generation->trigger_type, (int) $generation->id),
@@ -2148,10 +2166,18 @@ class LabPopulationService
                 'failures' => $failures,
             ];
         } finally {
-            $this->nativeFollowupInvocationProof = null;
-            $this->nativeFollowupConstructorInvocation = false;
-            optional($constructorLock)->release();
-            Cache::forget($this->constructorOwnerKey($constructorSymbol, $constructorTimeframe));
+            try {
+                if ($this->nativeFollowupSourceFenceScope !== null) {
+                    $this->nativeFollowupFeedbackOwner->endConstructorSourceFenceScope($this->nativeFollowupSourceFenceScope);
+                }
+            } finally {
+                $this->nativeFollowupSourceFenceScope = null;
+                $this->nativeFollowupFeedbackOwner = null;
+                $this->nativeFollowupInvocationProof = null;
+                $this->nativeFollowupConstructorInvocation = false;
+                optional($constructorLock)->release();
+                Cache::forget($this->constructorOwnerKey($constructorSymbol, $constructorTimeframe));
+            }
         }
     }
 
@@ -5648,7 +5674,8 @@ class LabPopulationService
             $this->assertNativeFollowupInvocationCurrent($intent, $this->nativeFollowupInvocationProof, $generationId);
             return $this->nativeFollowupInvocationProof['proof'];
         }
-        $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($work);
+        $feedback = $this->nativeFollowupFeedbackOwner ?? app(SpecialistCouncilResearchFeedbackService::class);
+        $proof = $feedback->inspectFollowupReadiness($work);
         if (($proof['executable'] ?? false) !== true
             || ! hash_equals($intent['followup_resolution_hash'], (string) ($proof['resolution_hash'] ?? ''))
             || ($intent['creator_id'] ?? null) !== ($proof['creator_id'] ?? null)
@@ -5658,11 +5685,11 @@ class LabPopulationService
         // Expensive proof may outlast the original lease. Never persist even
         // the first slot merely because its entry check preceded expiry.
         if ($requiresLease || $this->nativeFollowupConstructorInvocation) {
-            $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($work->fresh());
+            $binding = $feedback->inspectFollowupSourceBinding($work->fresh());
             $memo = ['proof' => $proof, 'work_id' => $work->id, 'lease_token' => $work->lease_token,
                 'fence_version' => (int) $work->fence_version, 'source_binding' => $binding];
             if ($this->nativeFollowupConstructorInvocation && ! ($proof['owned_generation_id'] ?? null)) {
-                $memo['pristine_unbuilt_start'] = app(SpecialistCouncilResearchFeedbackService::class)->pristineUnbuiltFollowupSnapshot($work->fresh());
+                $memo['pristine_unbuilt_start'] = $feedback->pristineUnbuiltFollowupSnapshot($work->fresh());
             }
             $this->assertNativeFollowupInvocationCurrent($intent, $memo, $generationId);
             if ($this->nativeFollowupConstructorInvocation) $this->nativeFollowupInvocationProof = $memo;
@@ -5683,10 +5710,11 @@ class LabPopulationService
             || data_get($current->payload, 'followup_resolution.resolution_hash') !== ($intent['followup_resolution_hash'] ?? null)) {
             throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_CURRENT_OWNER_REQUIRED');
         }
-        $binding = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupSourceBinding($current);
+        $feedback = $this->nativeFollowupFeedbackOwner ?? app(SpecialistCouncilResearchFeedbackService::class);
+        $binding = $feedback->inspectFollowupSourceBinding($current);
         if ($binding !== $memo['source_binding']) throw new \LogicException('NATIVE_COUNCIL_FOLLOWUP_SOURCE_CHANGED_DURING_CONSTRUCTION');
         if ($ownedId = $generationId ?? (int) ($memo['proof']['owned_generation_id'] ?? 0)) {
-            app(SpecialistCouncilResearchFeedbackService::class)->assertUnobservedConstructorBinding($current, $ownedId,
+            $feedback->assertUnobservedConstructorBinding($current, $ownedId,
                 $memo['pristine_unbuilt_start'] ?? null);
         }
         foreach ((array) ($memo['proof']['native_source_models'] ?? []) as $spec) {

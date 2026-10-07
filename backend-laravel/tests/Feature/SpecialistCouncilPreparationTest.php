@@ -425,6 +425,20 @@ class SpecialistCouncilPreparationTest extends TestCase
         $this->assertDatabaseCount('lab_evaluation_runs', 0);
     }
 
+    public function test_prospective_plan_uses_one_combined_owner_proof_not_a_second_restore_readiness(): void
+    {
+        [, $request, , , $bundle] = $this->discoveryFixture();
+        $owner = app(SpecialistCouncilPreparationService::class);
+        $owner->assertProspectiveDiscoveryPlan($request['evaluation_plan'], $bundle['manifest']);
+        $mtf = app(MultiTimeframeSnapshotService::class);
+        $mtf->shouldHaveReceived('inspectAndRestoreDiscoveryBundle')->with($bundle['manifest'])->once();
+        $mtf->shouldNotHaveReceived('discoveryBundleReadiness');
+        $mtf->shouldNotHaveReceived('restoreAgentOwnedConfirmationValidationBundle');
+        $changed = [...$bundle['manifest'], 'paper_eligible' => true];
+        $this->expectExceptionMessage('CANONICAL_COUNCIL_DISCOVERY_BUNDLE_NOT_READY:verified_original_fixture_bytes');
+        $owner->assertProspectiveDiscoveryPlan($request['evaluation_plan'], $changed);
+    }
+
     public function test_label_only_clean_bundle_has_no_native_owner(): void
     {
         [$generation, $request, $models, $rows, $bundle] = $this->discoveryFixture();
@@ -549,9 +563,9 @@ class SpecialistCouncilPreparationTest extends TestCase
         // Actual MTF provider/SQL/immutable-byte validation is separately exercised
         // by ProspectiveCleanDiscoverySnapshotTest; this tests the intake seam.
         $mtf = \Mockery::mock(MultiTimeframeSnapshotService::class)->makePartial();
-        $mtf->shouldReceive('discoveryBundleReadiness')->andReturnUsing(fn (array $candidate): array => [
-            'allowed' => $candidate === $manifest, 'reason' => 'verified_original_fixture_bytes']);
-        $mtf->shouldReceive('restoreAgentOwnedConfirmationValidationBundle')->with($manifest, true)->andReturn($bundle);
+        $mtf->shouldReceive('inspectAndRestoreDiscoveryBundle')->andReturnUsing(fn (array $candidate): array => [
+            'readiness' => ['allowed' => $candidate === $manifest, 'reason' => 'verified_original_fixture_bytes'],
+            'bundle' => $candidate === $manifest ? $bundle : null]);
         $this->app->instance(MultiTimeframeSnapshotService::class, $mtf);
         $request['discovery_bundle_manifest'] = $manifest;
         return [$generation, $request, $models, $rows, $bundle];
