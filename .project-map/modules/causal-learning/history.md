@@ -153,3 +153,11 @@ new confirmation runtime passport without overriding source parameters. One
 strictly unobserved twenty-seat missing-identity quarantine may receive one
 changed-source technical replacement under the original scientific scope;
 original history and authority limits stay unchanged. See ADR-022.
+
+## 2026-10-07 - One observed probe-attestation technical completion
+
+Original council request and expected screening-manifest probe now share their
+final stored plan owner. The user authorized one globally root-bound completion
+for the exact observed three-arm probe-identity collision after terminal/drain.
+Old outcomes remain observed and immutable; retuning, repeated completion,
+independence and scientific/financial credit stay forbidden. See ADR-030.

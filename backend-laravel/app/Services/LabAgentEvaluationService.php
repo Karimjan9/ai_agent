@@ -1178,7 +1178,6 @@ class LabAgentEvaluationService
             $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
             $manifest['execution_timeframe'] = $runtimeTimeframe;
         }
-        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -1193,6 +1192,10 @@ class LabAgentEvaluationService
             $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
         }
         $request = $this->bindCouncilEvaluationRequests($request, [$model]);
+        // The original council plan may replace the generic discovery identity.
+        // Seal the manifest from that final, owner-validated request, never from
+        // the preliminary Academy probe or the evaluator's later response.
+        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
         $this->assertAiReplayHealthy($requestId, $run, true);
@@ -1669,7 +1672,6 @@ class LabAgentEvaluationService
             $manifest['mtf_bundle_manifest'] = (array) $mtfBundle['manifest'];
             $manifest['execution_timeframe'] = $runtimeTimeframe;
         }
-        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         if ($regimeSnapshot !== null) {
             $manifest['regime_snapshot_sha256'] = $regimeSnapshot['sha256'];
             $manifest['regime_snapshot_manifest'] = $regimeSnapshot['manifest'];
@@ -1690,6 +1692,9 @@ class LabAgentEvaluationService
             $request['policy_context']['prospective_probe_window'] = $manifest['prospective_probe_window'];
         }
         $request = $this->bindCouncilEvaluationRequests($request, $agents->pluck('modelVersion')->all());
+        // Batch policy conflicts are refused by the same original plan owner.
+        // Every immutable arm manifest must attest the final transported probe.
+        if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
         $runs = [];
         foreach ($agents as $agent) {
             $run = $this->evidence->beginRun($agent, 'screening', 'incremental', [

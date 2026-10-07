@@ -185,6 +185,7 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).
   - One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).
   - Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.
   - Creation seals the primary Academy frozen-control owner and explicit admission-only candidate control IDs after hypothesis cleanup. Kernel pair contracts retain actual control and candidate IDs; no same-family fallback can silently substitute another control.
@@ -231,6 +232,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php
   - backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php

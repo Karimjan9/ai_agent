@@ -89,6 +89,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php
   - backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php
   - ai-service-python/tests/test_specialist_council.py

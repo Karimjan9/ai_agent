@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T11:20:21.222Z",
-  "source_digest": "92cc7d85bd82d1be244e66a953659da5afb5dad2a479d77b1f1ba6c37bedef9f",
-  "source_file_count": 1538,
-  "git_head": "cd3cd15a578c17c0ee65fd595c7cbdf0bfcf9210",
+  "generated_at": "2026-10-07T18:04:43.533Z",
+  "source_digest": "b4dcff14905a290fde11387c4769172a3a4f03441e8c7e2bf2b734e8c384ea66",
+  "source_file_count": 1539,
+  "git_head": "31ed2abd4e4f2850b1c6f25e4e205ce890fdfd74",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -3443,6 +3443,23 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php",
+      "tests": [
+        "test_observed_probe_completion_seals_one_explicit_observed_completion_without_credit",
+        "test_observed_probe_completion_refuses_incomplete_relabelled_or_mutated_originals",
+        "poisonCases",
+        "test_observed_probe_completion_once_cap_survives_new_work_id_changed_source_and_failed_target",
+        "test_observed_probe_completion_readiness_rechecks_original_projection_and_archive",
+        "test_observed_probe_completion_root_link_cannot_reset_the_once_cap",
+        "test_observed_probe_completion_tampered_sealed_observation_acknowledgement_is_not_ready",
+        "test_observed_probe_completion_accepts_mysql_object_key_order_without_rehashing_original_probe",
+        "test_observed_probe_completion_physical_identity_excludes_only_strategy_display_label",
+        "test_observed_probe_completion_refuses_broken_ancestor_or_cyclic_original_links",
+        "lineagePoisonCases",
+        "observedProbeFixture"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
       "tests": [
         "setUp",
@@ -3508,6 +3525,18 @@
         "test_declared_generation_preparation_tamper_throws_instead_of_falling_back_to_ordinary_selection",
         "test_clean_discovery_is_owned_by_original_native_plan_and_screening_keeps_exact_probe",
         "test_prospective_plan_uses_one_combined_owner_proof_not_a_second_restore_readiness",
+        "originalProbeScreeningRoutes",
+        "test_public_screening_seals_original_native_probe_in_both_payload_and_manifest",
+        "test_public_native_screening_refuses_a_generic_receipt_even_when_rows_and_costs_match",
+        "forgedOriginalProbeReceipts",
+        "test_public_native_screening_rejects_rehashed_source_clock_and_warmup_receipts",
+        "test_public_native_screening_refuses_changed_original_source_before_http",
+        "test_public_native_screening_refuses_forged_arm_owner_before_http",
+        "test_public_unbound_auxiliary_source_keeps_generic_clean_probe",
+        "originalProbeScreeningFixture",
+        "fakeOriginalProbeEvaluator",
+        "pythonOriginalProbeReceipt",
+        "driveOriginalProbeScreening",
         "test_label_only_clean_bundle_has_no_native_owner",
         "test_prepared_native_council_dispatches_singletons_and_oversized_direct_batch_is_rejected_before_evidence",
         "test_clean_plan_dataset_calendar_or_claim_mismatch_rolls_back_before_registration",

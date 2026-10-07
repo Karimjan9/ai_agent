@@ -166,6 +166,16 @@ signed pristine-target snapshot to the same at-most-three amendment chain.
 Original result/hold, attempt count and acknowledged auxiliary outcomes stay
 unchanged; this is not a new discovery or independent sample.
 
+`register-followup` also supports one explicitly named observed probe-attestation
+technical completion under ADR-030. This is not the `--unbuilt` source-amendment
+path: its old cohort has observed responses and must already be terminal and
+drained. The server verifies the exact original three-arm expected-probe owner
+collision, unchanged native programs/physical design and changed archived source.
+It derives/locks the original root and carries a global one-completion cap into
+the signed resolution; even a failed successor cannot reopen that allowance.
+Retuning and independent/credit claims are forbidden. New original runs close
+through the existing evaluator/feedback owner; old failed runs remain untouched.
+
 Fresh construction warms the complete proof before its draft row exists, within
 the same held lock/transaction. The signed invocation-local start distinguishes
 a prior nonconstructive hold from a constructive checkpoint. The exact six-slot

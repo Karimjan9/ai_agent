@@ -18,6 +18,15 @@ checkpoints and dispatch completion retain the original dependency hold.
 An unleased, entirely unbuilt target may append a verified old/new archive-backed
 source-only amendment through the same owner; its resolution, attempt count,
 observed auxiliary history and scientific cap are not replaced.
+
+A separate `observed_probe_attestation_completion` may consume the user's
+one-completion allowance only after the original terminal/drained three-arm
+probe-identity collision is proven from immutable request/release/source facts.
+It explicitly acknowledges observed responses, retains the original physical
+question and vectors, and locks a server-derived lineage root against a second
+completion. The existing registrar, arbiter and constructor own its new cohort;
+no old result, cache outcome, scientific cap or independent window is relabelled.
+See ADR-030.
 Support-role producer trials and original same-budget Portfolio comparisons
 remain distinct from confirmed skill, qualification and economic inheritance.
 

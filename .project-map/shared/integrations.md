@@ -142,6 +142,12 @@ current source before research-only screening/full-selection guards. A declared
 invalid owner throws instead of falling through to ordinary authority. No
 full replay or independent evidence is created by this clean-discovery route.
 
+The original native plan may override the generic discovery probe identity.
+Screening copies the probe into its immutable evaluation manifest only after
+that final owner binding, before release/request sealing. Python's receipt must
+match every field of this same contract; identical rows/UTC bounds do not permit
+another experiment key or hash. Generic auxiliary screens remain unchanged.
+
 MTF discovery inspection and stream resolution share one live owner call at
 that boundary. Another boundary or retry performs a new proof; full-validation
 discovery refusal and all underlying data/content/provenance guards remain.

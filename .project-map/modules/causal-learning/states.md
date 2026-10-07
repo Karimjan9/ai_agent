@@ -13,6 +13,17 @@ needs verified pre-execution absence of scientific outcomes; generic transport
 failure/timeout is not that proof. Unsupported independent or descendant
 executors stay explicitly blocked, not silently described as data-only waits.
 
+`observed_probe_attestation_completion` is a distinct user-authorized technical
+branch (ADR-030), not an unobserved repair. The original evaluator must first
+close the drained three-arm owner collision technically. Fresh compressed
+request/release/archive proofs, unchanged physical design and native vectors,
+and a changed verified source are required. Original observed outcomes stay
+acknowledged. The owner derives/locks the original root and seals a global cap
+of one completion across descendant receipts/versions, including failed leaves.
+Retuning, missing/completed comparative arms, renewed cap, independence or
+credit claims are refused. New construction remains the existing six-slot
+arbiter-owned path; old runs/versions are never reopened or re-attested.
+
 Cold construction captures an invocation-local signed pristine-target witness
 before creating its row, then requires the full original six-slot plan before
 each model persist. A canonical result-only dependency hold is retained during

@@ -17,6 +17,7 @@ use App\Services\LabPopulationService;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningVelocityGateService;
 use App\Services\LabAgentEvaluationService;
+use App\Services\LabImmutableEvidenceService;
 use App\Services\MultiTimeframeSnapshotService;
 use App\Services\ProspectiveRepairProbeWindowService;
 use App\Services\ResearchPaperEpochContractService;
@@ -28,12 +29,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SpecialistCouncilPreparationTest extends TestCase
 {
     use RefreshDatabase;
+
+    private array $originalProbeRows = [];
 
     public function test_atomic_native_preparation_preregisters_all_arms_without_dispatch_or_authority(): void
     {
@@ -437,6 +441,217 @@ class SpecialistCouncilPreparationTest extends TestCase
         $changed = [...$bundle['manifest'], 'paper_eligible' => true];
         $this->expectExceptionMessage('CANONICAL_COUNCIL_DISCOVERY_BUNDLE_NOT_READY:verified_original_fixture_bytes');
         $owner->assertProspectiveDiscoveryPlan($request['evaluation_plan'], $changed);
+    }
+
+    public static function originalProbeScreeningRoutes(): array
+    {
+        return ['single screen' => [false], 'single-member batch' => [true]];
+    }
+
+    /** Request/receipt wiring only: the fake evaluator is not market evidence. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalProbeScreeningRoutes')]
+    public function test_public_screening_seals_original_native_probe_in_both_payload_and_manifest(bool $batch): void
+    {
+        [$agent, $probe, $generic] = $this->originalProbeScreeningFixture();
+        $this->assertNotSame($generic['experiment_key'], $probe['experiment_key']);
+        $this->assertNotSame($generic['contract_hash'], $probe['contract_hash']);
+        $transported = null;
+        $this->fakeOriginalProbeEvaluator($transported);
+        $this->driveOriginalProbeScreening($agent, $batch);
+        $run = LabEvaluationRun::where('lab_agent_id', $agent->id)->sole();
+        $this->assertSame($probe, data_get($transported, 'policy_context.prospective_probe_window'));
+        $this->assertSame($probe, data_get($run->request_meta, 'payload.policy_context.prospective_probe_window'));
+        $this->assertSame($probe, data_get($run->request_meta, 'dataset_manifest.prospective_probe_window'));
+        $this->assertSame(15000, $probe['evaluated_rows']);
+        $this->assertSame(512, $probe['warmup_rows']);
+        $this->assertTrue(app(ProspectiveRepairProbeWindowService::class)->attests($probe, [...$probe, 'complete' => true]));
+        // This sentinel is reached only AFTER the unchanged probe receipt guard.
+        if ($batch) $this->assertSame('TEST_AFTER_ORIGINAL_PROBE_ATTESTATION', $run->error_message);
+        $this->assertDatabaseCount('paper_authority_admissions', 0);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalProbeScreeningRoutes')]
+    public function test_public_native_screening_refuses_a_generic_receipt_even_when_rows_and_costs_match(bool $batch): void
+    {
+        [$agent, $probe, $generic] = $this->originalProbeScreeningFixture();
+        foreach (['dataset_hash', 'execution_hash', 'loaded_rows', 'warmup_rows', 'evaluated_rows',
+            'loaded_start', 'loaded_end', 'evaluated_start', 'evaluated_end', 'evaluated_month_counts'] as $field) {
+            $this->assertSame($probe[$field], $generic[$field]);
+        }
+        $transported = null;
+        $this->fakeOriginalProbeEvaluator($transported, $generic);
+        $this->driveOriginalProbeScreening($agent, $batch, 'PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH');
+        $run = LabEvaluationRun::where('lab_agent_id', $agent->id)->sole();
+        $this->assertSame($probe, data_get($run->request_meta, 'dataset_manifest.prospective_probe_window'));
+        if ($batch) $this->assertSame('PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH', $run->error_message);
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+        $this->assertDatabaseCount('paper_authority_admissions', 0);
+    }
+
+    public static function forgedOriginalProbeReceipts(): array
+    {
+        $cases = [];
+        foreach ([false, true] as $batch) foreach (['dataset_hash', 'execution_hash', 'loaded_start', 'warmup_rows'] as $field) {
+            $cases[($batch ? 'batch ' : 'single ').$field] = [$batch, $field];
+        }
+        return $cases;
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('forgedOriginalProbeReceipts')]
+    public function test_public_native_screening_rejects_rehashed_source_clock_and_warmup_receipts(bool $batch, string $field): void
+    {
+        [$agent, $probe] = $this->originalProbeScreeningFixture();
+        $forged = $probe;
+        $forged[$field] = match ($field) {
+            'loaded_start' => '2025-01-06T02:05:00Z',
+            'warmup_rows' => 511,
+            default => str_repeat('e', 64),
+        };
+        unset($forged['contract_hash']);
+        $forged['contract_hash'] = hash('sha256', json_encode($forged, JSON_UNESCAPED_SLASHES));
+        $transported = null;
+        $this->fakeOriginalProbeEvaluator($transported, $forged);
+        $this->driveOriginalProbeScreening($agent, $batch, 'PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH');
+        $run = LabEvaluationRun::where('lab_agent_id', $agent->id)->sole();
+        $this->assertSame($probe, data_get($run->request_meta, 'dataset_manifest.prospective_probe_window'));
+        if ($batch) $this->assertSame('PROSPECTIVE_PROBE_WINDOW_RECEIPT_MISMATCH', $run->error_message);
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalProbeScreeningRoutes')]
+    public function test_public_native_screening_refuses_changed_original_source_before_http(bool $batch): void
+    {
+        [$agent] = $this->originalProbeScreeningFixture();
+        app(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn(str_repeat('e', 64));
+        Http::fake();
+        try {
+            if ($batch) app(LabAgentEvaluationService::class)->screenBatch([$agent->id], 'XAUUSD');
+            else app(LabAgentEvaluationService::class)->screen($agent);
+            $this->fail('A changed source cannot own an old native probe.');
+        } catch (\LogicException $error) {
+            $this->assertSame('CANONICAL_COUNCIL_PREPARATION_ORIGINAL_SOURCE_DRIFT', $error->getMessage());
+        }
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalProbeScreeningRoutes')]
+    public function test_public_native_screening_refuses_forged_arm_owner_before_http(bool $batch): void
+    {
+        [$agent] = $this->originalProbeScreeningFixture();
+        $model = $agent->modelVersion;
+        $metadata = (array) $model->metadata;
+        $metadata['specialist_council_evaluation']['arm_key'] = 'candidate';
+        $model->update(['metadata' => $metadata]);
+        Http::fake();
+        try {
+            if ($batch) app(LabAgentEvaluationService::class)->screenBatch([$agent->id], 'XAUUSD');
+            else app(LabAgentEvaluationService::class)->screen($agent);
+            $this->fail('A forged model cannot inherit another original arm probe.');
+        } catch (\LogicException $error) {
+            $this->assertContains($error->getMessage(), ['CANONICAL_COUNCIL_PREPARATION_ORIGINAL_MODEL_DRIFT',
+                'DECLARED_COUNCIL_EVALUATION_BINDING_INVALID', 'CANONICAL_COUNCIL_PREPARATION_ORIGINAL_ARM_DRIFT']);
+        }
+        Http::assertNothingSent();
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalProbeScreeningRoutes')]
+    public function test_public_unbound_auxiliary_source_keeps_generic_clean_probe(bool $batch): void
+    {
+        [$agent, $native, $generic] = $this->originalProbeScreeningFixture(true);
+        $this->assertNull(data_get($agent->modelVersion->metadata, 'specialist_council_evaluation'));
+        $transported = null;
+        $this->fakeOriginalProbeEvaluator($transported);
+        $this->driveOriginalProbeScreening($agent, $batch);
+        $run = LabEvaluationRun::where('lab_agent_id', $agent->id)->sole();
+        $this->assertSame($generic, data_get($transported, 'policy_context.prospective_probe_window'));
+        $this->assertSame($generic, data_get($run->request_meta, 'dataset_manifest.prospective_probe_window'));
+        $this->assertNotSame($native['contract_hash'], $generic['contract_hash']);
+        if ($batch) $this->assertSame('TEST_AFTER_ORIGINAL_PROBE_ATTESTATION', $run->error_message);
+        $this->assertDatabaseCount('paper_authority_admissions', 0);
+    }
+
+    private function originalProbeScreeningFixture(bool $auxiliary = false): array
+    {
+        Storage::fake('local');
+        [$generation, $preparation, $models, $rows, $bundle] = $this->discoveryFixture();
+        $this->originalProbeRows = $rows;
+        app(SpecialistCouncilPreparationService::class)->prepare($generation, $preparation);
+        $probe = $preparation['evaluation_plan']['windows'][0]['prospective_probe_window'];
+        $generic = app(ProspectiveRepairProbeWindowService::class)->seal($rows, $bundle['bundle_hash'],
+            $probe['execution_hash'], 'academy_clean_discovery:'.$bundle['bundle_hash'].':'.str_repeat('c', 64), 15000, 512);
+        // Original solo and auxiliary source both omit an aggregate runtime;
+        // only the solo belongs to the original comparison plan.
+        $agent = LabAgent::where('model_version_id', $models[$auxiliary ? 1 : 0]->id)->firstOrFail();
+        $agent->update(['lifecycle_status' => 'queued']);
+        $datasets = \Mockery::mock(LabDatasetExportService::class)->makePartial();
+        $datasets->shouldReceive('ensureGenerationSnapshot')->andReturn(['path' => '/fixture/paper.csv',
+            'sha256' => str_repeat('f', 64), 'protocol' => 'fixture_paper_reference']);
+        $datasets->shouldReceive('ensureGenerationFoundationSnapshot')->andReturn(['path' => '/fixture/foundation.csv',
+            'sha256' => str_repeat('a', 64), 'protocol' => 'fixture_historical_reference']);
+        $datasets->shouldReceive('rowsFromSnapshot')->with($bundle['entry_dataset_path'], 15512)->andReturn($rows);
+        $this->app->instance(LabDatasetExportService::class, $datasets);
+        $evidence = \Mockery::mock(LabImmutableEvidenceService::class)->makePartial();
+        $evidence->shouldReceive('replayEvidenceCompleteness')->andThrow(new \RuntimeException('TEST_AFTER_ORIGINAL_PROBE_ATTESTATION'));
+        $this->app->instance(LabImmutableEvidenceService::class, $evidence);
+        $this->app->forgetInstance(LabAgentEvaluationService::class);
+        return [$agent->fresh(['modelVersion', 'generation']), $probe, $generic];
+    }
+
+    private function fakeOriginalProbeEvaluator(?array &$transported, ?array $receipt = null): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            '*/api/replay-status' => Http::response(['protocol' => 'replay_liveness_v2_bounded_worker',
+                'active_requests' => 0, 'screening_active' => 0, 'screening_capacity' => 1, 'full_active' => 0]),
+            '*/api/backtest/run-all' => function ($httpRequest) use (&$transported, $receipt) {
+                $transported = $httpRequest->data();
+                $strategy = $transported['strategies'][0];
+                $actual = $receipt === null ? $this->pythonOriginalProbeReceipt($transported) : [...$receipt, 'complete' => true];
+                return Http::response(['leaderboard' => [['strategy' => $strategy['strategy'],
+                    'version' => $strategy['version'], 'lab_agent_id' => $strategy['lab_agent_id'], 'score' => 0,
+                    'result' => ['prospective_probe_window_receipt' => $actual]]]]);
+            },
+        ]);
+    }
+
+    /** Real PHP-to-Python serialization and existing slice producer, not replay/PnL. */
+    private function pythonOriginalProbeReceipt(array $request): array
+    {
+        $script = <<<'PY'
+import json, sys
+import pandas as pd
+from app.services.prospective_probe_window import select_probe_window
+facts = json.load(sys.stdin)
+request = facts['request']
+frame, receipt = select_probe_window(pd.DataFrame(facts['rows']),
+    request['policy_context']['prospective_probe_window'], request['replay_dataset_hash'],
+    request['execution_contract']['execution_hash'])
+assert len(frame) == 15000
+print(json.dumps(receipt))
+PY;
+        $process = new \Symfony\Component\Process\Process(['python', '-B', '-c', $script], dirname(base_path()).'/ai-service-python');
+        $process->setInput(json_encode(['request' => $request, 'rows' => $this->originalProbeRows], JSON_UNESCAPED_SLASHES));
+        $process->setTimeout(30);
+        $process->mustRun();
+        return json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function driveOriginalProbeScreening(LabAgent $agent, bool $batch,
+        string $expected = 'TEST_AFTER_ORIGINAL_PROBE_ATTESTATION'): void
+    {
+        $evaluator = app(LabAgentEvaluationService::class);
+        if ($batch) {
+            $evaluator->screenBatch([$agent->id], 'XAUUSD');
+            return;
+        }
+        try {
+            $evaluator->screen($agent);
+            $this->fail('The synthetic test must stop before learning or market settlement.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame($expected, $error->getMessage());
+        }
     }
 
     public function test_label_only_clean_bundle_has_no_native_owner(): void

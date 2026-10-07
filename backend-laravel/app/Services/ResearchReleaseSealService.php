@@ -67,6 +67,7 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php',
         'backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php',
         'backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php',
+        'backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php',
         'backend-laravel/tests/Feature/LabReplayRecoveryHashDomainTest.php',
         'backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php',
         'backend-laravel/tests/Feature/AcademyPrimaryInstrumentSurfaceTest.php',

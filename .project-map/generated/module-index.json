@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T11:20:21.222Z",
-  "source_digest": "92cc7d85bd82d1be244e66a953659da5afb5dad2a479d77b1f1ba6c37bedef9f",
-  "source_file_count": 1538,
-  "git_head": "cd3cd15a578c17c0ee65fd595c7cbdf0bfcf9210",
+  "generated_at": "2026-10-07T18:04:43.533Z",
+  "source_digest": "b4dcff14905a290fde11387c4769172a3a4f03441e8c7e2bf2b734e8c384ea66",
+  "source_file_count": 1539,
+  "git_head": "31ed2abd4e4f2850b1c6f25e4e205ce890fdfd74",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -201,6 +201,7 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).",
         "One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).",
         "Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.",
         "Creation seals the primary Academy frozen-control owner and explicit admission-only candidate control IDs after hypothesis cleanup. Kernel pair contracts retain actual control and candidate IDs; no same-family fallback can silently substitute another control.",
@@ -242,6 +243,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php",
         "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
@@ -682,6 +684,7 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
         "backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php",
         "ai-service-python/tests/test_specialist_council.py",

@@ -89,6 +89,11 @@ calculation from FastAPI.
    is not promoted from a broader session result.
 7. Laravel validates expected protocol, sealed-copy equality and declared-versus-
    observed runtime binding completeness.
+   For clean council discovery, the stored original council plan first binds
+   the final outgoing probe. Only then is that exact owner-validated probe copied
+   into the immutable run's evaluation manifest. Singleton and batch use the
+   same order. A generic Academy probe with identical calendar/data/costs but a
+   different experiment key/hash is not an interchangeable expected receipt.
 8. Laravel persists or forwards only an attested result to its owning lifecycle.
 
 ## Rules
