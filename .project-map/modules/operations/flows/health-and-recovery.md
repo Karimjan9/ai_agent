@@ -13,6 +13,14 @@ prerequisite failure.
 
 ## Sequence
 
+An exact admitted generation reservation is checked before no-op settlement,
+even when no immutable replay run has opened. The canonical queue inspector
+supplies transport semantics and generation-owned lab membership; original
+visibility/retry bounds permit a bounded wait, not a renewed experiment.
+Expired or malformed reservations fall back to existing lifecycle recovery.
+The same membership digest drives deduplication without including the selected
+scheduler child's own queue noise. See the operations state guard.
+
 Archive-first research is governed by `GenerationAdmissionDecisionService`
 and the existing arbiter, not a second scheduler. Until a valid champion exists,
 settlement, technical recovery and ready learning work keep priority; otherwise

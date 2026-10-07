@@ -57,3 +57,10 @@ paper or live authority. Authorized untouched independent windows remain a
 separate dependency; 2026 stays paper-only. There is no second scheduler,
 post-hoc receipt substitution, weaker hash check or source hot-fix to an active
 generation. Release follows admitted-work drain and loaded-source verification.
+
+The signed completion also fences the generic screening-learning projection
+before any derived write, including information/repair credit and provisional
+Mentor/cartridge/posterior/selector projections. One idempotent lifecycle
+diagnostic records the withholding; original native comparison and research
+feedback remain durable knowledge. Valid ordinary discovery and independent
+panel ownership keep their existing policies.

@@ -254,6 +254,16 @@ class ResearchLoopArbiterService
                         'active_phase' => (string) $activeRun->phase,
                     ], $dryRun);
             }
+            // Redis can retain admitted pre-run work after a worker restart.
+            // An exact, unexpired reservation is a bounded visibility wait,
+            // not an unsuccessful attempt to settle scientific evidence.
+            $reservation = $this->admittedGenerationReservation($latest);
+            if ($reservation !== null) {
+                return $this->decide($symbol, $timeframe, 'WAIT_EXISTING_GENERATION_RESERVATION', 100,
+                    null, [], null, ['ADMITTED_GENERATION_QUEUE_RESERVATION_IN_FLIGHT'], [
+                        'generation' => $generation, 'queue_reservation' => $reservation,
+                    ], $dryRun);
+            }
             return $this->decide($symbol, $timeframe, 'SETTLE_EXISTING_GENERATION', 100,
                 'trading:run-lifecycle-cycle', [
                     '--symbol' => $symbol,
@@ -1102,31 +1112,7 @@ class ResearchLoopArbiterService
                 ->whereNotIn('status', ['completed', 'technical_error', 'skipped', 'retry_released'])
                 ->count()
             : 0;
-        $queueWatermark = ['available' => false];
-        if (Schema::hasTable('jobs')) {
-            // The selected scheduler job must not become an input to its own
-            // next decision hash. Otherwise a command entering/leaving the
-            // constructor queue flips 0 -> 1 -> 0 and creates an endless pair
-            // of otherwise identical decisions. Only downstream laboratory
-            // work is part of the research state watermark.
-            $queues = array_values(array_unique(array_filter([
-                (string) config('services.lab_queue.screening_queue', 'lab-screening'),
-                (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
-                (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
-                (string) config('services.lab_queue.learning_queue', 'lab-learning'),
-                (string) config('services.lab_queue.default_queue', 'lab-xauusd'),
-            ])));
-            $jobs = DB::table('jobs')->whereIn('queue', $queues);
-            $queueWatermark = [
-                'available' => true,
-                'scope' => 'downstream_lab_runtime',
-                'queues' => $queues,
-                'selected_scheduler_queue' => $queue,
-                'count' => (int) (clone $jobs)->count(),
-                'max_id' => (int) ((clone $jobs)->max('id') ?? 0),
-                'max_available_at' => (int) ((clone $jobs)->max('available_at') ?? 0),
-            ];
-        }
+        $queueWatermark = $this->generationQueueWatermark($generation, $queue);
         $settlementWatermark = ['available' => false];
         if ($generation && Schema::hasTable('settlement_watermarks')) {
             $rows = DB::table('settlement_watermarks')
@@ -1243,6 +1229,96 @@ class ResearchLoopArbiterService
         }
 
         return $state;
+    }
+
+    /** Same canonical transport owner as dispatcher/terminality; never a scheduler's own row. */
+    private function generationLabQueueSnapshot(?LabGeneration $generation, ?string $selectedQueue = null): array
+    {
+        $queues = array_values(array_unique(array_filter([
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+            (string) config('services.lab_queue.learning_queue', 'lab-learning'),
+            (string) config('services.lab_queue.default_queue', 'lab-xauusd'),
+            ...((array) config('services.lab_queue.legacy_screening_queues', [])),
+        ], fn ($name): bool => $name !== '' && $name !== $selectedQueue)));
+        try {
+            return app(LabQueueJobInspector::class)->generationQueueBacklog(
+                $generation ? $generation->agents()->pluck('id')->map(fn ($id): int => (int) $id)->all() : [],
+                $queues,
+            );
+        } catch (Throwable) {
+            return ['available' => false, 'total' => null, 'rows' => []];
+        }
+    }
+
+    /** No payload is published; membership changes, not scheduler minutes, change this digest. */
+    private function generationQueueWatermark(?LabGeneration $generation, ?string $selectedQueue): array
+    {
+        $snapshot = $this->generationLabQueueSnapshot($generation, $selectedQueue);
+        if (($snapshot['available'] ?? true) !== true || ($snapshot['total'] ?? null) === null) {
+            return ['available' => false, 'backend' => $snapshot['backend'] ?? null, 'scope' => 'generation_lab_runtime'];
+        }
+        $members = [];
+        foreach ((array) ($snapshot['rows'] ?? []) as $row) {
+            $members[] = ['id' => (string) ($row['id'] ?? ''), 'queue' => (string) ($row['queue'] ?? ''),
+                'state' => $row['redis_state'] ?? (($row['reserved_at'] ?? null) !== null ? 'reserved' : 'pending'),
+                'attempts' => (int) ($row['attempts'] ?? 0), 'reserved_at' => $row['reserved_at'] ?? null,
+                'available_at' => $row['available_at'] ?? null,
+                'payload_hash' => hash('sha256', (string) ($row['payload'] ?? ''))];
+        }
+        usort($members, fn (array $a, array $b): int => strcmp($this->hash($a), $this->hash($b)));
+        return ['available' => true, 'backend' => $snapshot['backend'] ?? null, 'scope' => 'generation_lab_runtime',
+            'count' => count($members), 'membership_digest' => $this->hash($members)];
+    }
+
+    /** A reservation without a run can wait only through its original bounded queue admission. */
+    private function admittedGenerationReservation(LabGeneration $generation): ?array
+    {
+        $snapshot = $this->generationLabQueueSnapshot($generation);
+        if (($snapshot['available'] ?? null) !== true || ! is_int($snapshot['total'] ?? null) || $snapshot['total'] < 1
+            || ! in_array($snapshot['backend'] ?? '', ['redis', 'database'], true)) return null;
+        $agents = $generation->agents()->get(['id', 'lifecycle_status']);
+        $owned = $agents->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        $open = $agents->whereIn('lifecycle_status', ['queued', 'screening', 'full_queued', 'full_validation', 'training'])
+            ->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        $now = now()->timestamp;
+        $lease = (int) config('queue.connections.'.($snapshot['backend'] === 'redis' ? 'redis' : 'database').'.retry_after', 4500);
+        if ($lease < 1 || $lease > 4500) return null;
+        foreach ((array) ($snapshot['rows'] ?? []) as $row) {
+            if (($snapshot['backend'] === 'redis' && ($row['redis_state'] ?? null) !== 'reserved')
+                || ! is_int($row['reserved_at'] ?? null) || (int) ($row['attempts'] ?? 0) < 1) continue;
+            $claim = $snapshot['backend'] === 'redis' ? $row['reserved_at'] - $lease : $row['reserved_at'];
+            $expires = $claim + $lease;
+            $payload = json_decode((string) ($row['payload'] ?? ''), true);
+            if (! is_array($payload) || ! is_int($payload['createdAt'] ?? null) || ! is_int($payload['retryUntil'] ?? null)
+                || $payload['createdAt'] > $claim || $claim > $now || $expires <= $now
+                || $payload['retryUntil'] <= $now || ! is_string($payload['uuid'] ?? null)
+                || preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/iD', $payload['uuid']) !== 1
+                || ($snapshot['backend'] === 'redis' && (! is_string($payload['id'] ?? null)
+                    || $payload['id'] === '' || $payload['id'] !== (string) ($row['id'] ?? '')))) continue;
+            $class = data_get($payload, 'data.commandName');
+            if (! in_array($class, [\App\Jobs\EvaluateLabAgentJob::class, \App\Jobs\EvaluateLabScreeningBatchJob::class], true)
+                || ($payload['displayName'] ?? null) !== $class || ! is_string(data_get($payload, 'data.command'))) continue;
+            $command = @unserialize($payload['data']['command'], ['allowed_classes' => false, 'max_depth' => 32]);
+            $fields = (array) $command;
+            if (! is_object($command) || ($fields['__PHP_Incomplete_Class_Name'] ?? null) !== $class) continue;
+            $batch = $class === \App\Jobs\EvaluateLabScreeningBatchJob::class;
+            $ids = $batch ? ($fields['labAgentIds'] ?? []) : [$fields['labAgentId'] ?? null];
+            if (! is_array($ids) || $ids === [] || count($ids) > 6 || count(array_unique($ids)) !== count($ids)
+                || array_filter($ids, fn ($id): bool => ! is_int($id) || $id < 1)
+                || array_diff($ids, $owned) !== [] || array_intersect($ids, $open) === []
+                || ($batch && ($fields['labGenerationId'] ?? null) !== (int) $generation->id)
+                || (! $batch && ! in_array($fields['mode'] ?? null, ['screen', 'full'], true))) continue;
+            $maximum = $batch ? 86400 : (($fields['mode'] ?? null) === 'screen' ? 259200 : 172800);
+            if ($payload['retryUntil'] > $payload['createdAt'] + $maximum) continue;
+            return ['backend' => $snapshot['backend'], 'queue' => (string) ($row['queue'] ?? ''),
+                'job_id' => (string) ($row['id'] ?? ''), 'payload_hash' => hash('sha256', (string) $row['payload']),
+                'agent_ids' => array_values($ids), 'visibility_expires_at' => $expires,
+                'retry_deadline' => $payload['retryUntil'], 'wait_until' => min($expires, $payload['retryUntil']),
+                'promotion_evidence' => false];
+        }
+        return null;
     }
 
     /** @return array<string,mixed> */

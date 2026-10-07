@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T18:04:43.533Z",
-  "source_digest": "b4dcff14905a290fde11387c4769172a3a4f03441e8c7e2bf2b734e8c384ea66",
-  "source_file_count": 1539,
-  "git_head": "31ed2abd4e4f2850b1c6f25e4e205ce890fdfd74",
+  "generated_at": "2026-10-07T18:41:15.261Z",
+  "source_digest": "600fc59d587cd0148dcfaef747ff89479eec40ddcf87b5067240bd6326162330",
+  "source_file_count": 1540,
+  "git_head": "19e1f13d1368fa7f829c0270c857cf6bafe6243f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -1229,37 +1229,37 @@
       "symbol": "ProcessLabScreeningLearningProjection",
       "kind": "php_type",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 42
+      "line": 45
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 54
+      "line": 57
     },
     {
       "symbol": "uniqueId",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 64
+      "line": 67
     },
     {
       "symbol": "retryUntil",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 69
+      "line": 72
     },
     {
       "symbol": "middleware",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 74
+      "line": 77
     },
     {
       "symbol": "handle",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
-      "line": 84
+      "line": 87
     },
     {
       "symbol": "RunCausalExperimentFoldJob",
@@ -6950,34 +6950,46 @@
       "line": 92
     },
     {
+      "symbol": "projectNativeSources",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1000
+    },
+    {
+      "symbol": "assertFollowupDesign",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 1065
+    },
+    {
       "symbol": "observedAuxiliarySourceProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1031
+      "line": 1100
     },
     {
       "symbol": "observedProbeCompletionProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1152
+      "line": 1221
     },
     {
       "symbol": "observedProbeCompletionRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1323
+      "line": 1392
     },
     {
       "symbol": "observedCompletionQuestionFingerprint",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1369
+      "line": 1438
     },
     {
       "symbol": "unobservedTechnicalProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1382
+      "line": 1451
     },
     {
       "symbol": "registerFollowupProof",
@@ -6989,67 +7001,67 @@
       "symbol": "originalDescriptorMaterialization",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1506
+      "line": 1575
     },
     {
       "symbol": "followupBlocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1547
+      "line": 1616
     },
     {
       "symbol": "followupServerSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1554
+      "line": 1623
     },
     {
       "symbol": "priorObservations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1562
+      "line": 1631
     },
     {
       "symbol": "assertPriorObservations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1572
+      "line": 1641
     },
     {
       "symbol": "completedQuestionForSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1590
+      "line": 1659
     },
     {
       "symbol": "observationFromReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1623
+      "line": 1692
     },
     {
       "symbol": "questionFingerprint",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1638
+      "line": 1707
     },
     {
       "symbol": "priorReceiptValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1660
+      "line": 1729
     },
     {
       "symbol": "closure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1689
+      "line": 1758
     },
     {
       "symbol": "economicDirection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 1727
+      "line": 1796
     },
     {
       "symbol": "SpecialistCouncilResearchFeedbackService",
@@ -7106,82 +7118,76 @@
       "line": 60
     },
     {
-      "symbol": "pristineUnbuiltFollowupSnapshot",
+      "symbol": "screeningProjectionDisposition",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
       "line": 615
     },
     {
+      "symbol": "pristineUnbuiltFollowupSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+      "line": 684
+    },
+    {
       "symbol": "canonicalNonconstructiveResult",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 648
+      "line": 717
     },
     {
       "symbol": "assertUnobservedConstructorBinding",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 660
+      "line": 729
     },
     {
       "symbol": "assertSignedFollowupResolution",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 690
+      "line": 759
     },
     {
       "symbol": "assertSourceAmendmentChain",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 706
+      "line": 775
     },
     {
       "symbol": "verifyConstructorArchive",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 764
+      "line": 833
     },
     {
       "symbol": "sourceAmendmentSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 789
+      "line": 858
     },
     {
       "symbol": "assertPristineStartProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 796
+      "line": 865
     },
     {
       "symbol": "unobservedNativeConstructorSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 815
+      "line": 884
     },
     {
       "symbol": "followupOriginal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 898
+      "line": 967
     },
     {
       "symbol": "projectOriginalNativeSources",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 917
-    },
-    {
-      "symbol": "projectNativeSources",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 931
-    },
-    {
-      "symbol": "assertFollowupDesign",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
-      "line": 996
+      "line": 986
     },
     {
       "symbol": "TacticCatalogueService",
@@ -10528,6 +10534,19 @@
         "test_observed_probe_completion_refuses_broken_ancestor_or_cyclic_original_links",
         "lineagePoisonCases",
         "observedProbeFixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php",
+      "tests": [
+        "test_signed_observed_completion_skips_every_derived_projection_even_with_positive_eligible_economics",
+        "test_malformed_declared_continuation_cannot_fall_through_to_generic_projections",
+        "forgedCases",
+        "test_non_discovery_panel_keeps_its_original_projection_owner_domain",
+        "test_ordinary_valid_learning_paths_keep_the_existing_projection_pipeline",
+        "ordinaryKinds",
+        "fixture",
+        "expectNoProjections"
       ]
     },
     {

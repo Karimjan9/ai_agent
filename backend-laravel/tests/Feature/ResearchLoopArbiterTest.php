@@ -25,6 +25,7 @@ use App\Services\GenerationAutonomyReceiptService;
 use App\Services\LabDataEdgeAuditService;
 use App\Services\LearningLaneService;
 use App\Services\LearningVelocityGateService;
+use App\Services\LabQueueStateService;
 use App\Services\MarketDriftDetectionService;
 use App\Services\MtfResearchCohortService;
 use App\Services\ResearchClosureInvariantService;
@@ -251,6 +252,208 @@ class ResearchLoopArbiterTest extends TestCase
         Queue::assertPushed(RunScheduledArtisanCommandJob::class,
             fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:run-lifecycle-cycle');
         $this->assertDatabaseCount('research_loop_decisions', 1);
+    }
+
+    public function test_unexpired_admitted_redis_reservation_without_run_waits_without_spending_settlement_cap(): void
+    {
+        Queue::fake();
+        [$generation, $agent] = $this->reservationFixture();
+        $rows = [$this->reservationRow($generation, $agent)];
+        $this->fakeCanonicalQueue('redis', $rows);
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $first = $arbiter->tick();
+        $this->assertSame('WAIT_EXISTING_GENERATION_RESERVATION', $first['action']);
+        $this->assertSame([$agent->id], data_get($first, 'evidence_snapshot.queue_reservation.agent_ids'));
+        $this->assertStringNotContainsString($rows[0]['payload'], json_encode($first));
+        $this->travel(18)->minutes();
+        $this->assertSame('duplicate_suppressed', $arbiter->tick()['status']);
+        $this->assertSame('running', app(AutonomousModeService::class)->status()['state']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('research_loop_decisions', 1);
+        Queue::assertNothingPushed();
+        $this->travel(58)->minutes();
+        $expired = $arbiter->tick();
+        $this->assertSame('SETTLE_EXISTING_GENERATION', $expired['action']);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+        $this->assertSame($generation->id, data_get($expired, 'evidence_snapshot.generation.id'));
+    }
+
+    public static function invalidReservationProofs(): array
+    {
+        return array_map(fn ($kind) => [$kind], ['expired_visibility', 'expired_original_deadline', 'future_claim',
+            'corrupt_command', 'wrong_generation', 'unowned_agent', 'unknown_queue_state', 'wrong_row_id', 'empty_uuid']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidReservationProofs')]
+    public function test_invalid_or_unowned_reservation_cannot_manufacture_a_wait_proof(string $kind): void
+    {
+        Queue::fake();
+        [$generation, $agent] = $this->reservationFixture();
+        $row = $this->reservationRow($generation, $agent);
+        $payload = json_decode($row['payload'], true);
+        if ($kind === 'expired_visibility') $row['reserved_at'] = now()->subSecond()->timestamp;
+        if ($kind === 'expired_original_deadline') $payload['retryUntil'] = now()->subSecond()->timestamp;
+        if ($kind === 'future_claim') $row['reserved_at'] = now()->addSeconds(4800)->timestamp;
+        if ($kind === 'wrong_row_id') $row['id'] = 'unrelated-redis-reservation';
+        if ($kind === 'empty_uuid') $payload['uuid'] = '';
+        if ($kind === 'corrupt_command') $payload['data']['command'] = substr($payload['data']['command'], 0, -5);
+        if ($kind === 'wrong_generation') {
+            $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id], 'XAUUSD', null, $generation->id + 1);
+            $payload['data']['command'] = serialize($job);
+        }
+        if ($kind === 'unowned_agent') {
+            $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id + 100], 'XAUUSD', null, $generation->id);
+            $payload['data']['command'] = serialize($job);
+        }
+        $row['payload'] = json_encode($payload);
+        $rows = [$row];
+        $this->fakeCanonicalQueue('redis', $rows, $kind !== 'unknown_queue_state');
+        $decision = app(ResearchLoopArbiterService::class)->tick();
+        $this->assertSame('SETTLE_EXISTING_GENERATION', $decision['action']);
+        $this->assertArrayNotHasKey('queue_reservation', $decision['evidence_snapshot']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
+    public function test_real_laravel_redis_payload_without_dispatch_attests_original_reserved_job(): void
+    {
+        [$generation, $agent] = $this->reservationFixture();
+        $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id], 'XAUUSD', null, $generation->id);
+        $job->onConnection('redis');
+        // createPayload only serializes the actual producer; it never pushes/pops Redis.
+        $connection = app('queue')->connection('redis');
+        $raw = (new \ReflectionMethod($connection, 'createPayload'))->invoke($connection, $job, 'lab-screening');
+        $payload = json_decode($raw, true);
+        $payload['attempts'] = 1; // The existing Redis pop Lua adds this on reservation.
+        $rows = [['id' => $payload['id'], 'queue' => 'lab-screening', 'redis_state' => 'reserved',
+            'reserved_at' => now()->addSeconds(4500)->timestamp, 'attempts' => 1, 'available_at' => null,
+            'payload' => json_encode($payload)]];
+        $this->fakeCanonicalQueue('redis', $rows);
+        $proof = (new \ReflectionMethod(ResearchLoopArbiterService::class, 'admittedGenerationReservation'))
+            ->invoke(app(ResearchLoopArbiterService::class), $generation);
+        $this->assertSame($payload['id'], $proof['job_id']);
+        $this->assertSame([$agent->id], $proof['agent_ids']);
+        $this->assertSame($payload['retryUntil'], $proof['retry_deadline']);
+        $this->assertFalse($proof['promotion_evidence']);
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
+    public function test_reservation_proof_refuses_unknown_single_mode_duplicate_ids_and_unknown_snapshot_counts(): void
+    {
+        [$generation, $agent] = $this->reservationFixture();
+        $method = new \ReflectionMethod(ResearchLoopArbiterService::class, 'admittedGenerationReservation');
+        $owner = app(ResearchLoopArbiterService::class);
+        foreach (['single_mode', 'duplicate_ids'] as $case) {
+            $row = $this->reservationRow($generation, $agent);
+            $payload = json_decode($row['payload'], true);
+            if ($case === 'single_mode') {
+                $job = new \App\Jobs\EvaluateLabAgentJob($agent->id, 'screen');
+                $job->mode = 'unknown';
+            } else {
+                $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id], 'XAUUSD', null, $generation->id);
+                $job->labAgentIds = [$agent->id, $agent->id];
+            }
+            $payload['displayName'] = $payload['data']['commandName'] = get_class($job);
+            $payload['data']['command'] = serialize($job);
+            $row['payload'] = json_encode($payload);
+            $rows = [$row];
+            $this->fakeCanonicalQueue('redis', $rows);
+            $this->assertNull($method->invoke($owner, $generation), $case);
+        }
+        $inspector = Mockery::mock(\App\Services\LabQueueJobInspector::class);
+        $inspector->shouldReceive('generationQueueBacklog')->andReturn(['backend' => 'redis',
+            'rows' => [$this->reservationRow($generation, $agent)]]);
+        $this->app->instance(\App\Services\LabQueueJobInspector::class, $inspector);
+        $this->assertNull($method->invoke($owner, $generation));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('research_loop_decisions', 0);
+    }
+
+    public static function canonicalQueueBackends(): array
+    {
+        return ['redis' => ['redis'], 'database' => ['database']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('canonicalQueueBackends')]
+    public function test_generation_queue_membership_digest_uses_actual_backend_not_legacy_jobs_table(string $backend): void
+    {
+        [$generation, $agent] = $this->reservationFixture();
+        $rows = [$this->reservationRow($generation, $agent)];
+        $this->fakeCanonicalQueue($backend, $rows);
+        $owner = app(ResearchLoopArbiterService::class);
+        $method = new \ReflectionMethod($owner, 'operationalStateSnapshot');
+        $evidence = ['generation' => ['id' => $generation->id]];
+        $first = $method->invoke($owner, $evidence, 'scheduler-constructor', 'XAUUSD', 'H1');
+        $this->assertSame($backend, data_get($first, 'queue_watermark.backend'));
+        $this->assertSame(1, data_get($first, 'queue_watermark.count'));
+        $rows[0]['id'] = 'different-real-admitted-job';
+        $second = $method->invoke($owner, $evidence, 'scheduler-constructor', 'XAUUSD', 'H1');
+        $this->assertNotSame(data_get($first, 'queue_watermark.membership_digest'), data_get($second, 'queue_watermark.membership_digest'));
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertStringNotContainsString('data.command', json_encode($second));
+    }
+
+    public function test_scheduler_residency_cannot_change_generation_queue_digest_or_renew_settlement_budget(): void
+    {
+        Queue::fake();
+        [$generation, $agent] = $this->reservationFixture();
+        $rows = [];
+        $this->fakeCanonicalQueue('redis', $rows);
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $method = new \ReflectionMethod($arbiter, 'operationalStateSnapshot');
+        $evidence = ['generation' => ['id' => $generation->id]];
+        $first = $method->invoke($arbiter, $evidence, 'scheduler-constructor', 'XAUUSD', 'H1');
+        $rows = [$this->reservationRow($generation, $agent)];
+        $rows[0]['queue'] = 'scheduler-constructor';
+        $second = $method->invoke($arbiter, $evidence, 'scheduler-constructor', 'XAUUSD', 'H1');
+        $this->assertSame($first['queue_watermark'], $second['queue_watermark']);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $decision = $arbiter->tick();
+            $this->assertSame('SETTLE_EXISTING_GENERATION', $decision['action']);
+            ResearchLoopDecision::findOrFail($decision['decision_id'])->update(['status' => 'completed', 'completed_at' => now()]);
+            (new UniqueLock(Cache::store()))->release(new RunScheduledArtisanCommandJob(
+                $decision['command'], $decision['arguments'], $decision['queue'], $decision['decision_id']));
+            $this->travel(6)->minutes();
+        }
+        $this->assertSame('safety_blocked', $arbiter->tick()['status']);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 3);
+    }
+
+    private function reservationFixture(): array
+    {
+        $generation = LabGeneration::create(['ai_laboratory_id' => $this->lab()->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 1,
+            'trigger_context' => [], 'started_at' => now()]);
+        $model = ModelVersion::create(['name' => 'reserved-original', 'strategy' => 'hybrid', 'version' => 'v1',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test',
+            'lifecycle_status' => 'queued', 'parameter_diff' => []]);
+        return [$generation, $agent];
+    }
+
+    private function reservationRow(LabGeneration $generation, LabAgent $agent): array
+    {
+        $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id], 'XAUUSD', null, $generation->id);
+        $payload = ['uuid' => 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'id' => 'actual-admitted-job',
+            'createdAt' => now()->subMinutes(10)->timestamp, 'retryUntil' => now()->addHours(12)->timestamp,
+            'displayName' => get_class($job), 'data' => ['commandName' => get_class($job), 'command' => serialize($job)]];
+        return ['id' => 'actual-admitted-job', 'queue' => 'lab-screening', 'redis_state' => 'reserved',
+            'reserved_at' => now()->addSeconds(4500)->timestamp, 'attempts' => 1, 'available_at' => null,
+            'payload' => json_encode($payload)];
+    }
+
+    private function fakeCanonicalQueue(string $backend, array &$rows, bool $available = true): void
+    {
+        $state = Mockery::mock(LabQueueStateService::class);
+        $state->shouldReceive('backend')->andReturn($backend);
+        $state->shouldReceive('snapshot')->andReturnUsing(function (array $queues) use (&$rows, $backend, $available): array {
+            $selected = array_values(array_filter($rows, fn ($row): bool => in_array($row['queue'], $queues, true)));
+            return ['backend' => $backend, 'available' => $available, 'total' => $available ? count($selected) : null,
+                'rows' => $selected, 'queues' => []];
+        });
+        $this->app->instance(LabQueueStateService::class, $state);
     }
 
     public function test_dispatched_arbiter_decision_is_closed_by_its_child_command_outcome(): void

@@ -7,6 +7,18 @@ completed replay. The existing guarded arbiter drains these receipts, not a
 new selector. Scientific comparisons remain research-only until independent
 authorization and original E3/E4 gates pass.
 
+`WAIT_EXISTING_GENERATION_RESERVATION` covers an exact admitted lab payload
+whose reservation is still inside its transport visibility lease and original
+serialized retry deadline, even before an immutable run exists. Redis stores
+the visibility expiry in `reserved_at`; database transport stores the claim.
+Unknown, malformed, unrelated or expired rows do not provide a wait witness.
+After expiry the existing consumer/lifecycle owns redelivery or recovery; no
+manual queue mutation is performed. Genuine unchanged no-work settlement
+still has its original bounded retries and safety halt.
+The generation queue watermark uses the same backend-neutral inspector and
+stable lab membership digest, excluding the selected scheduler child's own
+residency. A scheduler minute is not progress or new scientific evidence.
+
 `WAIT_DATASET_CONTINUITY -> bounded Academy preparation` may occur only when
 a ready proposal explicitly names a verified clean discovery bundle. Parent
 full-archive continuity remains blocked. A spent/not-ready slice cannot authorize

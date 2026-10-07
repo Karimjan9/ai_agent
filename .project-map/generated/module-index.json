@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T18:04:43.533Z",
-  "source_digest": "b4dcff14905a290fde11387c4769172a3a4f03441e8c7e2bf2b734e8c384ea66",
-  "source_file_count": 1539,
-  "git_head": "31ed2abd4e4f2850b1c6f25e4e205ce890fdfd74",
+  "generated_at": "2026-10-07T18:41:15.261Z",
+  "source_digest": "600fc59d587cd0148dcfaef747ff89479eec40ddcf87b5067240bd6326162330",
+  "source_file_count": 1540,
+  "git_head": "19e1f13d1368fa7f829c0270c857cf6bafe6243f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -243,6 +243,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php",
@@ -922,6 +923,7 @@
         "laboratory"
       ],
       "invariants": [
+        "An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.",
         "Targeted superseded-run recovery is explicit, backend-neutral and bounded to twenty original IDs. Disabled admission, idle authenticated replay/known-empty laboratory queues, terminal agent/generation, absent same-host PID and a later same-phase completed original response artifact are required. It closes only response-less open attempts as operational retry_released, preserving old source/data/parameter/start facts and every later verdict; it grants no replay, learning or promotion evidence.",
         "The already-locked non-dry arbiter drains bounded native council evaluation deliveries after immutable run publication. Pause fences recovery; STOP may drain admitted deliveries. Retry never replays an arm, rewrites original evidence, self-qualifies a version or creates another scheduler.",
         "A native immutable unexpected-candle-gap envelope closes evaluator retry debt as a data dependency, not a strategy result. The same actual M5 source bytes remain blocked before fresh discovery and queue admission despite source or bundle-label changes; only verified prospective provider data may select new input, without changing old receipts or resetting the original question cap.",

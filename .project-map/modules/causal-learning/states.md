@@ -24,6 +24,13 @@ Retuning, missing/completed comparative arms, renewed cap, independence or
 credit claims are refused. New construction remains the existing six-slot
 arbiter-owned path; old runs/versions are never reopened or re-attested.
 
+An eligible completed screening run in that signed completion receives one
+idempotent `screening_learning_projection_withheld` diagnostic before any
+generic credit, Mentor, cartridge, response-map, posterior or selector write.
+Malformed declared continuation ownership also withholds projections. Native
+original comparison/feedback still publishes; ordinary discovery and independent
+panel paths retain their separate original-owner policies.
+
 Cold construction captures an invocation-local signed pristine-target witness
 before creating its row, then requires the full original six-slot plan before
 each model persist. A canonical result-only dependency hold is retained during

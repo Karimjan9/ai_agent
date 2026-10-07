@@ -96,6 +96,14 @@ before any PM2 mutation, without printing raw probe diagnostics. Durable
 preflight runs again after the probes and after scheduler cadence is stopped.
 An idle API response alone cannot certify that a queue owner has drained.
 
+Before a run opens, an admitted job may still be reserved by Redis after its
+old worker has disappeared. `reserved_at` is then a visibility expiry, not a
+claim time. The arbiter recognizes only exact owned payloads inside both that
+lease and their original retry deadline; it waits for ordinary redelivery
+instead of spending unchanged-settlement retries. Do not clear or force-pop
+the reservation. Expired/unknown ownership returns to normal lifecycle
+recovery, and the no-work safety halt remains strict.
+
 Never kill an active replay to apply source changes. Verify actual PHP/Python
 worker boot identities and `/health.research_source` reporting
 `loaded_code_current=true` after recycling, then use `ai:start --json` to

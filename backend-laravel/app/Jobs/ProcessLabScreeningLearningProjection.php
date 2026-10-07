@@ -6,6 +6,7 @@ use App\Models\AgentLearningEpisode;
 use App\Models\CandidateGateDecision;
 use App\Models\LabAgent;
 use App\Models\LabLearningLanePair;
+use App\Models\LabLifecycleEvent;
 use App\Services\AdversarialCoEvolutionService;
 use App\Services\AgentKnowledgeService;
 use App\Services\AgentProgressCardService;
@@ -23,6 +24,7 @@ use App\Services\ProvisionalSkillCartridgeService;
 use App\Services\SkillMentorService;
 use App\Services\SkillZooService;
 use App\Services\ScreeningLearningOutboxService;
+use App\Services\SpecialistCouncilResearchFeedbackService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,6 +32,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Projects secondary learning cards after the immutable screening run closes.
@@ -126,6 +129,22 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
                 $agent, [...$this->screenProjection, 'evidence_run_id' => $this->runId], $eligibility,
             );
 
+            return;
+        }
+
+        $disposition = app(SpecialistCouncilResearchFeedbackService::class)->screeningProjectionDisposition($agent, $run);
+        if (($disposition['allow_derived_learning'] ?? false) !== true) {
+            // One durable diagnostic is permitted; no credit, provisional skill,
+            // selector/posterior or other secondary learning projection may run.
+            // Native immutable council evaluation/feedback publishes elsewhere.
+            DB::transaction(function () use ($agent, $run, $evidence, $disposition): void {
+                $run->newQuery()->whereKey($run->id)->lockForUpdate()->firstOrFail();
+                if (! LabLifecycleEvent::where('run_id', $this->runId)->where('lab_agent_id', $agent->id)
+                    ->where('event_type', 'screening_learning_projection_withheld')->exists()) {
+                    $evidence->recordLifecycle($agent, 'screening_learning_projection_withheld', $disposition,
+                        'screening', $this->runId, null, self::class);
+                }
+            });
             return;
         }
 

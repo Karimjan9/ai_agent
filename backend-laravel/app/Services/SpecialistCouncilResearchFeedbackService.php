@@ -611,6 +611,75 @@ class SpecialistCouncilResearchFeedbackService
             'resolution_body_hash' => $this->epochs->parameterHash($body)];
     }
 
+    /** Original signed purpose controls secondary projections, never a queued result flag. */
+    public function screeningProjectionDisposition(LabAgent $agent, LabEvaluationRun $run): array
+    {
+        $protocol = 'specialist_council_screening_projection_disposition_v1';
+        $allowed = ['protocol' => $protocol, 'allow_derived_learning' => true, 'promotion_evidence' => false];
+        $agent->loadMissing('generation', 'modelVersion');
+        $intent = data_get($agent->generation?->trigger_context, 'native_specialist_council_intent');
+        $seed = data_get($agent->modelVersion?->metadata, 'native_specialist_council_seed');
+        $intentId = is_array($intent) ? ($intent['followup_work_item_id'] ?? null) : null;
+        $seedId = is_array($seed) ? ($seed['followup_work_item_id'] ?? null) : null;
+        $intentResolution = is_array($intent) ? ($intent['followup_resolution_hash'] ?? null) : null;
+        $seedResolution = is_array($seed) ? ($seed['followup_resolution_hash'] ?? null) : null;
+        if ($intentId === null && $seedId === null && $intentResolution === null && $seedResolution === null
+            && ($intent === null || is_array($intent)) && ($seed === null || is_array($seed))) return $allowed;
+        try {
+            if (! is_array($intent) || ! is_array($seed) || ! is_int($intentId) || $intentId <= 0 || $seedId !== $intentId
+                || ! $agent->generation || ! $agent->modelVersion
+                || (int) $run->lab_agent_id !== (int) $agent->id
+                || (int) $run->model_version_id !== (int) $agent->model_version_id
+                || (int) $run->lab_generation_id !== (int) $agent->lab_generation_id
+                || ($seed['lab_generation_id'] ?? null) !== (int) $agent->lab_generation_id
+                || ($seed['intent_hash'] ?? null) !== ($intent['intent_hash'] ?? null)
+                || ! is_string($intent['intent_hash'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $intent['intent_hash'])) {
+                throw new LogicException('COUNCIL_SCREENING_PROJECTION_DECLARED_CONTINUATION_INVALID');
+            }
+            $work = ResearchExperimentWorkItem::find($intentId);
+            if (! $work) throw new LogicException('COUNCIL_SCREENING_PROJECTION_ORIGINAL_WORK_MISSING');
+            $kind = data_get($work->payload, 'followup_resolution.scientific_question_kind');
+            if (! in_array($work->work_type, self::DISCOVERY_FOLLOWUPS, true)) {
+                if (! in_array($work->work_type, self::FOLLOWUP_TYPES, true) || $kind === 'observed_probe_attestation_completion') {
+                    throw new LogicException('COUNCIL_SCREENING_PROJECTION_CONTINUATION_PURPOSE_INVALID');
+                }
+                return $allowed; // Independent-panel original owner/eligibility remain unchanged.
+            }
+            $body = $this->assertSignedFollowupResolution($work);
+            if (($intent['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+                || ($seed['protocol'] ?? null) !== LabPopulationService::NATIVE_COUNCIL_INTENT_PROTOCOL
+                || $agent->origin !== 'native_council_root'
+                || ($body['resolution_hash'] ?? null) !== ($intent['followup_resolution_hash'] ?? null)
+                || ($body['resolution_hash'] ?? null) !== ($seed['followup_resolution_hash'] ?? null)
+                || ($body['work_type'] ?? null) !== $work->work_type
+                || ! in_array($kind, ['unobserved_same_question_source_repair',
+                    'source_repair_completion_after_observed_auxiliary_source',
+                    'new_prospective_discovery_informed_by_original_observation', 'observed_probe_attestation_completion'], true)) {
+                throw new LogicException('COUNCIL_SCREENING_PROJECTION_ORIGINAL_RESOLUTION_DRIFT');
+            }
+            if ($kind !== 'observed_probe_attestation_completion') return $allowed;
+            $proof = $body['original_observed_probe_completion_proof'] ?? null;
+            if (! is_array($proof) || ($proof['protocol'] ?? null) !== 'specialist_council_observed_probe_completion_proof_v1'
+                || ($proof['max_completions_per_root'] ?? null) !== 1
+                || ! is_int(data_get($proof, 'root.root_version_id')) || data_get($proof, 'root.root_version_id') <= 0
+                || ($body['scientific_outcomes_may_have_been_observed'] ?? null) !== true
+                || ($body['scientific_novelty_claimed'] ?? null) !== false || ($body['scientific_budget_renewed'] ?? null) !== false) {
+                throw new LogicException('COUNCIL_SCREENING_PROJECTION_OBSERVED_COMPLETION_PROOF_INVALID');
+            }
+            return ['protocol' => $protocol, 'allow_derived_learning' => false,
+                'reason_code' => 'OBSERVED_COUNCIL_TECHNICAL_COMPLETION_WITHHOLDS_DERIVED_LEARNING',
+                'scientific_question_kind' => $kind, 'work_item_id' => (int) $work->id,
+                'resolution_hash' => $body['resolution_hash'], 'root_version_id' => data_get($proof, 'root.root_version_id'),
+                'immutable_native_comparison_and_feedback_retained' => true, 'credit_or_provisional_authority_granted' => false,
+                'promotion_evidence' => false];
+        } catch (\Throwable $error) {
+            return ['protocol' => $protocol, 'allow_derived_learning' => false,
+                'reason_code' => 'COUNCIL_SCREENING_PROJECTION_DECLARED_OWNER_INVALID',
+                'detail' => $error instanceof LogicException ? $error->getMessage() : 'COUNCIL_ORIGINAL_PROJECTION_OWNER_UNAVAILABLE',
+                'credit_or_provisional_authority_granted' => false, 'promotion_evidence' => false];
+        }
+    }
+
     /** Pure target-only proof: original observed auxiliary sources are not target outcomes. */
     public function pristineUnbuiltFollowupSnapshot(ResearchExperimentWorkItem $work): array
     {
