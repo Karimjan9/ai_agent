@@ -108,6 +108,8 @@ class NativeSpecialistCouncilConstructorTest extends TestCase
         $population = app(LabPopulationService::class);
         Cache::shouldReceive('lock')->never();
         $this->mock(AutonomousModeService::class, fn ($mock) => $mock->shouldReceive('enabled')->never());
+        $declaration = ['specialist_id' => 'day', 'exact_context' => ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london',
+            'venue_phase' => 'london_interfix', 'direction' => 'BUY'], 'spread_context_predicate' => 'normal'];
         $cases = [
             [array_replace($this->intent(), ['population_size' => 4]), 'XAUUSD', 'historical_research', false, 'H1'],
             [array_replace($this->intent(), ['purpose' => 'paper']), 'XAUUSD', 'historical_research', false, 'H1'],
@@ -117,6 +119,12 @@ class NativeSpecialistCouncilConstructorTest extends TestCase
             [$this->intent(), 'XAUUSD', 'historical_research', false, 'M15'],
             [$this->intent(), 'EURUSD', 'historical_research', false, 'H1'],
             [array_replace($this->intent(), ['research_question' => '']), 'XAUUSD', 'historical_research', false, 'H1'],
+            [[...$this->intent(), 'research_purpose' => 'spread_context_study'], 'XAUUSD', 'historical_research', false, 'H1'],
+            [[...$this->intent(), 'research_purpose' => 'unknown'], 'XAUUSD', 'historical_research', false, 'H1'],
+            [[...$this->intent(), 'study_context_declaration' => []], 'XAUUSD', 'historical_research', false, 'H1'],
+            [[...$this->intent(), 'research_purpose' => 'spread_context_study', 'study_context_declaration' => $declaration], 'XAUUSD', 'historical_research', false, 'H1'],
+            [[...$this->intent(), 'research_purpose' => 'spread_context_study', 'study_context_declaration' => [...$declaration,
+                'liquidity_atr_binding' => 'arbitrary_runtime_field']], 'XAUUSD', 'historical_research', false, 'H1'],
         ];
         foreach ($cases as [$intent, $symbol, $trigger, $force, $timeframe]) {
             $this->assertNull($population->build($symbol, $trigger, $force, $timeframe, [], false,
@@ -125,6 +133,33 @@ class NativeSpecialistCouncilConstructorTest extends TestCase
         }
         $this->assertDatabaseCount('lab_generations', 0);
         $this->assertDatabaseCount('model_versions', 0);
+    }
+
+    public function test_actual_study_constructor_and_continuation_preserve_six_original_roles_and_pristine_day_carriers(): void
+    {
+        $this->ready(); config()->set('services.lab_selection.constructor_initial_seat_budget', 3);
+        $population = app(LabPopulationService::class);
+        $intent = [...$this->intent(), 'research_purpose' => 'spread_context_study', 'study_context_declaration' => [
+            'specialist_id' => 'day', 'exact_context' => ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london',
+                'venue_phase' => 'london_interfix', 'direction' => 'BUY'], 'spread_context_predicate' => 'normal',
+                'liquidity_atr_binding' => 'closed_m5_management_atr_v1']];
+        $generation = $population->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, null, null, false, null, $intent);
+        $this->assertNotNull($generation, json_encode($population->lastBuildOutcome()));
+        $this->assertSame(3, $generation->agents()->count());
+        $continuation = $population->continueInterruptedConstruction($generation->id, 3);
+        $this->assertSame([], $continuation['failures'] ?? null, json_encode($continuation));
+        $generation->refresh();
+        $agents = $generation->agents()->with('modelVersion')->orderBy('id')->get();
+        $this->assertSame(['source_scalp', 'source_hour', 'source_day', 'source_swing', 'study_masked_carrier', 'study_unmasked_carrier'],
+            $agents->map(fn ($agent) => data_get($agent->modelVersion->metadata, 'native_specialist_council_seed.slot_role'))->all());
+        $proof = app(\App\Services\SpecialistCouncilPreparationService::class)->assertOriginalSpreadStudyCarriers($generation, $agents[4], $agents[5]);
+        $this->assertSame('spread_context_study', $proof['research_purpose']);
+        $this->assertCount(6, $proof['constructor_episode_ids']);
+        $this->assertCount(4, $proof['source_ids']);
+        $this->assertSame($agents[2]->modelVersion->parameters, $agents[4]->modelVersion->parameters);
+        $this->assertSame($agents[2]->modelVersion->parameters, $agents[5]->modelVersion->parameters);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('specialist_council_evaluation_plans', 0);
     }
 
     public function test_native_intent_cannot_bypass_shared_technical_debt_or_existing_generation_owner(): void

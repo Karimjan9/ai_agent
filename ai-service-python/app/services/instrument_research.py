@@ -559,6 +559,11 @@ def _canonical_context_value(axis: str, value: Any) -> str:
             "normal_volatility": "normal",
             "high_volatility": "high",
         }.get(normalized, normalized)
+    if axis == "spread_liquidity_state":
+        return {
+            "low_spread": "normal", "normal_spread": "normal", "liquid": "normal", "high_liquidity": "normal",
+            "high_spread": "high", "thin": "high", "illiquid": "high", "low_liquidity": "high",
+        }.get(normalized, normalized)
     return normalized
 
 

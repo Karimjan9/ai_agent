@@ -438,6 +438,203 @@ class TypedInstrumentFoundryService
                 'expected_outputs' => $expectedOutputs, 'search_budget' => $budget], 'promotion_evidence' => false];
     }
 
+    /** Register an explicit unseen-example task before two native finite-pool search arms run. */
+    public function preregisterFiniteSearch(array $programKeys, string $taskKey, array $vectors, array $expected,
+        array $budget, string $blindSeed, bool $syntheticFixture = false): array
+    {
+        if (! Schema::hasTable('research_compounding_benchmarks')) return $this->unavailable();
+        if (count($programKeys) < 2 || count($programKeys) > 32 || count(array_unique($programKeys)) !== count($programKeys)
+            || ! preg_match('/^[A-Za-z0-9_.:-]{1,150}$/', $taskKey) || $blindSeed === '' || strlen($blindSeed) > 150
+            || ! array_is_list($vectors) || count($vectors) < 1 || count($vectors) > 128
+            || ! array_is_list($expected) || count($expected) !== count($vectors)
+            || ! $this->withinSearchBudget(['cpu_seconds' => 0, 'expansions' => 0], $budget)
+            || $budget['cpu_seconds'] > 1 || $budget['max_expansions'] > 196608
+            || ! is_int($budget['max_attempts'] ?? null) || $budget['max_attempts'] < 1 || $budget['max_attempts'] > 32) {
+            return $this->blocked('FINITE_SEARCH_EXPLICIT_BOUNDED_TASK_AND_EQUAL_CAPS_REQUIRED');
+        }
+        $pool = []; $definitions = []; $macroSources = []; $scope = null; $kind = null; $context = null; $taskIdentities = [];
+        foreach ($programKeys as $programKey) {
+            $program = DB::table('research_instrument_programs')->where('program_key', $programKey)->first();
+            if (! $program) return $this->blocked('INSTRUMENT_PROGRAM_NOT_FOUND');
+            $compiled = (array) json_decode($program->compiled_contract, true);
+            $currentContext = (array) data_get(json_decode($program->evidence, true), 'context', []);
+            $currentScope = $this->programScope($currentContext);
+            if (($currentContext['pre_2026_only'] ?? false) !== true || ($scope !== null && $scope !== $currentScope)) return $this->blocked('FINITE_SEARCH_EXACT_SHARED_SCOPE_REQUIRED');
+            $scope = $currentScope; $context ??= $currentContext;
+            $ast = (array) data_get($compiled, 'compression.compressed_ast', $compiled['source_ast'] ?? json_decode($program->ast, true));
+            try { $expanded = $this->expand($ast, $scope); }
+            catch (\RuntimeException $error) { return $this->blocked($error->getMessage()); }
+            $type = $this->infer($expanded);
+            if (! ($type['valid'] ?? false) || $this->hash($expanded) !== $program->ast_hash || ($kind !== null && $kind !== $type['type'])) return $this->blocked('FINITE_SEARCH_SAME_TYPED_SEMANTIC_POOL_REQUIRED');
+            $kind = $type['type'];
+            $identity = $this->finiteSearchTaskIdentity($expanded, $vectors, $expected);
+            if ($identity === null) return $this->blocked('FINITE_SEARCH_EXPLICIT_PRE2026_TYPED_ASOF_INPUT_REQUIRED');
+            $taskIdentities[] = $identity;
+            foreach ((array) data_get(json_decode($program->evidence, true), 'solved_task_observations', []) as $seen) {
+                if (($seen['task_identity'] ?? null) === $identity) return $this->blocked('FINITE_SEARCH_UNSEEN_TASK_REQUIRED');
+            }
+            foreach ($this->callKeys($ast) as $macroKey) {
+                $macro = DB::table('research_instrument_abstractions')->where('macro_key', $macroKey)->first();
+                $definition = $macro ? (array) json_decode($macro->definition, true) : [];
+                if (! $macro || $this->hash($definition) !== $macroKey || ($definition['scope_key'] ?? null) !== $scope) return $this->blocked('ABSTRACTION_CONTENT_OR_SCOPE_MISMATCH');
+                $sources = (array) json_decode($macro->source_evidence, true);
+                if (count($sources) < 2 || count($sources) > self::MAX_SOURCE_TASKS) return $this->blocked('FINITE_SEARCH_VERIFIED_ORIGINAL_LIBRARY_SOURCES_REQUIRED');
+                foreach ($sources as $source) {
+                    $original = DB::table('research_instrument_programs')->where('program_key', $source['program_key'] ?? '')->first();
+                    $proof = $original ? $this->solvedProgramProof($original, $source['run_id'] ?? '') : $this->blocked('ORIGINAL_MACRO_SOURCE_REQUIRED');
+                    if (($proof['status'] ?? null) === 'blocked' || $this->hash($proof) !== $this->hash($source)) return $this->blocked('FINITE_SEARCH_VERIFIED_ORIGINAL_LIBRARY_SOURCES_REQUIRED');
+                }
+                if (count(array_unique(array_column($sources, 'task_identity'))) < 2) return $this->blocked('FINITE_SEARCH_VERIFIED_ORIGINAL_LIBRARY_SOURCES_REQUIRED');
+                $macroSources[$macroKey] = $sources;
+                $definitions[$macroKey] = $definition;
+            }
+            $pool[] = ['program_key' => $programKey, 'program_contract_hash' => $this->hash($compiled), 'ast_hash' => $program->ast_hash,
+                'expanded_ast' => $expanded, 'library_ast' => $ast, 'description_nodes' => $this->nodeCount($ast)];
+        }
+        if ($definitions === [] || count($definitions) > 8) return $this->blocked('FINITE_SEARCH_ORIGINAL_BOUNDED_LIBRARY_REQUIRED');
+        foreach ($macroSources as $sources) foreach ($sources as $source) if (in_array($source['task_identity'], $taskIdentities, true)) return $this->blocked('FINITE_SEARCH_UNSEEN_TASK_REQUIRED');
+        foreach ($expected as $output) if ($kind === 'bool' ? ! is_bool($output) : ((! is_int($output) && ! is_float($output)) || ! is_finite((float) $output))) return $this->blocked('FINITE_SEARCH_EXPLICIT_GOAL_TYPE_REQUIRED');
+        usort($pool, fn ($a, $b) => strcmp($a['ast_hash'], $b['ast_hash'])); ksort($definitions); ksort($macroSources); sort($taskIdentities);
+        $executor = dirname(base_path()).'/ai-service-python/app/services/research_program_tasks.py';
+        $spec = ['protocol' => 'finite_program_search_spec_v1', 'task_key' => $taskKey, 'scope_key' => $scope, 'context' => $context,
+            'pool' => $pool, 'abstractions' => $definitions, 'macro_source_evidence' => $macroSources, 'result_type' => $kind,
+            'input_vectors' => $vectors, 'expected_outputs' => $expected, 'task_identities' => $taskIdentities,
+            'novelty_scope' => 'not_in_selected_program_or_verified_original_macro_solved_tasks_not_global_market_independence',
+            'budget' => $budget, 'blind_seed' => $blindSeed, 'executor_hash' => is_file($executor) ? hash_file('sha256', $executor) : null,
+            'synthetic_fixture' => $syntheticFixture, 'ranking_uses_expected_outputs' => false, 'economic_authority' => false, 'promotion_evidence' => false];
+        if (! $this->sha($spec['executor_hash']) || strlen($this->encode($spec)) > 1048576) return $this->blocked('FINITE_SEARCH_EXECUTOR_OR_CONTRACT_BYTE_BUDGET_INVALID');
+        // Seed, label and caps cannot mint a fresh question after seeing the same task/pool.
+        $key = $this->hash(['finite_program_search_v1', $scope, array_column($pool, 'ast_hash'), $taskIdentities]);
+        return DB::transaction(function () use ($key, $spec, $context): array {
+            $old = DB::table('research_compounding_benchmarks')->where('benchmark_key', $key)->lockForUpdate()->first();
+            if ($old && $this->hash(json_decode($old->sealed_contract, true)) !== $this->hash($spec)) return $this->blocked('FINITE_SEARCH_ORIGINAL_PREREGISTRATION_DRIFT');
+            if (! $old) DB::table('research_compounding_benchmarks')->insert(['benchmark_key' => $key,
+                'symbol' => $context['symbol'] ?? 'XAUUSD', 'timeframe' => $context['timeframe'] ?? 'H1', 'status' => 'planned',
+                'sealed_contract' => $this->encode($spec), 'created_at' => now(), 'updated_at' => now()]);
+            $tasks = [];
+            foreach (['library_guided', 'memory_blinded'] as $arm) {
+                $body = ['protocol' => 'sealed_finite_program_search_v1', 'benchmark_key' => $key,
+                    'spec' => $spec, 'spec_hash' => $this->hash($spec), 'arm' => $arm];
+                $tasks[$arm] = [...$body, 'contract_hash' => $this->hash($body), 'contract_json' => $this->encode($body)];
+            }
+            return ['status' => 'finite_search_preregistered', 'benchmark_key' => $key, 'tasks' => $tasks,
+                'request_path' => 'policy_context.research_program_task', 'result_path' => 'benchmark.research_program_task',
+                'search_efficiency_measured' => false, 'promotion_evidence' => false];
+        });
+    }
+
+    private function finiteSearchTaskIdentity(array $expanded, array $vectors, array $expected): ?string
+    {
+        $nodes = $this->subtrees($expanded); $consumed = [];
+        foreach ($vectors as $vector) {
+            $decision = is_array($vector) ? $this->utcSeconds($vector['decision_at'] ?? null) : null;
+            if ($decision === null || $decision >= strtotime('2026-01-01T00:00:00Z')) return null;
+            $row = ['decision_at' => $vector['decision_at']];
+            foreach ($nodes as $node) if (in_array($node['op'] ?? null, ['PRICE_CLOSE', 'ATR', 'NUMBER', 'BOOL', 'DURATION'], true)) {
+                $available = $this->utcSeconds($node['available_at'] ?? null); $input = (string) ($node['input_key'] ?? strtolower($node['op']));
+                $value = $vector[$input] ?? null;
+                if ($available === null || $available > $decision || ($node['op'] === 'BOOL' ? ! is_bool($value)
+                    : ((! is_int($value) && ! is_float($value)) || ! is_finite((float) $value)))) return null;
+                $row[$input] = $value;
+            }
+            $consumed[] = $row;
+        }
+        return $this->hash(['consumed_input_vectors' => $consumed, 'expected_outputs' => $expected]);
+    }
+
+    /** Settle two original native products; interpretation-only receipts cannot satisfy this boundary. */
+    public function settleFiniteSearch(string $benchmarkKey, string $libraryRunId, string $blindedRunId): array
+    {
+        if (! Schema::hasTable('research_compounding_benchmarks')) return $this->unavailable();
+        $row = DB::table('research_compounding_benchmarks')->where('benchmark_key', $benchmarkKey)->first();
+        $spec = $row ? (array) json_decode($row->sealed_contract, true) : [];
+        if (! $row || ($spec['protocol'] ?? null) !== 'finite_program_search_spec_v1' || $libraryRunId === $blindedRunId) return $this->blocked('FINITE_SEARCH_ORIGINAL_PREREGISTRATION_REQUIRED');
+        foreach ($spec['pool'] as $candidate) {
+            $program = DB::table('research_instrument_programs')->where('program_key', $candidate['program_key'])->first();
+            if (! $program || $program->ast_hash !== $candidate['ast_hash']
+                || $this->hash(json_decode($program->compiled_contract, true)) !== $candidate['program_contract_hash']) return $this->blocked('FINITE_SEARCH_REGISTERED_PROGRAM_DRIFT');
+        }
+        foreach ($spec['abstractions'] as $key => $definition) {
+            $macro = DB::table('research_instrument_abstractions')->where('macro_key', $key)->first();
+            if (! $macro || $this->hash(json_decode($macro->definition, true)) !== $key || $this->hash($definition) !== $key
+                || $this->hash(json_decode($macro->source_evidence, true)) !== $this->hash($spec['macro_source_evidence'][$key])) return $this->blocked('FINITE_SEARCH_REGISTERED_LIBRARY_DRIFT');
+            foreach ($spec['macro_source_evidence'][$key] as $source) {
+                $program = DB::table('research_instrument_programs')->where('program_key', $source['program_key'])->first();
+                $proof = $program ? $this->solvedProgramProof($program, $source['run_id']) : $this->blocked('ORIGINAL_MACRO_SOURCE_REQUIRED');
+                if (($proof['status'] ?? null) === 'blocked' || $this->hash($proof) !== $this->hash($source)) return $this->blocked('FINITE_SEARCH_REGISTERED_LIBRARY_SOURCE_DRIFT');
+            }
+        }
+        $executor = dirname(base_path()).'/ai-service-python/app/services/research_program_tasks.py';
+        if (! is_file($executor) || hash_file('sha256', $executor) !== $spec['executor_hash']) return $this->blocked('FINITE_SEARCH_EXECUTOR_SOURCE_DRIFT');
+        $arms = []; $matchedRequest = null;
+        foreach (['library_guided' => $libraryRunId, 'memory_blinded' => $blindedRunId] as $arm => $runId) {
+            $proof = $this->verifiedOutcome($runId);
+            if (($proof['status'] ?? null) === 'blocked') return $proof;
+            $run = $proof['run']; $request = $proof['request'];
+            $agent = LabAgent::with('modelVersion', 'generation')->find($run->lab_agent_id);
+            if (! $agent || (app(SpecialistCouncilResearchFeedbackService::class)->screeningProjectionDisposition($agent, $run)['allow_derived_learning'] ?? false) !== true) return $this->blocked('FINITE_SEARCH_DERIVED_LEARNING_WITHHELD');
+            $task = (array) data_get($request, 'policy_context.research_program_task', []);
+            $body = ['protocol' => 'sealed_finite_program_search_v1', 'benchmark_key' => $benchmarkKey,
+                'spec' => $spec, 'spec_hash' => $this->hash($spec), 'arm' => $arm];
+            $originalTask = [...$body, 'contract_hash' => $this->hash($body), 'contract_json' => $this->encode($body)];
+            $result = (array) data_get($proof['response'], 'benchmark.research_program_task', []);
+            if ($this->hash($task) !== $this->hash($originalTask) || ! $run->started_at
+                || $run->started_at->lessThanOrEqualTo(\Carbon\CarbonImmutable::parse($row->created_at))
+                || $run->data_hash !== $spec['context']['data_hash']
+                || data_get($request, 'execution_contract.execution_hash') !== $spec['context']['execution_hash']) return $this->blocked('FINITE_SEARCH_ORIGINAL_POSTSEAL_SCOPE_AND_TASK_REQUIRED');
+            $unsealed = array_diff_key($result, ['result_hash' => true]);
+            $resources = (array) ($result['search_resources'] ?? []);
+            if (($result['producer_protocol'] ?? null) !== 'bounded_finite_program_search_v1' || ($result['status'] ?? null) !== 'complete'
+                || ($result['benchmark_key'] ?? null) !== $benchmarkKey || ($result['arm'] ?? null) !== $arm
+                || ($result['spec_hash'] ?? null) !== $this->hash($spec) || ($result['contract_hash'] ?? null) !== $task['contract_hash']
+                || ($result['executor_hash'] ?? null) !== $spec['executor_hash'] || ($result['pool_hash'] ?? null) !== $this->hash($spec['pool'])
+                || ($result['result_hash'] ?? null) !== $this->hash($unsealed)
+                || ($resources['timing_scope'] ?? null) !== 'finite_pool_search_including_validation_and_ranking'
+                || ! $this->withinSearchBudget($resources, $spec['budget']) || ($resources['partial_program_nodes_unknown'] ?? true) !== false
+                || ! is_int($resources['attempts'] ?? null) || $resources['attempts'] < 1 || $resources['attempts'] > $spec['budget']['max_attempts']) return $this->blocked('FINITE_SEARCH_TWO_COMPLETE_NATIVE_MEASURED_PRODUCTS_REQUIRED');
+            $pool = $spec['pool'];
+            usort($pool, $arm === 'library_guided' ? fn ($a, $b) => ($a['description_nodes'] <=> $b['description_nodes']) ?: strcmp($a['ast_hash'], $b['ast_hash'])
+                : fn ($a, $b) => strcmp(hash('sha256', $spec['blind_seed'].'|'.$a['ast_hash']), hash('sha256', $spec['blind_seed'].'|'.$b['ast_hash'])));
+            $attempts = (array) ($result['attempted_programs'] ?? []); $visits = 0; $solution = null;
+            if (count($attempts) !== $resources['attempts']) return $this->blocked('FINITE_SEARCH_ACTUAL_ATTEMPT_PREFIX_REQUIRED');
+            foreach ($attempts as $index => $attempt) {
+                if ($solution !== null || ($attempt['ast_hash'] ?? null) !== $pool[$index]['ast_hash']
+                    || ! is_int($attempt['node_evaluations'] ?? null) || $attempt['node_evaluations'] < 1
+                    || ! is_bool($attempt['goal_matched'] ?? null) || ! $this->sha($attempt['outputs_hash'] ?? null)) return $this->blocked('FINITE_SEARCH_ACTUAL_ATTEMPT_PREFIX_REQUIRED');
+                $visits += $attempt['node_evaluations'];
+                if ($attempt['goal_matched']) {
+                    if ($attempt['outputs_hash'] !== $this->hash($spec['expected_outputs'])) return $this->blocked('FINITE_SEARCH_ORIGINAL_EXPLICIT_SOLUTION_REQUIRED');
+                    $solution = $attempt['ast_hash'];
+                }
+            }
+            if ($visits !== $resources['expansions'] || ($result['solution_hash'] ?? null) !== $solution
+                || ($solution === null ? count($attempts) !== count($pool) || $result['termination'] !== 'pool_exhausted'
+                    : $result['termination'] !== 'solution_found')) return $this->blocked('FINITE_SEARCH_ACTUAL_SOLUTION_OR_COMPLETE_EXHAUSTION_REQUIRED');
+            unset($request['policy_context']['research_program_task']);
+            if ($matchedRequest !== null && $this->hash($request) !== $matchedRequest) return $this->blocked('FINITE_SEARCH_EQUAL_ORIGINAL_INPUT_REQUIRED');
+            $matchedRequest = $this->hash($request);
+            $arms[$arm] = ['run_id' => $runId, 'request_hash' => $run->request_hash, 'response_hash' => $run->response_hash, 'result' => $result];
+        }
+        $a = $arms['library_guided']['result']['search_resources']; $b = $arms['memory_blinded']['result']['search_resources'];
+        $receipt = ['protocol' => 'paired_finite_program_search_observation_v1', 'benchmark_key' => $benchmarkKey,
+            'spec_hash' => $this->hash($spec), 'arms' => $arms, 'search_efficiency_measured' => true,
+            'measurement_scope' => 'one_explicit_finite_dsl_task_not_market_or_general_synthesis',
+            'local_effort_deltas_blinded_minus_library' => ['attempts' => $b['attempts'] - $a['attempts'],
+                'node_evaluations' => $b['expansions'] - $a['expansions'], 'cpu_seconds' => $b['cpu_seconds'] - $a['cpu_seconds']],
+            'synthetic_fixture' => $spec['synthetic_fixture'], 'library_utility_promoted' => false,
+            'economic_authority' => false, 'independent_market_evidence' => false, 'promotion_evidence' => false];
+        return DB::transaction(function () use ($benchmarkKey, $receipt): array {
+            $current = DB::table('research_compounding_benchmarks')->where('benchmark_key', $benchmarkKey)->lockForUpdate()->first();
+            if ($this->hash(json_decode($current->sealed_contract, true)) !== $receipt['spec_hash']) return $this->blocked('FINITE_SEARCH_ORIGINAL_PREREGISTRATION_DRIFT');
+            if ($current->assessment !== null && $this->hash(json_decode($current->assessment, true)) !== $this->hash($receipt)) return $this->blocked('FINITE_SEARCH_ORIGINAL_SETTLEMENT_DRIFT');
+            if ($current->assessment === null) DB::table('research_compounding_benchmarks')->where('id', $current->id)->update([
+                'status' => 'finite_search_diagnostic_measured', 'assessment' => $this->encode($receipt),
+                'memory_enabled_result' => $this->encode($receipt['arms']['library_guided']),
+                'memory_blinded_result' => $this->encode($receipt['arms']['memory_blinded']), 'updated_at' => now()]);
+            return ['status' => 'finite_search_diagnostic_measured', ...$receipt];
+        });
+    }
+
     /** Export a registered typed program into the real decision path, not benchmark vectors. */
     public function decisionOperatorContract(string $programKey, string $target, array $inputBindings, array $budget): array
     {
@@ -557,9 +754,34 @@ class TypedInstrumentFoundryService
     public function recordBehaviorOutcome(string $runId, ?array $alreadyLoadedImmutablePayload = null): array
     {
         if (! Schema::hasTable('research_behavior_archive')) return $this->unavailable();
+        $observation = $this->behaviorObservation($runId, $alreadyLoadedImmutablePayload);
+        if (($observation['status'] ?? null) === 'blocked') return $observation;
+        ['key' => $key, 'symbol' => $symbol, 'timeframe' => $timeframe, 'scope' => $scope, 'cell' => $cell,
+            'descriptors' => $descriptors, 'value' => $value, 'evidence' => $evidence] = $observation;
+        return DB::transaction(function () use ($key, $runId, $symbol, $timeframe, $scope, $cell, $descriptors, $value, $evidence): array {
+            $old = DB::table('research_behavior_archive')->where('run_id', $runId)->lockForUpdate()->first();
+            if ($old && ! $this->behaviorEntryMatches($old, compact('key', 'symbol', 'timeframe', 'scope', 'cell', 'descriptors', 'value', 'evidence'))) {
+                return $this->blocked('BEHAVIOR_IMMUTABLE_ENTRY_DRIFT');
+            }
+            if (! $old) DB::table('research_behavior_archive')->insert(['entry_key' => $key, 'run_id' => $runId,
+                'symbol' => $symbol, 'timeframe' => $timeframe, 'scope_key' => $this->hash($scope), 'descriptor_cell' => $cell,
+                'status' => 'observed_research_only', 'descriptors' => $this->encode($descriptors), 'research_value' => $this->encode($value),
+                'confirmed_value' => null, 'evidence' => $this->encode($evidence), 'created_at' => now(), 'updated_at' => now()]);
+            return ['status' => $old ? 'behavior_already_observed' : 'behavior_observed', 'entry_key' => $key,
+                'scope_key' => $this->hash($scope), 'descriptor_cell' => $cell, 'descriptors' => $descriptors,
+                'confirmed_value' => null, 'promotion_evidence' => false];
+        });
+    }
+
+    private function behaviorObservation(string $runId, ?array $alreadyLoadedImmutablePayload = null): array
+    {
         $proof = $this->verifiedOutcome($runId, $alreadyLoadedImmutablePayload);
         if (($proof['status'] ?? null) === 'blocked') return $proof;
         $run = $proof['run']; $request = $proof['request']; $response = $proof['response'];
+        $agent = LabAgent::with('modelVersion', 'generation')->find($run->lab_agent_id);
+        if (! $agent || (app(SpecialistCouncilResearchFeedbackService::class)->screeningProjectionDisposition($agent, $run)['allow_derived_learning'] ?? false) !== true) {
+            return $this->blocked('BEHAVIOR_SOURCE_DERIVED_LEARNING_WITHHELD');
+        }
         $symbol = strtoupper((string) ($request['symbol'] ?? ''));
         $timeframe = strtoupper((string) ($request['timeframe'] ?? ''));
         $execution = data_get($request, 'execution_contract.execution_hash');
@@ -581,21 +803,33 @@ class TypedInstrumentFoundryService
             'diagnostic_dimensions' => count(array_filter([$descriptors['response_latency_seconds'], $descriptors['holding_seconds']], fn ($v) => $v !== null))
                 + (int) ($descriptors['observed_contexts'] !== []) + (int) ($descriptors['error_occurrences'] !== []),
             'scope' => 'bounded_observation_not_profit_or_diversity_authority'];
-        return DB::transaction(function () use ($key, $runId, $symbol, $timeframe, $scope, $cell, $descriptors, $value, $evidence): array {
-            $old = DB::table('research_behavior_archive')->where('run_id', $runId)->lockForUpdate()->first();
-            if ($old && ($old->entry_key !== $key || $this->hash(json_decode($old->evidence, true)) !== $this->hash($evidence)
-                || $this->hash(json_decode($old->descriptors, true)) !== $this->hash($descriptors)
-                || $old->scope_key !== $this->hash($scope) || $old->descriptor_cell !== $cell
-                || $old->status !== 'observed_research_only' || $old->confirmed_value !== null
-                || $this->hash(json_decode($old->research_value, true)) !== $this->hash($value))) return $this->blocked('BEHAVIOR_IMMUTABLE_ENTRY_DRIFT');
-            if (! $old) DB::table('research_behavior_archive')->insert(['entry_key' => $key, 'run_id' => $runId,
-                'symbol' => $symbol, 'timeframe' => $timeframe, 'scope_key' => $this->hash($scope), 'descriptor_cell' => $cell,
-                'status' => 'observed_research_only', 'descriptors' => $this->encode($descriptors), 'research_value' => $this->encode($value),
-                'confirmed_value' => null, 'evidence' => $this->encode($evidence), 'created_at' => now(), 'updated_at' => now()]);
-            return ['status' => $old ? 'behavior_already_observed' : 'behavior_observed', 'entry_key' => $key,
-                'scope_key' => $this->hash($scope), 'descriptor_cell' => $cell, 'descriptors' => $descriptors,
-                'confirmed_value' => null, 'promotion_evidence' => false];
-        });
+        return compact('key', 'symbol', 'timeframe', 'scope', 'cell', 'descriptors', 'value', 'evidence');
+    }
+
+    private function behaviorEntryMatches(object $entry, array $observation): bool
+    {
+        return $entry->entry_key === $observation['key'] && $entry->symbol === $observation['symbol']
+            && $entry->timeframe === $observation['timeframe'] && $entry->scope_key === $this->hash($observation['scope'])
+            && $entry->descriptor_cell === $observation['cell'] && $entry->status === 'observed_research_only'
+            && $entry->confirmed_value === null && $this->hash(json_decode($entry->evidence, true)) === $this->hash($observation['evidence'])
+            && $this->hash(json_decode($entry->descriptors, true)) === $this->hash($observation['descriptors'])
+            && $this->hash(json_decode($entry->research_value, true)) === $this->hash($observation['value']);
+    }
+
+    /** Pure consumption: never create, refresh or repair an archive during proposal planning. */
+    public function inspectBehaviorEntry(string $entryKey): array
+    {
+        if (! Schema::hasTable('research_behavior_archive')) return $this->unavailable();
+        $entry = DB::table('research_behavior_archive')->where('entry_key', $entryKey)->first();
+        if (! $entry) return $this->blocked('BEHAVIOR_ENTRY_NOT_FOUND');
+        $observation = $this->behaviorObservation($entry->run_id);
+        if (($observation['status'] ?? null) === 'blocked') return $observation;
+        if (! $this->behaviorEntryMatches($entry, $observation)) return $this->blocked('BEHAVIOR_IMMUTABLE_ENTRY_DRIFT');
+        $body = ['protocol' => 'original_behavior_proposal_source_v1', 'entry_key' => $entryKey, 'run_id' => $entry->run_id,
+            'scope_key' => $entry->scope_key, 'scope' => $observation['scope'], 'descriptor_cell' => $entry->descriptor_cell,
+            'request_hash' => $observation['evidence']['request_hash'], 'response_hash' => $observation['evidence']['response_hash'],
+            'descriptors' => $observation['descriptors'], 'confirmed_value' => null, 'promotion_evidence' => false];
+        return [...$body, 'status' => 'verified_original_behavior', 'source_hash' => $this->hash($body)];
     }
 
     /** Revalidate every returned alternative, with an exact shared replay scope and sample protocol. */
@@ -604,12 +838,12 @@ class TypedInstrumentFoundryService
         if (! Schema::hasTable('research_behavior_archive')) return $this->unavailable();
         $entry = DB::table('research_behavior_archive')->where('entry_key', $entryKey)->first();
         if (! $entry) return $this->blocked('BEHAVIOR_ENTRY_NOT_FOUND');
-        $base = $this->recordBehaviorOutcome($entry->run_id);
+        $base = $this->inspectBehaviorEntry($entryKey);
         if (($base['status'] ?? null) === 'blocked') return $base;
         $alternatives = [];
         foreach (DB::table('research_behavior_archive')->where('scope_key', $entry->scope_key)->where('entry_key', '!=', $entryKey)
             ->orderBy('id')->limit(min(16, max(1, $limit)))->get() as $other) {
-            $fresh = $this->recordBehaviorOutcome($other->run_id);
+            $fresh = $this->inspectBehaviorEntry($other->entry_key);
             if (($fresh['status'] ?? null) === 'blocked') continue;
             $left = $base['descriptors']['error_occurrences']; $right = $fresh['descriptors']['error_occurrences'];
             $shared = [];
@@ -620,6 +854,41 @@ class TypedInstrumentFoundryService
         }
         return ['status' => 'compatible_behavior_alternatives', 'alternatives' => $alternatives,
             'research_only' => true, 'promotion_evidence' => false];
+    }
+
+    /** Bounded observed differences advise the existing research seat; they never score niche strength. */
+    public function behaviorProposalEvidence(string $symbol, string $timeframe): array
+    {
+        $sources = []; $pairs = []; $different = 0; $errorDifferences = 0;
+        if (Schema::hasTable('research_behavior_archive')) {
+            foreach (DB::table('research_behavior_archive')->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+                ->where('status', 'observed_research_only')->whereNull('confirmed_value')->latest('id')->limit(16)->get() as $row) {
+                $source = $this->inspectBehaviorEntry($row->entry_key);
+                if (($source['status'] ?? null) !== 'verified_original_behavior') continue;
+                $sources[] = $source;
+                if (count($sources) >= 8) break;
+            }
+        }
+        foreach ($sources as $index => $left) foreach (array_slice($sources, $index + 1) as $right) {
+            if ($left['scope_key'] !== $right['scope_key']) continue;
+            $dimensions = [];
+            foreach (['response_latency_seconds', 'holding_seconds', 'observed_contexts'] as $dimension) {
+                $a = $left['descriptors'][$dimension]; $b = $right['descriptors'][$dimension];
+                if ($a !== null && $b !== null && $a !== [] && $b !== [] && $a !== $b) $dimensions[] = $dimension;
+            }
+            $a = $left['descriptors']['error_occurrences']; $b = $right['descriptors']['error_occurrences']; $shared = [];
+            foreach ($a as $code => $events) if (isset($b[$code])) $shared[$code] = count(array_intersect($events, $b[$code]));
+            $different += (int) ($dimensions !== []);
+            $errorDifferences += (int) ($a !== [] && $b !== [] && $a !== $b);
+            $pairs[] = ['left_entry_key' => $left['entry_key'], 'right_entry_key' => $right['entry_key'],
+                'scope_key' => $left['scope_key'], 'different_observed_dimensions' => $dimensions,
+                'shared_error_occurrences' => $shared, 'error_difference_observed' => $a !== [] && $b !== [] && $a !== $b];
+        }
+        $body = ['protocol' => 'behavior_archive_proposal_consumption_v1', 'status' => $pairs === [] ? 'no_compatible_original_pair' : 'consumed_research_proposal_ranking',
+            'sources' => $sources, 'matched_pairs' => $pairs, 'priority_signal' => $pairs === [] ? 0.0 : (.2 * $different + .05 * $errorDifferences) / count($pairs),
+            'authority_ceiling' => 'bounded_research_proposal_priority_only', 'quality_or_complementarity_proven' => false,
+            'confirmed_value' => null, 'skill_authority_granted' => false, 'paper_authority_granted' => false, 'promotion_evidence' => false];
+        return [...$body, 'receipt_hash' => $this->hash($body)];
     }
 
     private function verifiedOutcome(string $runId, ?array $response = null): array

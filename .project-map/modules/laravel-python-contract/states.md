@@ -1,5 +1,25 @@
 # Cross-runtime contract states
 
+`specialist_council_native_chosen_solo_v1` follows `unused original source ->
+preregistered unqualified choice -> exact source-member/allocation derivation ->
+native account/trace/clock attestation`. Only allocation becomes 1.0; original
+programme/horizon/cost/external-risk identity cannot drift. Neither best-scope
+qualification nor an observed-source/follow-up upgrade is granted.
+
+An optional native spread-context study follows `prospectively_matched ->
+native_gate_events_emitted -> original_pair_attested -> research_sensitivity`.
+Only the computed instrument spread context differs. Program/source/physical
+clock/cost/risk mismatch rejects before comparison. Missing quote availability
+or opportunities remain dependencies; account-diverged/unreached events remain
+excluded coverage. The native producer is distinct from the legacy synthetic
+measurement witness and creates no economic or independent authority.
+
+`sealed_finite_program_search_v1` follows `original_task_sealed ->
+bounded_native_search -> two_complete_products -> local_effort_measured` under
+the existing pure task hook. Incomplete prefixes, future inputs, familiar source
+tasks, executor/library drift or changed original preregistration remain blocked.
+See ADR-032.
+
 Original comparison: `computed -> executed_clock_attested -> physically_paired`
 needs a genuine loop-emitted clock, its original producer/request/account
 bindings and equal physical index/time digests. A probe describes selected

@@ -16,6 +16,7 @@ paths:
   - backend-laravel/app/Models/PaperOrder.php
   - backend-laravel/app/Models/PaperFill.php
   - backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php
+  - backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php
   - docs/architecture/specialist-council.md
   - backend-laravel/app/Services/PaperExecutionStateMachineService.php
   - backend-laravel/app/Services/SmartDisciplineEngineService.php
@@ -40,6 +41,7 @@ dependencies:
   - market-data
   - causal-learning
 invariants:
+  - Locked native intake marks owned positions from fresh closed candles and pinned spread, slippage, commission and accrued carry. Missing marks or historical peak refuse new risk while management and retries continue. Spendable risk uses min(realized balance, marked equity); actual observed peak is monotonic and never backfilled from missing historical evidence (ADR-032).
   - The existing paper monitor is the sole council adoption clock. Opt-in running control may deliver at most eight due council identities per cycle to the native locked original-evidence owner; pause, stop, drain or safety halt fences adoption and new native entry but never the reconciliation of owned positions. Read-only minute paging prevents rejected versions from starving another due council.
   - Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.
   - Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.

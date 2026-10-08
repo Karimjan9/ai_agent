@@ -116,6 +116,26 @@ No queue deletion, manual episode update, replay, old-result re-attestation,
 second root completion, credit or independent authority is permitted. Default
 `system:runtime-reload-preflight` and PM2 sync remain strict. See ADR-031.
 
+A fully constructed **ordinary** draft blocked before source/admission sealing
+has a different cold-maintenance boundary:
+
+```powershell
+php artisan system:runtime-reload-preflight --unsealed-draft-maintenance=ID --json
+```
+
+Require the sole named draft, complete original constructor audit and actual
+unused draft agents/models, absent constructor lock/owner, no attempted/queued
+arm or immutable release/admission/evaluation artifact, drain-first STOP and
+known-empty reserved/pending/delayed queues. Protected native follow-up/panel/
+Academy owners cannot use this path. Conflicting target modes and unknown proof
+refuse. The check is read-only and is **not** a PM2 rolling-sync override.
+Confirm two fresh authenticated idle probes, cold-stop only the existing owners,
+deploy a verified source artifact with additive migrations and attest fresh
+worker boots. Start scheduler cadence last under STOP, then START the same draft.
+No draft retirement, new cohort, queue cleanup, data repair or independent
+evidence follows from maintenance. Its unchanged data dependency still owns
+subsequent admission. See ADR-032.
+
 Before a run opens, an admitted job may still be reserved by Redis after its
 old worker has disappeared. `reserved_at` is then a visibility expiry, not a
 claim time. The arbiter recognizes only exact owned payloads inside both that

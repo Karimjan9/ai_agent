@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T08:49:10.901Z",
-  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
-  "source_file_count": 1547,
-  "git_head": "758b477e7ba6415aea299ed428369c2a1e67b945",
+  "generated_at": "2026-10-08T20:19:14.993Z",
+  "source_digest": "b7f56ccf0d9e44b05c7c9d8e552dd25b6500059e587735e8cad54e2d57f7d7f9",
+  "source_file_count": 1557,
+  "git_head": "1616b2db713996dbe5be306733b8726739b8b703",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -14,6 +14,10 @@
     },
     {
       "path": "ai-service-python/tests/support/authorized_research_transport_fixture.py",
+      "tests": []
+    },
+    {
+      "path": "ai-service-python/tests/support/native_spread_context_study_fixture.py",
       "tests": []
     },
     {
@@ -219,6 +223,16 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_finite_program_search.py",
+      "tests": [
+        "test_existing_native_task_hook_exports_search_receipt_without_changing_market_replay",
+        "test_actual_attempts_nodes_cpu_and_solution_are_native_diagnostic_outputs",
+        "test_labels_cannot_change_library_or_blinded_order",
+        "test_incomplete_caps_do_not_claim_a_completed_product",
+        "test_scope_semantics_hash_asof_types_and_external_code_are_refused"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_fitness_scoring.py",
       "tests": [
         "test_fitness_prefers_monthly_survival_over_same_global_profit",
@@ -242,6 +256,7 @@
       "tests": [
         "test_snapshot_volatility_label_matches_runtime_volatility_without_widening_scope",
         "test_runtime_never_infers_liquid_from_absent_or_unavailable_spread",
+        "test_php_canonical_spread_predicate_matches_observation_without_unknown_scope_widening",
         "test_exact_trade_slices_do_not_merge_distinct_venue_phases",
         "test_effectful_veto_is_a_research_decision_but_not_execution_or_promotion",
         "test_pre_registered_runtime_bindings_are_attested_without_promotion",
@@ -329,6 +344,22 @@
         "test_m15_only_ablation_bypasses_h1_veto_but_remains_explicit",
         "test_m5_execution_uses_the_closed_h1_context_from_the_full_stack",
         "test_autonomous_m5_replay_accepts_one_exact_closed_mtf_manifest"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_native_spread_context_study.py",
+      "tests": [
+        "test_only_computed_context_field_is_masked_and_actual_pricing_frame_stays_unchanged",
+        "test_missing_quote_is_dependency_and_no_raw_signal_is_underpowered",
+        "test_future_quote_is_refused_and_unsigned_study_fails_before_dataset_compute",
+        "test_context_mask_is_pure_and_does_not_claim_full_feature_blindness",
+        "test_cached_study_requires_original_arm_contract_and_actual_clock_receipt",
+        "test_malformed_original_window_fails_before_loading_dataset",
+        "test_equal_cash_is_not_equal_pre_gate_causal_history",
+        "test_explicit_closed_management_port_is_same_actual_input_in_gate_observer_and_no_study_program",
+        "test_requested_public_atr_never_guesses_existing_management_or_structure_field",
+        "test_nonpositive_or_nonfinite_explicit_source_feature_is_data_missing",
+        "test_binding_must_be_single_supported_native_port_and_match_original_study_before_compute"
       ]
     },
     {
@@ -575,7 +606,10 @@
         "test_tick_precision_is_dependency_even_with_hourly_decisions",
         "test_run_all_carries_native_per_candidate_and_cache_refuses_missing_receipt",
         "test_native_probe_keeps_feature_warmup_without_any_warmup_account_activity",
-        "test_ordinary_native_incremental_uses_canonical_tail_not_the_full_source"
+        "test_ordinary_native_incremental_uses_canonical_tail_not_the_full_source",
+        "test_chosen_view_has_exact_source_programme_and_unchanged_external_account_policy",
+        "test_valid_rehashed_body_cannot_change_source_programme_or_authority_before_compute",
+        "test_full_chosen_contract_requires_actual_decision_trace_emission"
       ]
     },
     {
@@ -2522,6 +2556,14 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php",
+      "tests": [
+        "test_real_python_wire_float_and_empty_container_hash_survives_exact_http_encoding",
+        "test_native_hash_requires_matching_original_identity_and_preserves_legacy_hash_algorithm",
+        "response"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
       "tests": [
         "setUp",
@@ -2546,8 +2588,46 @@
         "ready",
         "test_actual_constructor_creates_six_clean_new_original_references_not_legacy_pairs",
         "test_bad_native_intents_fail_before_constructor_lock_or_authority_or_data_access",
+        "test_actual_study_constructor_and_continuation_preserve_six_original_roles_and_pristine_day_carriers",
         "test_native_intent_cannot_bypass_shared_technical_debt_or_existing_generation_owner",
         "test_ordinary_bounded_constructor_still_uses_its_existing_pair_owner"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+      "tests": [
+        "setUp",
+        "test_two_unused_native_carriers_receive_original_signed_contracts_idempotently",
+        "test_observed_carrier_cannot_be_preregistered",
+        "test_queued_snapshot_or_an_existing_evaluation_owner_cannot_acquire_study_authority",
+        "test_declared_arm_contract_or_cost_drift_and_missing_marker_are_refused",
+        "test_original_probe_replaces_only_a_valid_same_physical_generic_policy",
+        "test_atr_source_requires_an_explicit_supported_binding_before_registration",
+        "test_pair_publication_waits_for_both_originals_and_technical_closure_is_idempotent",
+        "test_new_administrative_ids_or_probe_label_cannot_reserve_the_same_physical_question",
+        "test_gate_effect_excludes_diverged_accounts_and_unreached_feature_gates",
+        "test_signed_php_contracts_cross_real_python_and_original_pair_settles_without_economic_credit",
+        "test_real_ema_source_keeps_missing_atr_as_data_dependency_even_with_actual_quotes",
+        "test_quarantine_race_finishes_technical_without_reopening_agent_or_granting_credit",
+        "verifyRealWire",
+        "fixture",
+        "batch",
+        "context",
+        "single",
+        "python",
+        "receipt",
+        "event"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+      "tests": [
+        "test_exact_two_study_projection_jobs_are_idempotent_audit_only_and_never_ordinary_advice",
+        "test_exact_or_malformed_reserved_study_declarations_cannot_mix_into_ordinary_history",
+        "studyDeclarations",
+        "assertAndExecuteOnlyProjectionJobs",
+        "assertZeroAuthority",
+        "projectionRun"
       ]
     },
     {
@@ -2767,6 +2847,8 @@
       "tests": [
         "recoveryProtocols",
         "test_native_verified_fork_releases_ordinary_freeze_but_never_relabels_old_academy_bundle",
+        "assertUnadmittedHistoricalDraftWait",
+        "unadmittedHistoricalDraft",
         "archive",
         "rows",
         "row",
@@ -3185,6 +3267,20 @@
         "test_cold_maintenance_never_overrides_running_pause_or_safety_halt",
         "test_cold_maintenance_refuses_missing_or_authority_granting_proof",
         "test_cli_refuses_invalid_explicit_target",
+        "test_named_unused_draft_allows_only_read_only_cold_maintenance_and_retains_data_dependency",
+        "test_unused_draft_requires_every_original_slot_model_and_draft_agent",
+        "unusedDraftConstructionFailures",
+        "test_unused_draft_refuses_original_seals_and_separate_owners",
+        "unusedDraftForbiddenMarkers",
+        "test_unused_draft_cannot_hide_original_attempts_or_queue_history",
+        "unusedDraftHistoricalEvidence",
+        "test_unused_draft_refuses_unknown_or_nonempty_queues",
+        "test_unused_draft_refuses_running_pause_safety_halt_and_unknown_control",
+        "test_unused_draft_refuses_constructor_owner_and_lease_without_changing_them",
+        "test_unused_draft_refuses_missing_competing_target_or_ambiguous_mode",
+        "test_unused_draft_refuses_cache_stores_whose_reads_can_mutate_expired_owner_records",
+        "test_unused_draft_cli_requires_explicit_single_valid_target",
+        "unusedDraft",
         "emptyQueueService",
         "activeProjection"
       ]
@@ -3416,6 +3512,7 @@
         "fixture",
         "duringArchiveSync",
         "test_actual_six_constructor_preserves_verified_vectors_with_zero_parent_authority_and_same_generation_resume",
+        "test_future_preparation_remaps_only_derived_solo_identity_without_changing_original_plan_or_hmac",
         "test_native_constructor_expensive_proof_is_reused_only_inside_one_locked_invocation",
         "test_native_constructor_expired_lease_after_expensive_slot_rolls_back_model_and_agent",
         "test_native_constructor_changed_original_source_vector_during_slot_cannot_persist_cached_proof",
@@ -3540,6 +3637,22 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php",
+      "tests": [
+        "test_original_declared_solo_crosses_real_python_account_with_same_clock_and_full_metrics",
+        "test_missing_or_changed_native_account_is_refused_before_dispatch",
+        "test_fresh_chosen_full_account_solo_changes_only_allocation_and_crosses_actual_python_receipt",
+        "test_chosen_full_account_preflight_refuses_programme_drift_or_best_claim_and_followup_reuse",
+        "test_chosen_full_account_seal_refuses_previously_bound_source_and_missing_choice_scope",
+        "test_wrong_declaration_or_full_budget_claim_cannot_be_sealed",
+        "test_legacy_plan_is_not_upgraded_and_original_stored_plan_is_unchanged",
+        "test_later_signed_declaration_cannot_grandfather_a_legacy_original_plan",
+        "fixture",
+        "chosenSelector",
+        "python"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php",
       "tests": [
         "test_observed_probe_completion_seals_one_explicit_observed_completion_without_credit",
@@ -3560,6 +3673,7 @@
     {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php",
       "tests": [
+        "test_signed_observed_completion_cannot_feed_the_behavior_archive_or_research_priority",
         "test_signed_observed_completion_skips_every_derived_projection_even_with_positive_eligible_economics",
         "test_malformed_declared_continuation_cannot_fall_through_to_generic_projections",
         "forgedCases",
@@ -3659,6 +3773,16 @@
         "assertRolledBack",
         "test_real_six_root_constructor_prepares_original_four_horizon_council_without_other_scientific_owner",
         "test_native_constructor_question_creator_and_slot_ownership_cannot_be_changed_at_preparation",
+        "test_original_spread_study_constructor_prepares_only_two_carriers_on_one_draft_native_version",
+        "test_original_six_slot_study_jobs_consume_real_native_products_and_close_neutrally",
+        "originalSpreadStudyTerminalCases",
+        "syntheticOriginalStudyBundle",
+        "test_future_native_constructor_refuses_missing_solo_declaration_without_partial_seals",
+        "test_future_native_constructor_seals_exact_matched_allocation_solo_without_model_mutation",
+        "test_fresh_native_constructor_seals_chosen_full_account_view_without_renormalizing_manifest",
+        "test_original_matched_preparation_cannot_be_upgraded_to_full_account_choice",
+        "fullAccountChosenSoloSelector",
+        "test_full_account_choice_refuses_an_original_source_attempt_before_partial_preparation",
         "test_unprepared_native_constructor_and_removed_intent_cannot_fall_back_to_ordinary_dispatch",
         "test_prepared_native_constructor_seed_drift_is_not_a_new_or_ordinary_authority",
         "test_actual_prepared_native_constructor_uses_original_comparison_in_normal_dispatch_not_legacy_pair_flags",
@@ -3740,6 +3864,17 @@
       "tests": [
         "setUp",
         "test_two_specialists_keep_opposite_positions_and_exact_shared_costs",
+        "test_open_loss_narrows_another_members_capital_before_any_close",
+        "test_observed_unrealized_peak_remains_the_drawdown_reference",
+        "test_unrealized_gain_cannot_fund_a_larger_member_allocation",
+        "test_missing_closed_mark_blocks_new_intake_but_not_retry_or_managed_exit",
+        "test_stale_mark_and_missing_pinned_cost_policy_withhold_equity",
+        "test_pinned_exit_costs_and_accrued_carry_narrow_marked_equity",
+        "test_fractional_cent_loss_is_rounded_against_new_spending",
+        "test_claimed_carry_payment_cannot_exceed_the_real_debited_cost",
+        "test_migrated_observed_account_cannot_invent_its_old_peak",
+        "test_filled_reservation_without_cost_ledger_cannot_initialize_a_missing_peak",
+        "test_owned_paper_fills_without_ledger_or_filled_counter_cannot_initialize_a_missing_peak",
         "test_native_pending_signal_path_opens_two_members_with_real_risk_and_discipline_gates",
         "test_reservation_retries_and_partial_cancel_do_not_duplicate_or_release_filled_capital",
         "test_reserved_capital_is_visible_to_another_owner_before_order_publication",
@@ -3752,7 +3887,8 @@
         "reserve",
         "signal",
         "order",
-        "owners"
+        "owners",
+        "closedMark"
       ]
     },
     {
@@ -3982,6 +4118,12 @@
         "test_archive_is_actual_behavior_not_model_name_or_parameter_distance",
         "test_zero_trade_archive_reports_unknowns_and_excludes_incompatible_or_mutated_sources",
         "test_behavior_sampling_is_bounded_and_archive_tampering_is_not_silently_overwritten",
+        "test_original_behavior_archive_changes_native_proposal_priority_with_sealed_pure_consumption",
+        "test_behavior_priority_keeps_missing_dimensions_unknown_and_refuses_scope_or_artifact_poison",
+        "test_committed_behavior_cannot_escape_a_current_invalid_continuation_owner",
+        "test_preregistered_finite_pool_search_measures_two_original_products_without_general_or_market_authority",
+        "test_finite_search_rejects_seen_inputs_incomplete_products_and_poisoned_registered_library",
+        "finiteSearchRun",
         "trainedMacro",
         "program",
         "ast",

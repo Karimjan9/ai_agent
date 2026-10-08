@@ -337,7 +337,15 @@ class SpecialistCouncilLifecycleService
 
     public function runtimeContractForModel(ModelVersion $model, string $timeframe, string $datasetHash, string $executionHash, ?array $mtfBundle = null, ?string $symbol = null): ?array
     {
-        if (data_get($model->metadata, 'specialist_council') === null) return null;
+        if (data_get($model->metadata, 'specialist_council') === null) {
+            $binding = $this->evaluationBindingForModel($model, $datasetHash);
+            if ($binding === null) return null;
+            $ownerVersion = SpecialistCouncilVersion::findOrFail($binding['version_id']);
+            $owner = $this->plan($ownerVersion); $arm = $owner['plan']['arms'][$binding['arm_key']];
+            $solo = $this->contracts->assertNativeSoloComparison($ownerVersion->manifest, $owner['plan']);
+            if ($solo === null || $arm['kind'] !== 'solo') return null;
+            return $this->runtimeContractForSolo($ownerVersion, $owner['plan'], $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol);
+        }
         $version = $this->researchVersionForModel($model);
         if (! $version) throw new LogicException('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
         $binding = $this->evaluationBindingForModel($model, $datasetHash);
@@ -357,17 +365,47 @@ class SpecialistCouncilLifecycleService
         return $this->runtimeContract($version, $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol);
     }
 
+    /** Original matched allocation, or an explicitly declared fresh allocation-only standalone view. */
+    private function runtimeContractForSolo(SpecialistCouncilVersion $version, array $plan, string $datasetHash,
+        string $executionHash, string $timeframe, ?array $mtfBundle, ?string $symbol): array
+    {
+        $solo = $this->contracts->assertNativeSoloComparison($version->manifest, $plan);
+        if ($solo === null) throw new LogicException('COUNCIL_NATIVE_SOLO_ORIGINAL_DECLARATION_REQUIRED');
+        $body = array_diff_key($this->runtimeContract($version, $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol),
+            array_flip(['contract_hash', 'contract_json']));
+        $body['members'] = array_values(array_filter($body['members'], fn (array $member): bool =>
+            $member['specialist_id'] === $solo['specialist_id'] && (int) $member['model_version_id'] === $solo['model_version_id']));
+        if (count($body['members']) !== 1) throw new LogicException('COUNCIL_NATIVE_SOLO_EXACT_MEMBER_REQUIRED');
+        if ($solo['protocol'] === SpecialistCouncilContractService::NATIVE_CHOSEN_SOLO_PROTOCOL) {
+            $body['solo_source_member'] = $body['members'][0];
+            $body['solo_source_member_hash'] = $this->epochs->parameterHash($body['solo_source_member']);
+            $body['members'][0]['capital_weight'] = $solo['capital_weight'];
+        }
+        $body['solo_comparison'] = $solo;
+        return [...$body, 'contract_hash' => $this->epochs->parameterHash($body), 'contract_json' => $this->json($body)];
+    }
+
     /** Verify actual member dispatch and the reconciled shared account against the original transported seal. */
     public function attestReplayResult(ModelVersion $model, array $originalRequest, array $result): ?array
     {
         $declared = data_get($model->metadata, 'specialist_council');
+        $soloVersion = null;
+        if ($declared === null && data_get($model->metadata, 'specialist_council_evaluation') !== null) {
+            $binding = $this->evaluationBindingForModel($model, (string) ($originalRequest['replay_dataset_hash'] ?? ''));
+            $candidateVersion = SpecialistCouncilVersion::findOrFail($binding['version_id']);
+            $owner = $this->plan($candidateVersion);
+            if ($owner['plan']['arms'][$binding['arm_key']]['kind'] === 'solo'
+                && $this->contracts->assertNativeSoloComparison($candidateVersion->manifest, $owner['plan']) !== null) {
+                $soloVersion = $candidateVersion;
+            }
+        }
         $receipt = $result['specialist_council_receipt'] ?? data_get($result, 'data_quality.specialist_council_receipt');
         $qualityReceipt = data_get($result, 'data_quality.specialist_council_receipt');
-        if ($declared === null && ($receipt === null || $receipt === [])
+        if ($declared === null && $soloVersion === null && ($receipt === null || $receipt === [])
             && ($qualityReceipt === null || $qualityReceipt === [])
             && ! $this->requestDeclaresNativeCouncilForModel($model, $originalRequest)) return null;
-        if ($declared === null || ! is_array($receipt)) throw new LogicException('SPECIALIST_COUNCIL_RECEIPT_OR_BINDING_MISSING');
-        $version = $this->researchVersionForModel($model);
+        if (($declared === null && $soloVersion === null) || ! is_array($receipt) || $receipt === []) throw new LogicException('SPECIALIST_COUNCIL_RECEIPT_OR_BINDING_MISSING');
+        $version = $soloVersion ?? $this->researchVersionForModel($model);
         if (! $version) throw new LogicException('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
         $runtime = $originalRequest['specialist_council_contract'] ?? null;
         if (! is_array($runtime)) {
@@ -394,6 +432,11 @@ class SpecialistCouncilLifecycleService
         $expected = $this->runtimeContract($version, (string) ($body['replay_dataset_hash'] ?? ''),
             (string) ($body['execution_hash'] ?? ''), (string) ($body['execution_timeframe'] ?? ''), $mtfBundle,
             (string) ($originalRequest['symbol'] ?? ''));
+        if ($soloVersion !== null) {
+            $expected = $this->runtimeContractForSolo($version, $owner['plan'], (string) ($body['replay_dataset_hash'] ?? ''),
+                (string) ($body['execution_hash'] ?? ''), (string) ($body['execution_timeframe'] ?? ''), $mtfBundle,
+                (string) ($originalRequest['symbol'] ?? ''));
+        }
         if (isset($body['ablation_removed_id'])) {
             $binding = $this->evaluationBindingForModel($model, (string) $body['replay_dataset_hash']);
             $owner = $this->plan($version); $arm = $owner['plan']['arms'][$binding['arm_key'] ?? ''] ?? null;
@@ -408,6 +451,13 @@ class SpecialistCouncilLifecycleService
         }
         $hash = $receipt['receipt_hash'] ?? '';
         $this->assertReceiptSeal($receipt);
+        if ((array) ($receipt['decision_trace_identity'] ?? []) !== []
+            || ($originalRequest['emit_decision_trace'] ?? false) === true
+            || data_get($result, 'data_quality.decision_trace.scope_owner') === 'native_specialist_council_v1') {
+            if (! $this->evidence->nativeDecisionTraceHashValid($result, $receipt)) {
+                throw new LogicException('COUNCIL_NATIVE_DECISION_TRACE_HASH_MISMATCH');
+            }
+        }
         foreach (['protocol' => 'specialist_council_receipt_v1', 'contract_hash' => $runtime['contract_hash'],
             'council_id' => $body['council_id'], 'council_version' => $body['council_version'],
             'final_council_version' => $body['council_version'], 'dataset_hash' => $body['replay_dataset_hash'],
@@ -567,6 +617,8 @@ class SpecialistCouncilLifecycleService
             throw new InvalidArgumentException('Evaluation requires a purpose, fixed execution, common capital, costs and risk.');
         }
         $this->contracts->timeframeSeconds((string) ($plan['execution_timeframe'] ?? ''));
+        $soloComparison = $this->contracts->sealNativeSoloComparison($version->manifest, $plan);
+        if ($soloComparison !== null) $plan['solo_comparison'] = $soloComparison;
         $windows = []; $symbols = [];
         foreach ($version->manifest['members'] as $member) $symbols = [...$symbols, ...$member['scope']['symbols']];
         foreach ((array) ($plan['windows'] ?? []) as $window) {
@@ -686,6 +738,18 @@ class SpecialistCouncilLifecycleService
             if ($current->state !== 'draft' || DB::table('specialist_council_evaluation_plans')->where('specialist_council_version_id', $version->id)->exists()) {
                 throw new LogicException('The original evaluation plan is already sealed.');
             }
+            if (data_get($sealed, 'solo_comparison.protocol') === SpecialistCouncilContractService::NATIVE_CHOSEN_SOLO_PROTOCOL) {
+                // A newly named council cannot turn an already queued/observed
+                // source or comparator into a preregistered full-account choice.
+                $ids = array_unique([...array_column($version->manifest['members'], 'model_version_id'),
+                    ...array_column($sealed['arms'], 'model_version_id')]);
+                $sources = ModelVersion::whereIn('id', $ids)->lockForUpdate()->get();
+                if (LabEvaluationRun::whereIn('model_version_id', $ids)->exists()
+                    || LabAgent::whereIn('model_version_id', $ids)->where('lifecycle_status', '!=', 'draft')->exists()
+                    || $sources->contains(fn (ModelVersion $model): bool => data_get($model->metadata, 'specialist_council_evaluation') !== null)) {
+                    throw new LogicException('COUNCIL_NATIVE_SOLO_FULL_ACCOUNT_REQUIRES_FRESH_ORIGINAL_MODELS');
+                }
+            }
             DB::table('specialist_council_evaluation_plans')->insert(['specialist_council_version_id' => $version->id,
                 'evaluator_id' => $evaluatorId, 'plan' => $this->json($sealed), 'plan_hash' => $hash,
                 'sealed_at' => now()->utc(), 'created_at' => now(), 'updated_at' => now()]);
@@ -718,6 +782,29 @@ class SpecialistCouncilLifecycleService
         $model = ModelVersion::find($arm['model_version_id']);
         if (! $model || $this->contracts->modelHash($model) !== $arm['model_hash']) throw new LogicException('Evaluation model changed after preregistration.');
         $plan = $owner['plan'];
+        $soloComparison = $this->contracts->assertNativeSoloComparison($version->manifest, $plan);
+        if ($soloComparison !== null && $arm['kind'] === 'solo') {
+            $runtimes = [$request['specialist_council_contract'] ?? null];
+            foreach ((array) ($request['strategies'] ?? []) as $strategy) {
+                if (($strategy['specialist_council_evaluation']['arm_key'] ?? null) === $armKey
+                    && ($strategy['specialist_council_evaluation']['plan_hash'] ?? null) === $owner['hash']) {
+                    $runtimes[] = $strategy['specialist_council_contract'] ?? null;
+                }
+            }
+            $runtimes = array_values(array_filter($runtimes, 'is_array'));
+            if (count($runtimes) !== 1 || ! $this->evidence->equivalentJsonValue($runtimes[0]['solo_comparison'] ?? null, $soloComparison)
+                || count((array) ($runtimes[0]['members'] ?? [])) !== 1
+                || ($runtimes[0]['members'][0]['specialist_id'] ?? null) !== $soloComparison['specialist_id']) {
+                throw new LogicException('COUNCIL_NATIVE_SOLO_DECLARED_ACCOUNT_NOT_APPLIED');
+            }
+            $bundle = empty($request['mtf_snapshot_manifest']) ? null : [
+                'bundle_hash' => $request['replay_dataset_hash'], 'manifest' => $request['mtf_snapshot_manifest']];
+            $expected = $this->runtimeContractForSolo($version, $plan, $request['replay_dataset_hash'], $plan['execution_hash'],
+                $plan['execution_timeframe'], $bundle, $request['symbol'] ?? null);
+            if (! $this->evidence->equivalentJsonValue($runtimes[0], $expected)) {
+                throw new LogicException('COUNCIL_NATIVE_SOLO_EXECUTED_DEFINITION_CHANGED');
+            }
+        }
         $execution = (array) ($request['execution'] ?? []);
         $executionContract = (array) ($request['execution_contract'] ?? []);
         if (strtoupper((string) ($request['timeframe'] ?? '')) !== $plan['execution_timeframe']
@@ -784,6 +871,9 @@ class SpecialistCouncilLifecycleService
         $request['policy_context'][is_array($probe) ? 'prospective_probe_window' : 'full_replay_runtime_policy'] = $policy;
         $request['specialist_council_evaluation'] = ['protocol' => self::PLAN_PROTOCOL, 'version_id' => $version->id,
             'manifest_hash' => $version->manifest_hash, 'plan_hash' => $owner['hash'], 'arm_key' => $armKey];
+        if (($soloComparison['protocol'] ?? null) === SpecialistCouncilContractService::NATIVE_CHOSEN_SOLO_PROTOCOL) {
+            $request['emit_decision_trace'] = true;
+        }
         return $request;
     }
 
@@ -1224,6 +1314,9 @@ class SpecialistCouncilLifecycleService
                 }
                 $this->assertOriginalArmScope($arm, $request, $response, $plan['execution_timeframe']);
                 $producer = null;
+                if ($arm['kind'] === 'solo' && isset($plan['solo_comparison'])) {
+                    $this->attestReplayResult($model, $request, $response);
+                }
                 if (isset($plan['descendant_programs']) && in_array($arm['kind'], ['champion', 'solo'], true)) {
                     $controlReceipt = $this->attestReplayResult($model, $request, $response);
                     if ($arm['kind'] === 'champion') $traitCoverage[$arm['window_key']]['champion'] = $this->nativeTraitObservation(
@@ -1375,6 +1468,7 @@ class SpecialistCouncilLifecycleService
                 'champion' => $champion['metrics'] ?? null, 'solo' => $solo['metrics'], 'incremental_value' => $gain,
                 'net_profit_delta_vs_solo' => $metrics['net_profit'] - $solo['metrics']['net_profit'],
                 'powered' => $powered, 'ablations' => $ablations, 'independently_confirmed' => false,
+                ...(isset($plan['solo_comparison']) ? ['solo_comparison' => $plan['solo_comparison'], 'best_solo_full_budget_proven' => false] : []),
                 ...($transfer ? ['descendant_transfer' => $transfer] : [])];
         }
         if ($plan['purpose'] !== 'independent') $errors[] = 'RESEARCH_COMPARISON_HAS_NO_INDEPENDENT_PROMOTION_AUTHORITY';
@@ -1408,6 +1502,10 @@ class SpecialistCouncilLifecycleService
             'memory_selector_comparisons' => $memoryComparisons, 'memory_superiority_proven' => false,
             'role_mature_outcome_coverage' => $roleCoverage, 'qualified_roles' => array_values(array_unique($qualifiedRoles)),
             'qualified' => $errors === [], 'reason_codes' => $errors, 'promotion_evidence' => false];
+        if (isset($plan['solo_comparison'])) {
+            $assessment['solo_comparison'] = $plan['solo_comparison'];
+            $assessment['best_solo_full_budget_proven'] = false;
+        }
         if (! empty($plan['support_role_trials'])) $assessment['support_role_qualifications'] = $support;
         return $assessment;
     }

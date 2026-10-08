@@ -1,5 +1,44 @@
 # Laboratory lifecycle states
 
+## Prospective native SOLO and spread-context studies
+
+An explicit `specialist_council_native_solo_v1` plan follows the existing
+`unused draft -> original preparation -> canonical admission -> native replay
+-> original account/clock attestation`. The original stored member keeps its
+capital share and risk. Missing declarations remain legacy diagnostics; an
+invalid declared SOLO cannot fall back or be grandfathered during a follow-up.
+
+The original chosen full-account protocol follows the same transition only
+with unused sources/arms and `preregistered_before_outcomes`. The server derives
+the sole allocation delta to 1.0 from a sealed exact source member. Its status
+is `chosen_source_unqualified`; best/eligible selection claims or an observed
+follow-up are rejected. Actual account/trace/clock proof still precedes use.
+
+A separate native spread-context study requires two unused same-draft carriers
+and a pre-outcome matched-program seal before the same canonical dispatch.
+The original new six-slot purpose owns four pristine references and the two
+study carriers. Target/context/spread predicate and fixed-vocabulary ATR input
+binding precede canonical assignments. The optional frozen native member port
+remains executable without a study observer; signed study identity must agree.
+Actual gate and Entry/WAIT events lead to an immutable paired research
+observation, or a typed missing-data/power/coverage dependency. A changed
+execution price, cost, program, source or physical clock rejects comparison.
+Neither path transitions itself into independent, paper or credit authority.
+Only valid or immutable terminal technical whole-pair evidence closes the six
+constructor episodes and four source references neutrally. Missing/queued arms
+stay dependent, not a measured sensitivity or a fabricated source replay.
+See ADR-032.
+
+`native receipt received -> actual trace hash verified -> replay-use recording`
+is fail-closed before downstream publication. Missing or mutated actual trace
+cannot pass by changing its copied hashes. The original generic coverage and
+legacy clock checks remain; zero measured decision effect grants no credit.
+
+The two original trace-projection jobs may publish idempotent audit rows/rollups.
+Typed study evidence remains excluded from ordinary historical mutation advice,
+causal source readers and pre-fence mixed caches. A projection does not transition
+the study to ordinary economic learning; the dedicated paired receipt owns it.
+
 ## Observed-completion terminal compensation
 
 `completed original runs + immutable technical council feedback + withheld

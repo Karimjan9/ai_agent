@@ -351,9 +351,22 @@ class MultiModalLearningPortfolioService
     /** @return array<string,mixed> */
     public function planForLab(AiLaboratory $lab, array $authorityBlocks, array $contextualEvidence = []): array
     {
-        $plan = $this->allocate($authorityBlocks, $this->signals($lab, $contextualEvidence),
+        $behavior = app(TypedInstrumentFoundryService::class)->behaviorProposalEvidence((string) $lab->symbol, (string) $lab->timeframe);
+        $plan = $this->allocate($authorityBlocks, [...$this->signals($lab, $contextualEvidence),
+            'observed_behavior_priority' => $behavior['priority_signal']],
             (array) ($contextualEvidence['__planning_identity'] ?? []));
         $references = $this->sourceReferences($lab);
+        $plan['behavior_archive_consumption'] = $behavior;
+        if ($behavior['matched_pairs'] !== []) {
+            $references['previous_archive_reference'] = $references['archive'] ?? null;
+            $references['observed_behavior_archive'] = ['source_type' => 'original_observed_behavior_archive',
+                'receipt_hash' => $behavior['receipt_hash'], 'sources' => $behavior['sources'],
+                'matched_pairs' => $behavior['matched_pairs'], 'authority_ceiling' => $behavior['authority_ceiling'],
+                'confirmed_value' => null, 'promotion_evidence' => false];
+            // The final native seat owner consumes this existing key as well
+            // as the legacy allocator's blocks; no new selector is introduced.
+            $references['archive'] = $references['observed_behavior_archive'];
+        }
         $signalSnapshot = (array) $plan['signals'];
         $plan['source_references'] = $references;
         $plan['blocks'] = collect((array) $plan['blocks'])->map(function (array $block) use ($references, $signalSnapshot): array {
@@ -362,7 +375,7 @@ class MultiModalLearningPortfolioService
                 'failure_directed_repair' => $references['failure'] ?? null,
                 'positive_skill_replication', 'counterfactual_factorial', 'context_transfer_validation' => $references['causal_skill'] ?? null,
                 'bayesian_active_learning' => $references['information'] ?? null,
-                'quality_diversity_novelty' => $references['archive'] ?? null,
+                'quality_diversity_novelty' => $references['observed_behavior_archive'] ?? $references['archive'] ?? null,
                 'adversarial_robustness' => $references['adversarial'] ?? null,
                 'elite_rehearsal_guard' => $references['economic_parent'] ?? null,
                 default => null,
@@ -419,6 +432,7 @@ class MultiModalLearningPortfolioService
                 'authority_block_type' => $block['authority_block_type'],
                 'learning_method' => $method,
                 'source_reference' => $source,
+                'behavior_archive_consumption_hash' => $references['observed_behavior_archive']['receipt_hash'] ?? null,
                 'experiment_topology' => data_get($block, 'experiment_topology'),
                 'fidelity_plan_hash' => $block['fidelity_plan']['plan_hash'] ?? null,
                 'question_selection' => $block['question_selection'] ?? null,
@@ -426,6 +440,7 @@ class MultiModalLearningPortfolioService
                 'signals' => $signalSnapshot,
             ], JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
             $block['selection_receipt'] = $receipt;
+            $block['selection_receipt']['behavior_archive_consumption_hash'] = $references['observed_behavior_archive']['receipt_hash'] ?? null;
 
             return $block;
         })->all();
@@ -1115,6 +1130,7 @@ class MultiModalLearningPortfolioService
             'pending_transfer_count' => 0, 'pending_adversarial_count' => 0,
             'context_coverage_deficit' => 0, 'posterior_entropy_mean' => 0,
             'expected_information_gain_proxy' => 0,
+            'observed_behavior_priority' => 0,
         ];
 
         return collect([...$defaults, ...$signals])->map(
@@ -1136,7 +1152,8 @@ class MultiModalLearningPortfolioService
                 + (.55 * (float) $signals['posterior_entropy_mean'])
                 + (.35 * log(1 + (float) $signals['expected_information_gain_proxy'])),
             'counterfactual_factorial' => 2.0 + $log('causal_skill_credit') + (.45 * $log('repair_credit')),
-            'quality_diversity_novelty' => 2.0 + (.45 * (float) $signals['context_coverage_deficit']) + (1 / sqrt(1 + (float) $signals['archive_cell_count'])),
+            'quality_diversity_novelty' => 2.0 + (.45 * (float) $signals['context_coverage_deficit']) + (1 / sqrt(1 + (float) $signals['archive_cell_count']))
+                + min(.25, (float) $signals['observed_behavior_priority']),
             'context_transfer_validation' => 1.8 + $log('causal_skill_credit') + (.25 * $log('pending_transfer_count')),
             'adversarial_robustness' => 2.0 + (.3 * $log('pending_adversarial_count')),
             'elite_rehearsal_guard' => 2.2 + $log('economic_parent_count') + (.35 * $log('confirmed_skill_count')),

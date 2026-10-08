@@ -2,7 +2,8 @@
 
 This intentionally supports only point-in-time boolean/numeric primitives.
 Temporal SEQUENCE/WITHIN semantics are NOT guessed. It measures interpretation,
-not synthesis/search efficiency. No Python source, eval, imports or LLM calls
+not open-ended synthesis. Finite registered-pool search has its own diagnostic
+protocol and resource receipts. No Python source, eval, imports or LLM calls
 are accepted from a task.
 """
 
@@ -183,6 +184,8 @@ def _infer(node: dict) -> tuple[str, int]:
 
 
 def execute_task(task: dict) -> dict:
+    if isinstance(task, dict) and task.get("protocol") == "sealed_finite_program_search_v1":
+        return execute_finite_search(task)
     if not isinstance(task, dict) or task.get("protocol") != "sealed_research_program_task_v1":
         raise ValueError("RESEARCH_TASK_PROTOCOL_REQUIRED")
     vectors = task.get("input_vectors")
@@ -254,6 +257,116 @@ def execute_task(task: dict) -> dict:
             "search_resources": {"timing_scope": "bounded_program_interpretation", "cpu_seconds": elapsed,
                                  "expansions": visits, "search_efficiency_measured": False},
             "research_only": True, "promotion_evidence": False}
+
+
+def finite_search_order(spec: dict, arm: str) -> list[dict]:
+    """Order depends on descriptions or a blinded seed, never goal labels."""
+    pool = spec["pool"]
+    if arm == "library_guided":
+        return sorted(pool, key=lambda item: (item["description_nodes"], item["ast_hash"]))
+    if arm == "memory_blinded":
+        return sorted(pool, key=lambda item: hashlib.sha256((spec["blind_seed"] + "|" + item["ast_hash"]).encode()).hexdigest())
+    raise ValueError("FINITE_SEARCH_ARM_INVALID")
+
+
+def execute_finite_search(task: dict) -> dict:
+    started = time.process_time()
+    if not isinstance(task.get("contract_json"), str):
+        raise ValueError("FINITE_SEARCH_PRESERVED_ORIGINAL_CONTRACT_REQUIRED")
+    body = preserved_contract_body(task, "FINITE_SEARCH")
+    if canonical_hash(body) != task.get("contract_hash"):
+        raise ValueError("FINITE_SEARCH_CONTRACT_HASH_INVALID")
+    spec = body.get("spec", {})
+    if not isinstance(spec, dict) or canonical_hash(spec) != body.get("spec_hash"):
+        raise ValueError("FINITE_SEARCH_SPEC_HASH_INVALID")
+    budget = spec.get("budget", {})
+    cpu = budget.get("cpu_seconds")
+    nodes = budget.get("max_expansions")
+    attempts = budget.get("max_attempts")
+    pool = spec.get("pool")
+    vectors = spec.get("input_vectors")
+    expected = spec.get("expected_outputs")
+    definitions = spec.get("abstractions", {})
+    if definitions == []: definitions = {}
+    if not _number(cpu) or not 0 < cpu <= 1 or not isinstance(nodes, int) or isinstance(nodes, bool) or not 1 <= nodes <= 196608 \
+            or not isinstance(attempts, int) or isinstance(attempts, bool) or not 1 <= attempts <= 32:
+        raise ValueError("FINITE_SEARCH_EQUAL_BUDGET_INVALID")
+    if not isinstance(pool, list) or not 2 <= len(pool) <= 32 or not isinstance(vectors, list) or not 1 <= len(vectors) <= 128 \
+            or not isinstance(expected, list) or len(expected) != len(vectors) or not isinstance(definitions, dict) or not 1 <= len(definitions) <= 8 \
+            or not isinstance(spec.get("blind_seed"), str) or not spec["blind_seed"]:
+        raise ValueError("FINITE_SEARCH_POOL_TASK_OR_LIBRARY_INVALID")
+    if hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != spec.get("executor_hash"):
+        raise ValueError("FINITE_SEARCH_EXECUTOR_SOURCE_DRIFT")
+    seen = set()
+    for item in pool:
+        if not isinstance(item, dict) or item.get("ast_hash") in seen:
+            raise ValueError("FINITE_SEARCH_DUPLICATE_SEMANTIC_PROGRAM")
+        seen.add(item.get("ast_hash"))
+        expanded = _expand(item.get("library_ast"), definitions, spec.get("scope_key", ""))
+        if canonical_hash(expanded) != item.get("ast_hash") or not _same_ast_copy(expanded, item.get("expanded_ast")):
+            raise ValueError("FINITE_SEARCH_SAME_SEMANTIC_POOL_REQUIRED")
+        kind, _ = _infer(expanded)
+        if kind != spec.get("result_type") or any(not isinstance(value, bool) if kind == "bool" else not _number(value) for value in expected):
+            raise ValueError("FINITE_SEARCH_GOAL_TYPE_INVALID")
+
+        def representation_nodes(node: dict) -> int:
+            return 1 + sum(representation_nodes(arg) for arg in node.get("args", []))
+
+        if item.get("description_nodes") != representation_nodes(item["library_ast"]):
+            raise ValueError("FINITE_SEARCH_DESCRIPTION_COST_INVALID")
+        pending = [expanded]
+        while pending:
+            node = pending.pop()
+            for vector in vectors:
+                if not isinstance(vector, dict): raise ValueError("FINITE_SEARCH_VECTOR_INVALID")
+                decision = _utc(vector.get("decision_at"))
+                if decision >= datetime(2026, 1, 1, tzinfo=timezone.utc): raise ValueError("FINITE_SEARCH_PRE2026_ASOF_REQUIRED")
+                if node["op"] in {"PRICE_CLOSE", "ATR", "NUMBER", "BOOL", "DURATION"}:
+                    if _utc(node.get("available_at")) > decision: raise ValueError("FINITE_SEARCH_FUTURE_INPUT_FORBIDDEN")
+                    value = vector.get(node.get("input_key", node["op"].lower()))
+                    if not isinstance(value, bool) if node["op"] == "BOOL" else not _number(value):
+                        raise ValueError("FINITE_SEARCH_INPUT_TYPE_INVALID")
+            pending.extend(node.get("args", []))
+    ordered = finite_search_order(spec, body.get("arm"))
+    receipts = []; visits = 0; solution = None; termination = "pool_exhausted"
+    for candidate in ordered:
+        if len(receipts) >= attempts or visits >= nodes or time.process_time() - started >= cpu:
+            termination = "budget_incomplete"; break
+        remaining_cpu = cpu - (time.process_time() - started)
+        if remaining_cpu <= 0:
+            termination = "budget_incomplete"; break
+        primitive_task = {"protocol": "sealed_research_program_task_v1", "task_key": spec["task_key"],
+            "ast": candidate["expanded_ast"], "ast_hash": candidate["ast_hash"], "scope_key": spec["scope_key"], "abstractions": {},
+            "input_vectors": vectors, "expected_outputs": expected,
+            "search_budget": {"cpu_seconds": remaining_cpu, "max_expansions": min(MAX_NODES * MAX_VECTORS, nodes - visits)}}
+        try:
+            result = execute_task(primitive_task)
+        except ValueError as error:
+            if str(error) == "RESEARCH_TASK_COMPUTE_BUDGET_EXCEEDED":
+                termination = "partial_program_budget_incomplete"; break
+            raise
+        visits += result["search_resources"]["expansions"]
+        matched = all(type(a) is type(b) and a == b if isinstance(a, bool) or isinstance(b, bool) else a == b
+                      for a, b in zip(result["outputs"], expected))
+        receipts.append({"ast_hash": candidate["ast_hash"], "node_evaluations": result["search_resources"]["expansions"],
+            "outputs_hash": canonical_hash(result["outputs"]), "goal_matched": matched})
+        if matched:
+            solution = candidate["ast_hash"]; termination = "solution_found"; break
+    elapsed = time.process_time() - started
+    complete = termination in {"solution_found", "pool_exhausted"} and elapsed <= cpu
+    if not complete and termination == "pool_exhausted": termination = "budget_incomplete"
+    result = {"producer_protocol": "bounded_finite_program_search_v1", "benchmark_key": body["benchmark_key"],
+        "spec_hash": body["spec_hash"], "contract_hash": task["contract_hash"], "arm": body["arm"],
+        "executor_hash": spec["executor_hash"], "pool_hash": canonical_hash(pool),
+        "status": "complete" if complete else "incomplete", "termination": termination,
+        "solution_hash": solution, "attempted_programs": receipts,
+        "search_resources": {"timing_scope": "finite_pool_search_including_validation_and_ranking",
+            "cpu_seconds": elapsed, "attempts": len(receipts), "expansions": visits,
+            "cpu_clock": "process_time", "cpu_clock_resolution_seconds": time.get_clock_info("process_time").resolution,
+            "partial_program_nodes_unknown": termination == "partial_program_budget_incomplete"},
+        "search_efficiency_measured": False, "measurement_scope": "one_explicit_finite_dsl_task_not_market_or_general_synthesis",
+        "synthetic_fixture": spec["synthetic_fixture"], "economic_authority": False, "research_only": True, "promotion_evidence": False}
+    return {**result, "result_hash": canonical_hash(result)}
 
 
 class BoundedDecisionProgram:

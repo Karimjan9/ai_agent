@@ -425,6 +425,24 @@ class LabImmutableEvidenceService
         ];
     }
 
+    /** Verify the actual received native trace, not just agreeing hash copies in its receipt. */
+    public function nativeDecisionTraceHashValid(array $response, array $native): bool
+    {
+        $trace = $response['decision_trace'] ?? null;
+        $producer = (array) data_get($response, 'data_quality.decision_trace', []);
+        $identity = (array) ($native['decision_trace_identity'] ?? []);
+        $hash = $producer['trace_hash'] ?? null;
+        $contractHash = $native['contract_hash'] ?? null;
+        return is_array($trace) && array_is_list($trace) && is_string($hash)
+            && preg_match('/^[a-f0-9]{64}$/D', $hash) === 1
+            && is_string($contractHash) && preg_match('/^[a-f0-9]{64}$/D', $contractHash) === 1
+            && ($producer['scope_owner'] ?? null) === 'native_specialist_council_v1'
+            && ($identity['protocol'] ?? null) === 'native_council_decision_trace_v1'
+            && ($identity['contract_hash'] ?? null) === $contractHash
+            && ($identity['trace_hash'] ?? null) === $hash
+            && app(ResearchPaperEpochContractService::class)->parameterHash($trace) === $hash;
+    }
+
     /**
      * Exact producer/consumer trace contract. Counts of trades or compact
      * projection rows are never candle coverage. A zero-trade WAIT history
@@ -461,8 +479,11 @@ class LabImmutableEvidenceService
                 || ($producer['scope_owner'] ?? null) !== $scope['owner']) {
                 $reasons[] = 'DECISION_TRACE_OWNED_CLOCK_MISMATCH';
             }
-            if (! is_string($producer['trace_hash'] ?? null) || $events === null
-                || $producer['trace_hash'] !== app(ResearchPaperEpochContractService::class)->parameterHash($trace)) {
+            $hashValid = $scope['owner'] === 'native_specialist_council_v1'
+                ? $this->nativeDecisionTraceHashValid($response, (array) ($scope['native'] ?? []))
+                : (is_string($producer['trace_hash'] ?? null) && $events !== null
+                    && $producer['trace_hash'] === app(ResearchPaperEpochContractService::class)->parameterHash($trace));
+            if (! $hashValid) {
                 $reasons[] = 'DECISION_TRACE_HASH_MISMATCH';
             }
             if (! $this->decisionTraceScopesAgree((array) ($producer['evaluated_scope'] ?? []), $scope['scope'])) {

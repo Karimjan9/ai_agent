@@ -64,13 +64,195 @@ class SpecialistPaperAccountTest extends TestCase
         $this->assertSame('scalp', $two->fresh()->owner_id);
     }
 
+    public function test_open_loss_narrows_another_members_capital_before_any_close(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 0);
+        $this->closedMark(97);
+
+        $valuation = $accounts->reconciliation('specialist-paper');
+        $this->assertSame(99700, $valuation['equity_cents']);
+        $this->assertSame(100000, (int) $valuation['account']['balance_cents']);
+        $blocked = $this->reserve($scalp, 'SELL', 49900);
+        $this->assertFalse($blocked['allowed']);
+        $this->assertSame('PAPER_MEMBER_CAPITAL_ALLOCATION_LIMIT', $blocked['reason_code']);
+        $this->assertDatabaseCount('paper_capital_reservations', 1);
+        $this->assertSame('open', $order->fresh()->status);
+    }
+
+    public function test_observed_unrealized_peak_remains_the_drawdown_reference(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 0);
+        $this->closedMark(250);
+        $this->assertSame(115000, $accounts->reconciliation('specialist-paper')['peak_equity_cents']);
+        $this->closedMark(95);
+        $blocked = $this->reserve($scalp, 'SELL', 1000);
+        $this->assertFalse($blocked['allowed']);
+        $this->assertSame('PAPER_ACCOUNT_DRAWDOWN_LIMIT', $blocked['reason_code']);
+        $this->assertSame(115000, (int) DB::table('paper_capital_accounts')->value('peak_equity_cents'));
+    }
+
+    public function test_unrealized_gain_cannot_fund_a_larger_member_allocation(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $accounts->fill($this->order($swing, $reservation), 'entry', 'entry', 10000, 100000000, 0);
+        $this->closedMark(250);
+        $blocked = $this->reserve($scalp, 'SELL', 55000);
+        $this->assertFalse($blocked['allowed']);
+        $this->assertSame('PAPER_MEMBER_CAPITAL_ALLOCATION_LIMIT', $blocked['reason_code']);
+        $this->assertSame(100000, (int) DB::table('paper_capital_accounts')->value('balance_cents'));
+    }
+
+    public function test_missing_closed_mark_blocks_new_intake_but_not_retry_or_managed_exit(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 0);
+        Candle::query()->delete();
+        // An open/future candle is not a closed mark and cannot imply zero P&L.
+        $this->closedMark(1000, CarbonImmutable::now('UTC'));
+        $unknown = $accounts->reconciliation('specialist-paper');
+        $this->assertNull($unknown['equity_cents']);
+        $this->assertNull($unknown['unrealized_pnl_cents']);
+        $this->assertSame('closed_mark_missing', $unknown['mark_dependencies'][$order->id]);
+        $blocked = $this->reserve($scalp, 'SELL', 1000);
+        $this->assertSame('PAPER_ACCOUNT_MARK_UNAVAILABLE', $blocked['reason_code']);
+        $retry = $accounts->reserve($swing, $reservation['signal'], $reservation['binding'], 10000, 100000000, 99990000, 2);
+        $this->assertTrue($retry['allowed']);
+        $this->assertTrue($retry['idempotent']);
+        $accounts->fill($order, 'exit', 'exit', 10000, 99000000, 0);
+        $this->assertSame('closed', $order->fresh()->status);
+        $this->assertSame(99900, $accounts->reconciliation('specialist-paper')['equity_cents']);
+    }
+
+    public function test_stale_mark_and_missing_pinned_cost_policy_withhold_equity(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 0);
+        $this->travelTo(CarbonImmutable::parse('2026-10-05T03:00:00Z'));
+        $unknown = $accounts->reconciliation('specialist-paper');
+        $this->assertNull($unknown['equity_cents']);
+        $this->assertSame('closed_mark_stale', $unknown['mark_dependencies'][$order->id]);
+        $this->assertSame('PAPER_ACCOUNT_MARK_UNAVAILABLE', $this->reserve($scalp, 'SELL', 1000)['reason_code']);
+        $this->closedMark(100);
+        $order->update(['signal_context' => []]);
+        $this->assertSame('pinned_mark_cost_policy_unavailable', $accounts->reconciliation('specialist-paper')['mark_dependencies'][$order->id]);
+    }
+
+    public function test_pinned_exit_costs_and_accrued_carry_narrow_marked_equity(): void
+    {
+        [$swing] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $order->update(['signal_context' => ['paper_cost_policy' => ['commission_percent' => .1, 'swap_per_day_percent' => 2.4,
+            'spread_points' => 2, 'slippage_points' => 1, 'point_size' => .01]]]);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 5);
+        $this->travelTo(CarbonImmutable::parse('2026-10-05T02:00:00Z'));
+        $this->closedMark(100);
+        $valuation = $accounts->reconciliation('specialist-paper');
+        $this->assertSame(-17, $valuation['unrealized_pnl_cents']);
+        $this->assertSame(99978, $valuation['equity_cents']);
+    }
+
+    public function test_fractional_cent_loss_is_rounded_against_new_spending(): void
+    {
+        [$swing] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10001);
+        $accounts->fill($this->order($swing, $reservation), 'entry', 'entry', 10001, 100000000, 0);
+        $this->closedMark(99.999);
+        $valuation = $accounts->reconciliation('specialist-paper');
+        $this->assertSame(-1, $valuation['unrealized_pnl_cents']);
+        $this->assertSame(99999, $valuation['equity_cents']);
+    }
+
+    public function test_claimed_carry_payment_cannot_exceed_the_real_debited_cost(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 1, ['carry_cents' => 100]);
+        $valuation = $accounts->reconciliation('specialist-paper');
+        $this->assertNull($valuation['equity_cents']);
+        $this->assertSame('closed_mark_or_cost_invalid', $valuation['mark_dependencies'][$order->id]);
+        $this->assertSame('PAPER_ACCOUNT_MARK_UNAVAILABLE', $this->reserve($scalp, 'SELL', 1000)['reason_code']);
+    }
+
+    public function test_migrated_observed_account_cannot_invent_its_old_peak(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $accounts->fill($this->order($swing, $reservation), 'entry', 'entry', 10000, 100000000, 0);
+        DB::table('paper_capital_accounts')->update(['peak_equity_cents' => null]);
+        $blocked = $this->reserve($scalp, 'SELL', 1000);
+        $this->assertSame('PAPER_ACCOUNT_PEAK_EQUITY_HISTORY_UNAVAILABLE', $blocked['reason_code']);
+        $this->assertNull(DB::table('paper_capital_accounts')->value('peak_equity_cents'));
+    }
+
+    public function test_filled_reservation_without_cost_ledger_cannot_initialize_a_missing_peak(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $accounts->fill($this->order($swing, $reservation), 'entry', 'entry', 10000, 100000000, 0);
+        DB::table('paper_cost_ledger')->delete();
+        DB::table('paper_fills')->delete();
+        DB::table('paper_capital_accounts')->update(['peak_equity_cents' => null]);
+
+        $this->assertSame(100000, (int) DB::table('paper_capital_accounts')->value('balance_cents'));
+        $this->assertNull($accounts->reconciliation('specialist-paper')['peak_equity_cents']);
+        $blocked = $this->reserve($scalp, 'SELL', 1000);
+        $this->assertSame('PAPER_ACCOUNT_PEAK_EQUITY_HISTORY_UNAVAILABLE', $blocked['reason_code']);
+        $this->assertNull(DB::table('paper_capital_accounts')->value('peak_equity_cents'));
+        $this->assertDatabaseCount('paper_capital_reservations', 1);
+    }
+
+    public function test_owned_paper_fills_without_ledger_or_filled_counter_cannot_initialize_a_missing_peak(): void
+    {
+        [$swing, $scalp] = $this->owners();
+        $accounts = app(SpecialistPaperAccountService::class);
+        $reservation = $this->reserve($swing, 'BUY', 10000);
+        $order = $this->order($swing, $reservation);
+        $accounts->fill($order, 'entry', 'entry', 10000, 100000000, 0);
+        $accounts->fill($order, 'exit', 'exit', 10000, 100000000, 0);
+        DB::table('paper_cost_ledger')->delete();
+        DB::table('paper_capital_reservations')->update(['filled_units_micros' => 0]);
+        DB::table('paper_capital_accounts')->update(['peak_equity_cents' => null]);
+
+        $this->assertSame(100000, (int) DB::table('paper_capital_accounts')->value('balance_cents'));
+        $this->assertDatabaseCount('paper_fills', 2);
+        $this->assertNull($accounts->reconciliation('specialist-paper')['peak_equity_cents']);
+        $blocked = $this->reserve($scalp, 'SELL', 1000);
+        $this->assertSame('PAPER_ACCOUNT_PEAK_EQUITY_HISTORY_UNAVAILABLE', $blocked['reason_code']);
+        $this->assertNull(DB::table('paper_capital_accounts')->value('peak_equity_cents'));
+        $this->assertDatabaseCount('paper_capital_reservations', 1);
+    }
+
     public function test_native_pending_signal_path_opens_two_members_with_real_risk_and_discipline_gates(): void
     {
         [$swing, $scalp] = $this->owners();
         $this->signal($swing, 'BUY'); $this->signal($scalp, 'SELL');
-        $symbol = Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Synthetic test gold', 'asset_class' => 'commodity', 'is_active' => true]);
+        $symbol = Symbol::where('code', 'XAUUSD')->firstOrFail();
         Candle::create(['symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => now()->addHour(), 'open' => 100, 'high' => 101, 'low' => 99, 'close' => 100, 'volume' => 100, 'provider' => 'synthetic_test']);
         $this->travelTo(CarbonImmutable::parse('2026-10-05T02:00:00Z'));
+        $this->closedMark(100);
         $this->mock(CandlePayloadService::class)->shouldReceive('candlesForBacktest')->andReturn([]);
         $this->mock(MarketReadinessService::class)->shouldReceive('ready')->andReturn(true);
         $this->mock(EconomicCalendarService::class)->shouldReceive('veto')->andReturn(['active' => false]);
@@ -297,13 +479,16 @@ class SpecialistPaperAccountTest extends TestCase
         $order = PaperOrder::create(['model_market_performance_id' => $owner->id, 'paper_signal_id' => $reservation['signal']->id,
             'broker' => 'simulated', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'direction' => $reservation['signal']->decision,
             'units' => $reservation['reservation']['requested_units_micros'] / 10000, 'entry_price' => 100, 'stop_loss' => 99.5,
-            'take_profit' => 102, 'status' => 'submitted', 'opened_at' => now()]);
+            'take_profit' => 102, 'status' => 'submitted', 'opened_at' => now(),
+            'signal_context' => ['paper_cost_policy' => ['commission_percent' => 0, 'swap_per_day_percent' => 0,
+                'spread_points' => 0, 'slippage_points' => 0, 'point_size' => .01]]]);
         app(SpecialistPaperAccountService::class)->attach($reservation['reservation']['id'], $order);
         return $order;
     }
 
     private function owners(): array
     {
+        $this->closedMark(100);
         $owners = [];
         foreach (['swing', 'scalp'] as $role) {
             $hashes = ['passport_hash' => str_repeat('c', 64), 'execution_hash' => app(ExecutionContractService::class)->for('XAUUSD', 'H1')['execution_hash'],
@@ -349,5 +534,12 @@ class SpecialistPaperAccountTest extends TestCase
                 'council_id' => 'paper-fixture', 'council_version' => 'v1', 'specialist_id' => $owner->modelVersion->strategy, 'management_version' => 'manage-v1']]]);
         }
         return [...$owners, $version];
+    }
+
+    private function closedMark(float $price, ?CarbonImmutable $openedAt = null): Candle
+    {
+        $symbol = Symbol::firstOrCreate(['code' => 'XAUUSD'], ['display_name' => 'Synthetic test gold', 'asset_class' => 'commodity', 'is_active' => true]);
+        return Candle::updateOrCreate(['symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $openedAt ?? CarbonImmutable::now('UTC')->subHour()],
+            ['open' => $price, 'high' => $price, 'low' => $price, 'close' => $price, 'volume' => 100, 'provider' => 'synthetic_test']);
     }
 }

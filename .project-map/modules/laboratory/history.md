@@ -1,5 +1,14 @@
 # Laboratory history
 
+## 2026-10-08 - Prospective native comparison and bounded consumption
+
+Explicit future SOLO preserves one original native member/allocation and its
+actual account clock. A separate prospective native spread-context pair records
+research-only Entry/WAIT sensitivity without changing costs or qualifying an
+old observed plan. Original evidence controls archive consumption and finite
+library effort measurement. Deployment and market qualification remain distinct.
+See ADR-032.
+
 ## 2026-10-05 - Original native policy panels
 
 Learning/evolution support benchmarks now use preregistered original native

@@ -17,7 +17,7 @@ acceptance. The 2026 paper-only policy remains unchanged.
 | Skill enabling graph | XauusdEdgeFormationAcademyService | Original prerequisite trial/run hashes and actually completed downstream stage observations; no cycle or assumed unlock |
 | Behavioral diversity | TypedInstrumentFoundryService, committed screening projection | Original immutable request/model/response, compatible data/execution/evaluator scope and bounded latency/holding/context/error descriptors |
 | Applicability boundary | ResearchKnowledgePortfolioService | Exact-context verified positive/negative/unknown research cells; unknown adjacent context gets a prospective probe, never automatic authority |
-| Bounded fidelity and rejection audit | MultiModalLearningPortfolioService, ResearchLoopArbiterService | Purpose-specific ceilings, preregistered rejection pool/sample, matching later expensive original producer receipt; final guards unchanged |
+| Bounded fidelity and rejection audit | MultiModalLearningPortfolioService, ResearchLoopArbiterService | Purpose-specific ceilings and prospective pool/sample reader exist; native fidelity-witness publication and deferred cheap-to-deeper execution remain an explicit unimplemented boundary. Synthetic receipt tests are not runtime delivery. |
 | Measurement value | MultiModalLearningPortfolioService | Competing sealed hypotheses plus same-event masked/unmasked original observations with as-of/provenance/cost; otherwise an explicit dependency |
 | Declarative policy challengers | ResearchKnowledgePortfolioService, CausalGoldenWorldHarnessService | Finite whitelisted weights/caps, fixed six-world evaluator, prospectively fixed real question panel and original outcomes; self-activation forbidden |
 
@@ -57,7 +57,51 @@ acceptance. The 2026 paper-only policy remains unchanged.
    questions with equal caps. Neither synthetic success nor local positive PnL
    activates a new policy or grants inherited economic skill.
 
+The native portfolio now consumes already-committed behavior archive entries
+through pure original-artifact revalidation. At most sixteen rows are inspected
+and eight valid sources are retained; comparisons require the exact same data,
+execution, evaluator and sampling scope. Observed holding/latency/context
+differences and matching error-event overlap can add at most 0.25 to the existing
+quality-diversity research proposal score. Entry/run/request/response identities,
+descriptors, matched pairs and the consumption receipt are included in the
+existing portfolio and selection seals. Planning does not create or refresh an
+archive entry. Unknown dimensions and confirmed value remain unknown; this
+priority adjustment proves neither niche quality nor economic complementarity.
+The original screening projection disposition is rechecked on both archive
+publication and consumption, so an observed technical completion or invalid
+declared continuation cannot feed this proposal ranking.
+
+Foundry can also preregister one explicit finite DSL search task using two to
+thirty-two existing typed programs, up to eight verified original macro
+definitions, and at most 128 unseen example vectors. The existing optional
+`policy_context.research_program_task` hook accepts the distinct
+`sealed_finite_program_search_v1` protocol; results stay in the diagnostic
+benchmark and do not modify trading decisions. Both arms receive the same
+expanded semantic pool and caps (at most one process CPU second and thirty-two
+attempts each). Library ordering uses verified representation length; blinded
+ordering uses a sealed seed. Goal outputs never participate in ordering.
+
+Original complete arm receipts record attempted program hashes, actual node
+visits, solution hashes and process CPU, including clock resolution. Tiny
+Windows tasks can legitimately measure zero CPU; no positive cost is invented.
+Foundry verifies the prospective registry, source, library, original artifact
+chronology, matched replay inputs and attempted prefixes before recording a
+paired local effort comparison. `search_efficiency_measured=true` applies only
+to that completed finite task. Synthetic fixtures are labeled, budget-incomplete
+products cannot settle, and generalized synthesis advantage, promoted library
+utility and independent economic authority remain unproven.
+
 ## Delivery and scientific limits
+
+The current native spread-context study does not replace the rejection-fidelity
+audit. Repository audit found `fidelity_witness` only in the consumer and
+synthetic test publisher. A real future audit requires a prospectively declared
+diagnostic reachability criterion, explicit cheap/deeper source-clock views and
+budgets, semantic program/member identity, original in-loop witness publication,
+and lawful deferred canonical dispatch after pool/sample sealing. Deeper
+same-data observation must not be called independent validation or economic
+`POSITIVE_CANDIDATE`. Until that owner path exists, no native false-rejection
+rate or all-ten-mechanisms runtime completion is claimed.
 
 Run focused positive, poisoned, missing-proof, changed-source, scope-drift,
 duplicate-delivery and future/as-of tests. Run Project Map impact/generate/check.

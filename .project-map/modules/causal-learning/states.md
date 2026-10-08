@@ -1,5 +1,17 @@
 # Causal learning states
 
+Finite program search follows `explicit typed task + verified original library
+-> prospective equal-cap seal -> two original native search products ->
+finite_search_diagnostic_measured`. Incomplete, familiar, tampered or drifted
+products remain blocked. CPU/attempt/node comparisons apply only to that finite
+task, not independent market utility or promoted library authority.
+
+Behavior archives follow `original eligible observation -> pure reinspection
+-> capped research-priority consumption receipt -> sealed selected block`.
+Consumption rechecks the original projection-withholding policy. Inventory,
+selection and unknown quality never turn into a confirmed-value archive entry.
+See ADR-032.
+
 Observed completion's `projection_withheld` is not an open-ended episode: once
 its six original arms and immutable technical feedback are terminal, exact
 constructor episodes close with idempotent zero-authority settlements. A

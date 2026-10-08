@@ -373,6 +373,124 @@ windows. Memory-guided versus blinded comparison additionally needs the same
 baseline, legal proposal space, seed/resource budget and original blinded
 information boundary; one lucky candidate is not selector superiority.
 
+## Completion boundaries for the specialist-council plan
+
+The plan has three different acceptance levels: executable code, completed
+original research comparisons, and independent market/paper qualification.
+Passing the first does not assert the other two. Activity counts remain separate
+from retained capability, transfer, economic value and equal-budget learning.
+
+| Plan area | Executable owner / check | What is not implied |
+| --- | --- | --- |
+| Roles, horizons and passports | Stored specialist contracts and role-specific original exams | MTF sensors do not qualify four trading horizons. |
+| Parallel team and version changes | Native shared-account replay, owner-pinned position management, original adoption/rollback guards | Summing independent PnLs is not a team result; a draft is not active. |
+| Common paper capital/risk/cost | Locked integer reservations, fresh closed position marks, pinned exit/carry costs and observed peak | Floating gains do not fund new risk; unknown historical peaks are not backfilled. |
+| Original council controls | Native candidate, explicit native matched-member or preregistered chosen full-account SOLO, member/operator ablation and retention | Neither a matched member nor an unqualified full-account choice proves best eligible standalone superiority. |
+| Useful learned programs | Typed AST/CALL decision operators and actual entry/risk/exit behavior tests | Invocation or compression alone does not prove profit or general transfer. |
+| Forecast, explanation, curriculum and skill graph | Preregistered predictions/probes, original outcome calibration and bounded Academy trials | A proposed explanation is not a verified market cause. |
+| Archive, negative knowledge and research policy | Pure original archive reinspection, bounded selected-block consumption and scoped original policy exams | Selection is research-only; withheld technical runs cannot feed a side door. |
+| Library effort | Prospectively sealed finite-pool native library/blinded search products and original paired settlement | One finite task is not general synthesis speedup or improved trading. |
+| Observation value | Native matched spread-context Entry/WAIT study, actual gate/coverage receipts | Only the computed instrument context is hidden; this is not full feature blindness, acquisition value or profit. |
+| Rejection-filter depth audit | Existing prospective pool/sample and strict original-witness consumer | Native `fidelity_witness` publication and lawful deferred cheap-to-deeper dispatch are not delivered by this release; synthetic hand-built witnesses are not runtime proof. |
+| Exposure and independent qualification | Original physical event-use records and authorized untouched-window reservations | New labels, providers, hashes or generations do not create independence. |
+| Precision and broker behavior | Candle/hedging checks and typed external capability dependencies | M5 replay does not certify second-scale latency/fills, broker netting or broker-specific rollover. |
+
+### Explicit prospective native SOLO
+
+A new `solo_comparison` declaration uses protocol
+`specialist_council_native_solo_v1`, `comparison_kind=matched_member_allocation`
+and the original `specialist_id`. The owner derives the member model/passport
+hashes and retains its original capital weight, horizon, costs and risk. Actual
+native account metrics and physical clock must attest the original request.
+`best_solo_full_budget_proven` stays false. Old plans without this declaration
+remain legacy diagnostics; neither a fresh signature nor follow-up ID remapping
+can upgrade an observed plan or renew its completion budget.
+
+The separate `specialist_council_native_chosen_solo_v1` protocol uses
+`chosen_source_full_account_allocation`, `chosen_source_unqualified` and
+`preregistered_before_outcomes`. The server retains the exact compiled source
+member and its hash, then changes only its explicitly declared allocation to
+1.0. Account capital, external hard risk, costs, native programme, passport and
+horizon remain equal; the original council manifest is not renormalized. All
+original sources/comparison arms must be unused and unqueued before sealing.
+Observed sources, old plans and continuation remapping cannot acquire this
+choice retrospectively. Actual original trace/account attestation is required.
+
+This supports an equal-account chosen-source comparison, not best-qualified
+SOLO selection. The original eligible-roster, as-of qualification, prospective
+panel ranking and separate evaluation owner for a **best** claim remain an
+explicit engineering boundary; a caller cannot assert that status.
+
+### Marked equity and observed paper peak
+
+The nullable `paper_capital_accounts.peak_equity_cents` addition is not a history
+backfill. New accounts initialize their peak at creation. Existing accounts with
+fills, cumulative filled reservations or cost history and no known peak refuse
+new intake. Under the account lock, marks require fresh closed original-timeframe
+candles and pinned costs. Invalid/missing marks keep new risk blocked while
+owned-position management and idempotent retries continue. Spendable risk uses
+the lesser of realized balance and equity; drawdown uses the monotonic actually
+observed peak. Full-notional reservation remains intentionally conservative.
+
+### Prospectively measured Entry/WAIT sensitivity
+
+Native consumers verify the actual received trace against the producer hash and
+sealed native trace identity before replay-use recording. Numeric wire types
+must survive HTTP transport; agreeing stale hash copies do not authenticate a
+changed trace. Existing hashes and old artifacts are not rewritten. An unchanged
+Entry/WAIT result under intact risk and pricing is valid measured zero, not a
+technical error or proof of economic value.
+
+`native_spread_context_study_v1` preregisters two unused same-draft native
+carriers of an unchanged program. It masks only computed instrument
+`spread_liquidity_state`; raw quotes/features, execution prices, fees, slippage
+and external hard risk stay unchanged. Contemporaneous raw opportunities, actual
+gate reachability, closed quote availability and final Entry/WAIT receipts own
+comparison. Primary paired sensitivity includes only events with common inputs
+and matching pre-gate account state. Diverged account states and unreached gates
+remain explicit excluded coverage, not a fabricated quote effect. Missing
+quotes/opportunities remain dependencies. Settlement is idempotent and grants
+no profit, skill, independent, paper or live authority.
+
+The immutable producer may enqueue only the two original carriers' existing
+candle-event projection jobs. They retain audit visibility and are idempotent;
+the four source references have no fabricated trace. Historical mutation advice,
+ordinary outcome/credit-source queries and old mixed aggregate caches exclude
+the controlled study. The original paired receipt, not an audit row aggregate,
+owns the measured result.
+
+The carriers must originate in a new native six-slot intent with
+`research_purpose=spread_context_study`: four pristine source roles plus
+`study_masked_carrier` and `study_unmasked_carrier`. The original intent's
+`study_context_declaration` specifies the target, exact five-axis context and
+supported canonical spread predicate. Preparation must match that declaration,
+then install its target membership cell **before** the six canonical instrument
+assignments. It cannot inject a predicate into an old root or prepared model.
+Both arms retain that same predicate/program; only observation availability at
+the decision-context seam differs. Canonical dispatcher queues only the two
+original carriers. Valid or immutable terminal technical whole-pair evidence
+closes six constructor episodes and four source references neutrally through
+the existing terminal boundary. Sources receive no fabricated replay/score;
+queued or missing arms cannot pretend that the pair has settled.
+
+The original declaration also selects `liquidity_atr_binding` from the fixed
+closed-source vocabulary: strategy ATR, structure ATR, or actual closed-M5
+management ATR. Observer and real gate use that same explicitly bound field;
+the quote receipt records its source key/value hash. There is no guessed fallback
+or arbitrary feature name. Missing, invalid or nonpositive bound values remain
+missing data. Selecting management ATR uses the existing closed-OHLC true-range
+calculation; it does not change strategy features, position sizing or pricing.
+The binding is an optional frozen native member input port, not a private study
+fallback: replay without the observer retains the same declared port. A study
+identity claiming another binding is rejected. Undeclared legacy members keep
+their existing context behavior; management-M5 binding requires M5 execution.
+
+The study owner does not build agents or bypass canonical admission. No existing
+observed council root can be reused; old immutable original runs/assessments and
+the exhausted technical-completion cap remain unchanged. Prospective execution
+still needs a real eligible new pair, original source/data seals and the existing
+dispatcher. Code tests cannot be presented as that market execution.
+
 The stored plan binds actual canonical execution parameters, shared-account
 risk limits, capital and probe policy before the dispatcher seals its request.
 Conflicting batch policies are refused. Warmup is feature-only: its last signal

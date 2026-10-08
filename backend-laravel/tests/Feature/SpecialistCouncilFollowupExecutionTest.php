@@ -43,6 +43,7 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
     /** Actual original constructor; only data/technical readiness infrastructure is a fixture. */
     private function fixture(?callable $readinessHook = null): array
     {
+        config()->set('services.internal_api.token', 'isolated-native-solo-test-only-hmac-key');
         config()->set('services.xauusd_organism.historical_research_until_champion', true);
         config()->set('services.market_data.provider', 'csv');
         config()->set('services.lab_selection.constructor_initial_seat_budget', 6);
@@ -100,6 +101,8 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
                 'risk' => ['id' => 'external-hard-risk', 'version' => '1'], 'execution' => $account,
                 'evaluation_policy' => ['objective' => 'net_return_at_equal_risk', 'champion_model_version_id' => $models[0]->id, 'solo_model_version_id' => $models[0]->id]],
             'evaluation_plan' => ['purpose' => 'research', 'execution_hash' => $execution['execution_hash'], 'execution_timeframe' => 'M5',
+                'solo_comparison' => ['protocol' => \App\Services\SpecialistCouncilContractService::NATIVE_SOLO_PROTOCOL,
+                    'comparison_kind' => 'matched_member_allocation', 'specialist_id' => 'scalp', 'best_solo_full_budget_proven' => false],
                 'initial_capital' => 10000, 'cost_model' => $execution['parameters'],
                 'risk_policy' => [...array_diff_key($account, ['id' => true, 'version' => true]), 'risk_per_trade_percent' => .5],
                 'windows' => [['window_key' => 'new-question-window', 'start_inclusive' => $probe['loaded_start'], 'end_exclusive' => '2025-01-06T02:40:00Z',
@@ -110,6 +113,15 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
                     ['arm_key' => 'solo', 'kind' => 'solo', 'window_key' => 'new-question-window', 'model_version_id' => $models[0]->id],
                     ['arm_key' => 'without-hour', 'kind' => 'ablation', 'removed_id' => 'hour', 'window_key' => 'new-question-window', 'model_version_id' => $models[5]->id]]],
             'discovery_bundle_manifest' => null];
+        $originalOwner = app(\App\Services\SpecialistCouncilLifecycleService::class);
+        $originalVersion = $originalOwner->registerDraft($proof['manifest_template'], $proof['creator_id']);
+        $originalPlan = $originalOwner->sealEvaluationPlan($originalVersion, $proof['evaluator_id'], $proof['evaluation_plan']);
+        $proof['evaluation_plan'] = $originalPlan;
+        $proof['source_version_id'] = (int) $originalVersion->id;
+        $proof['source_manifest_hash'] = $originalVersion->manifest_hash;
+        $proof['source_plan_hash'] = $originalPlan['plan_hash'];
+        $seal = new \ReflectionMethod(SpecialistCouncilResearchFeedbackService::class, 'followupServerSeal');
+        $proof['server_seal'] = $seal->invoke(app(SpecialistCouncilResearchFeedbackService::class), $proof);
         $feedback = \Mockery::mock(app(SpecialistCouncilResearchFeedbackService::class))->makePartial();
         $feedback->shouldReceive('inspectFollowupReadiness')->andReturnUsing(function () use ($proof, $readinessHook): array {
             if ($readinessHook !== null) $readinessHook($proof);
@@ -210,7 +222,49 @@ class SpecialistCouncilFollowupExecutionTest extends TestCase
         $this->assertFalse($execution['promotion_evidence']);
         $this->assertSame((int) $work->id, data_get($next->fresh()->trigger_context, 'specialist_council_preparation.learning_consumption_receipt.original_followup.work_item_id'));
         $this->assertDatabaseCount('lab_evaluation_runs', 0);
-        $this->assertDatabaseCount('specialist_council_versions', 1);
+        $this->assertDatabaseCount('specialist_council_versions', 2);
+    }
+
+    public function test_future_preparation_remaps_only_derived_solo_identity_without_changing_original_plan_or_hmac(): void
+    {
+        [$source, $work, $proof] = $this->fixture();
+        $row = \Illuminate\Support\Facades\DB::table('specialist_council_evaluation_plans')
+            ->where('specialist_council_version_id', $proof['source_version_id'])->sole();
+        $original = $proof;
+        // Model the fresh unused six references without dispatching or executing.
+        $copy = $source->replicate();
+        $copy->forceFill(['generation' => 3, 'status' => 'draft', 'trigger_context' => [], 'completed_at' => null])->save();
+        foreach ($source->agents()->with('modelVersion')->orderBy('id')->get() as $agent) {
+            $model = $agent->modelVersion->replicate();
+            $model->forceFill(['name' => $model->name.'-fresh-solo'])->save();
+            $member = $agent->replicate();
+            $member->forceFill(['lab_generation_id' => $copy->id, 'model_version_id' => $model->id, 'lifecycle_status' => 'draft'])->save();
+        }
+        $owner = app(SpecialistCouncilFollowupExecutionService::class);
+        $request = $owner->preparationRequest($copy, $proof);
+        $this->assertSame(['protocol', 'comparison_kind', 'specialist_id', 'best_solo_full_budget_proven'],
+            array_keys($request['evaluation_plan']['solo_comparison']));
+        $this->assertSame('matched_member_allocation', $request['evaluation_plan']['solo_comparison']['comparison_kind']);
+        $this->assertFalse($request['evaluation_plan']['solo_comparison']['best_solo_full_budget_proven']);
+        $freshSolo = collect($request['evaluation_plan']['arms'])->firstWhere('kind', 'solo')['model_version_id'];
+        $this->assertNotSame($proof['evaluation_plan']['solo_comparison']['model_version_id'], $freshSolo);
+        $this->assertSame($original, $proof);
+        $freshRow = \Illuminate\Support\Facades\DB::table('specialist_council_evaluation_plans')->where('id', $row->id)->sole();
+        $this->assertSame($row->plan, $freshRow->plan);
+        $this->assertSame($row->plan_hash, $freshRow->plan_hash);
+        $this->assertSame($proof['server_seal'], hash_hmac('sha256', SpecialistCouncilResearchFeedbackService::FOLLOWUP_PROTOCOL."\n"
+            .app(ResearchPaperEpochContractService::class)->parameterHash(array_diff_key($proof, ['server_seal' => true])),
+            config('services.internal_api.token')));
+        foreach (['missing', 'unknown', 'passport'] as $mutation) {
+            $wrong = $proof;
+            if ($mutation === 'missing') unset($wrong['evaluation_plan']['solo_comparison']);
+            if ($mutation === 'unknown') $wrong['evaluation_plan']['solo_comparison']['protocol'] = 'unknown';
+            if ($mutation === 'passport') $wrong['evaluation_plan']['solo_comparison']['passport_hash'] = str_repeat('a', 64);
+            try { $owner->preparationRequest($copy, $wrong); $this->fail('An undeclared or changed original SOLO was remapped.'); }
+            catch (\LogicException|\InvalidArgumentException $error) { $this->assertStringContainsString('SOLO', $error->getMessage()); }
+        }
+        $this->assertSame('leased', $work->fresh()->status);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
     }
 
     public function test_native_constructor_expensive_proof_is_reused_only_inside_one_locked_invocation(): void

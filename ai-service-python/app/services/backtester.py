@@ -824,6 +824,11 @@ def run_backtest(payload: BacktestRequest) -> BacktestResponse:
 def run_simple_ema_rsi_backtest(
     payload: SimpleBacktestRequest,
 ) -> SimpleBacktestResponse:
+    if payload.specialist_council_contract or payload.native_spread_context_study_contract:
+        if not payload.specialist_council_contract:
+            raise ValueError('NATIVE_SPREAD_CONTEXT_STUDY_NATIVE_ACCOUNT_REQUIRED')
+        from app.services.specialist_council import validate_contract
+        validate_contract(payload)
     df = _load_simple_candles(payload)
 
     return run_simple_ema_rsi_backtest_on_dataframe(payload, df)
@@ -4619,7 +4624,9 @@ def _record_instrument_runtime_event(
     observation = instruments.get(instrument_key)
     if not isinstance(observation, dict):
         return
-    context = _instrument_runtime_context(signal_row, direction, context_overrides)
+    context = _instrument_runtime_context(signal_row, direction, context_overrides,
+        spread_liquidity_masked=bool(state.get('_native_spread_context_masked', False)),
+        liquidity_atr_field=state.get('liquidity_atr_field'))
     context_key = "|".join(
         [
             str(context["regime"]),
@@ -4838,12 +4845,16 @@ def _instrument_owner_scope_allows(
         True,
     )
     blocked: list[str] = []
-    context = _instrument_runtime_context(signal_row, direction)
+    context = _instrument_runtime_context(signal_row, direction,
+        spread_liquidity_masked=bool(state.get('_native_spread_context_masked', False)),
+        liquidity_atr_field=state.get('liquidity_atr_field'))
+    feature_reached = False
     for key, source in events.items():
         observation = instruments.get(key)
         if not isinstance(observation, dict) or str(observation.get("role") or "") not in {"tactic", "model"}:
             continue
         contract = observation.get("contract") or {}
+        feature_reached = feature_reached or 'spread_liquidity_state' in ((contract.get('context') or {}).get('declared_context') or {})
         if isinstance(contract, dict) and _instrument_contract_context_matches(contract, context):
             continue
         _record_instrument_runtime_event(
@@ -4855,6 +4866,9 @@ def _instrument_owner_scope_allows(
             outside_scope_effect="VETO",
         )
         blocked.append(key)
+    study = state.get('_native_spread_context_study')
+    if study is not None:
+        study.gate(context, blocked == [], feature_reached)
     return blocked == [], sorted(blocked)
 
 
@@ -4862,7 +4876,10 @@ def _instrument_runtime_context(
     signal_row: object,
     direction: str,
     overrides: dict[str, str] | None = None,
+    *, spread_liquidity_masked: bool = False, liquidity_atr_field: str | None = None,
 ) -> dict[str, str]:
+    if liquidity_atr_field is not None and liquidity_atr_field not in {'atr', 'structure_atr', '_management_atr'}:
+        raise ValueError('NATIVE_SPREAD_CONTEXT_STUDY_ATR_SOURCE_FIELD_INVALID')
     timestamp = signal_row.get("time")
     session = str(signal_row.get("market_session", "") or "")
     if not session:
@@ -4891,7 +4908,8 @@ def _instrument_runtime_context(
     }
     context["spread_liquidity_state"] = "unknown"
     try:
-        atr = float(signal_row.get("atr", signal_row.get("structure_atr", 0)))
+        atr = float(signal_row.get(liquidity_atr_field) if liquidity_atr_field is not None
+            else signal_row.get("atr", signal_row.get("structure_atr", 0)))
         spread = float(signal_row.get("spread"))
     except (TypeError, ValueError, OverflowError):
         atr, spread = float("nan"), float("nan")
@@ -4909,6 +4927,8 @@ def _instrument_runtime_context(
         context[str(key)] = str(value)
     if context.get("regime") == "transition":
         context["transition_state"] = "transition"
+    if spread_liquidity_masked:
+        context['spread_liquidity_state'] = 'unknown'
     return context
 
 
@@ -5022,6 +5042,11 @@ def _canonical_instrument_context_value(axis: str, value: object) -> str:
             "low_volatility": "low",
             "normal_volatility": "normal",
             "high_volatility": "high",
+        }.get(normalized, normalized)
+    if axis == "spread_liquidity_state":
+        return {
+            "low_spread": "normal", "normal_spread": "normal", "liquid": "normal", "high_liquidity": "normal",
+            "high_spread": "high", "thin": "high", "illiquid": "high", "low_liquidity": "high",
         }.get(normalized, normalized)
     return normalized
 

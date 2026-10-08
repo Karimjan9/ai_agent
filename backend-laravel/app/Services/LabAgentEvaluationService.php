@@ -23,6 +23,9 @@ class LabAgentEvaluationService
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
         $agent->loadMissing('modelVersion', 'generation');
+        if ($agent->modelVersion && app(NativeSpreadContextStudyService::class)->declares($agent->modelVersion)) {
+            throw new RuntimeException('NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
+        }
         $councilPurpose = $agent->modelVersion
             ? app(SpecialistCouncilLifecycleService::class)->evaluationPurposeForModel($agent->modelVersion) : null;
         if ($councilPurpose === 'research'
@@ -1264,6 +1267,7 @@ class LabAgentEvaluationService
             ]);
             throw new RuntimeException('SCREENING_EVIDENCE_INCOMPLETE: '.implode(',', $screenEvidence['reason_codes']));
         }
+        if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
             $screenResult,
@@ -2109,6 +2113,7 @@ class LabAgentEvaluationService
             ]);
             throw new RuntimeException('SCREENING_EVIDENCE_INCOMPLETE: '.implode(',', $screenEvidence['reason_codes']));
         }
+        if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
             $screenResult,
@@ -2994,7 +2999,26 @@ class LabAgentEvaluationService
                 $request = app(SpecialistCouncilLifecycleService::class)->bindEvaluationRequestForModel($model, $request);
             }
         }
-        return $request;
+        return app(NativeSpreadContextStudyService::class)->bindRequest($request, $models);
+    }
+
+    /** Native feature sensitivity closes only original diagnostic evidence, without economic/skill fan-out. */
+    private function finishNativeSpreadContextStudy(LabAgent $agent, LabEvaluationRun $run, array $result): bool
+    {
+        $owner = app(NativeSpreadContextStudyService::class);
+        if (! $agent->modelVersion || ! $owner->declares($agent->modelVersion)) return false;
+        $receipt = $owner->attestResult($agent->modelVersion, $run, $result);
+        $updated = LabAgent::query()->whereKey($agent->id)
+            ->whereNotIn('lifecycle_status', ['quarantined', 'technical_quarantine', 'legacy_quarantine'])
+            ->update(['lifecycle_status' => 'screened',
+                'decision_reason' => 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY:'.($receipt['status'] ?? 'unassessable')]);
+        $this->evidence->finishRun($run, $updated === 1 ? 'completed' : 'technical_error', $result, [], ['reason_code' => $updated === 1
+            ? 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY' : 'TECHNICAL_QUARANTINE_RACE_GUARD',
+            'quality_verdict' => $updated === 1 ? 'research_only' : 'withheld', 'economic_authority' => false,
+            'skill_authority' => false, 'promotion_evidence' => false]);
+        $owner->settleOriginalPair($run->fresh());
+        $this->closeScreeningGenerationIfTerminal($agent->fresh(['modelVersion', 'generation']));
+        return true;
     }
 
     /**
@@ -3049,6 +3073,7 @@ class LabAgentEvaluationService
             'version' => $model->version,
             'parameters' => $model->parameters ?? [],
             'instrument_research_assignment' => $assignment,
+            'liquidity_atr_binding' => app(SpecialistCouncilContractService::class)->liquidityAtrBindingForModel($model, $runtimeTimeframe),
             'composition_runtime_contract' => $agent === null ? new \stdClass : $this->compositionRuntimeContract(
                 $agent, $assignment, $runtimeTimeframe, $mtfBundle, $replayDatasetHash,
             ),
@@ -3063,6 +3088,7 @@ class LabAgentEvaluationService
     private function attestSpecialistCouncilReplay(ModelVersion $model, LabEvaluationRun $run, array $result): void
     {
         if (data_get($model->metadata, 'specialist_council') === null
+            && data_get($model->metadata, 'specialist_council_evaluation') === null
             && data_get($result, 'specialist_council_receipt') === null) {
             return;
         }

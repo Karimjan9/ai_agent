@@ -1,5 +1,14 @@
 # Paper execution states
 
+Native locked intake first requires `fresh_closed_marks + pinned_costs +
+known_observed_peak -> marked_equity_ready`. Missing/stale/future candles or
+unknown historical peak transition new intake to a typed dependency. They do
+not block reconciliation or idempotent reservation retries. New spendable risk
+uses the lesser of realized balance and marked equity; floating gains cannot
+fund more risk. Actual peak is monotonic. Old nullable peaks with any filled
+reservation, paper fill or cost history are never initialized from today's
+balance as if that were historical evidence (ADR-032).
+
 Native specialist intake additionally passes `identity_verified -> reserved ->
 published -> managed -> released`. Reservation and order publication share the
 account/candidate transaction; rejection/cancellation releases only the exact

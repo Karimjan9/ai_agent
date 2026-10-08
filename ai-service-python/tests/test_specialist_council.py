@@ -10,7 +10,7 @@ from app.schemas import Candle, ExecutionConfig, SimpleBacktestRequest, Strategy
 from app.services.backtester import run_simple_ema_rsi_backtest_on_dataframe
 from app.services.execution_contract import execution_contract_metadata
 from app.services.research_program_tasks import BoundedDecisionProgram, canonical_hash
-from app.services.specialist_council import run_specialist_council, seal_contract
+from app.services.specialist_council import CHOSEN_SOLO_PROTOCOL, run_specialist_council, seal_contract, validate_contract
 
 
 def member(role, *, holding=20, risk=0.2, direction="BUY"):
@@ -466,6 +466,69 @@ class SpecialistCouncilTest(unittest.TestCase):
                 self.assertEqual(scope["warmup_rows"], warmup)
                 self.assertEqual(scope["start_inclusive"], frame.iloc[warmup]["time"].isoformat())
                 self.assertEqual(result.specialist_council_receipt["members"][0]["stages"]["decision:observed"], evaluated_rows - 1)
+
+
+class ChosenNativeSoloContractTest(unittest.TestCase):
+    def chosen_request(self):
+        source = {**member('scalp'), 'model_version_id': 7, 'passport_hash': 'a' * 64}
+        request, frame = fixtures([source])
+        body = {key: value for key, value in request.specialist_council_contract.items() if key != 'contract_hash'}
+        body.update(promotion_evidence=False, solo_source_member=copy.deepcopy(source),
+            solo_source_member_hash=canonical_hash(source), members=[{**source, 'capital_weight': 1.0}],
+            solo_comparison={'protocol': CHOSEN_SOLO_PROTOCOL, 'comparison_kind': 'chosen_source_full_account_allocation',
+                'specialist_id': 'scalp', 'model_version_id': 7, 'source_model_hash': 'b' * 64, 'passport_hash': 'a' * 64,
+                'source_capital_weight': .25, 'capital_weight': 1.0, 'risk_per_trade_percent': .2,
+                'initial_account_capital_equal': True, 'member_allocation_unchanged': False,
+                'programme_unchanged_except_capital_weight': True, 'selection_status': 'chosen_source_unqualified',
+                'selection_timing': 'preregistered_before_outcomes', 'best_solo_full_budget_proven': False,
+                'promotion_evidence': False})
+        request.specialist_council_contract = seal_contract(body)
+        request.emit_decision_trace = True
+        return request, frame
+
+    def test_chosen_view_has_exact_source_programme_and_unchanged_external_account_policy(self):
+        request, _ = self.chosen_request()
+        contract = validate_contract(request)
+        restored = {**contract['members'][0], 'capital_weight': .25}
+        self.assertEqual(restored, contract['solo_source_member'])
+        self.assertEqual(contract['members'][0]['capital_weight'], 1)
+        self.assertEqual(contract['policy'], fixtures()[0].specialist_council_contract['policy'])
+        self.assertFalse(contract['solo_comparison']['best_solo_full_budget_proven'])
+        self.assertEqual(contract['solo_comparison']['selection_status'], 'chosen_source_unqualified')
+        ordinary, _ = fixtures([member('scalp')])
+        self.assertEqual(validate_contract(ordinary)['members'][0]['capital_weight'], .25)
+
+    def test_valid_rehashed_body_cannot_change_source_programme_or_authority_before_compute(self):
+        for mutation in ('parameters', 'management', 'risk', 'passport', 'weight', 'source_hash',
+                'best', 'selection', 'selection_timing', 'protocol', 'extra', 'upgrades', 'missing_source', 'missing_declaration'):
+            with self.subTest(mutation=mutation):
+                request, frame = self.chosen_request()
+                body = {key: copy.deepcopy(value) for key, value in request.specialist_council_contract.items() if key != 'contract_hash'}
+                if mutation == 'parameters': body['members'][0]['parameters']['ema_fast'] = 3
+                if mutation == 'management': body['members'][0]['management_version'] = 'different'
+                if mutation == 'risk': body['members'][0]['risk_per_trade_percent'] = .5
+                if mutation == 'passport': body['members'][0]['passport_hash'] = 'c' * 64
+                if mutation == 'weight': body['members'][0]['capital_weight'] = .25
+                if mutation == 'source_hash': body['solo_source_member_hash'] = 'c' * 64
+                if mutation == 'best': body['solo_comparison']['best_solo_full_budget_proven'] = True
+                if mutation == 'selection': body['solo_comparison']['selection_status'] = 'best_on_preregistered_candidate_panel'
+                if mutation == 'selection_timing': body['solo_comparison']['selection_timing'] = 'after_outcomes'
+                if mutation == 'protocol': body['solo_comparison']['protocol'] = 'specialist_council_native_solo_v1'
+                if mutation == 'extra': body['solo_comparison']['qualified'] = True
+                if mutation == 'upgrades': body['upgrades'] = [{'council_version': 'v2'}]
+                if mutation == 'missing_source': del body['solo_source_member']
+                if mutation == 'missing_declaration': del body['solo_comparison']
+                request.specialist_council_contract = seal_contract(body)
+                with patch('app.services.backtester.get_strategy') as strategy:
+                    with self.assertRaisesRegex(ValueError, 'SPECIALIST_COUNCIL_CHOSEN_SOLO_'):
+                        run_simple_ema_rsi_backtest_on_dataframe(request, frame)
+                    strategy.assert_not_called()
+
+    def test_full_chosen_contract_requires_actual_decision_trace_emission(self):
+        request, _ = self.chosen_request()
+        request.emit_decision_trace = False
+        with self.assertRaisesRegex(ValueError, 'SPECIALIST_COUNCIL_CHOSEN_SOLO_ORIGINAL_VIEW_REQUIRED'):
+            validate_contract(request)
 
 
 if __name__ == "__main__":

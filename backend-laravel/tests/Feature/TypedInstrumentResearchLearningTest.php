@@ -8,6 +8,7 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\MultiModalLearningPortfolioService;
 use App\Services\TypedInstrumentFoundryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -280,6 +281,167 @@ class TypedInstrumentResearchLearningTest extends TestCase
         DB::table('research_behavior_archive')->where('entry_key', $result['entry_key'])->update(['descriptors' => '{}']);
         $this->assertSame('BEHAVIOR_IMMUTABLE_ENTRY_DRIFT', $owner->recordBehaviorOutcome($run->run_id)['reason']);
         $this->assertSame('{}', DB::table('research_behavior_archive')->where('entry_key', $result['entry_key'])->value('descriptors'));
+    }
+
+    public function test_original_behavior_archive_changes_native_proposal_priority_with_sealed_pure_consumption(): void
+    {
+        $program = $this->program(1); $owner = app(TypedInstrumentFoundryService::class);
+        $trade = ['entry_time' => '2025-01-01T11:00:00Z', 'exit_time' => '2025-01-01T12:00:00Z', 'signal_time' => '2025-01-01T10:59:00Z'];
+        [$a] = $this->fixtureRun($program, $this->ast(1), 1, [], [], true, 1, [$trade]);
+        $trade['exit_time'] = '2025-01-01T16:00:00Z';
+        [$b] = $this->fixtureRun($program, $this->ast(1), 2, [], [], true, 1, [$trade]);
+        $lab = AiLaboratory::where('name', 'Research fixture')->firstOrFail();
+        $identity = ['laboratory_id' => $lab->id, 'generation_number' => 3, 'symbol' => 'XAUUSD', 'timeframe' => 'H1'];
+        $blocks = [['block_type' => 'structural_novelty']];
+        $portfolio = app(MultiModalLearningPortfolioService::class);
+        $before = $portfolio->planForLab($lab, $blocks, ['__planning_identity' => $identity]);
+        $owner->recordBehaviorOutcome($a->run_id); $owner->recordBehaviorOutcome($b->run_id);
+        $original = DB::table('research_behavior_archive')->orderBy('id')->get()->toJson();
+        $writes = [];
+        DB::listen(function ($query) use (&$writes): void {
+            if (preg_match('/^\s*(insert|update|delete|replace)\b/i', $query->sql)) $writes[] = $query->sql;
+        });
+        $after = $portfolio->planForLab($lab, $blocks, ['__planning_identity' => $identity]);
+        $receipt = $after['behavior_archive_consumption'];
+        $this->assertSame('consumed_research_proposal_ranking', $receipt['status']);
+        $this->assertGreaterThan(0, $receipt['priority_signal']);
+        $this->assertLessThanOrEqual(.25, $receipt['priority_signal']);
+        $this->assertGreaterThan($before['scores']['quality_diversity_novelty'], $after['scores']['quality_diversity_novelty']);
+        $this->assertSame('quality_diversity_novelty', $after['blocks'][0]['learning_method']);
+        $this->assertSame($receipt['receipt_hash'], $after['blocks'][0]['selection_receipt']['behavior_archive_consumption_hash']);
+        $this->assertSame($receipt['receipt_hash'], $after['blocks'][0]['source_reference']['receipt_hash']);
+        $this->assertSame($receipt['receipt_hash'], $after['source_references']['archive']['receipt_hash']);
+        $nativeSeat = $portfolio->planExistingSeat('native-novelty-seat', 'novelty_pair', 'quality_diversity_novelty',
+            ['score' => 2], $identity, $after['source_references']['archive']);
+        $this->assertSame($receipt['receipt_hash'], $nativeSeat['fidelity_plan']['source_references'][0]['receipt_hash']);
+        $this->assertTrue($nativeSeat['resolved_method_unchanged']);
+        $this->assertSame(['holding_seconds'], $receipt['matched_pairs'][0]['different_observed_dimensions']);
+        $this->assertSame(['spread_limit' => 1], $receipt['matched_pairs'][0]['shared_error_occurrences']);
+        foreach ($receipt['sources'] as $source) {
+            $run = LabEvaluationRun::where('run_id', $source['run_id'])->firstOrFail();
+            $this->assertSame($run->request_hash, $source['request_hash']);
+            $this->assertSame($run->response_hash, $source['response_hash']);
+            $this->assertNull($source['confirmed_value']);
+            $this->assertNull($source['descriptors']['cost_sensitivity']);
+        }
+        $this->assertSame($after, $portfolio->planForLab($lab, $blocks, ['__planning_identity' => $identity]));
+        $this->assertSame([], $writes);
+        $this->assertSame($original, DB::table('research_behavior_archive')->orderBy('id')->get()->toJson());
+        $this->assertFalse($receipt['quality_or_complementarity_proven']);
+        $this->assertFalse($receipt['skill_authority_granted']);
+        $this->assertFalse($receipt['paper_authority_granted']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_behavior_priority_keeps_missing_dimensions_unknown_and_refuses_scope_or_artifact_poison(): void
+    {
+        $owner = app(TypedInstrumentFoundryService::class); $program = $this->program(1);
+        [$a] = $this->fixtureRun($program, $this->ast(1), 1);
+        [$b, , $model] = $this->fixtureRun($program, $this->ast(1), 2);
+        [$c] = $this->fixtureRun($program, $this->ast(1), 3, [], [], true, 1, [], 2, [], str_repeat('c', 64));
+        $first = $owner->recordBehaviorOutcome($a->run_id);
+        $owner->recordBehaviorOutcome($b->run_id); $owner->recordBehaviorOutcome($c->run_id);
+        $evidence = $owner->behaviorProposalEvidence('XAUUSD', 'H1');
+        $this->assertCount(1, $evidence['matched_pairs']);
+        $this->assertSame(0.0, $evidence['priority_signal']);
+        $this->assertContains('holding_time', $evidence['sources'][0]['descriptors']['missing_dimensions']);
+        $this->assertSame([], $evidence['matched_pairs'][0]['different_observed_dimensions']);
+        $model->update(['parameters' => ['atr_period' => 99]]);
+        $this->assertSame('no_compatible_original_pair', $owner->behaviorProposalEvidence('XAUUSD', 'H1')['status']);
+        DB::table('research_behavior_archive')->where('entry_key', $first['entry_key'])->update(['descriptors' => '{}']);
+        $this->assertSame('BEHAVIOR_IMMUTABLE_ENTRY_DRIFT', $owner->inspectBehaviorEntry($first['entry_key'])['reason']);
+        $this->assertSame('{}', DB::table('research_behavior_archive')->where('entry_key', $first['entry_key'])->value('descriptors'));
+        $this->assertSame('completed', $a->fresh()->status);
+    }
+
+    public function test_committed_behavior_cannot_escape_a_current_invalid_continuation_owner(): void
+    {
+        $owner = app(TypedInstrumentFoundryService::class); $program = $this->program(1);
+        [$run] = $this->fixtureRun($program, $this->ast(1), 1);
+        $entry = $owner->recordBehaviorOutcome($run->run_id);
+        $archive = DB::table('research_behavior_archive')->get()->toJson();
+        $generation = LabGeneration::findOrFail($run->lab_generation_id);
+        $generation->update(['trigger_context' => ['native_specialist_council_intent' => ['followup_work_item_id' => 999]]]);
+        $this->assertSame('BEHAVIOR_SOURCE_DERIVED_LEARNING_WITHHELD', $owner->inspectBehaviorEntry($entry['entry_key'])['reason']);
+        $this->assertSame('BEHAVIOR_SOURCE_DERIVED_LEARNING_WITHHELD', $owner->recordBehaviorOutcome($run->run_id)['reason']);
+        $this->assertSame([], $owner->behaviorProposalEvidence('XAUUSD', 'H1')['sources']);
+        $this->assertSame($archive, DB::table('research_behavior_archive')->get()->toJson());
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertSame('completed', $run->fresh()->status);
+    }
+
+    public function test_preregistered_finite_pool_search_measures_two_original_products_without_general_or_market_authority(): void
+    {
+        [$first] = $this->trainedMacro(); $other = $this->program(3000);
+        $owner = app(TypedInstrumentFoundryService::class);
+        $vectors = [['decision_at' => '2025-01-02T11:00:00Z', 'price_close' => 10, 'bool' => false],
+            ['decision_at' => '2025-01-02T12:00:00Z', 'price_close' => 0, 'bool' => false]];
+        $budget = ['cpu_seconds' => 1, 'max_expansions' => 1000, 'max_attempts' => 32];
+        $seal = $owner->preregisterFiniteSearch([$first->program_key, $other->program_key], 'synthetic-search', $vectors, [true, false], $budget, 'fixed-blind-seed', true);
+        $this->assertSame('finite_search_preregistered', $seal['status'], json_encode($seal));
+        $this->assertFalse($seal['search_efficiency_measured']);
+        $this->travel(2)->seconds();
+        $library = $this->finiteSearchRun($seal['tasks']['library_guided']);
+        $blind = $this->finiteSearchRun($seal['tasks']['memory_blinded']);
+        $receipt = $owner->settleFiniteSearch($seal['benchmark_key'], $library->run_id, $blind->run_id);
+        $this->assertSame('finite_search_diagnostic_measured', $receipt['status'], json_encode($receipt));
+        $this->assertTrue($receipt['search_efficiency_measured']);
+        $this->assertTrue($receipt['synthetic_fixture']);
+        $this->assertFalse($receipt['library_utility_promoted']);
+        $this->assertFalse($receipt['economic_authority']);
+        $this->assertFalse($receipt['independent_market_evidence']);
+        $this->assertFalse($receipt['promotion_evidence']);
+        foreach ($receipt['arms'] as $arm) {
+            $this->assertGreaterThanOrEqual(0, $arm['result']['search_resources']['cpu_seconds']);
+            $this->assertSame('process_time', $arm['result']['search_resources']['cpu_clock']);
+            $this->assertNotEmpty($arm['result']['attempted_programs']);
+            $this->assertNotNull($arm['result']['solution_hash']);
+        }
+        $this->assertSame($receipt, $owner->settleFiniteSearch($seal['benchmark_key'], $library->run_id, $blind->run_id));
+        $this->assertSame('FINITE_SEARCH_ORIGINAL_PREREGISTRATION_DRIFT', $owner->preregisterFiniteSearch(
+            [$first->program_key, $other->program_key], 'renamed-seen-search', $vectors, [true, false], $budget, 'different-seed', true)['reason']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_finite_search_rejects_seen_inputs_incomplete_products_and_poisoned_registered_library(): void
+    {
+        [$first, $macro] = $this->trainedMacro(); $other = $this->program(3000);
+        $owner = app(TypedInstrumentFoundryService::class); $keys = [$first->program_key, $other->program_key];
+        $budget = ['cpu_seconds' => 1, 'max_expansions' => 1, 'max_attempts' => 32];
+        $seen = [['decision_at' => '2025-01-01T11:00:00Z', 'price_close' => 2001, 'bool' => false]];
+        $this->assertSame('FINITE_SEARCH_UNSEEN_TASK_REQUIRED', $owner->preregisterFiniteSearch($keys, 'seen', $seen, [true], $budget, 'fixed', true)['reason']);
+        $vectors = [['decision_at' => '2025-01-02T11:00:00Z', 'price_close' => 10, 'bool' => false]];
+        $seal = $owner->preregisterFiniteSearch($keys, 'synthetic-limited-search', $vectors, [true], $budget, 'fixed', true);
+        $this->assertSame('finite_search_preregistered', $seal['status']);
+        $this->travel(2)->seconds();
+        $a = $this->finiteSearchRun($seal['tasks']['library_guided']); $b = $this->finiteSearchRun($seal['tasks']['memory_blinded']);
+        $this->assertSame('FINITE_SEARCH_TWO_COMPLETE_NATIVE_MEASURED_PRODUCTS_REQUIRED', $owner->settleFiniteSearch($seal['benchmark_key'], $a->run_id, $b->run_id)['reason']);
+        $this->assertNull(DB::table('research_compounding_benchmarks')->where('benchmark_key', $seal['benchmark_key'])->value('assessment'));
+        DB::table('research_instrument_abstractions')->where('id', $macro->id)->update(['definition' => '{}']);
+        $this->assertSame('FINITE_SEARCH_REGISTERED_LIBRARY_DRIFT', $owner->settleFiniteSearch($seal['benchmark_key'], $a->run_id, $b->run_id)['reason']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    private function finiteSearchRun(array $task): LabEvaluationRun
+    {
+        $lab = AiLaboratory::where('name', 'Research fixture')->firstOrFail();
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => LabGeneration::count() + 1, 'trigger_type' => 'synthetic_test']);
+        $model = ModelVersion::create(['name' => 'Finite search fixture-'.$generation->id, 'strategy' => 'trend_v1', 'version' => 'test', 'parameters' => [], 'metadata' => []]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id, 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'strategy_family' => 'trend', 'origin' => 'test', 'parameter_diff' => []]);
+        $owner = app(LabImmutableEvidenceService::class);
+        $run = $owner->beginRun($agent, 'screening', 'synthetic_test', ['code_hash' => str_repeat('a', 64)]);
+        $owner->attachRequest($run, ['symbol' => 'XAUUSD', 'timeframe' => 'H1', 'parameters' => [], 'candles' => $this->candles(),
+            'execution_contract' => ['execution_hash' => str_repeat('b', 64)], 'policy_context' => ['research_program_task' => $task]]);
+        $result = $this->nativeTask($task);
+        $trace = [['candle_index' => 200, 'candle_time' => '2025-01-01T10:00:00Z', 'event_type' => 'signal_evaluation', 'action' => 'WAIT', 'accepted' => false],
+            ['candle_index' => 201, 'candle_time' => '2025-01-01T10:01:00Z', 'event_type' => 'signal_evaluation', 'action' => 'WAIT', 'accepted' => false]];
+        $owner->finishRun($run, 'completed', ['total_trades' => 0, 'trades' => [], 'trade_ledger' => [], 'displayed_trade_count' => 0,
+            'trade_ledger_hash' => $owner->hash([]), 'decision_trace' => $trace, 'benchmark' => ['research_program_task' => $result],
+            'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1', 'requested' => true, 'complete' => true,
+                'event_count' => 2, 'evaluated_candle_count' => 2]]]);
+        $this->assertTrue($owner->learningEligibility($run->fresh())['complete']);
+        return $run->fresh();
     }
 
     private function trainedMacro(): array

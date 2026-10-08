@@ -11,6 +11,8 @@ aliases:
 paths:
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabImmutableEvidenceService.php
+  - backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php
+  - backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php
   - backend-laravel/app/Services/ExecutionContractService.php
   - backend-laravel/app/Services/ResearchReleaseSealService.php
   - backend-laravel/app/Services/InstrumentResearchWindowService.php
@@ -29,6 +31,14 @@ paths:
   - ai-service-python/app/services/backtester.py
   - ai-service-python/app/services/replay_executed_clock.py
   - ai-service-python/app/services/research_program_tasks.py
+  - ai-service-python/app/services/instrument_research.py
+  - ai-service-python/app/services/native_spread_context_study.py
+  - backend-laravel/app/Services/NativeSpreadContextStudyService.php
+  - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php
+  - backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php
+  - ai-service-python/tests/test_native_spread_context_study.py
+  - ai-service-python/tests/support/native_spread_context_study_fixture.py
+  - ai-service-python/tests/test_finite_program_search.py
   - ai-service-python/app/services/specialist_council.py
   - ai-service-python/app/services/authorized_council_arm.py
   - ai-service-python/tests/test_authorized_council_arm.py
@@ -44,6 +54,9 @@ paths:
   - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
   - docs/ai-service-contract.md
 entry_points:
+  - LabImmutableEvidenceService::recordDecisionTrace
+  - LabImmutableEvidenceService::projectDecisionTrace
+  - ProjectLabCandleDecisionEvents::handle
   - ExecutionContractService
   - ConfirmationEntryContractService
   - FastAPI /health
@@ -55,6 +68,9 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.
+  - native_spread_context_study_v1 changes only the computed instrument spread context, never raw quotes, prices, execution fees or hard risk. Its in-loop receipt distinguishes shared eligible gate events, unreached gates and account-diverged coverage; complete immutable original arms must share physical clock/source/program/cost before research-only Entry/WAIT sensitivity can settle.
+  - Optional native member liquidity_atr_binding is a fixed-vocabulary closed input port compiled from the original source membership cell, not a study-only fallback. Both the actual gate and observer consume that same explicit field and receipt its source/value hash; signed study identity must match the native member. Unknown, absent or invalid inputs do not manufacture liquidity, and legacy undeclared context behavior remains unchanged.
   - replay_executed_clock_v1 observes each actual loop's previous-closed signal and next-open execution indices/timestamps in constant space. Input-selection warmup/probe counts cannot attest executed clocks; ordinary/native/authorized producers are independently bound to their original request and account owner. Missing/stale/malformed clocks or unequal physical schedule/index digests make an original comparison unassessable before economic deltas, not a strategy loss. Legacy evaluator starts are not silently changed or historical receipts backfilled.
   - A per-candidate specialist_council_runtime_v1 executes on one chronological account with shared reservations, costs, exposure and owner-pinned positions. Adding separately computed specialist PnLs is not a native council replay.
   - Native specialist_council_receipt_v1 seals dataset, execution, member/version identities and actual account/position ledgers; original-request attestation precedes screen/full cache or learning consumption.
@@ -69,6 +85,7 @@ invariants:
   - Upstream strategy opportunities survive specialist veto in emitted receipts; missing measured liquidity is distinct from no signal and modeled execution spread never replaces an observation.
   - A prospective instrument research trace keeps exact venue-phase activation keys and trade-ledger slices together; Laravel cannot substitute broad session envelopes for phase-local posterior evidence.
   - Laravel and Python must agree on required protocol and sealed identity fields.
+  - Instrument spread context uses the same canonical aliases in Laravel, Python matching and research attribution (liquid/low_spread to normal; illiquid to high). Raw observed labels and masked unknown remain traceable; alias equivalence never manufactures measured liquidity or changes execution prices/costs.
   - HTTP success alone is never evidence attestation.
   - A mismatched hash fails at the owning boundary.
   - Prospective screens verify exact warmup/evaluation rows, UTC bounds, month counts and data/execution identities before replay and before learning; a legacy short replay cannot satisfy the new evaluator receipt.
@@ -91,6 +108,11 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_instrument_research.py
+  - backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php
+  - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php
+  - ai-service-python/tests/test_native_spread_context_study.py
+  - ai-service-python/tests/test_finite_program_search.py
   - ai-service-python/tests/test_replay_executed_clock.py
   - backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php

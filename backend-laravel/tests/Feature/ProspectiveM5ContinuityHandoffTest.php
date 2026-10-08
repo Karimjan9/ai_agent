@@ -4,8 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\AiLaboratory;
 use App\Models\LabAgent;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
+use App\Models\MarketTrainingArchive;
 use App\Models\ModelVersion;
+use App\Models\ResearchLoopDecision;
 use App\Services\AcademyExperimentMaterializerService;
 use App\Services\AutonomousLearningProgressDirectorService;
 use App\Services\AutonomousModeService;
@@ -13,6 +16,8 @@ use App\Services\ExecutionContractService;
 use App\Services\GenerationSnapshotAdmissionService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabImmutableEvidenceService;
+use App\Services\LabQueueJobInspector;
+use App\Services\LabQueueStateService;
 use App\Services\MarketData\MarketTrainingDataService;
 use App\Services\MultiTimeframeSnapshotService;
 use App\Services\ResearchLoopArbiterService;
@@ -174,6 +179,10 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
                 $this->assertDatabaseCount('edge_academy_trials', 0);
                 $this->assertDatabaseCount('research_loop_decisions', 0);
                 Queue::assertNothingPushed();
+                $this->assertUnadmittedHistoricalDraftWait($lab, $archive, $pricePath, $priceCsv);
+                $this->assertSame($runBefore, $run->fresh()->toArray());
+                $this->assertSame($oldBefore, $old->fresh()->toArray());
+                $this->assertSame($sourceHash, hash_file('sha256', $sourcePath));
                 return;
             }
             $this->assertTrue($ready['ready'], json_encode($ready));
@@ -209,6 +218,10 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
             $this->assertDatabaseCount('edge_academy_trials', 0);
             $this->assertDatabaseCount('research_loop_decisions', 0);
             Queue::assertNothingPushed();
+            $draft = $this->unadmittedHistoricalDraft($lab);
+            $choice = app(ResearchLoopArbiterService::class)->tick('XAUUSD', 'H1', true);
+            $this->assertSame('SETTLE_EXISTING_GENERATION', $choice['action']);
+            $this->assertSame($draft->id, data_get($choice, 'evidence_snapshot.generation.id'));
         } finally {
             // Exact fixture-owned paths only; no production dataset is touched.
             if ($bundleDirectory !== null) File::deleteDirectory($bundleDirectory);
@@ -216,6 +229,152 @@ class ProspectiveM5ContinuityHandoffTest extends TestCase
             File::deleteDirectory($priceDirectory);
             File::deleteDirectory($sourceDirectory);
         }
+    }
+
+    private function assertUnadmittedHistoricalDraftWait(AiLaboratory $lab, MarketTrainingArchive $archive, string $pricePath, string $priceCsv): void
+    {
+        $draft = $this->unadmittedHistoricalDraft($lab);
+        $context = $draft->trigger_context;
+        $before = $draft->fresh()->toArray();
+        $agentsBefore = $draft->agents()->orderBy('id')->get()->toArray();
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $choice = $arbiter->tick('XAUUSD', 'H1', true);
+        $this->assertSame('WAIT_DATASET_CONTINUITY', $choice['action'], json_encode($choice));
+        $this->assertNull($choice['command']);
+        $this->assertSame(100, $choice['priority']);
+        $dependency = data_get($choice, 'evidence_snapshot.data_readiness.source_dependency');
+        $this->assertSame('unadmitted_historical_draft_m5_continuity_v1', $dependency['protocol']);
+        $this->assertSame($archive->dataset_key, $dependency['dataset_key']);
+        $this->assertSame(hash_file('sha256', $pricePath), $dependency['selected_m5_sha256']);
+        $this->assertSame(1, $dependency['full_source_unexpected_gaps']);
+        $this->assertSame($dependency, data_get($choice, 'state_snapshot.unadmitted_historical_draft_dependency'));
+        $this->assertFalse(data_get($choice, 'evidence_snapshot.measurement_acquisition_proposal.paid_api_calls_authorized'));
+        $first = $arbiter->tick();
+        $this->assertSame('deferred', $first['status']);
+        foreach (range(1, 4) as $_) {
+            $this->travel(6)->minutes();
+            $this->assertSame('duplicate_suppressed', $arbiter->tick()['status']);
+        }
+        $this->assertSame('running', app(AutonomousModeService::class)->status()['state']);
+        $this->assertDatabaseCount('research_loop_decisions', 1);
+        $this->assertSame('WAIT_DATASET_CONTINUITY', ResearchLoopDecision::query()->sole()->action);
+        $this->assertSame($before, $draft->fresh()->toArray());
+        $this->assertSame($agentsBefore, $draft->agents()->orderBy('id')->get()->toArray());
+        $this->assertSame(0, LabEvaluationRun::where('lab_generation_id', $draft->id)->count());
+        Queue::assertNothingPushed();
+
+        // Unknown queue visibility and an actual generation-owned payload cannot prove an unused draft.
+        $queueKnown = true;
+        $rows = [];
+        $state = \Mockery::mock(LabQueueStateService::class);
+        $state->shouldReceive('backend')->andReturn('database');
+        $state->shouldReceive('snapshot')->andReturnUsing(function (array $queues) use (&$rows, &$queueKnown): array {
+            $selected = array_values(array_filter($rows, fn ($row): bool => in_array($row['queue'], $queues, true)));
+            return ['backend' => 'database', 'available' => $queueKnown, 'total' => $queueKnown ? count($selected) : null,
+                'rows' => $selected, 'queues' => []];
+        });
+        $this->app->instance(LabQueueStateService::class, $state);
+        $this->app->forgetInstance(LabQueueJobInspector::class);
+        $assertSettlement = function (string $case) use ($arbiter): void {
+            $this->assertSame('SETTLE_EXISTING_GENERATION', $arbiter->tick('XAUUSD', 'H1', true)['action'], $case);
+        };
+        $queueKnown = false;
+        $assertSettlement('unknown queue');
+        $queueKnown = true;
+        $agent = $draft->agents()->oldest('id')->firstOrFail();
+        $job = new \App\Jobs\EvaluateLabScreeningBatchJob([$agent->id], 'XAUUSD', null, $draft->id);
+        $rows = [['id' => 1, 'queue' => 'lab-screening', 'reserved_at' => null, 'attempts' => 0,
+            'payload' => json_encode(['displayName' => get_class($job),
+                'data' => ['commandName' => get_class($job), 'command' => serialize($job)]])]];
+        $assertSettlement('generation queue payload');
+        $rows = [];
+
+        $variants = [
+            'incomplete plan' => [...$context, 'generation_plan' => array_slice($context['generation_plan'], 0, 19)],
+            'incomplete constructor receipt' => [...$context, 'constructor_audit' => [...$context['constructor_audit'], 'created_agents' => 19]],
+            'native intent' => [...$context, 'native_specialist_council_intent' => ['protocol' => 'declared_native_intent']],
+            'authorized intent' => [...$context, 'authorized_specialist_council_panel_intent' => ['protocol' => 'declared_panel_intent']],
+            'protected preparation' => [...$context, 'specialist_council_preparation' => ['protocol' => 'declared_preparation']],
+            'spread study' => [...$context, 'native_spread_context_study' => ['protocol' => 'declared_study']],
+            'Academy trial' => [...$context, 'academy_trial_id' => 7],
+            'Academy experiment' => [...$context, 'academy_experiment' => ['trial_id' => 7]],
+            'Academy control' => [...$context, 'academy_control_admission' => ['trial_id' => 7]],
+            'release seal' => [...$context, 'research_release' => ['source_hash' => str_repeat('a', 64)]],
+            'MTF seal' => [...$context, 'mtf_bundle_hash' => str_repeat('b', 64)],
+            'invalid declared MTF contract' => [...$context, 'mtf_bundle_manifest' => ['protocol' => 'invalid']],
+            'batch publication' => [...$context, 'queue_batches' => ['original-batch']],
+        ];
+        foreach ($variants as $case => $changed) {
+            $draft->update(['trigger_context' => $changed]);
+            $assertSettlement($case);
+        }
+        $draft->update(['trigger_context' => $context]);
+        $agent->update(['origin' => 'native_council_root']);
+        $assertSettlement('native origin without its intent projection');
+        $agent->update(['origin' => 'test']);
+        $model = $agent->modelVersion;
+        $metadata = $model->metadata;
+        foreach (['native_specialist_council_seed', 'authorized_specialist_council_panel_seed', 'specialist_council',
+            'specialist_council_evaluation', 'native_spread_context_study', 'academy_experiment',
+            'academy_control_admission', 'original_source_execution_snapshot', 'policy_context.specialist_council_authorized_arm'] as $purpose) {
+            $changed = $metadata;
+            data_set($changed, $purpose, ['protocol' => 'protected_owner']);
+            $model->update(['metadata' => $changed]);
+            $assertSettlement('protected model '.$purpose);
+        }
+        $model->update(['metadata' => $metadata]);
+
+        // Reopen the real native verifier against changed/missing bytes and invalid immutable repair identity.
+        try {
+            File::put($pricePath, $priceCsv."\n");
+            $assertSettlement('selected CSV drift');
+            File::delete($pricePath);
+            $assertSettlement('selected CSV missing');
+        } finally {
+            File::put($pricePath, $priceCsv);
+        }
+        $metrics = $archive->metrics;
+        $archive->update(['metrics' => [...$metrics, 'frozen_m5_gap_recovery_receipt' => [
+            ...$metrics['frozen_m5_gap_recovery_receipt'], 'repair_hash' => str_repeat('0', 64)]]]);
+        $assertSettlement('invalid repair provenance');
+        $archive->update(['metrics' => $metrics]);
+        $this->assertSame('WAIT_DATASET_CONTINUITY', $arbiter->tick('XAUUSD', 'H1', true)['action']);
+        $this->assertDatabaseCount('research_loop_decisions', 1);
+        Queue::assertNothingPushed();
+
+        // Already admitted replay keeps the existing bounded wait and stale-recovery behavior.
+        $agent->update(['lifecycle_status' => 'screening']);
+        LabEvaluationRun::create(['run_id' => 'admitted-continuity-draft-'.$draft->id,
+            'lab_generation_id' => $draft->id, 'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id, 'phase' => 'screening', 'mode' => 'screen',
+            'status' => 'started', 'started_at' => now()]);
+        $this->assertSame('WAIT_EXISTING_GENERATION_REPLAY', $arbiter->tick('XAUUSD', 'H1', true)['action']);
+        $this->travel(76)->minutes();
+        $assertSettlement('stale admitted replay');
+    }
+
+    private function unadmittedHistoricalDraft(AiLaboratory $lab): LabGeneration
+    {
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+            'generation' => (int) $lab->generations()->max('generation') + 1,
+            'status' => 'draft', 'trigger_type' => 'historical_research', 'population_size' => 20,
+            'trigger_context' => [
+                'native_specialist_council_intent' => null, 'authorized_specialist_council_panel_intent' => null,
+                'specialist_council_authorized_panel' => null,
+                'generation_plan' => array_map(fn ($slot): array => ['slot' => $slot], range(1, 20)),
+                'constructor_audit' => ['protocol' => 'agent_constructor_invariant_v1', 'planned_slots' => 20,
+                    'created_agents' => 20, 'skipped_zero_diff_slots' => []],
+            ]]);
+        foreach (range(1, 20) as $slot) {
+            $model = ModelVersion::create(['name' => 'unadmitted-continuity-'.$slot, 'version' => 'v1',
+                'strategy' => 'confirmation_entry_mtf_v1', 'parameters' => ['risk_per_trade' => .01],
+                'metadata' => ['base_strategy' => 'confirmation_entry_mtf_v1']]);
+            LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+                'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'confirmation_entry_mtf',
+                'origin' => 'test', 'lifecycle_status' => 'draft', 'parameter_diff' => []]);
+        }
+
+        return $generation;
     }
 
     private function archive(MarketTrainingDataService $training, string $dataset, string $timeframe, array $rows): \App\Models\MarketTrainingArchive

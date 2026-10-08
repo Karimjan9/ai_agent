@@ -9,6 +9,7 @@ use App\Models\LabGeneration;
 use App\Models\LabLearningConsumptionEvent;
 use App\Models\LabLearningInsight;
 use App\Models\LabMutationCreditEvent;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -76,7 +77,7 @@ class LabHistoricalLearningService
     /** @return array<int,LabLearningInsight> */
     private function refreshForLabLocked(string $symbol, string $timeframe): array
     {
-        $families = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
+        $families = $this->ordinaryHistoryAgents($symbol, $timeframe)
             ->distinct()->pluck('strategy_family')->filter()->values();
         if ($families->isEmpty()) return [];
 
@@ -109,7 +110,7 @@ class LabHistoricalLearningService
     {
         return LabLearningInsight::query()->where([
             'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family,
-        ])->latest('generated_at')->first();
+        ])->latest('generated_at')->cursor()->first(fn (LabLearningInsight $insight): bool => ! $this->hasStudySource($insight));
     }
 
     /** Record exactly how a new generation consumed historical advice. */
@@ -167,7 +168,7 @@ class LabHistoricalLearningService
      */
     public function confirmedMutationPrior(string $symbol, string $timeframe, string $family, ?string $scope = null): ?array
     {
-        $agents = LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+        $agents = $this->ordinaryHistoryAgents(strtoupper($symbol), strtoupper($timeframe))
             ->where('strategy_family', $family)->get(['id']);
         $baseCacheKey = implode('|', [strtoupper($symbol), strtoupper($timeframe), $family, $scope ?: 'global']);
         if ($agents->isEmpty()) {
@@ -194,6 +195,7 @@ class LabHistoricalLearningService
         $runIds = $credits->flatMap(fn (LabMutationCreditEvent $event): array => (array) $event->evidence_run_ids)->filter()->unique()->values();
         $exactRuns = LabEvaluationRun::query()
             ->whereIn('run_id', $runIds->all())
+            ->whereNotIn('run_id', $this->studyRunIds())
             ->where('status', 'completed')
             // Paper/holdout are sealed evaluation authority, never mutation
             // training. Only pre-2026 full-validation evidence may create a
@@ -299,7 +301,7 @@ class LabHistoricalLearningService
 
     private function refreshFamily(string $symbol, string $timeframe, string $family, array $candleEvidence = []): ?LabLearningInsight
     {
-        $agents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe)
+        $agents = $this->ordinaryHistoryAgents($symbol, $timeframe)
             ->where('strategy_family', $family)->get(['id', 'lab_generation_id']);
         if ($agents->isEmpty()) {
             return null;
@@ -309,13 +311,15 @@ class LabHistoricalLearningService
         // projection and is hundreds of MB in production. Historical target
         // compilation only needs evidence identity and eligibility manifests;
         // selecting metrics here multiplied memory/CPU by strategy family.
-        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->get([
+        $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)
+            ->whereNotIn('run_id', $this->studyRunIds())->get([
             'id', 'run_id', 'lab_generation_id', 'lab_agent_id', 'model_version_id',
             'phase', 'status', 'request_hash', 'response_hash', 'data_hash',
             'request_meta', 'response_meta', 'metadata', 'created_at', 'updated_at',
         ]);
         $legacyRunIds = $runs->where('status', 'legacy_snapshot')->pluck('run_id')->filter()->all();
         $gateEvents = LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)
+            ->where(fn ($query) => $query->whereNull('run_id')->orWhereNotIn('run_id', $this->studyRunIds()))
             ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate', 'paper_admission'])
             ->latest('recorded_at')->get([
                 'id', 'lab_generation_id', 'lab_agent_id', 'run_id', 'stage',
@@ -494,20 +498,22 @@ class LabHistoricalLearningService
         $agents = fn ($query) => $query
             ->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
             ->where('a.symbol', strtoupper($symbol))
-            ->where('a.timeframe', strtoupper($timeframe));
+            ->where('a.timeframe', strtoupper($timeframe))
+            ->whereIn('e.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
+            ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
         $legacyBase = $agents(DB::table('lab_candle_decision_events as e'))
             ->whereNotExists(fn ($query) => $query
                 ->selectRaw('1')
                 ->from('lab_candle_decision_rollups as r')
                 ->whereColumn('r.run_id', 'e.run_id'));
         $latestLegacyEventId = (int) ((clone $legacyBase)->max('e.id') ?? 0);
-        $legacyCacheKey = 'lab-history:legacy-candle-evidence:v1:'.hash('sha256', $cacheKey);
+        $legacyCacheKey = 'lab-history:ordinary-legacy-candle-evidence:v2:'.hash('sha256', $cacheKey);
         $cachedLegacy = Cache::get($legacyCacheKey);
         if (! is_array($cachedLegacy)
-            || data_get($cachedLegacy, 'protocol') !== 'immutable_legacy_candle_aggregate_v1'
+            || data_get($cachedLegacy, 'protocol') !== 'immutable_ordinary_candle_aggregate_v2'
             || (int) data_get($cachedLegacy, 'latest_event_id', -1) !== $latestLegacyEventId) {
             $cachedLegacy = [
-                'protocol' => 'immutable_legacy_candle_aggregate_v1',
+                'protocol' => 'immutable_ordinary_candle_aggregate_v2',
                 'latest_event_id' => $latestLegacyEventId,
                 'evidence' => $this->aggregateRawCandleEvidence($legacyBase),
                 'promotion_evidence' => false,
@@ -518,7 +524,9 @@ class LabHistoricalLearningService
         $rollupBase = DB::table('lab_candle_decision_rollups as r')
             ->join('lab_agents as a', 'a.id', '=', 'r.lab_agent_id')
             ->where('a.symbol', strtoupper($symbol))
-            ->where('a.timeframe', strtoupper($timeframe));
+            ->where('a.timeframe', strtoupper($timeframe))
+            ->whereIn('r.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
+            ->where(fn ($query) => $query->whereNull('r.run_id')->orWhereNotIn('r.run_id', $this->studyRunIds()));
         $rollupSummary = (clone $rollupBase)
             ->select('a.strategy_family')
             ->selectRaw('SUM(r.event_count) as total, SUM(r.accepted_count) as accepted, SUM(CASE WHEN r.accepted = 0 THEN r.event_count ELSE 0 END) as rejected')
@@ -623,6 +631,7 @@ class LabHistoricalLearningService
             ->where('timeframe', $timeframe)
             ->latest('generated_at')
             ->get()
+            ->reject(fn (LabLearningInsight $insight): bool => $this->hasStudySource($insight))
             ->unique('strategy_family')
             ->values()
             ->all();
@@ -630,14 +639,15 @@ class LabHistoricalLearningService
 
     private function sourceRevision(string $symbol, string $timeframe): string
     {
-        $agents = LabAgent::query()->where('symbol', $symbol)->where('timeframe', $timeframe);
+        $agents = $this->ordinaryHistoryAgents($symbol, $timeframe);
         $agentIds = (clone $agents)->pluck('id');
         if ($agentIds->isEmpty()) return hash('sha256', $symbol.'|'.$timeframe.'|empty');
 
         $revision = [
             'agent_max' => (int) $agentIds->max(),
             'agent_count' => $agentIds->count(),
-            'run_max' => (int) (LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'run_max' => (int) (LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)
+                ->whereNotIn('run_id', $this->studyRunIds())->max('id') ?? 0),
             'gate_max' => (int) (LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
             'credit_max' => (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
             'candle_max' => (int) (DB::table('lab_candle_decision_events')->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
@@ -650,7 +660,10 @@ class LabHistoricalLearningService
     /** Fallback for a direct family refresh outside refreshForLab(). */
     private function candleEvidenceForAgents(array $agentIds, string $family = '__fallback'): array
     {
-        $base = DB::table('lab_candle_decision_events as e')->whereIn('e.lab_agent_id', $agentIds);
+        $base = DB::table('lab_candle_decision_events as e')
+            ->whereIn('e.lab_agent_id', LabAgent::query()->whereIn('id', $agentIds)
+                ->whereNotIn('id', $this->studyAgentIds())->select('id'))
+            ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
         $summary = (clone $base)->selectRaw(
             'COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected'
         )->first();
@@ -673,6 +686,54 @@ class LabHistoricalLearningService
             ]],
             'aggregates' => [$family => $aggregates],
         ];
+    }
+
+    /** Study projections are audit observations, never ordinary failure advice. */
+    private function ordinaryHistoryAgents(string $symbol, string $timeframe): Builder
+    {
+        return LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+            ->whereNotIn('id', $this->studyAgentIds());
+    }
+
+    private function studyAgentIds(): Builder
+    {
+        return LabAgent::query()->select('id')->where(fn ($query) => $query
+            ->whereHas('generation', fn ($generation) => $this->studyGenerationScope($generation))
+            ->orWhereHas('modelVersion', fn ($model) => $model
+                ->where('metadata->native_specialist_council_seed->research_purpose', 'spread_context_study')
+                // A malformed reserved owner is still excluded: failure to
+                // attest it must not turn counterfactual data into advice.
+                ->orWhereNotNull('metadata->native_spread_context_study')
+                ->orWhereNotNull('metadata->native_spread_context_study_contract'))
+            ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
+                ->whereIn('run_id', $this->studyRunIds())));
+    }
+
+    private function studyGenerationScope(Builder $query): Builder
+    {
+        return $query->where(fn ($generation) => $generation
+            ->where('trigger_context->native_specialist_council_intent->research_purpose', 'spread_context_study')
+            ->orWhereNotNull('trigger_context->native_spread_context_study'));
+    }
+
+    private function studyRunIds(): Builder
+    {
+        return LabEvaluationRun::query()->select('run_id')->whereNotNull('run_id')->where(fn ($run) => $run
+            ->where('metadata->reason_code', 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY')
+            ->orWhereNotNull('request_meta->payload->native_spread_context_study_contract')
+            ->orWhereNotNull('request_meta->payload->strategies[0]->native_spread_context_study_contract')
+            ->orWhereNotNull('metrics->native_spread_context_study_receipt')
+            ->orWhereNotNull('response_meta->native_spread_context_study_receipt')
+            ->orWhereNotNull('response_meta->data_quality->native_spread_context_study_receipt'));
+    }
+
+    /** Old append-only insights remain visible in SQL, but cannot be reused. */
+    private function hasStudySource(LabLearningInsight $insight): bool
+    {
+        return $this->studyGenerationScope(LabGeneration::query())
+                ->whereIn('id', (array) $insight->source_generation_ids)->exists()
+            || $this->studyAgentIds()->whereIn('id', (array) $insight->source_agent_ids)->exists()
+            || $this->studyRunIds()->whereIn('run_id', (array) $insight->source_run_ids)->exists();
     }
 
     private function targetForFailure(string $reason, array $metrics = []): ?string

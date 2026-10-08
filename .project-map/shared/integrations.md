@@ -32,6 +32,48 @@ The additive
 paper account remains opt-in and uses the original E3/E4 intake/execution owner;
 native deployment grants no paper or live authority.
 
+Prospective `specialist_council_native_solo_v1` plans derive one unchanged
+native member, original capital share/passport/risk and the same physical
+account clock. Missing legacy declarations are not upgraded by follow-up
+remapping; matched-member allocation is not a best full-budget SOLO claim.
+An original `specialist_council_native_chosen_solo_v1` can instead preregister
+one unused chosen source at allocation 1.0. PHP derives and hashes the exact
+source member, Python verifies the sole allocation delta before execution,
+and original account/trace/clock parity remains required. Chosen-unqualified is
+not a ranked best-qualified claim; old sources and continuation remapping are
+refused rather than given new authority.
+Optional `native_spread_context_study_v1` owns prospectively matched unused
+native carriers and masks only the computed instrument spread context. Actual
+in-loop gate/Entry/WAIT receipts and original immutable pair inspection own
+research sensitivity; raw quotes, costs and hard risk remain untouched.
+Account-diverged/unreached events are explicit excluded coverage (ADR-032).
+
+Native trace attestation binds the actual received list to both the producer
+quality hash and sealed native trace identity before replay-use publication.
+HTTP adapters must preserve the wire's numeric types (`2000.0` is not rewritten
+as `2000` after hashing). No new generic codec or retrospective rehash is used.
+Measured zero Entry/WAIT change stays a valid research-only observation.
+
+`ProjectLabCandleDecisionEvents` can project original terminal study traces into
+query-friendly audit events/rollups. Only the two original run IDs own those
+jobs, not the four source references. `LabHistoricalLearningService` keeps
+controlled masked/unmasked study data out of ordinary family/agent mutation
+advice, causal source queries and old mixed aggregate caches. A projection is
+not a learning credit or a second experiment outcome; the paired study owner
+alone settles its research-only measurement.
+
+The same spread-context canonical aliases apply to PHP assignments, Python
+runtime matching and instrument research: `liquid`/`low_spread -> normal`,
+`illiquid -> high`. Original observed labels and masked `unknown` stay in the
+native study ledger; normalizing a label does not infer missing quote/ATR data
+or alter execution pricing.
+
+The existing pure task boundary can execute `sealed_finite_program_search_v1`
+with an original verified library, registered semantic pool, typed as-of task
+and equal attempt/node/CPU caps. Native products expose actual search prefixes
+and measured resources. The original paired consumer measures one finite task,
+not broad synthesis, independent market value or library promotion (ADR-032).
+
 Screening stores returned execution observations separately from the frozen
 execution definition. A source-repair continuation after an observed auxiliary
 baseline authenticates its unique immutable pre-run/request/response and

@@ -90,6 +90,7 @@ class StrategyRuntimeConfig(BaseModel):
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)
     research_release: dict[str, Any] = Field(default_factory=dict)
     specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
+    native_spread_context_study_contract: dict[str, Any] = Field(default_factory=dict)
     # Original PHP plan binding survives validation, but grants no authority
     # without the server-signed full-window transport and immutable exam.
     specialist_council_evaluation: dict[str, Any] = Field(default_factory=dict)
@@ -194,6 +195,7 @@ class SimpleBacktestRequest(BaseModel):
     # Explicit opt-in to independent specialist positions on a synchronized
     # account. Undeclared requests retain the original portfolio router.
     specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
+    native_spread_context_study_contract: dict[str, Any] = Field(default_factory=dict)
     # Canonical XAUUSD multi-timeframe routing contract. H1 remains a closed
     # regime context and M15 remains the independent entry population.
     mtf_pilot: dict[str, Any] = Field(default_factory=dict)
@@ -341,6 +343,7 @@ class SimpleBacktestResponse(BaseModel):
     control_root: dict[str, Any] = Field(default_factory=dict)
     policy_boundary: dict[str, Any] = Field(default_factory=dict)
     specialist_council_receipt: dict[str, Any] = Field(default_factory=dict)
+    native_spread_context_study_receipt: dict[str, Any] = Field(default_factory=dict)
     core_replay_gate: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
     volume_quality: dict[str, Any] = Field(default_factory=dict)

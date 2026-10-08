@@ -22,6 +22,16 @@ entries leaves mandatory open-position reconciliation running. Unsupported
 netting/cost/partial-fill assumptions are explicit dependencies. A matured
 close records policy-scoped paper feedback, not automatic research permission.
 
+Under the same account lock, intake and reconciliation mark every owned open
+position from a fresh closed candle of its original timeframe. Pinned spread,
+slippage, commission and accrued unpaid carry enter conservative integer equity.
+Risk/capital caps use `min(realized balance, marked equity)` and drawdown uses
+the monotonic actually observed peak. The additive nullable peak migration does
+not invent historical marks; any filled/cost history with an unknown peak
+blocks new intake. Missing marks leave exits, management and duplicate-command
+retries available. Full-notional reservation remains conservative; no new margin
+or broker-netting capability is implied (ADR-032).
+
 ## Trigger
 
 An eligible research/paper signal arrives with its execution, strategy and (if

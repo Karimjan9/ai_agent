@@ -1,5 +1,19 @@
 # Operations history
 
+## 2026-10-08 - Unadmitted draft cold-maintenance boundary
+
+A fully constructed but genuinely unsealed ordinary draft can pass a named
+read-only cold-maintenance guard only after STOP and actual physical drain.
+Active construction, source/admission seals, attempts, protected owners and
+unknown queues still refuse; normal rolling reload is unchanged. Missing data
+and the original draft survive deployment. See ADR-032.
+
+The arbiter also distinguishes a verified full-source continuity dependency
+on a complete ordinary unadmitted draft from genuine unchanged settlement.
+Its commandless wait carries physical source/proof/calendar identity; admitted
+work, protected purposes and the original bounded settlement halt retain their
+existing owners. No old decision or dataset is rewritten.
+
 ## 2026-10-03 - Archive-first pre-champion research
 
 The existing arbiter now preserves recovery/learning priority and selects one

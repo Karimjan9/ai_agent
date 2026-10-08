@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T08:49:10.901Z",
-  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
-  "source_file_count": 1547,
-  "git_head": "758b477e7ba6415aea299ed428369c2a1e67b945",
+  "generated_at": "2026-10-08T20:19:14.993Z",
+  "source_digest": "b7f56ccf0d9e44b05c7c9d8e552dd25b6500059e587735e8cad54e2d57f7d7f9",
+  "source_file_count": 1557,
+  "git_head": "1616b2db713996dbe5be306733b8726739b8b703",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -168,6 +168,9 @@
         "TypedInstrumentFoundryService::settleCausalBenchmark",
         "TypedInstrumentFoundryService::compress",
         "TypedInstrumentFoundryService::taskContract",
+        "TypedInstrumentFoundryService::preregisterFiniteSearch",
+        "TypedInstrumentFoundryService::settleFiniteSearch",
+        "TypedInstrumentFoundryService::inspectBehaviorEntry",
         "TypedInstrumentFoundryService::behaviorAlternatives",
         "ResearchKnowledgePortfolioService::preregisterExperiment",
         "ResearchKnowledgePortfolioService::chooseDiscriminatingProbe",
@@ -204,6 +207,8 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).",
+        "Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).",
         "The signed observed-completion projection withholding closes only its exact constructor mutation-selection episodes with append-only zero-authority settlements after all six immutable runs and original feedback are terminal. It never re-runs consolidation, rewrites decisions/assessment/feedback, grants credit or replenishes the root cap (ADR-031).",
         "One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).",
         "One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).",
@@ -387,10 +392,18 @@
         "backend-laravel/app/Services/LabPopulationService.php",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabImmutableEvidenceService.php",
+        "backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php",
+        "backend-laravel/app/Services/LabHistoricalLearningService.php",
+        "backend-laravel/tests/Feature/LabHistoricalLearningTest.php",
+        "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
         "backend-laravel/app/Services/SpecialistCouncilContractService.php",
         "backend-laravel/app/Services/SpecialistCouncilLifecycleService.php",
         "backend-laravel/app/Services/SpecialistCouncilDataUseService.php",
         "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
+        "backend-laravel/app/Services/NativeSpreadContextStudyService.php",
+        "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+        "backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php",
         "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
         "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
         "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
@@ -462,6 +475,7 @@
         "SpecialistCouncilLifecycleService::sealEvaluationPlan",
         "SpecialistCouncilLifecycleService::evaluateOriginalRuns",
         "SpecialistCouncilPreparationService::prepare",
+        "NativeSpreadContextStudyService",
         "LabPopulationService::build nativeCouncilIntent",
         "SpecialistCouncilPreparationService::isResearchGeneration",
         "SpecialistCouncilPreparationService::inspectDiscoveryOwner",
@@ -519,8 +533,12 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "specialist_council_native_chosen_solo_v1 is an original preregistered chosen_source_unqualified full-account comparison. The server preserves and hashes the exact source member and derives only capital_weight 1.0; observed sources, old plans, follow-up reuse and caller best-qualified claims are refused. Actual native account/trace/clock parity still owns comparison.",
+        "Controlled native spread-study traces retain canonical audit projection, but their typed generation/carrier/run/request/response declarations exclude ordinary historical mutation advice and causal priors. Old mixed aggregate cache identities and tainted append-only insights are not consumed; dedicated original paired measurement is the result owner.",
+        "Prospective matched-member SOLO is an explicit specialist_council_native_solo_v1 declaration. The owner derives one unchanged native member from the original stored council, preserves its allocation, passport, cost and risk, and attests the same actual account clock and metrics. A legacy plan or later follow-up signature cannot add that declaration; matched allocation is not best full-budget standalone proof (ADR-032).",
+        "A prospective native spread-context study owns two unused same-draft carriers with one unchanged native program, common physical data/clock/cost/risk and a pre-outcome question seal. It masks only the instrument decision-context spread_liquidity_state, records contemporaneous Entry/WAIT decisions and excluded coverage, and grants no profit, causal credit or paper authority. Existing constructor and dispatcher remain the only admission path (ADR-032).",
         "A signed observed-completion cohort with six completed original runs and immutable technical feedback closes its exact mutation-selection episodes with zero-authority settlements before the terminal watermark. A technical council disposition remains technical at generation close without rewriting agent verdicts; blocked settle-only closure is deferred, not reported as progress (ADR-031).",
-        "An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Four prospective source horizons and two unused carriers are not qualified specialists. This intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; its creator/question/hash are bound to all six model markers. Without original atomic council preparation, dispatcher and snapshot admission refuse the declared roots, including deleted context with retained markers/origin. Ordinary population paths are unchanged.",
+        "An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Its comparison purpose retains four sources plus candidate/ablation; a separately declared spread_context_study purpose retains four sources plus masked/unmasked carriers. The new purpose and exact supported spread/context declaration are original-intent-owned and cannot be injected into an old comparison or follow-up. Sources/carriers are not qualified specialists. Intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; creator/question/hash bind all six markers. Original atomic preparation remains mandatory for dispatcher/snapshot admission, including deleted context with retained markers/origin. Ordinary population paths are unchanged.",
         "Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.",
         "Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.",
         "Council comparison plans preregister equal capital, costs, risk, original windows and champion/solo/ablation/retention identities before evidence. The creator cannot self-certify; research comparison never grants independent, paper or live authority.",
@@ -601,7 +619,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 75,
+      "source_file_count": 83,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -619,6 +637,8 @@
       "paths": [
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabImmutableEvidenceService.php",
+        "backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php",
+        "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
         "backend-laravel/app/Services/ExecutionContractService.php",
         "backend-laravel/app/Services/ResearchReleaseSealService.php",
         "backend-laravel/app/Services/InstrumentResearchWindowService.php",
@@ -637,6 +657,14 @@
         "ai-service-python/app/services/backtester.py",
         "ai-service-python/app/services/replay_executed_clock.py",
         "ai-service-python/app/services/research_program_tasks.py",
+        "ai-service-python/app/services/instrument_research.py",
+        "ai-service-python/app/services/native_spread_context_study.py",
+        "backend-laravel/app/Services/NativeSpreadContextStudyService.php",
+        "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+        "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+        "ai-service-python/tests/test_native_spread_context_study.py",
+        "ai-service-python/tests/support/native_spread_context_study_fixture.py",
+        "ai-service-python/tests/test_finite_program_search.py",
         "ai-service-python/app/services/specialist_council.py",
         "ai-service-python/app/services/authorized_council_arm.py",
         "ai-service-python/tests/test_authorized_council_arm.py",
@@ -653,6 +681,9 @@
         "docs/ai-service-contract.md"
       ],
       "entry_points": [
+        "LabImmutableEvidenceService::recordDecisionTrace",
+        "LabImmutableEvidenceService::projectDecisionTrace",
+        "ProjectLabCandleDecisionEvents::handle",
         "ExecutionContractService",
         "ConfirmationEntryContractService",
         "FastAPI /health",
@@ -666,6 +697,9 @@
       ],
       "dependencies": [],
       "invariants": [
+        "Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.",
+        "native_spread_context_study_v1 changes only the computed instrument spread context, never raw quotes, prices, execution fees or hard risk. Its in-loop receipt distinguishes shared eligible gate events, unreached gates and account-diverged coverage; complete immutable original arms must share physical clock/source/program/cost before research-only Entry/WAIT sensitivity can settle.",
+        "Optional native member liquidity_atr_binding is a fixed-vocabulary closed input port compiled from the original source membership cell, not a study-only fallback. Both the actual gate and observer consume that same explicit field and receipt its source/value hash; signed study identity must match the native member. Unknown, absent or invalid inputs do not manufacture liquidity, and legacy undeclared context behavior remains unchanged.",
         "replay_executed_clock_v1 observes each actual loop's previous-closed signal and next-open execution indices/timestamps in constant space. Input-selection warmup/probe counts cannot attest executed clocks; ordinary/native/authorized producers are independently bound to their original request and account owner. Missing/stale/malformed clocks or unequal physical schedule/index digests make an original comparison unassessable before economic deltas, not a strategy loss. Legacy evaluator starts are not silently changed or historical receipts backfilled.",
         "A per-candidate specialist_council_runtime_v1 executes on one chronological account with shared reservations, costs, exposure and owner-pinned positions. Adding separately computed specialist PnLs is not a native council replay.",
         "Native specialist_council_receipt_v1 seals dataset, execution, member/version identities and actual account/position ledgers; original-request attestation precedes screen/full cache or learning consumption.",
@@ -680,6 +714,7 @@
         "Upstream strategy opportunities survive specialist veto in emitted receipts; missing measured liquidity is distinct from no signal and modeled execution spread never replaces an observation.",
         "A prospective instrument research trace keeps exact venue-phase activation keys and trade-ledger slices together; Laravel cannot substitute broad session envelopes for phase-local posterior evidence.",
         "Laravel and Python must agree on required protocol and sealed identity fields.",
+        "Instrument spread context uses the same canonical aliases in Laravel, Python matching and research attribution (liquid/low_spread to normal; illiquid to high). Raw observed labels and masked unknown remain traceable; alias equivalence never manufactures measured liquidity or changes execution prices/costs.",
         "HTTP success alone is never evidence attestation.",
         "A mismatched hash fails at the owning boundary.",
         "Prospective screens verify exact warmup/evaluation rows, UTC bounds, month counts and data/execution identities before replay and before learning; a legacy short replay cannot satisfy the new evaluator receipt.",
@@ -697,6 +732,11 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_instrument_research.py",
+        "backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php",
+        "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+        "ai-service-python/tests/test_native_spread_context_study.py",
+        "ai-service-python/tests/test_finite_program_search.py",
         "ai-service-python/tests/test_replay_executed_clock.py",
         "backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
@@ -736,7 +776,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 35,
+      "source_file_count": 45,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {
@@ -862,6 +902,8 @@
       "paths": [
         "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
         "backend-laravel/app/Services/RuntimeMonitoringService.php",
+        "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
+        "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
         "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
         "backend-laravel/app/Services/SettlementWatermarkService.php",
         "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
@@ -924,6 +966,7 @@
         "system:runtime-monitor",
         "system:runtime-reload-preflight",
         "RuntimeReloadPreflightService::inspect",
+        "LabLifecycleErrorLogger::record",
         "trading:run-research-loop",
         "ai:pause",
         "ai:resume",
@@ -939,6 +982,7 @@
         "laboratory"
       ],
       "invariants": [
+        "Explicit unsealed-draft cold maintenance accepts only one named fully constructed unused draft under drain-first STOP, with absent constructor ownership, no source/admission/replay seals or attempted arms and all queues known-empty. Default rolling reload and sealed native owners remain strict. Read-only preflight, two authenticated idle probes and actual new worker boot seals are required; the original data dependency and draft are not rewritten (ADR-032).",
         "Default rolling reload still requires no active generation. Explicit terminal-projection cold maintenance accepts only one named signed observed-completion cohort whose original arms/feedback are terminal, all queues are known-empty and control is drain-first STOP; it still requires fresh authenticated replay-idle probes. It grants neither replay nor another completion (ADR-031).",
         "An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.",
         "Targeted superseded-run recovery is explicit, backend-neutral and bounded to twenty original IDs. Disabled admission, idle authenticated replay/known-empty laboratory queues, terminal agent/generation, absent same-host PID and a later same-phase completed original response artifact are required. It closes only response-less open attempts as operational retry_released, preserving old source/data/parameter/start facts and every later verdict; it grants no replay, learning or promotion evidence.",
@@ -963,6 +1007,7 @@
         "Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer."
       ],
       "tests": [
+        "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
         "backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php",
         "backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php",
         "backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php",
@@ -987,7 +1032,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 50,
+      "source_file_count": 52,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {
@@ -1010,6 +1055,7 @@
         "backend-laravel/app/Models/PaperOrder.php",
         "backend-laravel/app/Models/PaperFill.php",
         "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+        "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
         "docs/architecture/specialist-council.md",
         "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
         "backend-laravel/app/Services/SmartDisciplineEngineService.php",
@@ -1038,6 +1084,7 @@
         "causal-learning"
       ],
       "invariants": [
+        "Locked native intake marks owned positions from fresh closed candles and pinned spread, slippage, commission and accrued carry. Missing marks or historical peak refuse new risk while management and retries continue. Spendable risk uses min(realized balance, marked equity); actual observed peak is monotonic and never backfilled from missing historical evidence (ADR-032).",
         "The existing paper monitor is the sole council adoption clock. Opt-in running control may deliver at most eight due council identities per cycle to the native locked original-evidence owner; pause, stop, drain or safety halt fences adoption and new native entry but never the reconciliation of owned positions. Read-only minute paging prevents rejected versions from starving another due council.",
         "Opt-in native specialists still require their own E3/E4 frozen admission. Shared account reservations lock integer capital before order publication, cannot double-spend across members, and may only narrow sentinel, discipline and external global risk limits.",
         "Specialist orders pin council, owner, strategy, tactic, management and source request versions. Disabling new council entries or retiring a version cannot stop existing owned position management. Unsupported broker netting or fill accounting remains a dependency.",
@@ -1059,7 +1106,7 @@
       "flows": [
         ".project-map/modules/paper-execution/flows/paper-order-lifecycle.md"
       ],
-      "source_file_count": 11,
+      "source_file_count": 12,
       "map": ".project-map/modules/paper-execution/module.yaml"
     }
   ]

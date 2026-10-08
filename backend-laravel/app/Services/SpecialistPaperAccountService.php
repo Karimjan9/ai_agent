@@ -77,7 +77,7 @@ class SpecialistPaperAccountService
             $initial = (int) config('services.paper.specialist_initial_balance_cents', 1000000);
             if ($initial <= 0) return $this->blocked('PAPER_ACCOUNT_CAPITAL_UNAVAILABLE');
             DB::table('paper_capital_accounts')->insertOrIgnore(['account_key' => $key, 'initial_balance_cents' => $initial,
-                'balance_cents' => $initial, 'created_at' => now(), 'updated_at' => now()]);
+                'balance_cents' => $initial, 'peak_equity_cents' => $initial, 'created_at' => now(), 'updated_at' => now()]);
             $account = DB::table('paper_capital_accounts')->where('account_key', $key)->lockForUpdate()->first();
             if (PaperOrder::whereNull('paper_capital_reservation_id')->whereIn('status', ['open', 'submitted'])->exists()) return $this->blocked('LEGACY_PAPER_ACCOUNT_RECONCILIATION_REQUIRED');
             $version = \App\Models\SpecialistCouncilVersion::where('council_id', $binding['council_id'] ?? '')
@@ -127,6 +127,14 @@ class SpecialistPaperAccountService
             $existing = DB::table('paper_capital_reservations')->where('intent_key', $intent)->first();
             if ($existing) return ['allowed' => true, 'idempotent' => true, 'reservation' => (array) $existing];
             if ($units <= 0 || $entry <= 0 || $stop <= 0 || $costCents < 0) return $this->blocked('INVALID_PAPER_RESERVATION');
+            $valuation = $this->markedEquity($account);
+            if (! $valuation['known']) return [...$this->blocked('PAPER_ACCOUNT_MARK_UNAVAILABLE'), 'mark_dependencies' => $valuation['dependencies']];
+            $peak = $this->observePeak($account, $valuation['equity_cents']);
+            if ($peak === null) return $this->blocked('PAPER_ACCOUNT_PEAK_EQUITY_HISTORY_UNAVAILABLE');
+            // Floating gains do not fund entries; floating losses immediately
+            // narrow the same locked account's capital and risk allowance.
+            $budget = min((int) $account->balance_cents, $valuation['equity_cents']);
+            if ($budget <= 0) return $this->blocked('PAPER_SHARED_CAPITAL_EXHAUSTED');
             $capital = self::notionalCents($units, $entry);
             $risk = self::notionalCents($units, abs($entry - $stop)) + $costCents;
             if ($costCents > self::costCents($units, $entry, (float) ($policy['max_expected_cost_percent'] ?? 0))) return $this->blocked('PAPER_EXPECTED_COST_LIMIT');
@@ -140,27 +148,30 @@ class SpecialistPaperAccountService
             $group = str_starts_with(strtoupper($candidate->symbol), 'XAU') ? 'metal_usd' : 'usd_fx';
             $sameGroup = static fn ($row): bool => (str_starts_with(strtoupper($row->symbol), 'XAU') ? 'metal_usd' : 'usd_fx') === $group;
             if ($open->get()->filter($sameGroup)->count() + $unpublished->filter($sameGroup)->count() >= (int) config('services.risk.max_positions_per_group', 2)) return $this->blocked('NO_TRADE_CORRELATED_RISK');
-            if ($capital > $account->balance_cents - $account->reserved_cents - $account->allocated_cents - $costCents) return $this->blocked('PAPER_SHARED_CAPITAL_EXHAUSTED');
-            $ownerCap = self::costCents(10000, self::price($account->balance_cents / 100), (float) data_get($member, 'member.capital_weight', 0) * 100);
+            if ($capital > $budget - $account->reserved_cents - $account->allocated_cents - $costCents) return $this->blocked('PAPER_SHARED_CAPITAL_EXHAUSTED');
+            $ownerCap = self::costCents(10000, self::price($budget / 100), (float) data_get($member, 'member.capital_weight', 0) * 100);
             if ($capital > $ownerCap) return $this->blocked('PAPER_MEMBER_CAPITAL_ALLOCATION_LIMIT');
-            $reservedCap = self::costCents(10000, self::price($account->balance_cents / 100), (float) ($policy['max_reserved_capital_percent'] ?? 0));
+            $reservedCap = self::costCents(10000, self::price($budget / 100), (float) ($policy['max_reserved_capital_percent'] ?? 0));
             if ($account->reserved_cents + $account->allocated_cents + $capital > $reservedCap) return $this->blocked('PAPER_SHARED_CAPITAL_ALLOCATION_LIMIT');
             $grossCap = min((int) config('services.paper.specialist_max_gross_exposure_cents', 1000000),
-                self::costCents(10000, self::price($account->balance_cents / 100), (float) ($policy['max_gross_exposure_percent'] ?? 0)),
-                self::costCents(10000, self::price($account->balance_cents / 100), (float) data_get(app(ExecutionContractService::class)->for($candidate->symbol, $signal->timeframe), 'parameters.max_leverage', 0) * 100));
+                self::costCents(10000, self::price($budget / 100), (float) ($policy['max_gross_exposure_percent'] ?? 0)),
+                self::costCents(10000, self::price($budget / 100), (float) data_get(app(ExecutionContractService::class)->for($candidate->symbol, $signal->timeframe), 'parameters.max_leverage', 0) * 100));
             if ($account->gross_exposure_cents + $capital > $grossCap) return $this->blocked('PAPER_GROSS_EXPOSURE_LIMIT');
             $riskCap = min((int) config('services.paper.specialist_max_account_risk_cents', 10000),
-                self::costCents(10000, self::price($account->balance_cents / 100), (float) ($policy['max_total_risk_percent'] ?? 0)));
+                self::costCents(10000, self::price($budget / 100), (float) ($policy['max_total_risk_percent'] ?? 0)));
             if ($account->reserved_risk_cents + $account->allocated_risk_cents + $risk > $riskCap) return $this->blocked('PAPER_ACCOUNT_RISK_LIMIT');
             if (($policy['opposite_position_policy'] ?? 'reject') === 'reject'
                 && (clone $pending)->where('symbol', $candidate->symbol)->where('direction', '!=', $signal->decision)->exists()) return $this->blocked('PAPER_OPPOSITE_POSITION_POLICY_REJECTED');
-            $perTradeCap = self::costCents(10000, self::price($account->balance_cents / 100), min((float) config('services.risk.max_risk_per_trade_percent', 1), (float) data_get($member, 'member.risk_per_trade_percent', 0)));
+            $perTradeCap = self::costCents(10000, self::price($budget / 100), min((float) config('services.risk.max_risk_per_trade_percent', 1), (float) data_get($member, 'member.risk_per_trade_percent', 0)));
             if ($risk > $perTradeCap) return $this->blocked('NO_TRADE_PER_TRADE_RISK');
             $daily = (int) DB::table('paper_cost_ledger')->where('paper_capital_account_id', $account->id)->where('created_at', '>=', now()->startOfDay())->selectRaw('COALESCE(SUM(realized_cents - cost_cents), 0) as pnl')->value('pnl');
+            // Without an original day-open mark, retain a conservative loss
+            // floor instead of treating overnight unrealized loss as zero.
+            $daily += min(0, $valuation['unrealized_pnl_cents']);
             $lossCap = self::costCents(10000, self::price($account->initial_balance_cents / 100), min(abs((float) config('services.risk.daily_loss_limit_percent', 2)), (float) ($policy['max_daily_loss_percent'] ?? 0)));
             if ($daily <= -$lossCap) return $this->blocked('NO_TRADE_DAILY_LOSS_LOCK');
-            $drawdownCap = self::costCents(10000, self::price($account->initial_balance_cents / 100), (float) ($policy['max_drawdown_percent'] ?? 0));
-            if ($account->initial_balance_cents - $account->balance_cents >= $drawdownCap) return $this->blocked('PAPER_ACCOUNT_DRAWDOWN_LIMIT');
+            $drawdownCap = self::costCents(10000, self::price($peak / 100), (float) ($policy['max_drawdown_percent'] ?? 0));
+            if ($peak - $valuation['equity_cents'] >= $drawdownCap) return $this->blocked('PAPER_ACCOUNT_DRAWDOWN_LIMIT');
             $id = DB::table('paper_capital_reservations')->insertGetId(['paper_capital_account_id' => $account->id, 'paper_signal_id' => $signal->id,
                 'intent_key' => $intent, 'owner_id' => $owner, 'council_id' => $binding['council_id'], 'council_version' => $binding['council_version'],
                 'management_version' => $binding['management_version'], 'symbol' => $candidate->symbol, 'direction' => $signal->decision,
@@ -251,6 +262,9 @@ class SpecialistPaperAccountService
                 'filled_at' => $payload['filled_at'] ?? now(), 'payload' => $payload]);
             $order->update(['filled_units_micros' => $filled, 'remaining_units_micros' => $remaining,
                 'units' => $filled / self::UNIT_SCALE, 'status' => $remaining > 0 ? 'open' : ($entry ? 'submitted' : 'closed')]);
+            $account->balance_cents += $realized - $cost;
+            $valuation = $this->markedEquity($account);
+            if ($valuation['known']) $this->observePeak($account, $valuation['equity_cents']);
             $candidate = ModelMarketPerformance::findOrFail($order->model_market_performance_id);
             $this->executionState->record($candidate, $entry ? ($filled < $reservation->requested_units_micros ? 'partially_filled' : 'filled') : ($remaining > 0 ? 'partial_exit' : 'closed_fill'),
                 $order->paperSignal, $order, ['provider' => 'simulated', 'idempotency_suffix' => $key,
@@ -303,28 +317,111 @@ class SpecialistPaperAccountService
                 $cost = (int) $fills->sum('cost_cents');
                 if ($cost !== (int) $ledger->where('paper_order_id', $row->paper_order_id)->sum('cost_cents')) $differences['cost_'.$row->paper_order_id] = ['fills' => $cost];
             }
-            $exposure = []; $unrealized = 0; $missingMarks = [];
+            $exposure = [];
             foreach ($rows as $row) {
                 $gross = (int) $row->pending_capital_cents + (int) $row->allocated_capital_cents;
                 $exposure[$row->symbol] ??= ['gross_cents' => 0, 'net_cents' => 0];
                 $exposure[$row->symbol]['gross_cents'] += $gross;
                 $exposure[$row->symbol]['net_cents'] += $gross * ($row->direction === 'BUY' ? 1 : -1);
-                if ((int) $row->remaining_units_micros <= 0 || ! $row->paper_order_id) continue;
-                $order = PaperOrder::findOrFail($row->paper_order_id);
-                $mark = \App\Models\Candle::where('symbol_id', \App\Models\Symbol::where('code', $order->symbol)->value('id'))
-                    ->where('timeframe', $order->timeframe)->where('time', '<=', now())->latest('time')->first();
-                if (! $mark) { $missingMarks[] = $order->id; continue; }
-                $delta = self::price((string) $mark->close) - self::price((string) $order->entry_price);
-                $unrealized += ($row->direction === 'BUY' ? 1 : -1) * ($delta < 0 ? -1 : 1)
-                    * intdiv(self::multiply(abs($delta), (int) $row->remaining_units_micros), 100000000);
             }
+            $valuation = $this->markedEquity($account, $rows);
+            $peak = $valuation['known'] ? $this->observePeak($account, $valuation['equity_cents']) : $account->peak_equity_cents;
             return ['protocol' => 'specialist_paper_account_reconciliation_v1', 'reconciled' => $differences === [], 'differences' => $differences,
                 'account' => (array) $account, 'currency' => 'USD', 'exposure_by_symbol' => $exposure,
-                'unrealized_pnl_cents' => $missingMarks === [] ? $unrealized : null,
-                'equity_cents' => $missingMarks === [] ? $account->balance_cents + $unrealized : null,
-                'missing_mark_order_ids' => $missingMarks, 'mark_basis' => 'last_available_candle_close_before_exit_costs',
+                'unrealized_pnl_cents' => $valuation['unrealized_pnl_cents'],
+                'equity_cents' => $valuation['equity_cents'], 'peak_equity_cents' => $peak,
+                'mark_dependencies' => $valuation['dependencies'],
+                'missing_mark_order_ids' => array_keys($valuation['dependencies']),
+                'mark_basis' => 'latest_fresh_closed_candle_less_pinned_exit_spread_slippage_commission_and_accrued_carry',
                 'broker' => 'simulated', 'broker_reconciled' => false, 'promotion_evidence' => false];
         });
+    }
+
+    /** Caller holds the account lock. The same valuation owns reporting and intake. */
+    private function markedEquity(object $account, ?\Illuminate\Support\Collection $rows = null): array
+    {
+        $rows ??= DB::table('paper_capital_reservations')->where('paper_capital_account_id', $account->id)->get();
+        $observedAt = \Carbon\CarbonImmutable::now('UTC');
+        $unrealized = 0; $dependencies = [];
+        foreach ($rows as $row) {
+            if ((int) $row->remaining_units_micros <= 0) continue;
+            if (! $row->paper_order_id) { $dependencies['reservation_'.$row->id] = 'owned_order_missing'; continue; }
+            $order = PaperOrder::find($row->paper_order_id);
+            if (! $order || ! $order->opened_at || $order->symbol !== $row->symbol || $order->direction !== $row->direction) {
+                $dependencies[$row->paper_order_id] = 'owned_order_identity_invalid'; continue;
+            }
+            $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800, 'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$order->timeframe] ?? 0;
+            if ($seconds <= 0) { $dependencies[$order->id] = 'mark_timeframe_unsupported'; continue; }
+            $mark = \App\Models\Candle::where('symbol_id', \App\Models\Symbol::where('code', $order->symbol)->value('id'))
+                ->where('timeframe', $order->timeframe)->where('time', '<=', $observedAt->subSeconds($seconds))
+                ->orderByDesc('time')->orderByDesc('id')->first();
+            if (! $mark) { $dependencies[$order->id] = 'closed_mark_missing'; continue; }
+            $closedAt = $mark->time->copy()->utc()->addSeconds($seconds);
+            if ($closedAt->lessThan($observedAt->subSeconds($seconds)) || $closedAt->lessThan($order->opened_at)) {
+                $dependencies[$order->id] = 'closed_mark_stale'; continue;
+            }
+            $policy = (array) data_get($order->signal_context, 'paper_cost_policy', []);
+            foreach (['commission_percent', 'swap_per_day_percent', 'spread_points', 'slippage_points', 'point_size'] as $field) {
+                if (! isset($policy[$field]) || ! is_numeric($policy[$field]) || ! is_finite((float) $policy[$field]) || $policy[$field] < 0) {
+                    $dependencies[$order->id] = 'pinned_mark_cost_policy_unavailable'; continue 2;
+                }
+            }
+            if ((float) $policy['point_size'] <= 0) { $dependencies[$order->id] = 'pinned_mark_cost_policy_unavailable'; continue; }
+            try {
+                if (! is_numeric($mark->close) || ! is_finite((float) $mark->close) || $mark->close <= 0 || empty($mark->provider)) {
+                    throw new LogicException('INVALID_PAPER_MARK');
+                }
+                $entry = self::price((string) $order->entry_price);
+                $offset = ((float) $policy['spread_points'] / 2 + (float) $policy['slippage_points']) * (float) $policy['point_size'];
+                // Round hypothetical closing friction against equity; an
+                // unavailable precision cannot silently remove an exit cost.
+                if (! is_finite($offset) || $offset * self::PRICE_SCALE > PHP_INT_MAX) throw new LogicException('INVALID_PAPER_EXIT_COST');
+                $exit = self::price((string) $mark->close) + ($order->direction === 'BUY' ? -1 : 1) * (int) ceil($offset * self::PRICE_SCALE);
+                if ($exit <= 0) throw new LogicException('INVALID_PAPER_EXIT_MARK');
+                $delta = $exit - $entry;
+                $movement = self::multiply(abs($delta), (int) $row->remaining_units_micros);
+                $loss = $order->direction === 'BUY' ? $delta < 0 : $delta > 0;
+                $pnl = $loss ? -self::ceilRatio($movement, 100000000) : intdiv($movement, 100000000);
+                $exitCommission = self::costCents((int) $row->remaining_units_micros, $entry, (float) $policy['commission_percent'] / 2);
+                // Canonical paper carry remains payable on the original filled
+                // notional even after a partial exit; the ledger owns paid cost.
+                $days = max(0, $order->opened_at->diffInSeconds($observedAt)) / 86400;
+                $carry = self::costCents((int) $row->filled_units_micros, $entry, (float) $policy['swap_per_day_percent'] * $days);
+                $paidCarry = 0;
+                foreach (DB::table('paper_cost_ledger')->where('paper_order_id', $order->id)->get(['payload', 'cost_cents']) as $costRow) {
+                    $paid = data_get(json_decode((string) $costRow->payload, true), 'carry_cents', 0);
+                    if (! is_int($paid) || $paid < 0 || $paid > (int) $costRow->cost_cents) throw new LogicException('PAPER_PAID_CARRY_UNATTESTED');
+                    $paidCarry += $paid;
+                }
+                $unrealized += $pnl - $exitCommission - max(0, $carry - $paidCarry);
+            } catch (LogicException $error) {
+                $dependencies[$order->id] = 'closed_mark_or_cost_invalid';
+            }
+        }
+        return ['known' => $dependencies === [], 'dependencies' => $dependencies,
+            'unrealized_pnl_cents' => $dependencies === [] ? $unrealized : null,
+            'equity_cents' => $dependencies === [] ? (int) $account->balance_cents + $unrealized : null];
+    }
+
+    private function observePeak(object $account, int $equity): ?int
+    {
+        if ($account->peak_equity_cents === null) {
+            if ((int) $account->balance_cents !== (int) $account->initial_balance_cents
+                || DB::table('paper_cost_ledger')->where('paper_capital_account_id', $account->id)->exists()
+                || DB::table('paper_capital_reservations')->where('paper_capital_account_id', $account->id)
+                    ->where(function ($query): void {
+                        $query->where('filled_units_micros', '>', 0)
+                            ->orWhereExists(function ($fills): void {
+                                $fills->selectRaw('1')->from('paper_fills')
+                                    ->whereColumn('paper_fills.paper_order_id', 'paper_capital_reservations.paper_order_id');
+                            });
+                    })->exists()) return null;
+            $account->peak_equity_cents = (int) $account->initial_balance_cents;
+        }
+        $peak = max((int) $account->peak_equity_cents, $equity);
+        DB::table('paper_capital_accounts')->where('id', $account->id)->update(['peak_equity_cents' => $peak]);
+        $account->peak_equity_cents = $peak;
+        return $peak;
     }
 
     private function locked(int $id, callable $action): mixed

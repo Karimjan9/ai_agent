@@ -22,6 +22,19 @@ class SpecialistCouncilObservedProjectionGuardTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_signed_observed_completion_cannot_feed_the_behavior_archive_or_research_priority(): void
+    {
+        [$agent, $run] = $this->fixture();
+        $owner = app(\App\Services\TypedInstrumentFoundryService::class);
+        $this->assertSame('BEHAVIOR_SOURCE_DERIVED_LEARNING_WITHHELD', $owner->recordBehaviorOutcome($run->run_id)['reason']);
+        $proposal = $owner->behaviorProposalEvidence('XAUUSD', 'H1');
+        $this->assertSame([], $proposal['sources']);
+        $this->assertSame(0.0, $proposal['priority_signal']);
+        $this->assertDatabaseCount('research_behavior_archive', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertSame('completed', $run->fresh()->status);
+    }
+
     public function test_signed_observed_completion_skips_every_derived_projection_even_with_positive_eligible_economics(): void
     {
         [$agent,$run,$decision,$projection]=$this->fixture();

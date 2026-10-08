@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T08:49:10.901Z",
-  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
-  "source_file_count": 1547,
-  "git_head": "758b477e7ba6415aea299ed428369c2a1e67b945",
+  "generated_at": "2026-10-08T20:19:14.993Z",
+  "source_digest": "b7f56ccf0d9e44b05c7c9d8e552dd25b6500059e587735e8cad54e2d57f7d7f9",
+  "source_file_count": 1557,
+  "git_head": "1616b2db713996dbe5be306733b8726739b8b703",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -19,19 +19,19 @@
       "symbol": "SimpleBacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 114
+      "line": 115
     },
     {
       "symbol": "Metrics",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 213
+      "line": 215
     },
     {
       "symbol": "Trade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 223
+      "line": 225
     },
     {
       "symbol": "StrategyConfig",
@@ -43,37 +43,37 @@
       "symbol": "MistakeJournalEntry",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 236
+      "line": 238
     },
     {
       "symbol": "DailyReportDay",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 242
+      "line": 244
     },
     {
       "symbol": "DailyReport",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 253
+      "line": 255
     },
     {
       "symbol": "BacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 258
+      "line": 260
     },
     {
       "symbol": "SimpleTrade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 267
+      "line": 269
     },
     {
       "symbol": "SimpleBacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 310
+      "line": 312
     },
     {
       "symbol": "BacktestRequest",
@@ -91,7 +91,7 @@
       "symbol": "ExecutionConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 98
+      "line": 99
     },
     {
       "symbol": "OriginalSoloAccountObserver",
@@ -154,6 +154,12 @@
       "line": 33
     },
     {
+      "symbol": "NativeSpreadContextStudy",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/native_spread_context_study.py",
+      "line": 92
+    },
+    {
       "symbol": "RedTeamService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/red_team.py",
@@ -169,13 +175,13 @@
       "symbol": "BoundedDecisionProgram",
       "kind": "python_class",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 259
+      "line": 372
     },
     {
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 225
+      "line": 283
     },
     {
       "symbol": "StrategyDnaService",
@@ -218,6 +224,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_execution_contract.py",
       "line": 7
+    },
+    {
+      "symbol": "FiniteProgramSearchTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_finite_program_search.py",
+      "line": 43
     },
     {
       "symbol": "MarketAdaptiveReplayTest",
@@ -284,6 +296,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_robustness_protocol.py",
       "line": 11
+    },
+    {
+      "symbol": "ChosenNativeSoloContractTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_specialist_council.py",
+      "line": 471
     },
     {
       "symbol": "SpecialistCouncilTest",
@@ -685,7 +703,7 @@
       "symbol": "causal",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1019
+      "line": 1031
     },
     {
       "symbol": "DispatchLabGeneration",
@@ -4867,7 +4885,7 @@
       "symbol": "LabHistoricalLearningService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabHistoricalLearningService.php",
-      "line": 27
+      "line": 28
     },
     {
       "symbol": "LabImmutableEvidenceService",
@@ -5356,6 +5374,12 @@
       "line": 17
     },
     {
+      "symbol": "NativeSpreadContextStudyService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/NativeSpreadContextStudyService.php",
+      "line": 22
+    },
+    {
       "symbol": "ObservedCouncilEpisodeDispositionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php",
@@ -5707,7 +5731,7 @@
       "symbol": "RuntimeReloadPreflightService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
-      "line": 14
+      "line": 27
     },
     {
       "symbol": "ScheduledArtisanProcessRunnerService",
@@ -7204,6 +7228,12 @@
       "line": 7
     },
     {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
+      "line": 7
+    },
+    {
       "symbol": "NativeBi5DecoderTest",
       "kind": "python_class",
       "path": "backend-laravel/scripts/decode-dukascopy-tick-hour.test.py",
@@ -8098,6 +8128,12 @@
       "line": 22
     },
     {
+      "symbol": "NativeDecisionTraceHashTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php",
+      "line": 11
+    },
+    {
       "symbol": "NativePolicyPhysicalExposureTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
@@ -8108,6 +8144,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
       "line": 16
+    },
+    {
+      "symbol": "NativeSpreadContextStudyTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+      "line": 25
+    },
+    {
+      "symbol": "NativeStudyHistoricalProjectionIsolationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+      "line": 23
     },
     {
       "symbol": "NormalCausalResearchContractTest",
@@ -8221,7 +8269,7 @@
       "symbol": "ProspectiveM5ContinuityHandoffTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
-      "line": 28
+      "line": 33
     },
     {
       "symbol": "ProspectiveRepairExperimentTest",
@@ -8389,7 +8437,7 @@
       "symbol": "RuntimeReloadPreflightTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 15
+      "line": 28
     },
     {
       "symbol": "ScheduledCommandIsolationTest",
@@ -8504,6 +8552,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeIntegrationTest.php",
       "line": 14
+    },
+    {
+      "symbol": "SpecialistCouncilNativeSoloTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php",
+      "line": 17
     },
     {
       "symbol": "SpecialistCouncilObservedProbeCompletionTest",
@@ -8695,7 +8749,7 @@
       "symbol": "TypedInstrumentResearchLearningTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
-      "line": 19
+      "line": 20
     },
     {
       "symbol": "TypedOperatorDecisionIntegrationTest",

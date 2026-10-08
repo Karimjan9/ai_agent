@@ -13,6 +13,8 @@ class SpecialistCouncilContractService
     public const MANIFEST_PROTOCOL = 'specialist_council_manifest_v1';
     public const PASSPORT_PROTOCOL = 'specialist_passport_v1';
     public const RUNTIME_PROTOCOL = 'specialist_council_runtime_v1';
+    public const NATIVE_SOLO_PROTOCOL = 'specialist_council_native_solo_v1';
+    public const NATIVE_CHOSEN_SOLO_PROTOCOL = 'specialist_council_native_chosen_solo_v1';
     public const TRADING_ROLES = ['scalp', 'hour', 'day', 'swing'];
     public const SUPPORT_TRIAL_PROTOCOL = 'specialist_support_role_trial_v1';
 
@@ -427,6 +429,19 @@ class SpecialistCouncilContractService
             'instrument_owner' => data_get($model->metadata, 'instrument_research_assignment')]);
     }
 
+    /** An explicit frozen source port is executable authority, never an inferred ATR fallback. */
+    public function liquidityAtrBindingForModel(ModelVersion $model, string $timeframe): ?string
+    {
+        $cell = (array) data_get($model->metadata, 'specialist_council_membership.contextual_cell', []);
+        if (! array_key_exists('liquidity_atr_binding', $cell)) return null;
+        $binding = $cell['liquidity_atr_binding'];
+        if (! is_string($binding) || ! in_array($binding, ['closed_strategy_atr_v1', 'closed_structure_atr_v1', 'closed_m5_management_atr_v1'], true)
+            || ($binding === 'closed_m5_management_atr_v1' && strtoupper($timeframe) !== 'M5')) {
+            throw new InvalidArgumentException('COUNCIL_DECISION_CONTEXT_ATR_BINDING_INVALID');
+        }
+        return $binding;
+    }
+
     /** The caller resolves this manifest from storage; passports never accept caller-supplied model vectors. */
     public function runtimeContract(array $manifest, string $timeframe, string $dataHash, string $executionHash, array $nativeMembers = [], ?string $symbol = null): array
     {
@@ -477,6 +492,8 @@ class SpecialistCouncilContractService
                     'tick_execution' => ($horizon['execution_precision'] ?? 'candle') === 'tick'],
             ];
             $native = $nativeMembers[$member['specialist_id']] ?? null;
+            $atrBinding = $this->liquidityAtrBindingForModel($model, $timeframe);
+            if ($atrBinding !== null) $runtimeMember['liquidity_atr_binding'] = $atrBinding;
             if (is_array($native)) {
                 if (($native['strategy'] ?? null) !== $model->strategy
                     || $this->epochs->parameterHash((array) ($native['parameters'] ?? [])) !== $this->epochs->parameterHash((array) $model->parameters)) {
@@ -484,6 +501,9 @@ class SpecialistCouncilContractService
                 }
                 if (isset($native['symbol']) && strtoupper((string) $native['symbol']) !== $symbol) {
                     throw new InvalidArgumentException('COUNCIL_MEMBER_NATIVE_INSTRUMENT_IDENTITY_MISMATCH');
+                }
+                if (($native['liquidity_atr_binding'] ?? null) !== $atrBinding) {
+                    throw new InvalidArgumentException('COUNCIL_MEMBER_NATIVE_ATR_BINDING_IDENTITY_MISMATCH');
                 }
                 $runtimeMember['symbol'] = $symbol;
                 $runtimeMember['base_strategy'] = $native['base_strategy'] ?? $runtimeMember['base_strategy'];
@@ -516,6 +536,62 @@ class SpecialistCouncilContractService
             'risk_identity' => $manifest['risk'], 'execution_identity' => ['id' => $manifest['execution']['id'], 'version' => $manifest['execution']['version']],
             'upgrades' => [], 'promotion_evidence' => false];
         return [...$contract, 'contract_hash' => $this->epochs->parameterHash($contract)];
+    }
+
+    /** Explicit prospective comparator scope; neither mode certifies the best eligible standalone. */
+    public function sealNativeSoloComparison(array $manifest, array $plan): ?array
+    {
+        if (! array_key_exists('solo_comparison', $plan)) return null;
+        $declared = $plan['solo_comparison'];
+        $fullChosen = is_array($declared) && ($declared['protocol'] ?? null) === self::NATIVE_CHOSEN_SOLO_PROTOCOL;
+        if (! is_array($declared)
+            || (! $fullChosen && ($declared['protocol'] ?? null) !== self::NATIVE_SOLO_PROTOCOL)
+            || ($declared['comparison_kind'] ?? null) !== ($fullChosen ? 'chosen_source_full_account_allocation' : 'matched_member_allocation')
+            || ($fullChosen && (($declared['selection_status'] ?? null) !== 'chosen_source_unqualified'
+                || ($declared['selection_timing'] ?? null) !== 'preregistered_before_outcomes'))
+            || ($declared['best_solo_full_budget_proven'] ?? null) !== false
+            || ($plan['purpose'] ?? null) !== 'research' || isset($plan['panel_reservation_hash']) || isset($plan['descendant_programs'])) {
+            throw new InvalidArgumentException($fullChosen
+                ? 'COUNCIL_NATIVE_SOLO_FULL_ACCOUNT_REQUIRES_EXPLICIT_ORIGINAL_CHOICE_SCOPE'
+                : 'COUNCIL_NATIVE_SOLO_REQUIRES_EXPLICIT_MATCHED_ALLOCATION_SCOPE');
+        }
+        $members = array_values(array_filter($manifest['members'], fn (array $member): bool =>
+            in_array($member['role'], self::TRADING_ROLES, true)
+            && $member['specialist_id'] === ($declared['specialist_id'] ?? null)
+            && (int) $member['model_version_id'] === (int) $manifest['evaluation_policy']['solo_model_version_id']));
+        if (count($members) !== 1) throw new InvalidArgumentException('COUNCIL_NATIVE_SOLO_EXACT_MEMBER_REQUIRED');
+        $member = $members[0];
+        $soloArms = array_filter((array) ($plan['arms'] ?? []), fn (array $arm): bool => ($arm['kind'] ?? null) === 'solo');
+        if ($soloArms === [] || collect($soloArms)->contains(fn (array $arm): bool =>
+            (int) ($arm['model_version_id'] ?? 0) !== (int) $member['model_version_id'])) {
+            throw new InvalidArgumentException('COUNCIL_NATIVE_SOLO_ORIGINAL_ARM_MEMBER_MISMATCH');
+        }
+        $sealed = ['protocol' => $fullChosen ? self::NATIVE_CHOSEN_SOLO_PROTOCOL : self::NATIVE_SOLO_PROTOCOL,
+            'comparison_kind' => $fullChosen ? 'chosen_source_full_account_allocation' : 'matched_member_allocation',
+            'specialist_id' => $member['specialist_id'], 'model_version_id' => (int) $member['model_version_id'],
+            'source_model_hash' => $member['source_model_hash'], 'passport_hash' => $member['passport_hash'],
+            'capital_weight' => $fullChosen ? 1.0 : $member['capital_weight'], 'risk_per_trade_percent' => $member['risk_per_trade_percent'],
+            'initial_account_capital_equal' => true, 'member_allocation_unchanged' => ! $fullChosen,
+            'best_solo_full_budget_proven' => false];
+        if ($fullChosen) $sealed = [...$sealed, 'source_capital_weight' => $member['capital_weight'],
+            'programme_unchanged_except_capital_weight' => true, 'selection_status' => 'chosen_source_unqualified',
+            'selection_timing' => 'preregistered_before_outcomes', 'promotion_evidence' => false];
+        foreach ($declared as $key => $value) {
+            if (! array_key_exists($key, $sealed)
+                || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($value, $sealed[$key])) {
+                throw new InvalidArgumentException('COUNCIL_NATIVE_SOLO_DECLARATION_IDENTITY_MISMATCH:'.$key);
+            }
+        }
+        return $sealed;
+    }
+
+    public function assertNativeSoloComparison(array $manifest, array $plan): ?array
+    {
+        $expected = $this->sealNativeSoloComparison($manifest, $plan);
+        if ($expected !== null && ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($expected, $plan['solo_comparison'])) {
+            throw new InvalidArgumentException('COUNCIL_NATIVE_SOLO_ORIGINAL_DECLARATION_INCOMPLETE');
+        }
+        return $expected;
     }
 
     public function timeframeSeconds(string $timeframe): int

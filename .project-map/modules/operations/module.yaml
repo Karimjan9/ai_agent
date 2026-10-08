@@ -11,6 +11,8 @@ aliases:
 paths:
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/RuntimeMonitoringService.php
+  - backend-laravel/app/Services/LabLifecycleErrorLogger.php
+  - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/app/Services/RuntimeReloadPreflightService.php
   - backend-laravel/app/Services/SettlementWatermarkService.php
   - backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php
@@ -72,6 +74,7 @@ entry_points:
   - system:runtime-monitor
   - system:runtime-reload-preflight
   - RuntimeReloadPreflightService::inspect
+  - LabLifecycleErrorLogger::record
   - trading:run-research-loop
   - ai:pause
   - ai:resume
@@ -84,6 +87,7 @@ data_tables:
 dependencies:
   - laboratory
 invariants:
+  - Explicit unsealed-draft cold maintenance accepts only one named fully constructed unused draft under drain-first STOP, with absent constructor ownership, no source/admission/replay seals or attempted arms and all queues known-empty. Default rolling reload and sealed native owners remain strict. Read-only preflight, two authenticated idle probes and actual new worker boot seals are required; the original data dependency and draft are not rewritten (ADR-032).
   - Default rolling reload still requires no active generation. Explicit terminal-projection cold maintenance accepts only one named signed observed-completion cohort whose original arms/feedback are terminal, all queues are known-empty and control is drain-first STOP; it still requires fresh authenticated replay-idle probes. It grants neither replay nor another completion (ADR-031).
   - An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.
   - Targeted superseded-run recovery is explicit, backend-neutral and bounded to twenty original IDs. Disabled admission, idle authenticated replay/known-empty laboratory queues, terminal agent/generation, absent same-host PID and a later same-phase completed original response artifact are required. It closes only response-less open attempts as operational retry_released, preserving old source/data/parameter/start facts and every later verdict; it grants no replay, learning or promotion evidence.
@@ -113,6 +117,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php
   - backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php
   - backend-laravel/tests/Feature/AcademyValidatorReadinessBatchTest.php

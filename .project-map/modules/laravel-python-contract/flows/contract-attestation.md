@@ -12,6 +12,30 @@ or a seal created after completion; this original source proof is not credit.
 
 ## Trigger
 
+Prospective native SOLO uses the original stored council's unchanged member
+and allocation rather than an ordinary legacy carrier. The original account
+receipt and executed clock must attest the exact same physical scope.
+
+The separate preregistered chosen full-account protocol retains a hash-valid
+exact compiled source member; only its declared allocation becomes 1.0. Python
+checks that derivation before computation and PHP rechecks the original runtime,
+actual trace and native account afterward. It is not best-qualified selection,
+independence or authority and cannot retrofit an observed comparison.
+
+An optional native spread-context study carries a separate prospective matched
+pair seal. Python masks only computed instrument spread context and records
+actual gate/Entry/WAIT events plus closed-quote and account-state coverage.
+Laravel verifies both complete original immutable products and excludes
+unreached/account-diverged events from direct sensitivity. Execution prices,
+costs and hard-risk definitions are unchanged; no market skill or authority
+follows. The explicit native protocol cannot be replaced by a manually inserted
+legacy `measurement_witness` (ADR-032).
+
+The existing pure task hook can also carry a prospectively sealed finite
+registered DSL search. Original macro sources, semantic pool, typed as-of
+inputs and equal caps are checked before native products; original paired
+settlement measures only the completed finite task's actual effort.
+
 Original council arm comparison also requires a producer-sealed
 `replay_executed_clock_v1` emitted from the actual ordinary/native/authorized
 next-open loop. Input selection attests loaded rows and indicator warmup only;

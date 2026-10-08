@@ -32,6 +32,19 @@ def test_runtime_never_infers_liquid_from_absent_or_unavailable_spread():
     assert _instrument_runtime_context({**row, "spread": 0.6, "spread_available": True}, "BUY")["spread_liquidity_state"] == "illiquid"
 
 
+def test_php_canonical_spread_predicate_matches_observation_without_unknown_scope_widening():
+    from app.services.backtester import _instrument_contract_context_matches
+
+    boundary = {"declared_context": {"spread_liquidity_state": "normal"}}
+    activation = {"protocol": "instrument_runtime_activation_contract_v1", "context": boundary}
+    for value in ('normal', 'low_spread', 'normal_spread', 'liquid', 'high_liquidity'):
+        assert _context_matches(boundary, {'spread_liquidity_state': value})
+        assert _instrument_contract_context_matches(activation, {'spread_liquidity_state': value})
+    for value in ('high', 'illiquid', 'high_spread', 'unknown', ''):
+        assert not _context_matches(boundary, {'spread_liquidity_state': value})
+        assert not _instrument_contract_context_matches(activation, {'spread_liquidity_state': value})
+
+
 def test_exact_trade_slices_do_not_merge_distinct_venue_phases():
     result = {
         "robustness_matrix": {

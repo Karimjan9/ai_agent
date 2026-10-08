@@ -18,6 +18,38 @@ loss or permission to resubmit the same invalid arm.
 
 ## Declared native specialist council
 
+Prospective matched-member SOLO declares `specialist_council_native_solo_v1`
+before original preparation. The stored council supplies one unchanged native
+member and its allocation; actual native clock/account attestation precedes
+economic comparison. Legacy plans and observed-completion follow-ups cannot
+acquire this declaration retrospectively (ADR-032).
+
+An original `specialist_council_native_chosen_solo_v1` choice may explicitly
+derive allocation 1.0 from one unused stored source. The exact source member
+snapshot/hash and unchanged programme/passport/horizon/account/cost/hard-risk
+identity precede runtime compilation. It is `chosen_source_unqualified`, not
+best-qualified SOLO; old observed sources and follow-ups cannot acquire it.
+
+A prospectively sealed native spread-context pair uses two genuinely unused
+same-draft carriers of one unchanged native program. Existing construction,
+readiness and dispatcher still own admission; the study owner cannot create
+seats or bypass another experiment owner. Only the computed instrument spread
+context is masked. Original in-loop Entry/WAIT and coverage receipts settle
+research sensitivity, never profit, independent skill or paper authority.
+
+Native attestation checks the actual received decision trace against its sealed
+native identity and producer hash before recording replay use. Agreeing hash
+copies alone are insufficient. Transport preserves numeric wire types, including
+integral floats; legacy hashing is unchanged. A measured zero Entry/WAIT effect
+is valid diagnostic evidence, not technical failure or positive authority.
+
+Immutable study traces may enqueue the existing `ProjectLabCandleDecisionEvents`
+read-model projection for the two original carriers. Sources have no fabricated
+trace. Projection is retryable audit visibility, not ordinary learning: typed
+study declarations fence its events/rollups, gate/full outcomes and legacy
+aggregate caches out of historical mutation advice and causal prior consumption.
+The dedicated paired study receipt remains the diagnostic result owner.
+
 A council conversion dependency can become runnable only after original-owner
 follow-up proof registration. The kernel verifies the server seal, real source
 and clean-MTF plan before the existing arbiter claims it. Its existing work

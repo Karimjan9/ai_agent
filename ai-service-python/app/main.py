@@ -451,6 +451,17 @@ def _candidate_cache_contract_is_current(
                 policy = scope.get("selector_policy")
         if scope.get("policy_hash") != (canonical_hash(policy) if isinstance(policy, dict) else None):
             return False
+        if payload.native_spread_context_study_contract:
+            from app.services.native_spread_context_study import validate_study, RECEIPT_PROTOCOL
+            study = validate_study(payload, contract)
+            witness = result.get('native_spread_context_study_receipt')
+            quality_witness = (result.get('data_quality') or {}).get('native_spread_context_study_receipt')
+            if not isinstance(witness, dict) or witness != quality_witness or not receipt_hash_is_current(witness) \
+                    or witness.get('protocol') != RECEIPT_PROTOCOL or witness.get('contract_hash') != study['contract_hash'] \
+                    or witness.get('study_id') != study['study_id'] or witness.get('arm') != study['arm'] \
+                    or witness.get('identity_hash') != study['identity_hash'] \
+                    or witness.get('replay_executed_clock') != receipt.get('replay_executed_clock'):
+                return False
     probe = (payload.policy_context or {}).get("prospective_probe_window")
     if isinstance(probe, dict):
         receipt = result.get("prospective_probe_window_receipt")
@@ -979,6 +990,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "specialist_council_contract": dict(
                         config.get("specialist_council_contract") or payload.specialist_council_contract
                     ),
+                    "native_spread_context_study_contract": dict(
+                        config.get("native_spread_context_study_contract") or payload.native_spread_context_study_contract
+                    ),
                     "specialist_context_contract": dict(
                         config.get("specialist_context_contract") or {}
                     ),
@@ -997,6 +1011,9 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             candidate_payload = _candidate_cache_payload(
                 payload, strategy_payload, candidate_label
             )
+            if strategy_payload.native_spread_context_study_contract:
+                from app.services.specialist_council import validate_contract
+                validate_contract(strategy_payload)
             candidate_cache_key = _replay_cache_key("candidate", candidate_payload)
             candidate_cache = _load_immutable_replay_cache(candidate_cache_key)
             cached_item = (

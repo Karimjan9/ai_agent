@@ -1,5 +1,13 @@
 # Causal-learning history
 
+## 2026-10-08 - Bounded archive consumption and native finite search
+
+Original behavior entries can influence sealed research priorities through a
+capped consumption receipt after pure reinspection. Equal-cap native library
+and blinded finite-pool products measure one explicit task, not general synthesis
+or market authority. Withheld original technical runs remain ineligible.
+See ADR-032.
+
 ## 2026-10-04 - Evidence-bounded research meta-learning
 
 Existing memory, Academy, Foundry and portfolio gain prospective calibration,

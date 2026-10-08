@@ -18,10 +18,18 @@ paths:
   - backend-laravel/app/Services/LabPopulationService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabImmutableEvidenceService.php
+  - backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php
+  - backend-laravel/app/Services/LabHistoricalLearningService.php
+  - backend-laravel/tests/Feature/LabHistoricalLearningTest.php
+  - backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php
   - backend-laravel/app/Services/SpecialistCouncilContractService.php
   - backend-laravel/app/Services/SpecialistCouncilLifecycleService.php
   - backend-laravel/app/Services/SpecialistCouncilDataUseService.php
   - backend-laravel/app/Services/SpecialistCouncilPreparationService.php
+  - backend-laravel/app/Services/NativeSpreadContextStudyService.php
+  - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php
+  - backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php
   - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
   - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
   - backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php
@@ -92,6 +100,7 @@ entry_points:
   - SpecialistCouncilLifecycleService::sealEvaluationPlan
   - SpecialistCouncilLifecycleService::evaluateOriginalRuns
   - SpecialistCouncilPreparationService::prepare
+  - NativeSpreadContextStudyService
   - LabPopulationService::build nativeCouncilIntent
   - SpecialistCouncilPreparationService::isResearchGeneration
   - SpecialistCouncilPreparationService::inspectDiscoveryOwner
@@ -145,9 +154,16 @@ data_tables:
 dependencies:
   - market-data
   - laravel-python-contract
+# Original spread-study publication crosses into the existing conversion kernel;
+# see shared/integrations.md rather than adding a reverse ownership edge to
+# causal-learning (which already depends on laboratory).
 invariants:
+  - specialist_council_native_chosen_solo_v1 is an original preregistered chosen_source_unqualified full-account comparison. The server preserves and hashes the exact source member and derives only capital_weight 1.0; observed sources, old plans, follow-up reuse and caller best-qualified claims are refused. Actual native account/trace/clock parity still owns comparison.
+  - Controlled native spread-study traces retain canonical audit projection, but their typed generation/carrier/run/request/response declarations exclude ordinary historical mutation advice and causal priors. Old mixed aggregate cache identities and tainted append-only insights are not consumed; dedicated original paired measurement is the result owner.
+  - Prospective matched-member SOLO is an explicit specialist_council_native_solo_v1 declaration. The owner derives one unchanged native member from the original stored council, preserves its allocation, passport, cost and risk, and attests the same actual account clock and metrics. A legacy plan or later follow-up signature cannot add that declaration; matched allocation is not best full-budget standalone proof (ADR-032).
+  - A prospective native spread-context study owns two unused same-draft carriers with one unchanged native program, common physical data/clock/cost/risk and a pre-outcome question seal. It masks only the instrument decision-context spread_liquidity_state, records contemporaneous Entry/WAIT decisions and excluded coverage, and grants no profit, causal credit or paper authority. Existing constructor and dispatcher remain the only admission path (ADR-032).
   - A signed observed-completion cohort with six completed original runs and immutable technical feedback closes its exact mutation-selection episodes with zero-authority settlements before the terminal watermark. A technical council disposition remains technical at generation close without rewriting agent verdicts; blocked settle-only closure is deferred, not reported as progress (ADR-031).
-  - An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Four prospective source horizons and two unused carriers are not qualified specialists. This intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; its creator/question/hash are bound to all six model markers. Without original atomic council preparation, dispatcher and snapshot admission refuse the declared roots, including deleted context with retained markers/origin. Ordinary population paths are unchanged.
+  - An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Its comparison purpose retains four sources plus candidate/ablation; a separately declared spread_context_study purpose retains four sources plus masked/unmasked carriers. The new purpose and exact supported spread/context declaration are original-intent-owned and cannot be injected into an old comparison or follow-up. Sources/carriers are not qualified specialists. Intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; creator/question/hash bind all six markers. Original atomic preparation remains mandatory for dispatcher/snapshot admission, including deleted context with retained markers/origin. Ordinary population paths are unchanged.
   - Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.
   - Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.
   - Council comparison plans preregister equal capital, costs, risk, original windows and champion/solo/ablation/retention identities before evidence. The creator cannot self-certify; research comparison never grants independent, paper or live authority.

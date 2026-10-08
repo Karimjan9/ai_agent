@@ -51,6 +51,23 @@ class LabGenerationTerminalBoundaryService
             return $this->blocked('GENERATION_ALREADY_TERMINAL', $generation);
         }
 
+        // Four original study sources are references, not replay candidates.
+        // The original pair owner alone can close them neutrally after both
+        // immutable arm envelopes are terminal; missing/queued work stays open.
+        try { $studyDisposition = app(NativeSpreadContextStudyService::class)->reconcileGeneration($generation); }
+        catch (\Throwable $error) {
+            return $this->blocked('NATIVE_SPREAD_STUDY_ORIGINAL_PAIR_EVIDENCE_INVALID', $generation,
+                ['native_spread_study_reason' => str_starts_with($error->getMessage(), 'NATIVE_SPREAD_STUDY_')
+                    ? $error->getMessage() : 'ORIGINAL_STUDY_OWNER_UNAVAILABLE']);
+        }
+        if ($studyDisposition !== null) {
+            if (($studyDisposition['status'] ?? null) !== 'recorded') {
+                return $this->blocked('NATIVE_SPREAD_STUDY_ORIGINAL_PAIR_NOT_TERMINAL', $generation,
+                    ['native_spread_study_disposition' => $studyDisposition]);
+            }
+            $generation = $generation->fresh(['agents']);
+        }
+
         $agents = $generation->agents;
         if ($agents->isEmpty()) {
             return $this->blocked('GENERATION_HAS_NO_AGENTS', $generation);

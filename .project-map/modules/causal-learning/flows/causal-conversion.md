@@ -43,6 +43,15 @@ No generic learning consolidation or credit fan-out runs. See ADR-031.
 Support-role producer trials and original same-budget Portfolio comparisons
 remain distinct from confirmed skill, qualification and economic inheritance.
 
+The existing pure task hook also admits a prospectively sealed finite registered
+DSL pool for library-guided versus memory-blinded search. Original macro proofs,
+typed as-of inputs, identical semantic candidates and resource caps are frozen
+before both native products. The original consumer measures complete attempt
+prefixes and resources without library promotion or market credit. An archive
+entry can separately contribute a bounded research prior only after pure
+original-run reinspection and a hash-bound selected-block consumption receipt.
+Withheld technical-completion projections cannot supply either source (ADR-032).
+
 Typed operator proposals have a separate bounded research admission:
 `compileResearchCandidate -> decisionOperatorContract -> original closed-input
 confirmation/risk-reduction/exit receipt -> exact absence/ablation comparison`.

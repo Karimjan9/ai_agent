@@ -264,6 +264,14 @@ class ResearchLoopArbiterService
                         'generation' => $generation, 'queue_reservation' => $reservation,
                     ], $dryRun);
             }
+            $draftContinuity = $this->unadmittedHistoricalDraftContinuityReadiness($latest, $symbol);
+            if ($draftContinuity !== null) {
+                return $this->decide($symbol, $timeframe, 'WAIT_DATASET_CONTINUITY', 100,
+                    null, [], null, ['HISTORICAL_M5_CONTINUITY_SCOPE_UNRESOLVED'], [
+                        'generation' => $generation, 'data_readiness' => $draftContinuity,
+                        'promotion_evidence' => false,
+                    ], $dryRun);
+            }
             return $this->decide($symbol, $timeframe, 'SETTLE_EXISTING_GENERATION', 100,
                 'trading:run-lifecycle-cycle', [
                     '--symbol' => $symbol,
@@ -747,6 +755,65 @@ class ResearchLoopArbiterService
             ->first();
     }
 
+    /** A complete ordinary draft with no admitted work can wait on verified selected-source gaps. */
+    private function unadmittedHistoricalDraftContinuityReadiness(LabGeneration $generation, string $symbol): ?array
+    {
+        if ($generation->status !== 'draft' || $generation->trigger_type !== 'historical_research'
+            || $generation->completed_at !== null) return null;
+        $context = (array) $generation->trigger_context;
+        foreach (['native_specialist_council_intent', 'authorized_specialist_council_panel_intent',
+            'specialist_council_authorized_panel', 'specialist_council_preparation', 'native_spread_context_study',
+            'academy_trial_id', 'academy_experiment', 'academy_control_admission'] as $purpose) {
+            if (data_get($context, $purpose) !== null) return null;
+        }
+        foreach (['research_release', 'mtf_bundle_hash', 'mtf_bundle_manifest', 'mtf_runtime_contract', 'queue_batches'] as $seal) {
+            if (! empty($context[$seal])) return null;
+        }
+        $planned = count((array) ($context['generation_plan'] ?? []));
+        $modelPurposes = ['native_specialist_council_seed', 'authorized_specialist_council_panel_seed',
+            'specialist_council', 'specialist_council_evaluation', 'native_spread_context_study',
+            'academy_experiment', 'academy_control_admission', 'original_source_execution_snapshot',
+            'policy_context.specialist_council_authorized_arm'];
+        $agents = $generation->agents()->with('modelVersion')->get();
+        if ($planned < 1 || (int) $generation->population_size !== $planned || $agents->count() !== $planned
+            || data_get($context, 'constructor_audit.protocol') !== 'agent_constructor_invariant_v1'
+            || data_get($context, 'constructor_audit.planned_slots') !== $planned
+            || data_get($context, 'constructor_audit.created_agents') !== $planned
+            || ! empty(data_get($context, 'constructor_audit.skipped_zero_diff_slots'))
+            || $agents->contains(fn (LabAgent $agent): bool => $agent->lifecycle_status !== 'draft'
+                || in_array($agent->origin, ['native_council_root', 'authorized_council_panel'], true)
+                || array_filter($modelPurposes, fn ($purpose): bool => data_get($agent->modelVersion?->metadata, $purpose) !== null) !== [])
+            || ! Schema::hasTable('lab_evaluation_runs')
+            || LabEvaluationRun::query()->where('lab_generation_id', $generation->id)->exists()) return null;
+        $queue = $this->generationLabQueueSnapshot($generation);
+        if (($queue['available'] ?? null) !== true || ($queue['total'] ?? null) !== 0
+            || ($queue['rows'] ?? null) !== [] || ! in_array($queue['backend'] ?? '', ['redis', 'database'], true)) return null;
+        try {
+            $readiness = app(MultiTimeframeSnapshotService::class)->agentValidationReadiness($symbol);
+        } catch (Throwable) {
+            return null;
+        }
+        $repair = (array) ($readiness['prospective_m5_repair'] ?? []);
+        $gaps = $readiness['full_source_unexpected_gaps'] ?? null;
+        if (($readiness['ready'] ?? null) !== false
+            || ($readiness['reason'] ?? null) !== 'HISTORICAL_M5_CONTINUITY_SCOPE_UNRESOLVED'
+            || ($repair['verified'] ?? null) !== true || ! is_int($gaps) || $gaps < 1) return null;
+        $dependency = [
+            'protocol' => 'unadmitted_historical_draft_m5_continuity_v1',
+            'dataset_key' => $repair['dataset_key'], 'repair_hash' => $repair['repair_hash'],
+            'original_bad_m5_sha256' => $repair['original_bad_m5_sha256'],
+            'selected_m5_sha256' => $repair['prospective_m5_source_sha256'],
+            'economic_rows_sha256' => $repair['economic_rows_sha256'],
+            'calendar_scope_hash' => $this->hash($repair['calendar_scope']),
+            'full_source_unexpected_gaps' => $gaps,
+            'promotion_evidence' => false,
+        ];
+
+        return ['allowed' => false, 'reasons' => [$readiness['reason']],
+            'source_dependency' => $dependency, 'primary_stream_sha256' => $dependency['selected_m5_sha256'],
+            'full_source_unexpected_gaps' => $gaps, 'promotion_evidence' => false];
+    }
+
     /** Read-only early dependency check; the final frozen bundle still rechecks before queueing. */
     private function freshDatasetContinuityReadiness(?LabGeneration $latest, array $academy, string $symbol): array
     {
@@ -1150,6 +1217,9 @@ class ResearchLoopArbiterService
             // executable later. Retry only on an actual dependency change,
             // never merely on another scheduler minute or new live candle.
             $state['archive_dependency'] = data_get($evidence, 'archive_dependency');
+        }
+        if (data_get($evidence, 'data_readiness.source_dependency.protocol') === 'unadmitted_historical_draft_m5_continuity_v1') {
+            $state['unadmitted_historical_draft_dependency'] = data_get($evidence, 'data_readiness.source_dependency');
         }
         if (data_get($evidence, 'academy_proposal.status') === 'pending_canonical_admission' && $generation) {
             // An executed typed refusal is not an undelivered publication.

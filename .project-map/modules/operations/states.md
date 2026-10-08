@@ -70,6 +70,7 @@ single arbiter and its separately bounded unchanged-question allowance.
 | stopped after admitted work drains | operator `ai:start` | running | Existing durable lineage and canonical arbiter retain ownership | START creates no generation directly; RESUME rejects stopped/draining state. |
 | source deployment requested | replay probe HTTP/authentication/transport/JSON/count failure | reload refused | An online AI owner requires two authenticated zero-count probes; durable idle checks always apply | Exit non-zero before any PM2 mutation; no raw probe diagnostics are printed. |
 | active generation, unchanged after completed settlement child | five-minute retry window | bounded settlement retry, then safety_halt | At most two retries for the same operational state hash | A third unchanged completion persists `UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES`; no per-minute redispatch or automatic resume. |
+| complete ordinary unadmitted historical draft | verified selected M5 repair has positive full-source gaps | WAIT_DATASET_CONTINUITY | No runs/seals/protected purpose, all agents draft, known-empty generation queue; native readiness and physical proof/calendar watermark | No lifecycle child or retry-cap consumption; unknown/drifted proof stays under normal admission/recovery. Data repair is still required. |
 | active research generation | causal arm reaches terminal technical disposition | causal settlement, then arbiter reselection | `ResearchLoopArbiterService` gives the dedicated disposition precedence over generic lifecycle settlement | Quarantine without authority; do not repeat a no-op active-generation tick. |
 | terminal generation with actionable technical debt | arbiter evaluates the lineage head | bounded technical recovery, then arbiter reselection | The same learning-velocity authority used by generation admission must report `blocked_technical_recovery`; the lifecycle owner uses the one-shot frozen snapshot repair | Drift/new-data construction waits; a blocked exit-zero builder is `safety_blocked`, never a completed successor. |
 | terminal pre-execution draft identity quarantine | original dispatcher event and matching generation attestation, with no run or response artifact | terminal diagnostic history | Shared technical classifier excludes this immutable construction failure from evaluator recovery | No replay or quality credit; a new attempt still requires its separate bounded admission policy. |
@@ -79,7 +80,7 @@ single arbiter and its separately bounded unchanged-question allowance.
 | queued sealed replay | immutable source, dataset or execution identity differs before run creation | technical_quarantine | Queue evidence middleware emits one idempotent pre-execution refusal run; generation-owned open learning pairs/dispatches close without evaluator request | No retry storm, scientific verdict, release reseal or promotion credit. A merely stale worker boot hash remains a separate reload condition. |
 | user logon with managed runtime absent | autonomous runtime task starts | recovering | Hidden supervisor owns a per-user mutex and restores only missing dependencies/lanes | Duplicate launch exits; strict runtime health remains the acceptance check. |
 
-The sole exception to waiting for the mutable generation projection is explicit
+One exception to waiting for the mutable generation projection is explicit
 `system:runtime-reload-preflight --terminal-projection-recovery=ID --json`
 cold maintenance (ADR-031). It requires one exact signed observed-completion
 cohort, complete original runs/feedback, no runnable/reserved/delayed queue work
@@ -88,6 +89,17 @@ work, and still requires authenticated replay-idle probes and fresh boot seals.
 The canonical drain owner then appends zero-authority episode settlements and
 closes the existing generation; it does not replay or reinterpret old evidence.
 Default preflight and PM2 rolling sync continue to refuse every active generation.
+
+A separate explicit `system:runtime-reload-preflight
+--unsealed-draft-maintenance=ID --json` accepts only the sole named completely
+constructed ordinary draft before any immutable source/admission/evaluation
+seal. Drain-first STOP, absent constructor lease/owner, known-empty reserved/
+pending/delayed queues and no attempted/queued arms are mandatory. Protected
+native follow-up/panel/Academy owners require their separate original authority.
+The check is read-only, grants no rolling reload or source/data reseal, and still
+requires two fresh authenticated replay-idle probes. Cold deployment preserves
+the same unadmitted draft; after actual boot verification, START re-enters its
+unchanged canonical admission. Missing data stays missing (ADR-032).
 
 Deployment provenance has its own guarded sequence: STOP new admission while
 the current generation still owns the lane, let the existing arbiter drain its

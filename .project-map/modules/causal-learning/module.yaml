@@ -155,6 +155,9 @@ entry_points:
   - TypedInstrumentFoundryService::settleCausalBenchmark
   - TypedInstrumentFoundryService::compress
   - TypedInstrumentFoundryService::taskContract
+  - TypedInstrumentFoundryService::preregisterFiniteSearch
+  - TypedInstrumentFoundryService::settleFiniteSearch
+  - TypedInstrumentFoundryService::inspectBehaviorEntry
   - TypedInstrumentFoundryService::behaviorAlternatives
   - ResearchKnowledgePortfolioService::preregisterExperiment
   - ResearchKnowledgePortfolioService::chooseDiscriminatingProbe
@@ -188,6 +191,8 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).
+  - Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).
   - The signed observed-completion projection withholding closes only its exact constructor mutation-selection episodes with append-only zero-authority settlements after all six immutable runs and original feedback are terminal. It never re-runs consolidation, rewrites decisions/assessment/feedback, grants credit or replenishes the root cap (ADR-031).
   - One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).
   - One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).

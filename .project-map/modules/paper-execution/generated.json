@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T08:49:10.901Z",
-  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
-  "source_file_count": 1547,
-  "git_head": "758b477e7ba6415aea299ed428369c2a1e67b945",
+  "generated_at": "2026-10-08T20:19:14.993Z",
+  "source_digest": "b7f56ccf0d9e44b05c7c9d8e552dd25b6500059e587735e8cad54e2d57f7d7f9",
+  "source_file_count": 1557,
+  "git_head": "1616b2db713996dbe5be306733b8726739b8b703",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "paper-execution",
   "paths": [
@@ -16,6 +16,7 @@
     "backend-laravel/app/Models/PaperOrder.php",
     "backend-laravel/app/Models/PaperFill.php",
     "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+    "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
     "docs/architecture/specialist-council.md",
     "backend-laravel/app/Services/PaperExecutionStateMachineService.php",
     "backend-laravel/app/Services/SmartDisciplineEngineService.php",
@@ -33,6 +34,7 @@
     "backend-laravel/app/Services/SmartDisciplineEngineService.php",
     "backend-laravel/app/Services/SpecialistPaperAccountService.php",
     "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+    "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
     "backend-laravel/tests/Support/SpecialistPaperReservationWorker.php"
   ],
   "symbols": [
@@ -655,22 +657,22 @@
       "line": 13
     },
     {
-      "symbol": "attach",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 176
-    },
-    {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
       "line": 18
     },
     {
+      "symbol": "attach",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 187
+    },
+    {
       "symbol": "fill",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 188
+      "line": 199
     },
     {
       "symbol": "decimalUnits",
@@ -682,13 +684,13 @@
       "symbol": "release",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 264
+      "line": 278
     },
     {
       "symbol": "reconciliation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 286
+      "line": 300
     },
     {
       "symbol": "price",
@@ -697,28 +699,40 @@
       "line": 31
     },
     {
-      "symbol": "locked",
+      "symbol": "markedEquity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 330
-    },
-    {
-      "symbol": "blocked",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 342
-    },
-    {
-      "symbol": "passport",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
-      "line": 347
+      "line": 341
     },
     {
       "symbol": "scaled",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
       "line": 36
+    },
+    {
+      "symbol": "observePeak",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 406
+    },
+    {
+      "symbol": "locked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 427
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 439
+    },
+    {
+      "symbol": "passport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/SpecialistPaperAccountService.php",
+      "line": 444
     },
     {
       "symbol": "multiply",
@@ -766,6 +780,24 @@
       "symbol": "up",
       "kind": "php_method",
       "path": "backend-laravel/database/migrations/2026_10_05_020000_create_specialist_paper_capital_ledger.php",
+      "line": 9
+    },
+    {
+      "symbol": "down",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
+      "line": 17
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
+      "line": 7
+    },
+    {
+      "symbol": "up",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_08_120000_add_observed_peak_equity_to_paper_capital_accounts.php",
       "line": 9
     }
   ],
@@ -872,6 +904,17 @@
       "tests": [
         "setUp",
         "test_two_specialists_keep_opposite_positions_and_exact_shared_costs",
+        "test_open_loss_narrows_another_members_capital_before_any_close",
+        "test_observed_unrealized_peak_remains_the_drawdown_reference",
+        "test_unrealized_gain_cannot_fund_a_larger_member_allocation",
+        "test_missing_closed_mark_blocks_new_intake_but_not_retry_or_managed_exit",
+        "test_stale_mark_and_missing_pinned_cost_policy_withhold_equity",
+        "test_pinned_exit_costs_and_accrued_carry_narrow_marked_equity",
+        "test_fractional_cent_loss_is_rounded_against_new_spending",
+        "test_claimed_carry_payment_cannot_exceed_the_real_debited_cost",
+        "test_migrated_observed_account_cannot_invent_its_old_peak",
+        "test_filled_reservation_without_cost_ledger_cannot_initialize_a_missing_peak",
+        "test_owned_paper_fills_without_ledger_or_filled_counter_cannot_initialize_a_missing_peak",
         "test_native_pending_signal_path_opens_two_members_with_real_risk_and_discipline_gates",
         "test_reservation_retries_and_partial_cancel_do_not_duplicate_or_release_filled_capital",
         "test_reserved_capital_is_visible_to_another_owner_before_order_publication",
@@ -884,7 +927,8 @@
         "reserve",
         "signal",
         "order",
-        "owners"
+        "owners",
+        "closedMark"
       ]
     },
     {

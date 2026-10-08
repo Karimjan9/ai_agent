@@ -179,6 +179,29 @@ class SpecialistCouncilFollowupExecutionService
     /** Rebind the sealed old-role template only to this exact fresh cohort's original models. */
     public function preparationRequest(LabGeneration $generation, array $proof): array
     {
+        $contracts = app(SpecialistCouncilContractService::class);
+        $originalVersion = \App\Models\SpecialistCouncilVersion::find($proof['source_version_id'] ?? 0);
+        $originalRow = $originalVersion ? DB::table('specialist_council_evaluation_plans')
+            ->where('specialist_council_version_id', $originalVersion->id)->first() : null;
+        if (! $originalVersion || ! $originalRow || ! $contracts->manifestValid($originalVersion->manifest)
+            || ($originalVersion->manifest['manifest_hash'] ?? null) !== $originalVersion->manifest_hash
+            || ($proof['source_manifest_hash'] ?? null) !== $originalVersion->manifest_hash
+            || ($proof['source_plan_hash'] ?? null) !== $originalRow->plan_hash) {
+            throw new LogicException('COUNCIL_FOLLOWUP_NATIVE_SOLO_ORIGINAL_PLAN_REQUIRED');
+        }
+        $originalPlan = json_decode($originalRow->plan, true, 512, JSON_THROW_ON_ERROR);
+        if ($this->epochs->parameterHash($originalPlan) !== $originalRow->plan_hash) {
+            throw new LogicException('COUNCIL_FOLLOWUP_NATIVE_SOLO_ORIGINAL_PLAN_DRIFT');
+        }
+        $originalSolo = $contracts->assertNativeSoloComparison($originalVersion->manifest, $originalPlan);
+        $declaredSolo = $contracts->assertNativeSoloComparison($originalVersion->manifest, $proof['evaluation_plan']);
+        if ($originalSolo === null || $declaredSolo === null
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($originalSolo, $declaredSolo)) {
+            throw new LogicException('COUNCIL_FOLLOWUP_FUTURE_NATIVE_SOLO_ORIGINAL_DECLARATION_REQUIRED');
+        }
+        if ($originalSolo['protocol'] !== SpecialistCouncilContractService::NATIVE_SOLO_PROTOCOL) {
+            throw new LogicException('COUNCIL_FOLLOWUP_NATIVE_SOLO_FULL_ACCOUNT_REQUIRES_FRESH_ORIGINAL_REQUEST');
+        }
         $agents = $generation->agents()->with('modelVersion')->get();
         if ($agents->count() !== 6) throw new LogicException('COUNCIL_FOLLOWUP_EXACT_SIX_MODELS_REQUIRED');
         $roles = []; $map = [];
@@ -216,6 +239,11 @@ class SpecialistCouncilFollowupExecutionService
             unset($manifest['evaluation_policy'][$key.'_hash']);
         }
         $plan = $proof['evaluation_plan'];
+        // The verified original source/passport seals belong to the old IDs.
+        // Retain the explicit question, then let atomic preparation seal the
+        // exact fresh source IDs; the original proof and stored plan stay intact.
+        $plan['solo_comparison'] = array_intersect_key($declaredSolo, array_flip([
+            'protocol', 'comparison_kind', 'specialist_id', 'best_solo_full_budget_proven']));
         // Derived parent seals are never copied to the new original plan.
         foreach (['plan_hash', 'manifest_hash', 'version_id', 'preparation_source_hash', 'learning_consumption_receipt',
             'research_question_fingerprint', 'prior_feedback_digest'] as $field) unset($plan[$field]);

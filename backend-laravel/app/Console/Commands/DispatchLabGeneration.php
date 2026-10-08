@@ -500,6 +500,11 @@ class DispatchLabGeneration extends Command
                     ])
                     ->values();
                 $dispatchAgents = $draftAgents->concat($strandedQueuedAgents)->values();
+                $studyCarrierIds = app(\App\Services\SpecialistCouncilPreparationService::class)->spreadStudyDispatchAgentIds($generation);
+                if ($studyCarrierIds !== null) {
+                    $draftAgents = $draftAgents->whereIn('id', $studyCarrierIds)->values();
+                    $dispatchAgents = $dispatchAgents->whereIn('id', $studyCarrierIds)->values();
+                }
                 $agentIds = $dispatchAgents->pluck('id');
                 if ($agentIds->isEmpty()) {
                     if ($draftIntegrityQuarantines !== []) {
@@ -718,6 +723,11 @@ class DispatchLabGeneration extends Command
     private function screeningJobs(LabGeneration $generation, \Illuminate\Support\Collection $dispatchAgents,
         array $orderedIds, int $ordinaryBatchSize, string $symbol, string $timeframe): array
     {
+        $studyIds = app(\App\Services\SpecialistCouncilPreparationService::class)->spreadStudyDispatchAgentIds($generation);
+        if ($studyIds !== null) {
+            $dispatchAgents = $dispatchAgents->whereIn('id', $studyIds)->values();
+            $orderedIds = array_values(array_intersect($orderedIds, $studyIds));
+        }
         // Include resumed queued agents, not only newly constructed draft seats.
         $controlIds = $dispatchAgents->whereIn('id', $orderedIds)
             ->filter(fn (LabAgent $agent): bool => $this->isFrozenRepairControl($agent))
@@ -761,7 +771,9 @@ class DispatchLabGeneration extends Command
         if ($generation instanceof \App\Models\LabGeneration && $native->hasNativeConstructorIntent($generation)) {
             try {
                 $native->isResearchGeneration($generation);
-                return ['allowed' => true, 'reasons' => [], 'owner' => 'original_native_council_research_plan'];
+                return ['allowed' => true, 'reasons' => [], 'owner' =>
+                    data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === 'spread_context_study'
+                        ? 'original_native_spread_context_study' : 'original_native_council_research_plan'];
             } catch (\LogicException $error) {
                 return ['allowed' => false, 'reasons' => [$error->getMessage()]];
             }

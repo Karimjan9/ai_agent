@@ -22,6 +22,7 @@ from app.services.prospective_probe_window import assert_clean_discovery_boundar
 
 PROTOCOL = "specialist_council_runtime_v1"
 RECEIPT_PROTOCOL = "specialist_council_receipt_v1"
+CHOSEN_SOLO_PROTOCOL = "specialist_council_native_chosen_solo_v1"
 MAX_SOURCE_ROWS = 250000
 MAX_MEMBER_CANDLE_EVALUATIONS = 2000000
 TRADING_ROLES = {"scalp", "hour", "day", "swing"}
@@ -149,6 +150,52 @@ def _members(members: object) -> list[dict]:
     return copy.deepcopy(members)
 
 
+def _validate_chosen_solo(contract: dict, members: list[dict], payload: SimpleBacktestRequest) -> None:
+    """An original full-account choice changes allocation, never its programme or authority."""
+    comparison = contract.get("solo_comparison")
+    chosen = isinstance(comparison, dict) and (
+        comparison.get("protocol") == CHOSEN_SOLO_PROTOCOL
+        or comparison.get("comparison_kind") == "chosen_source_full_account_allocation")
+    if not chosen:
+        if "solo_source_member" in contract or "solo_source_member_hash" in contract:
+            raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_DECLARATION_REQUIRED")
+        return
+    fixed = {"protocol": CHOSEN_SOLO_PROTOCOL,
+        "comparison_kind": "chosen_source_full_account_allocation",
+        "selection_status": "chosen_source_unqualified",
+        "selection_timing": "preregistered_before_outcomes",
+        "initial_account_capital_equal": True, "member_allocation_unchanged": False,
+        "programme_unchanged_except_capital_weight": True,
+        "best_solo_full_budget_proven": False, "promotion_evidence": False}
+    if any(comparison.get(key) is not value if isinstance(value, bool)
+           else comparison.get(key) != value for key, value in fixed.items()):
+        raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_SCOPE_INVALID")
+    expected_keys = set(fixed) | {"specialist_id", "model_version_id", "source_model_hash",
+        "passport_hash", "source_capital_weight", "capital_weight", "risk_per_trade_percent"}
+    if set(comparison) != expected_keys or len(members) != 1 or contract.get("upgrades", []) != [] \
+            or payload.emit_decision_trace is not True \
+            or contract.get("promotion_evidence") is not False:
+        raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_ORIGINAL_VIEW_REQUIRED")
+    source = contract.get("solo_source_member")
+    if not isinstance(source, dict) or canonical_hash(source) != contract.get("solo_source_member_hash"):
+        raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_SOURCE_HASH_INVALID")
+    _members([source])
+    for key in ("specialist_id", "model_version_id", "passport_hash", "risk_per_trade_percent"):
+        if comparison.get(key) != source.get(key):
+            raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_SOURCE_IDENTITY_MISMATCH")
+    for key in ("passport_hash", "source_model_hash"):
+        value = comparison.get(key)
+        if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_SOURCE_IDENTITY_MISMATCH")
+    if comparison.get("source_capital_weight") != source["capital_weight"] \
+            or not _positive_number(comparison.get("capital_weight"), 1) \
+            or comparison["capital_weight"] != 1 or members[0]["capital_weight"] != 1:
+        raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_ALLOCATION_INVALID")
+    restored = {**members[0], "capital_weight": source["capital_weight"]}
+    if canonical_hash(restored) != canonical_hash(source):
+        raise ValueError("SPECIALIST_COUNCIL_CHOSEN_SOLO_PROGRAMME_CHANGED")
+
+
 def validate_contract(payload: SimpleBacktestRequest) -> dict:
     contract = payload.specialist_council_contract
     if not isinstance(contract, dict) or contract.get("protocol") != PROTOCOL:
@@ -189,9 +236,16 @@ def validate_contract(payload: SimpleBacktestRequest) -> dict:
     ):
         raise ValueError("SPECIALIST_COUNCIL_CARRY_RATE_INVALID")
     members = _members(contract.get("members"))
+    _validate_chosen_solo(contract, members, payload)
     def validate_member_symbols(declarations: list[dict]) -> None:
         execution_symbol = payload.symbol.upper().replace("/", "")
         for member in declarations:
+            if 'liquidity_atr_binding' in member:
+                from app.services.native_spread_context_study import LIQUIDITY_ATR_BINDINGS
+                binding = member['liquidity_atr_binding']
+                if not isinstance(binding, str) or binding not in LIQUIDITY_ATR_BINDINGS \
+                        or (binding == 'closed_m5_management_atr_v1' and payload.timeframe != 'M5'):
+                    raise ValueError('SPECIALIST_COUNCIL_LIQUIDITY_ATR_BINDING_INVALID')
             native_symbol = member.get("symbol")
             if native_symbol is not None and (not isinstance(native_symbol, str) or native_symbol.upper().replace("/", "") != execution_symbol):
                 raise ValueError("SPECIALIST_COUNCIL_MEMBER_SYMBOL_IDENTITY_MISMATCH")
@@ -218,7 +272,11 @@ def validate_contract(payload: SimpleBacktestRequest) -> dict:
         previous_time = effective
         versions.add(upgrade["council_version"])
         validate_member_symbols(_members(upgrade.get("members")))
-    return {**copy.deepcopy(contract), "members": members}
+    validated = {**copy.deepcopy(contract), "members": members}
+    if payload.native_spread_context_study_contract:
+        from app.services.native_spread_context_study import validate_study
+        validate_study(payload, validated)
+    return validated
 
 
 @dataclass
@@ -281,6 +339,9 @@ def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member:
         BoundedDecisionProgram(member["operator_contract"]) if member.get("operator_contract") else None)
     runtime.temporal_state = kernel._temporal_survival_state()
     runtime.instrument_state = kernel._instrument_runtime_state(child.instrument_research_assignment)
+    if 'liquidity_atr_binding' in member:
+        from app.services.native_spread_context_study import LIQUIDITY_ATR_BINDINGS
+        runtime.instrument_state['liquidity_atr_field'] = LIQUIDITY_ATR_BINDINGS[member['liquidity_atr_binding']]
     return runtime
 
 
@@ -372,6 +433,15 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         version: [_compile_member(payload, frame, member, version) for member in members]
         for version, members in versions
     } if not dependencies else {}
+    study = None
+    if payload.native_spread_context_study_contract:
+        from app.services.native_spread_context_study import NativeSpreadContextStudy, validate_study
+        study = NativeSpreadContextStudy(validate_study(payload, contract), payload, attestation)
+        for version_runtimes in runtimes.values():
+            for runtime in version_runtimes:
+                if runtime.identity == study.identity['specialist_id']:
+                    runtime.instrument_state['_native_spread_context_masked'] = study.masked
+                    runtime.instrument_state['_native_spread_context_study'] = study
     active_version = contract["council_version"]
     active = runtimes.get(active_version, [])
     rows = frame.to_dict("records")
@@ -412,6 +482,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         return value
 
     def event(runtime: MemberRuntime | None, timestamp: object, stage: str, reason: str, **detail) -> None:
+        if study is not None:
+            study.action(runtime, stage, reason)
         item = {"time": _stamp(timestamp), "stage": stage, "reason": reason, **detail}
         if runtime:
             runtime.stages[f"{stage}:{reason}"] += 1
@@ -516,6 +588,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         event(runtime, timestamp, "execution", "closed", position_id=pos["position_id"], exit_reason=reason, net_pnl=net_pnl)
 
     for index in range(evaluation_start_index + 1, len(rows)):
+        if study is not None:
+            study.current = None
         if dependencies:
             break
         candle = rows[index]
@@ -615,6 +689,13 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         for runtime in active:
             member = runtime.declaration
             prior = runtime.rows[index - 1]
+            if study is not None:
+                study.begin(runtime, prior, index - evaluation_start_index, timestamp,
+                    {'cash': cash, 'reserved_capital': reserved, 'loss_streak': runtime.loss_streak,
+                     'loss_wait_until': runtime.loss_wait_until,
+                     'positions': [{'position_id': key, 'owner': position['runtime'].identity,
+                         'direction': position['direction'], 'units': position['units'], 'risk_amount': position['risk_amount']}
+                         for key, position in sorted(positions.items())]})
             if trace_clock is not None:
                 closed_inputs, input_hash, input_columns = _closed_trace_input(prior, MEMBER_TRACE_FIELDS, kernel)
                 observed = {'decision_id': canonical_hash({'account_decision_id': trace_clock['decision_id'],
@@ -678,6 +759,18 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
             if reason:
                 event(runtime, timestamp, "risk", reason)
                 continue
+            if study is not None and runtime.identity == study.identity['specialist_id']:
+                # Capture the account at the actual instrument gate, after
+                # cadence/cooldown/state vetoes, not from the raw opportunity.
+                study.account = {'cash': cash, 'reserved_capital': reserved, 'loss_streak': runtime.loss_streak,
+                    'loss_wait_until': runtime.loss_wait_until,
+                    'peak_equity': peak_equity, 'day_equity': day_equity, 'halted_reason': halted_reason,
+                    'cooldown_until': runtime.cooldown_until, 'last_decision_at': runtime.last_decision_at,
+                    'closed_returns': runtime.closed_returns, 'meta_returns': runtime.meta_returns,
+                    'confidence_history': runtime.confidence_history, 'temporal_state': runtime.temporal_state,
+                    'positions': [{'position_id': key, 'owner': position['runtime'].identity,
+                        'direction': position['direction'], 'units': position['units'], 'risk_amount': position['risk_amount']}
+                        for key, position in sorted(positions.items())]}
             scope_allowed, _owners = kernel._instrument_owner_scope_allows(runtime.instrument_state, prior, signal, runtime.identity)
             if not scope_allowed:
                 event(runtime, timestamp, "risk", "instrument_context_outside_scope")
@@ -972,6 +1065,9 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     data_quality.update({"dataset_attestation": attestation, "research_release_receipt": release_receipt,
         "specialist_council_receipt": receipt, "replay_evaluation_scope": evaluated_scope,
         "replay_executed_clock": receipt["replay_executed_clock"]})
+    study_receipt = study.finish(receipt['replay_executed_clock']) if study is not None else {}
+    if study is not None:
+        data_quality['native_spread_context_study_receipt'] = study_receipt
     data_quality['decision_trace'] = {'protocol': 'candle_decision_trace_v1', 'requested': emit_trace,
         'complete': emit_trace and not dependencies and decision_count == evaluated_scope['decision_rows'],
         'event_count': len(decision_trace), 'evaluated_candle_count': decision_count,
@@ -994,7 +1090,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         top_mistakes=[], conclusion="Specialist council research replay; independent evaluation is required.",
         execution_assumptions=payload.execution.model_dump(),
         execution_contract=execution_contract_metadata(payload), policy_boundary=policy_boundary,
-        specialist_council_receipt=receipt, data_quality=data_quality,
+        specialist_council_receipt=receipt, native_spread_context_study_receipt=study_receipt, data_quality=data_quality,
         decision_trace=decision_trace, trade_ledger=trades, displayed_trade_count=len(trades),
         prospective_probe_window_receipt=probe_receipt or {},
         entry_funnel={"strategy_signals": stages["intent:created"],

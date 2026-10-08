@@ -21,6 +21,17 @@ Expired or malformed reservations fall back to existing lifecycle recovery.
 The same membership digest drives deduplication without including the selected
 scheduler child's own queue noise. See the operations state guard.
 
+A completely constructed ordinary `historical_research` draft with no runs,
+source/MTF/admission seal or protected experiment owner is not admitted
+settlement work. After existing active-run/reservation and dedicated-owner
+precedence, the native readiness owner may prove the selected M5 repair still
+has positive full-source gaps. Only that exact verified dependency produces
+commandless `WAIT_DATASET_CONTINUITY`; source/proof/economic-row/calendar
+identities participate in deduplication. Unknown queues, incomplete construction,
+invalid provenance or source drift cannot acquire this wait. Ordinary unchanged
+settlement retains its bounded retries and safety halt; old decisions are not
+reset and missing provider observations remain missing.
+
 Archive-first research is governed by `GenerationAdmissionDecisionService`
 and the existing arbiter, not a second scheduler. Until a valid champion exists,
 settlement, technical recovery and ready learning work keep priority; otherwise
@@ -108,6 +119,16 @@ still owns the lane; the same arbiter continues replay and settlement before
 its disabled-mode check. PAUSE blocks new settlement children too. Before any
 source edit, require the latest generation/owning trial and agents to be terminal and
 their queues, batches, active replays and constructor children to be drained.
+
+An explicit unsealed-draft cold-maintenance check is narrower than ignoring an
+active generation: it requires the sole fully constructed ordinary draft to
+have no source/admission/evaluation seal or attempted arm, absent constructor
+lease/owner, drain-first STOP and all queues known-empty. It cannot accept a
+protected native follow-up/panel/Academy owner. Two authenticated idle probes
+and cold actual worker boot verification remain mandatory. This path does not
+retire, reseal or dispatch the draft and cannot repair its missing data. The
+default rolling preflight continues to refuse every active generation (ADR-032).
+
 Recheck the latest owner; a successor that raced through postpones deployment
 until its admitted work drains. For an online AI owner, PM2 sync requires two
 authenticated zero-count replay-status responses five seconds apart; late
