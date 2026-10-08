@@ -79,6 +79,16 @@ single arbiter and its separately bounded unchanged-question allowance.
 | queued sealed replay | immutable source, dataset or execution identity differs before run creation | technical_quarantine | Queue evidence middleware emits one idempotent pre-execution refusal run; generation-owned open learning pairs/dispatches close without evaluator request | No retry storm, scientific verdict, release reseal or promotion credit. A merely stale worker boot hash remains a separate reload condition. |
 | user logon with managed runtime absent | autonomous runtime task starts | recovering | Hidden supervisor owns a per-user mutex and restores only missing dependencies/lanes | Duplicate launch exits; strict runtime health remains the acceptance check. |
 
+The sole exception to waiting for the mutable generation projection is explicit
+`system:runtime-reload-preflight --terminal-projection-recovery=ID --json`
+cold maintenance (ADR-031). It requires one exact signed observed-completion
+cohort, complete original runs/feedback, no runnable/reserved/delayed queue work
+and drain-first STOP. Its proof is read-only, permits no rolling reload or new
+work, and still requires authenticated replay-idle probes and fresh boot seals.
+The canonical drain owner then appends zero-authority episode settlements and
+closes the existing generation; it does not replay or reinterpret old evidence.
+Default preflight and PM2 rolling sync continue to refuse every active generation.
+
 Deployment provenance has its own guarded sequence: STOP new admission while
 the current generation still owns the lane, let the existing arbiter drain its
 admitted replay and settlement, verify terminal generation/owning trial and drained

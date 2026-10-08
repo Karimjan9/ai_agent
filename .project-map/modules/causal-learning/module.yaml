@@ -80,6 +80,9 @@ paths:
   - backend-laravel/app/Services/ResearchExperimentConversionKernelService.php
   - backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php
   - backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php
+  - backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php
+  - backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php
+  - backend-laravel/app/Services/SettlementWatermarkService.php
   - backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php
   - backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php
   - backend-laravel/app/Services/ResearchKnowledgePortfolioService.php
@@ -185,6 +188,7 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - The signed observed-completion projection withholding closes only its exact constructor mutation-selection episodes with append-only zero-authority settlements after all six immutable runs and original feedback are terminal. It never re-runs consolidation, rewrites decisions/assessment/feedback, grants credit or replenishes the root cap (ADR-031).
   - One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).
   - One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).
   - Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.

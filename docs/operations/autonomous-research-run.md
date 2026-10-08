@@ -96,6 +96,26 @@ before any PM2 mutation, without printing raw probe diagnostics. Durable
 preflight runs again after the probes and after scheduler cadence is stopped.
 An idle API response alone cannot certify that a queue owner has drained.
 
+An observed-completion terminal-projection bug can deadlock this procedure even
+when every original replay, comparison and feedback receipt is complete. The
+explicit read-only cold-maintenance check is:
+
+```powershell
+php artisan system:runtime-reload-preflight --terminal-projection-recovery=ID --json
+```
+
+This is not a rolling reload override. It accepts only the sole named signed
+observed-completion generation under drain-first STOP, with hash-valid original
+six-arm evidence, withheld projections, terminal feedback and known-empty
+reserved/pending/delayed queues. Confirm two fresh authenticated idle probes,
+stop the exact existing owners, deploy a verified source artifact and verify
+fresh boots. Start scheduler cadence last under STOP: the canonical boundary
+appends only zero-authority episode settlements and preserves the technical
+feedback in the generation projection. Verify closure and then use START.
+No queue deletion, manual episode update, replay, old-result re-attestation,
+second root completion, credit or independent authority is permitted. Default
+`system:runtime-reload-preflight` and PM2 sync remain strict. See ADR-031.
+
 Before a run opens, an admitted job may still be reserved by Redis after its
 old worker has disappeared. `reserved_at` is then a visibility expiry, not a
 claim time. The arbiter recognizes only exact owned payloads inside both that

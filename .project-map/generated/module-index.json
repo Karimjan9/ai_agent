@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T07:09:49.856Z",
-  "source_digest": "81178fcf44e15cd7b09c2364c219a5e837cffe2b729602df139bbcda6ba701f3",
-  "source_file_count": 1545,
-  "git_head": "04386a5164e10a96878965a8e1de034feb58b4f9",
+  "generated_at": "2026-10-08T08:24:12.099Z",
+  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
+  "source_file_count": 1547,
+  "git_head": "a2095df66a9d1b60f615b7d44fd9fda7363947d4",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -92,6 +92,9 @@
         "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
         "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
         "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
+        "backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php",
+        "backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php",
+        "backend-laravel/app/Services/SettlementWatermarkService.php",
         "backend-laravel/app/Services/SpecialistCouncilFollowupExecutionService.php",
         "backend-laravel/app/Services/SpecialistCouncilIndependentPanelService.php",
         "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
@@ -201,6 +204,7 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "The signed observed-completion projection withholding closes only its exact constructor mutation-selection episodes with append-only zero-authority settlements after all six immutable runs and original feedback are terminal. It never re-runs consolidation, rewrites decisions/assessment/feedback, grants credit or replenishes the root cap (ADR-031).",
         "One explicitly authorized observed probe-attestation completion requires an original terminal drained six-seat cohort, three immutable native owner-collision errors, unchanged current vectors/data/cost/risk and verified old/new source artifacts. Its server-derived signed lineage root is locked and globally capped at one completion, including failed successors; no cached outcome import, independent sample, renewed scientific budget or credit follows (ADR-030).",
         "One original drained clean-discovery cohort with exact immutable pre-execution MTF validator refusal may receive one unchanged-question replacement under fresh full/Python source. Every attempted and unexecuted dependent arm is re-attested; original plus one is the maximum, with no constructor/preparation chain, new vectors, scientific budget reset or authority (ADR-025).",
         "Causal discovery and Research Mentor do not depend on paper profitability. Paper admission consumes original-source and exact-trait causal verification; the reverse E4 performance/Economic Parent receipt is later feedback documented in shared integrations, not a prerequisite for causal execution.",
@@ -305,7 +309,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 113,
+      "source_file_count": 116,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -422,6 +426,8 @@
         "backend-laravel/app/Services/StrategyLibraryCompilerService.php",
         "backend-laravel/app/Console/Commands/Trading/RunLifecycleCycle.php",
         "backend-laravel/app/Services/LabGenerationTerminalBoundaryService.php",
+        "backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php",
+        "backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php",
         "backend-laravel/app/Services/GenerationAutonomyAuditService.php",
         "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
         "backend-laravel/app/Services/GenerationSnapshotAdmissionService.php",
@@ -513,6 +519,7 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "A signed observed-completion cohort with six completed original runs and immutable technical feedback closes its exact mutation-selection episodes with zero-authority settlements before the terminal watermark. A technical council disposition remains technical at generation close without rewriting agent verdicts; blocked settle-only closure is deferred, not reported as progress (ADR-031).",
         "An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Four prospective source horizons and two unused carriers are not qualified specialists. This intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; its creator/question/hash are bound to all six model markers. Without original atomic council preparation, dispatcher and snapshot admission refuse the declared roots, including deleted context with retained markers/origin. Ordinary population paths are unchanged.",
         "Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.",
         "Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.",
@@ -594,7 +601,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 73,
+      "source_file_count": 75,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -856,6 +863,8 @@
         "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
         "backend-laravel/app/Services/RuntimeMonitoringService.php",
         "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
+        "backend-laravel/app/Services/SettlementWatermarkService.php",
+        "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
         "backend-laravel/app/Services/ResearchReleaseSealService.php",
         "backend-laravel/app/Providers/AppServiceProvider.php",
         "ai-service-python/app/services/research_release.py",
@@ -930,6 +939,7 @@
         "laboratory"
       ],
       "invariants": [
+        "Default rolling reload still requires no active generation. Explicit terminal-projection cold maintenance accepts only one named signed observed-completion cohort whose original arms/feedback are terminal, all queues are known-empty and control is drain-first STOP; it still requires fresh authenticated replay-idle probes. It grants neither replay nor another completion (ADR-031).",
         "An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.",
         "Targeted superseded-run recovery is explicit, backend-neutral and bounded to twenty original IDs. Disabled admission, idle authenticated replay/known-empty laboratory queues, terminal agent/generation, absent same-host PID and a later same-phase completed original response artifact are required. It closes only response-less open attempts as operational retry_released, preserving old source/data/parameter/start facts and every later verdict; it grants no replay, learning or promotion evidence.",
         "The already-locked non-dry arbiter drains bounded native council evaluation deliveries after immutable run publication. Pause fences recovery; STOP may drain admitted deliveries. Retry never replays an arm, rewrites original evidence, self-qualifies a version or creates another scheduler.",
@@ -977,7 +987,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 48,
+      "source_file_count": 50,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {

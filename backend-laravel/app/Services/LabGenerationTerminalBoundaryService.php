@@ -101,6 +101,10 @@ class LabGenerationTerminalBoundaryService
         // A terminal agent projection is not enough: every learning episode
         // must have exactly one terminal settlement (or an explicit technical
         // / legacy disposition) before the generation can close.
+        $observedDisposition = app(ObservedCouncilEpisodeDispositionService::class)->reconcileGeneration($generation);
+        if (($observedDisposition['status'] ?? null) === 'blocked') {
+            return $this->blocked('OBSERVED_COUNCIL_EPISODE_DISPOSITION_BLOCKED', $generation, ['observed_episode_disposition' => $observedDisposition]);
+        }
         $watermark = $this->watermarks->reconcile($generation->laboratory->symbol, $generation->laboratory->timeframe, $generation);
         if (($watermark['generation_close_allowed'] ?? false) !== true) {
             return $this->blocked('SETTLEMENT_WATERMARK_NOT_TERMINAL', $generation, ['settlement_watermark' => $watermark]);
@@ -119,10 +123,11 @@ class LabGenerationTerminalBoundaryService
         $status = $technicalAgentIds !== []
             ? 'technical_quarantine'
             : ($fullValidationBoundary ? 'completed' : ($screened ? 'screened' : 'technical_quarantine'));
+        if (($observedDisposition['status'] ?? null) === 'settled_zero_authority') $status = 'technical_quarantine';
         $this->contexts->updateWithAttributes($generation, [
             'status' => $status,
             'completed_at' => now(),
-        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds, $fullValidationBoundary): array {
+        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds, $fullValidationBoundary, $observedDisposition): array {
             $receipt = [
                 'protocol' => self::PROTOCOL,
                 'recovered_from_status' => $fromStatus,
@@ -137,6 +142,10 @@ class LabGenerationTerminalBoundaryService
                 'promotion_evidence' => false,
             ];
             $context['generation_terminal_recovery'] = $receipt;
+            if (($observedDisposition['status'] ?? null) === 'settled_zero_authority') {
+                $receipt['observed_episode_disposition'] = $observedDisposition;
+                $context['generation_terminal_recovery'] = $receipt;
+            }
             if ($fullValidationBoundary) {
                 $context['full_validation_terminal'] = $receipt;
             } else {
@@ -153,7 +162,7 @@ class LabGenerationTerminalBoundaryService
             ? ($status === 'completed'
                 ? 'full_validation_completed_recovered'
                 : 'full_validation_technical_quarantine_recovered')
-            : ($screened ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered');
+            : ($status === 'screened' ? 'screening_completed_recovered' : 'screening_technical_quarantine_recovered');
         $this->reports->record(
             $generation->fresh(['agents']),
             $reportReason,

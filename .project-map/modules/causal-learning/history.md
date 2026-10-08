@@ -161,3 +161,10 @@ final stored plan owner. The user authorized one globally root-bound completion
 for the exact observed three-arm probe-identity collision after terminal/drain.
 Old outcomes remain observed and immutable; retuning, repeated completion,
 independence and scientific/financial credit stay forbidden. See ADR-030.
+
+## 2026-10-08 - Observed completion terminal compensation
+
+Withheld screening learning now has a scoped zero-authority terminal handoff
+for its exact constructor episodes. Original evidence and the root cap remain
+unchanged; a blocked boundary is deferred rather than reported as progress.
+See ADR-031.

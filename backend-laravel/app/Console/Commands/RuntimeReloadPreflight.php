@@ -7,13 +7,20 @@ use Illuminate\Console\Command;
 
 class RuntimeReloadPreflight extends Command
 {
-    protected $signature = 'system:runtime-reload-preflight {--json}';
+    protected $signature = 'system:runtime-reload-preflight {--json}
+        {--terminal-projection-recovery= : Exact sole observed council generation; cold maintenance only, never rolling reload}';
 
     protected $description = 'Refuse a rolling runtime reload while durable replay work can be interrupted.';
 
     public function handle(RuntimeReloadPreflightService $preflight): int
     {
-        $result = $preflight->inspect();
+        $target = $this->option('terminal-projection-recovery');
+        if ($target !== null && (! is_string($target) || ! preg_match('/^[1-9][0-9]{0,9}$/D', $target) || (int) $target > 2147483647)) {
+            $result = ['protocol' => RuntimeReloadPreflightService::PROTOCOL, 'safe' => false,
+                'reason' => 'TERMINAL_PROJECTION_RECOVERY_TARGET_INVALID', 'promotion_evidence' => false];
+        } else {
+            $result = $preflight->inspect($target === null ? null : (int) $target);
+        }
         if ($this->option('json')) {
             $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {

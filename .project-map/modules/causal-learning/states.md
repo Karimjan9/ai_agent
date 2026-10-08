@@ -1,5 +1,11 @@
 # Causal learning states
 
+Observed completion's `projection_withheld` is not an open-ended episode: once
+its six original arms and immutable technical feedback are terminal, exact
+constructor episodes close with idempotent zero-authority settlements. A
+conflicting owner/settlement, missing signed proof or active physical work
+keeps compensation blocked. No scientific lesson or credit fan-out runs (ADR-031).
+
 ## Council prospective follow-up
 
 `blocked -> server_preregistered -> ready -> leased -> canonical_cohort_dispatched`

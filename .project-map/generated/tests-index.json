@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T07:09:49.856Z",
-  "source_digest": "81178fcf44e15cd7b09c2364c219a5e837cffe2b729602df139bbcda6ba701f3",
-  "source_file_count": 1545,
-  "git_head": "04386a5164e10a96878965a8e1de034feb58b4f9",
+  "generated_at": "2026-10-08T08:24:12.099Z",
+  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
+  "source_file_count": 1547,
+  "git_head": "a2095df66a9d1b60f615b7d44fd9fda7363947d4",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -2565,6 +2565,23 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php",
+      "tests": [
+        "test_ordinary_generation_is_not_applicable_and_remains_unchanged",
+        "test_inspection_is_pure_and_all_six_close_with_zero_authority_without_rewriting_originals",
+        "test_reconciliation_retry_preserves_settlement_ids_contents_and_all_timestamps",
+        "test_forged_partial_or_unbound_originals_cannot_close_any_episode",
+        "invalidOriginalCases",
+        "test_other_owner_settlement_collision_is_rejected_atomically",
+        "test_collision_arriving_after_inspection_is_rechecked_under_the_episode_lock",
+        "test_settle_only_paused_dependency_is_deferred_not_a_completed_scheduler_transition",
+        "fixture",
+        "otherOwnerSettlement",
+        "immutableSnapshot",
+        "assertNoDerivedAuthority"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
       "tests": [
         "test_observed_completion_cold_build_and_checkpoint_copy_all_six_original_vectors",
@@ -3161,7 +3178,15 @@
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "tests": [
         "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
-        "test_runnable_job_or_active_generation_refuses_reload"
+        "test_runnable_job_or_active_generation_refuses_reload",
+        "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
+        "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
+        "test_cold_maintenance_refuses_other_active_generation_or_missing_target",
+        "test_cold_maintenance_never_overrides_running_pause_or_safety_halt",
+        "test_cold_maintenance_refuses_missing_or_authority_granting_proof",
+        "test_cli_refuses_invalid_explicit_target",
+        "emptyQueueService",
+        "activeProjection"
       ]
     },
     {

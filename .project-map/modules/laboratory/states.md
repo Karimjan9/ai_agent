@@ -1,5 +1,15 @@
 # Laboratory lifecycle states
 
+## Observed-completion terminal compensation
+
+`completed original runs + immutable technical council feedback + withheld
+learning projections -> exact zero-authority episode settlements -> terminal
+watermark -> technical_quarantine generation projection` (ADR-031).
+The canonical boundary verifies signed ownership and original artifacts before
+compensation; agent verdicts and old assessment/feedback remain unchanged.
+Missing or conflicting evidence leaves a typed deferred settle-only boundary,
+not CYCLE_ADVANCED and not permission to replay the observed question.
+
 ## Frozen technical source retirement
 
 `blocking technical attempt -> terminal technical history` requires an original

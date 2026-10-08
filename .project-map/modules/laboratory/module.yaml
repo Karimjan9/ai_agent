@@ -57,6 +57,8 @@ paths:
   - backend-laravel/app/Services/StrategyLibraryCompilerService.php
   - backend-laravel/app/Console/Commands/Trading/RunLifecycleCycle.php
   - backend-laravel/app/Services/LabGenerationTerminalBoundaryService.php
+  - backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php
+  - backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php
   - backend-laravel/app/Services/GenerationAutonomyAuditService.php
   - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
   - backend-laravel/app/Services/GenerationSnapshotAdmissionService.php
@@ -144,6 +146,7 @@ dependencies:
   - market-data
   - laravel-python-contract
 invariants:
+  - A signed observed-completion cohort with six completed original runs and immutable technical feedback closes its exact mutation-selection episodes with zero-authority settlements before the terminal watermark. A technical council disposition remains technical at generation close without rewriting agent verdicts; blocked settle-only closure is deferred, not reported as progress (ADR-031).
   - An explicit native_specialist_council_intent_v1 may open exactly six new schema-root references through the same XAUUSD/H1 historical constructor, shared admission and locks. Four prospective source horizons and two unused carriers are not qualified specialists. This intent is unforced and excludes ordinary causal/pair/cooperative ownership or inherited vectors; its creator/question/hash are bound to all six model markers. Without original atomic council preparation, dispatcher and snapshot admission refuse the declared roots, including deleted context with retained markers/origin. Ordinary population paths are unchanged.
   - Technical recovery targets the shared lookback gate's actual generation and actionable agent IDs, not an already-reconciled latest generation. A named drained cohort with a canonical original source/data/execution seal and genuinely changed evaluator may append at most two terminal-only withheld dispositions per cycle; it never replays mixed source, alters old scientific receipts or consumes replay dispatch budget. Missing, malformed or current source proofs stay explicit blocked dependencies, and target progress changes the arbiter watermark.
   - Specialist scalp/hour/day/swing horizons are distinct from sensor timeframes. Stored passports, native model vectors and common account execution policies own a declared council replay; an invalid explicit binding never silently falls back to legacy strategy execution.

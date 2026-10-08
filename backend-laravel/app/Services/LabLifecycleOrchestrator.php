@@ -252,6 +252,13 @@ class LabLifecycleOrchestrator
                     ],
                 );
             }
+            if ($settleOnly && in_array($terminalBoundary['reason_code'] ?? null,
+                ['SETTLEMENT_WATERMARK_NOT_TERMINAL', 'OBSERVED_COUNCIL_EPISODE_DISPOSITION_BLOCKED'], true)) {
+                return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                    'Generation terminal boundary remains blocked; no lifecycle transition achieved.', $stage,
+                    ['terminal_boundary' => $terminalBoundary, 'expected_generation_id' => $expectedGenerationId,
+                        'next_action' => 'research_loop_arbiter_reselect']);
+            }
             if ($settleOnly && ! $this->generationStillOwnsSettlement($settlementGeneration->fresh())) {
                 return $this->summarize(
                     $cycleId,

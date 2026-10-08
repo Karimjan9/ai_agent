@@ -33,6 +33,13 @@ question and vectors, and locks a server-derived lineage root against a second
 completion. The existing registrar, arbiter and constructor own its new cohort;
 no old result, cache outcome, scientific cap or independent window is relabelled.
 See ADR-030.
+The observed-completion withholding also owns a terminal compensation: after
+all six original runs and original comparison/feedback close, its exact
+constructor mutation-selection episodes receive idempotent zero-authority
+settlements. The canonical terminal boundary invokes this before the watermark;
+technical feedback remains a technical generation projection, not a strategy
+loss. Missing or inconsistent signed evidence leaves the boundary blocked.
+No generic learning consolidation or credit fan-out runs. See ADR-031.
 Support-role producer trials and original same-budget Portfolio comparisons
 remain distinct from confirmed skill, qualification and economic inheritance.
 

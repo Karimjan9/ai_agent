@@ -46,3 +46,10 @@ The existing release owner and audit script add explicit content-addressed
 source ZIP build/verification, source-change and unsafe-entry guards, and
 prospective-only archive references. Git cleanliness, worker boot evidence and
 scientific authority remain separate. See the ADR-016 extension.
+
+## 2026-10-08 - Scoped terminal-projection cold maintenance
+
+Default rolling reload remains strict. One named signed observed-completion
+cohort can receive read-only cold-maintenance readiness after all physical work
+and queues drain under STOP, allowing its verified zero-authority compensation
+to close the mutable generation projection on a sealed release. See ADR-031.

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T07:09:49.856Z",
-  "source_digest": "81178fcf44e15cd7b09c2364c219a5e837cffe2b729602df139bbcda6ba701f3",
-  "source_file_count": 1545,
-  "git_head": "04386a5164e10a96878965a8e1de034feb58b4f9",
+  "generated_at": "2026-10-08T08:24:12.099Z",
+  "source_digest": "de23f40445bc7dd786730a35ee6d9bac82fa8cbe6eea036e34c5b149606a6901",
+  "source_file_count": 1547,
+  "git_head": "a2095df66a9d1b60f615b7d44fd9fda7363947d4",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -5356,6 +5356,12 @@
       "line": 17
     },
     {
+      "symbol": "ObservedCouncilEpisodeDispositionService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ObservedCouncilEpisodeDispositionService.php",
+      "line": 18
+    },
+    {
       "symbol": "OfficialUsdCalendarBackfillService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/OfficialUsdCalendarBackfillService.php",
@@ -8110,6 +8116,12 @@
       "line": 15
     },
     {
+      "symbol": "ObservedCouncilEpisodeDispositionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php",
+      "line": 33
+    },
+    {
       "symbol": "ObservedProbeColdConstructorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
@@ -8377,7 +8389,7 @@
       "symbol": "RuntimeReloadPreflightTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 13
+      "line": 15
     },
     {
       "symbol": "ScheduledCommandIsolationTest",
