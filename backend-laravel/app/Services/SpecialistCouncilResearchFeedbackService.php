@@ -706,12 +706,34 @@ class SpecialistCouncilResearchFeedbackService
             'resolution_body_hash' => $this->epochs->parameterHash($body), 'result_hash' => $this->epochs->parameterHash($result),
             'nonconstructive_result' => $result,
             'native_vectors_hash' => $this->epochs->parameterHash($body['native_source_models']),
-            'original_observed_source_hash' => $this->epochs->parameterHash($body['original_observed_source_proof'] ?? null),
+            'original_observed_source_hash' => $this->nullableOriginalObservedSourceHash($body),
             'owned_generations' => 0, 'owned_model_markers' => 0, 'target_outcomes' => 0,
             'captured_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'), 'target_unbuilt' => true,
             'original_auxiliary_outcome_still_observed' => ($body['original_observed_source_proof'] ?? null) !== null,
             'promotion_evidence' => false];
+        if (($body['scientific_question_kind'] ?? null) === 'observed_probe_attestation_completion') {
+            $snapshot['original_observed_probe_completion_hash'] = $this->observedProbeSnapshotHash($body);
+        }
         return [...$snapshot, 'server_seal' => $this->sourceAmendmentSeal($snapshot)];
+    }
+
+    /** Absence is explicit null, never the hash of an empty proof; old non-null hashes are unchanged. */
+    private function nullableOriginalObservedSourceHash(array $body): ?string
+    {
+        $proof = $body['original_observed_source_proof'] ?? null;
+        if ($proof === null) return null;
+        if (! is_array($proof)) throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_OBSERVED_PROOF_INVALID');
+        return $this->epochs->parameterHash($proof);
+    }
+
+    /** The distinct observed-comparison proof has its own snapshot domain. */
+    private function observedProbeSnapshotHash(array $body): string
+    {
+        $proof = $body['original_observed_probe_completion_proof'] ?? null;
+        if (! is_array($proof) || ($proof['protocol'] ?? null) !== 'specialist_council_observed_probe_completion_proof_v1') {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_ORIGINAL_OBSERVED_PROBE_PROOF_INVALID');
+        }
+        return $this->epochs->parameterHash($proof);
     }
 
     private function canonicalNonconstructiveResult(array $result): bool
@@ -865,12 +887,20 @@ class SpecialistCouncilResearchFeedbackService
     private function assertPristineStartProof(ResearchExperimentWorkItem $work, array $body, array $snapshot): void
     {
         $unsigned = array_diff_key($snapshot, ['server_seal' => true]);
+        $probeCompletion = ($body['scientific_question_kind'] ?? null) === 'observed_probe_attestation_completion';
+        if ($probeCompletion
+            ? (! array_key_exists('original_observed_probe_completion_hash', $unsigned)
+                || $unsigned['original_observed_probe_completion_hash'] !== $this->observedProbeSnapshotHash($body))
+            : array_key_exists('original_observed_probe_completion_hash', $unsigned)) {
+            throw new LogicException('COUNCIL_SOURCE_AMENDMENT_PRISTINE_START_PROOF_INVALID');
+        }
         if (($unsigned['protocol'] ?? null) !== 'specialist_council_pristine_unbuilt_target_v1'
             || ($unsigned['work_item_id'] ?? null) !== (int) $work->id || ($unsigned['work_key'] ?? null) !== $work->work_key
             || ($unsigned['resolution_hash'] ?? null) !== $body['resolution_hash']
             || ($unsigned['resolution_body_hash'] ?? null) !== $this->epochs->parameterHash($body)
             || ($unsigned['native_vectors_hash'] ?? null) !== $this->epochs->parameterHash($body['native_source_models'])
-            || ($unsigned['original_observed_source_hash'] ?? null) !== $this->epochs->parameterHash($body['original_observed_source_proof'] ?? null)
+            || ! array_key_exists('original_observed_source_hash', $unsigned)
+            || $unsigned['original_observed_source_hash'] !== $this->nullableOriginalObservedSourceHash($body)
             || ($unsigned['result_hash'] ?? null) !== $this->epochs->parameterHash($unsigned['nonconstructive_result'] ?? null)
             || ! $this->canonicalNonconstructiveResult((array) ($unsigned['nonconstructive_result'] ?? []))
             || ($unsigned['owned_generations'] ?? null) !== 0 || ($unsigned['owned_model_markers'] ?? null) !== 0

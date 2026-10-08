@@ -57,6 +57,8 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php',
         'backend-laravel/tests/Feature/ResearchWorkLeaseBudgetTest.php',
         'backend-laravel/tests/Feature/SpecialistCouncilFollowupExecutionTest.php',
+        'backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php',
+        'backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php',
         'backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php',
         'backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php',
         'backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php',

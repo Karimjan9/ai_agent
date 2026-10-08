@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T18:41:15.261Z",
-  "source_digest": "600fc59d587cd0148dcfaef747ff89479eec40ddcf87b5067240bd6326162330",
-  "source_file_count": 1540,
-  "git_head": "19e1f13d1368fa7f829c0270c857cf6bafe6243f",
+  "generated_at": "2026-10-08T04:27:44.275Z",
+  "source_digest": "2c984e07918afcb31369ebf1ee0e0f5578e0f0660e3fd29f49c5b431e7cd4775",
+  "source_file_count": 1542,
+  "git_head": "4cf2b47a9df609ddcd2c8b21990c4ccd784ecbcb",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -243,6 +243,8 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
+        "backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilObservedProbeCompletionTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilFollowupReadinessTest.php",

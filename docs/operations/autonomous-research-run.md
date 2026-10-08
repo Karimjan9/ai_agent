@@ -238,3 +238,13 @@ baseline/data/MTF/cost and the physical-parent budget. The canonical dispatcher
 admits fresh IDs; the failed trial is never reopened. Original plus one is
 the maximum, with no subsequent constructor/preparation/validator chain.
 Any scientific output, missing proof or another error fails closed (ADR-025).
+
+Council follow-up executor failures retain a separate sanitized
+`specialist_council_executor_failure` SystemEvent under the original work/fence.
+Use its stage, exception class, repository-relative location and message hash
+for diagnosis; raw SQL, credentials, bindings and stacks are deliberately absent.
+A diagnostic never resets a lease or scientific cap. An entirely unbuilt target
+may use the existing verified source-only amendment after safe release; the
+original resolution and dependency hold remain visible. The observed probe
+completion's pristine witness has a distinct comparison-proof hash and explicit
+null auxiliary proof, rather than fabricating an empty auxiliary proof.

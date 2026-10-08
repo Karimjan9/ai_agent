@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-07T18:41:15.261Z",
-  "source_digest": "600fc59d587cd0148dcfaef747ff89479eec40ddcf87b5067240bd6326162330",
-  "source_file_count": 1540,
-  "git_head": "19e1f13d1368fa7f829c0270c857cf6bafe6243f",
+  "generated_at": "2026-10-08T04:27:44.275Z",
+  "source_digest": "2c984e07918afcb31369ebf1ee0e0f5578e0f0660e3fd29f49c5b431e7cd4775",
+  "source_file_count": 1542,
+  "git_head": "4cf2b47a9df609ddcd2c8b21990c4ccd784ecbcb",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -2555,6 +2555,18 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
+      "tests": [
+        "test_observed_completion_cold_build_and_checkpoint_copy_all_six_original_vectors",
+        "test_even_resigned_snapshot_cannot_drop_alias_or_poison_either_proof_domain",
+        "snapshotPoisons",
+        "test_historical_nonnull_auxiliary_snapshot_hash_and_seal_keep_the_original_shape",
+        "conditionalOwner",
+        "sealBody",
+        "actualNativeVectors"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/OriginalModelRuntimeIdentityTest.php",
       "tests": [
         "test_first_request_preserves_raw_transport_hash_and_freezes_real_nested_treatment_and_generated_contract",
@@ -3311,6 +3323,25 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php",
+      "tests": [
+        "work",
+        "executor",
+        "events",
+        "record",
+        "test_sql_failure_is_durable_sanitized_and_does_not_pollute_original_result_or_payload",
+        "reasons",
+        "test_only_bounded_machine_code_logic_reasons_are_preserved",
+        "test_anonymous_exception_class_does_not_disclose_its_embedded_absolute_path",
+        "test_external_exception_file_and_line_are_withheld",
+        "test_construction_failure_has_original_stage_and_never_builds_extra_science",
+        "test_stop_and_stale_fences_cannot_append_diagnostic_or_dependency_hold",
+        "test_superseded_lease_during_failure_cannot_write_under_new_owner",
+        "test_event_is_idempotent_for_same_fence_and_survives_original_defer_and_repeat",
+        "test_storage_failure_has_only_sanitized_fallback_and_cannot_replace_disposition"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SpecialistCouncilFollowupCommandTest.php",
       "tests": [
         "test_existing_generation_source_amendment_keeps_its_original_feedback_owner",
@@ -3467,6 +3498,7 @@
         "test_observed_probe_completion_physical_identity_excludes_only_strategy_display_label",
         "test_observed_probe_completion_refuses_broken_ancestor_or_cyclic_original_links",
         "lineagePoisonCases",
+        "test_pristine_completion_source_repair_retains_original_observed_resolution_and_once_cap",
         "observedProbeFixture"
       ]
     },

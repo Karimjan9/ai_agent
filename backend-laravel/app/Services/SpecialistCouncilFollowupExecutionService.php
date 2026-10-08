@@ -4,8 +4,11 @@ namespace App\Services;
 
 use App\Models\LabGeneration;
 use App\Models\ResearchExperimentWorkItem;
+use App\Models\SystemEvent;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use LogicException;
 use Throwable;
 
@@ -35,6 +38,7 @@ class SpecialistCouncilFollowupExecutionService
     {
         $lock = Cache::lock('specialist-council-followup-work:'.$item->id, LabPopulationService::CONSTRUCTOR_LOCK_TTL_SECONDS);
         if (! $lock->get()) return $this->defer($item, 'COUNCIL_FOLLOWUP_OWNER_BUSY', true);
+        $stage = 'readiness';
         try {
             $this->assertLease($item);
             $proof = $this->feedback->inspectFollowupReadiness($item->fresh());
@@ -64,6 +68,7 @@ class SpecialistCouncilFollowupExecutionService
             $active = LabGeneration::query()->whereHas('laboratory', fn ($q) => $q->where('symbol', $item->symbol)->where('timeframe', $item->timeframe))
                 ->whereIn('status', LabPopulationService::ACTIVE_GENERATION_STATUSES)->get();
             if ($active->contains(fn ($g) => ! $generation || $g->id !== $generation->id)) return $this->defer($item, 'COUNCIL_FOLLOWUP_ANOTHER_GENERATION_OWNS_STREAM', false);
+            $stage = 'construction';
             if (! $generation) {
                 $generation = $this->population->build((string) $item->symbol, GenerationAdmissionDecisionService::HISTORICAL_TRIGGER,
                     false, (string) $item->timeframe, [], false, false, 6, null, false, null, [
@@ -92,6 +97,7 @@ class SpecialistCouncilFollowupExecutionService
                 throw new LogicException('COUNCIL_FOLLOWUP_ORIGINAL_COHORT_NOT_ADMISSIBLE');
             }
             $this->assertLease($item);
+            $stage = 'preparation';
             $request = $this->preparationRequest($generation, $proof);
             $this->preparation->prepare($generation, $request);
             $generation->refresh();
@@ -99,15 +105,75 @@ class SpecialistCouncilFollowupExecutionService
             $this->assertLease($item);
             // Canonical dispatch owns dataset/release admission and queue creation.
             // Exit zero alone is not success; verify its durable batch witness below.
+            $stage = 'dispatch';
             Artisan::call('trading:dispatch-lab', ['symbol' => $item->symbol, '--timeframe' => $item->timeframe, '--resume-draft-agents' => true]);
             $this->assertLease($item);
             $generation->refresh();
             if (! $this->admitted($generation)) return $this->defer($item, 'COUNCIL_FOLLOWUP_CANONICAL_DISPATCH_NOT_ADMITTED', false);
             return $this->complete($item, $generation, $proof);
         } catch (Throwable $error) {
-            return $this->defer($item, $error instanceof LogicException || $error instanceof \InvalidArgumentException
-                ? $error->getMessage() : 'COUNCIL_FOLLOWUP_EXECUTOR_TECHNICAL_FAILURE', false);
+            $reason = $this->failureReason($error);
+            $this->recordExecutorFailure($item, $error, $reason, $stage);
+            return $this->defer($item, $reason, false);
         } finally { $lock->release(); }
+    }
+
+    private function failureReason(Throwable $error): string
+    {
+        return ($error instanceof LogicException || $error instanceof \InvalidArgumentException)
+            && preg_match('/^[A-Z][A-Z0-9_]{0,159}$/D', $error->getMessage()) === 1
+            ? $error->getMessage() : 'COUNCIL_FOLLOWUP_EXECUTOR_TECHNICAL_FAILURE';
+    }
+
+    /** No raw message, binding, token, absolute path or stack can enter this audit. */
+    private function failureDiagnostic(Throwable $error, string $reason, string $stage): array
+    {
+        $class = get_class($error);
+        $safeClass = preg_match('/^[A-Za-z_][A-Za-z0-9_\\\\]{0,159}$/D', $class) === 1 ? $class : get_parent_class($error);
+        if (! is_string($safeClass) || preg_match('/^[A-Za-z_][A-Za-z0-9_\\\\]{0,159}$/D', $safeClass) !== 1) $safeClass = 'Throwable';
+        $root = str_replace('\\', '/', realpath(dirname(base_path())) ?: dirname(base_path()));
+        $file = str_replace('\\', '/', realpath($error->getFile()) ?: $error->getFile());
+        $relative = str_starts_with(strtolower($file), strtolower($root.'/')) ? substr($file, strlen($root) + 1) : null;
+        if (! is_string($relative) || preg_match('/^backend-laravel\/(?:app|tests|vendor|bootstrap|config|routes)\/[A-Za-z0-9_.\/-]+\.php$/D', $relative) !== 1
+            || in_array('..', explode('/', $relative), true)) $relative = null;
+        return ['protocol' => 'specialist_council_executor_failure_diagnostic_v1',
+            'exception_class' => $safeClass, 'exception_class_hash' => hash('sha256', $class),
+            'file' => $relative, 'line' => $relative !== null && $error->getLine() > 0 ? $error->getLine() : null,
+            'message_hash' => hash('sha256', $error->getMessage()), 'reason_code' => $reason,
+            'stage' => in_array($stage, ['readiness', 'construction', 'preparation', 'dispatch'], true) ? $stage : 'unknown',
+            'promotion_evidence' => false, 'scientific_evidence' => false];
+    }
+
+    /** Separate append-only event preserves the canonical nonconstructive result shape. */
+    private function recordExecutorFailure(ResearchExperimentWorkItem $item, Throwable $error, string $reason, string $stage): void
+    {
+        if (in_array($reason, ['AUTONOMOUS_MODE_STOPPED', 'COUNCIL_FOLLOWUP_LEASE_NOT_CURRENT'], true)) return;
+        $diagnostic = null;
+        try {
+            if (! $this->autonomy->enabled($item->symbol, $item->timeframe)) return;
+            $diagnostic = $this->failureDiagnostic($error, $reason, $stage);
+            DB::transaction(function () use ($item, $diagnostic): void {
+                $current = ResearchExperimentWorkItem::whereKey($item->id)->lockForUpdate()->first();
+                if (! $current || $current->status !== 'leased' || $current->lease_token !== $item->lease_token
+                    || (int) $current->fence_version !== (int) $item->fence_version || ! $current->lease_expires_at?->isFuture()
+                    || data_get($current->payload, 'owner') !== ResearchLoopArbiterService::class
+                    || ! $this->autonomy->enabled($item->symbol, $item->timeframe)) return;
+                $payload = [...$diagnostic, 'work_item_id' => (int) $item->id,
+                    'fence_version' => (int) $item->fence_version, 'attempt' => (int) $current->attempts];
+                SystemEvent::firstOrCreate(['event_key' => 'council-executor-failure:'.hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES))], [
+                    'event_type' => 'specialist_council_executor_failure', 'source_type' => ResearchExperimentWorkItem::class,
+                    'source_id' => (int) $item->id, 'symbol' => $item->symbol, 'timeframe' => $item->timeframe,
+                    'severity' => 'error', 'summary' => 'Council executor refused an original leased operation; sensitive diagnostics withheld.',
+                    'payload' => $payload, 'occurred_at' => now()->utc()]);
+            }, 1);
+        } catch (Throwable) {
+            // A database outage cannot be repaired by diagnostics. Preserve a
+            // sanitized log fallback without replacing or exposing the failure.
+            try {
+                Log::error('Council executor diagnostic storage unavailable.', ['work_item_id' => (int) $item->id,
+                    'fence_version' => (int) $item->fence_version, 'diagnostic' => $diagnostic]);
+            } catch (Throwable) { /* Diagnostics must never replace the original disposition. */ }
+        }
     }
 
     /** Rebind the sealed old-role template only to this exact fresh cohort's original models. */

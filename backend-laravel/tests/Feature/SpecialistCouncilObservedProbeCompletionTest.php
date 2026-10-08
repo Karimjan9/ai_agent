@@ -198,6 +198,51 @@ class SpecialistCouncilObservedProbeCompletionTest extends TestCase
 
     public static function lineagePoisonCases():array { return [['ancestor_hash'],['cycle']]; }
 
+    public function test_pristine_completion_source_repair_retains_original_observed_resolution_and_once_cap(): void
+    {
+        [$work, $proposal, $version, $runs] = $this->observedProbeFixture();
+        $owner = app(SpecialistCouncilResearchFeedbackService::class);
+        $body = $owner->registerFollowupProof($work->id, $proposal, 'synthetic-operator');
+        $oldArchive = $body['completion_source_artifact'];
+        $newArchive = ['source_hash' => str_repeat('9', 64), 'python_source_hash' => str_repeat('a', 64),
+            'artifact_hash' => str_repeat('3', 64)];
+        $this->partialMock(LabImmutableEvidenceService::class)->shouldReceive('codeHash')->andReturn($newArchive['source_hash']);
+        $this->partialMock(ResearchReleaseSealService::class, function ($mock) use ($oldArchive, $newArchive) {
+            $mock->shouldReceive('pythonHash')->andReturn($newArchive['python_source_hash']);
+            $mock->shouldReceive('currentSourceArtifact')->andReturn($newArchive);
+            $mock->shouldReceive('retainedSourceArtifactAddresses')->with(128)->andReturn([$oldArchive['artifact_hash']]);
+            $mock->shouldReceive('sourceArtifactReference')->with($oldArchive['artifact_hash'])->andReturn($oldArchive);
+            $mock->shouldReceive('verifySourceArtifact')->andReturnUsing(fn ($ref) => ['status' => 'verified',
+                'manifest' => ['source_identity' => ['source_hash' => $ref['source_hash'], 'python_source_hash' => $ref['python_source_hash']]]]);
+        });
+        $hold = ['dependency_hold' => ['reason' => 'COUNCIL_FOLLOWUP_EXECUTOR_TECHNICAL_FAILURE',
+            'prerequisite_hash' => str_repeat('8', 64), 'promotion_evidence' => false]];
+        $work->update(['status' => 'blocked', 'attempts' => 1, 'fence_version' => 1,
+            'last_error' => 'COUNCIL_FOLLOWUP_PREREGISTERED_SOURCE_CHANGED', 'result' => $hold]);
+        $resolution = data_get($work->fresh()->payload, 'followup_resolution');
+        $originalRuns = $runs->map(fn ($run) => $run->getRawOriginal())->all();
+        $amended = $owner->amendUnbuiltFollowupSource($work->id, 'synthetic-operator', 'Repair proven pristine constructor failure');
+        $this->assertSame('registered', $amended['status']);
+        $work->refresh();
+        $this->assertSame($resolution, data_get($work->payload, 'followup_resolution'));
+        $this->assertSame($hold, $work->result);
+        $this->assertSame(1, $work->attempts);
+        $this->assertSame(1, $work->fence_version);
+        $this->assertCount(1, data_get($work->payload, 'followup_source_amendments'));
+        $ready = $owner->inspectFollowupReadiness($work);
+        $this->assertTrue($ready['executable'], json_encode($ready));
+        $this->assertSame($newArchive['source_hash'], $ready['effective_source_hash']);
+        $this->assertSame($resolution['current_source_hash'], $ready['current_source_hash']);
+        $this->assertSame(1, $ready['original_observed_probe_completion_proof']['max_completions_per_root']);
+        $this->assertSame($version->id, $ready['original_observed_probe_completion_proof']['root']['root_version_id']);
+        $this->assertFalse($ready['scientific_budget_renewed']);
+        $this->assertFalse($ready['independent_evidence_claimed']);
+        $this->assertSame($originalRuns, $runs->map(fn ($run) => $run->fresh()->getRawOriginal())->all());
+        $this->assertDatabaseCount('lab_generations', 1);
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     private function observedProbeFixture(): array
     {
         // Reuse the established exact native manifest/three-arm construction fixture.

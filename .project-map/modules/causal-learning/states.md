@@ -42,6 +42,16 @@ unique verified old/new source archives. Up to three source amendments share the
 same immutable resolution, observed auxiliary history and attempt/scientific
 budgets; amendment alone does not resume execution.
 
+Pristine-target witnesses represent an absent auxiliary-source proof as explicit
+null, not an empty proof hash. Observed probe completion has its own original
+comparison-proof hash, checked in both construction and source amendment;
+existing non-null auxiliary proof hashes keep their original domain.
+Executor exceptions append a fenced, idempotent `specialist_council_executor_failure`
+SystemEvent with stage, safe class/repository location and message hash only.
+Raw messages, SQL bindings, tokens and stacks are withheld. The event does not
+replace the canonical dependency hold, spend/renew a scientific budget, create
+a cohort or authorize retry; STOP and stale leases cannot write it.
+
 Before validating closure, the existing conversion reconciliation owner returns
 at most 100 genuinely expired leases per pass to `ready`, under row locks and
 an exact token/fence/expiry recheck. Attempts, results, question identity and

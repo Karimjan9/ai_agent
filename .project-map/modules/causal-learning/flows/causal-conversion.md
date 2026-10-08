@@ -19,6 +19,12 @@ An unleased, entirely unbuilt target may append a verified old/new archive-backe
 source-only amendment through the same owner; its resolution, attempt count,
 observed auxiliary history and scientific cap are not replaced.
 
+An absent auxiliary-source proof is explicit null in the pristine witness;
+the observed-comparison completion proof is separately hash-bound and verified.
+Constructor/preparation/dispatch exceptions retain a sanitized, idempotent
+SystemEvent under the original current lease/fence. This diagnostic is separate
+from the unchanged dependency hold and never grants another experiment or credit.
+
 A separate `observed_probe_attestation_completion` may consume the user's
 one-completion allowance only after the original terminal/drained three-arm
 probe-identity collision is proven from immutable request/release/source facts.
