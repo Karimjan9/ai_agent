@@ -371,12 +371,9 @@ PY;
         $arm = json_decode($sealed->plan, true)['arms']['candidate-2025'];
         $probe = $plan['windows'][0]['prospective_probe_window'];
         $bound = $service->bindEvaluationRequestForModel($carrier, $request);
-        $service->assertOriginalArmScope($arm, $bound, ['prospective_probe_window_receipt' => [...$probe, 'complete' => true]], 'M5');
-        $this->addToAssertionCount(1);
-        $wrong = $arm['evaluation_scope']; $wrong['rows']--; $wrong['decision_rows']--;
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('ORIGINAL_PAIRED_ARM_CALENDAR_OR_ROW_BUDGET_MISMATCH');
-        $service->assertOriginalArmScope($arm, $bound, ['data_quality' => ['replay_evaluation_scope' => $wrong]], 'M5');
+        $this->expectExceptionMessage('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_RECEIPT_MISSING');
+        $service->assertOriginalArmScope($arm, $bound, ['prospective_probe_window_receipt' => [...$probe, 'complete' => true]], 'M5');
     }
 
     public function test_memory_blinded_arm_cannot_be_annotated_without_original_selector(): void

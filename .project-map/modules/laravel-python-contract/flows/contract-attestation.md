@@ -12,6 +12,16 @@ or a seal created after completion; this original source proof is not credit.
 
 ## Trigger
 
+Original council arm comparison also requires a producer-sealed
+`replay_executed_clock_v1` emitted from the actual ordinary/native/authorized
+next-open loop. Input selection attests loaded rows and indicator warmup only;
+it cannot substitute for an executed clock. Laravel rechecks producer/request/
+dataset/execution/policy/probe identities and actual calendar/index budget, then
+compares physical schedule/index digests across arms before economic deltas.
+Different storage offsets or arm/model identities are not themselves physical
+clock differences. Missing, stale or unequal clocks are unassessable, not an
+economic loss; old receipts are never given a retrospective clock.
+
 Laravel needs deterministic backtest, replay, entry-signal or paper-contract
 calculation from FastAPI.
 

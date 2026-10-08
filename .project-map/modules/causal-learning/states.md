@@ -52,6 +52,13 @@ Raw messages, SQL bindings, tokens and stacks are withheld. The event does not
 replace the canonical dependency hold, spend/renew a scientific budget, create
 a cohort or authorize retry; STOP and stale leases cannot write it.
 
+Original council comparisons require loop-emitted executed-clock receipts from
+their actual producers and equal physical schedule/index digests. An input
+probe's 15000 rows is not evidence that an ordinary comparator executed all
+14999 decisions. Missing/different clocks close unassessable before economic
+deltas; no negative lesson/credit is inferred. This guard does not silently
+align old evaluator starts or permit another capped completion.
+
 Before validating closure, the existing conversion reconciliation owner returns
 at most 100 genuinely expired leases per pass to `ready`, under row locks and
 an exact token/fence/expiry recheck. Attempts, results, question identity and

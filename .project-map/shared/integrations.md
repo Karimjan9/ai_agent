@@ -1,5 +1,13 @@
 # Integrations and runtime boundaries
 
+`replay_executed_clock_v1` is sealed by the actual Python ordinary/native/
+authorized evaluator loop, not reconstructed from a nominal selection probe.
+Laravel's original council scope owner rechecks request/policy/probe/data/
+execution/account bindings and physical schedule/index parity before economic
+comparison. Indicator warmup remains separate input provenance. Different
+producer/storage identities may share an actual clock, but differing/missing
+clocks are unassessable; old artifacts are not backfilled or normalized.
+
 Native specialist councils use the existing `/api/backtest/run-all`, `/run` and
 `/portfolio` boundary. `specialist_council_runtime_v1` belongs to the individual
 candidate, not unrelated batch peers. One native shared account emits

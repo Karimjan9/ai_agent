@@ -27,6 +27,7 @@ paths:
   - ai-service-python/app/services/market_adaptive_replay.py
   - ai-service-python/app/services/multitimeframe.py
   - ai-service-python/app/services/backtester.py
+  - ai-service-python/app/services/replay_executed_clock.py
   - ai-service-python/app/services/research_program_tasks.py
   - ai-service-python/app/services/specialist_council.py
   - ai-service-python/app/services/authorized_council_arm.py
@@ -54,6 +55,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - replay_executed_clock_v1 observes each actual loop's previous-closed signal and next-open execution indices/timestamps in constant space. Input-selection warmup/probe counts cannot attest executed clocks; ordinary/native/authorized producers are independently bound to their original request and account owner. Missing/stale/malformed clocks or unequal physical schedule/index digests make an original comparison unassessable before economic deltas, not a strategy loss. Legacy evaluator starts are not silently changed or historical receipts backfilled.
   - A per-candidate specialist_council_runtime_v1 executes on one chronological account with shared reservations, costs, exposure and owner-pinned positions. Adding separately computed specialist PnLs is not a native council replay.
   - Native specialist_council_receipt_v1 seals dataset, execution, member/version identities and actual account/position ledgers; original-request attestation precedes screen/full cache or learning consumption.
   - typed_operator_decision_v1 binds a registered bounded AST/CALL program to actual closed inputs for confirmation, risk reduction or exit. Caller vectors, future inputs, risk increases and unsupported temporal semantics cannot enter the decision path. Exact JSON copies must agree with transported content before hash checking.
@@ -89,6 +91,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_replay_executed_clock.py
+  - backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php
   - backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php

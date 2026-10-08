@@ -1,5 +1,12 @@
 # Cross-runtime contract states
 
+Original comparison: `computed -> executed_clock_attested -> physically_paired`
+needs a genuine loop-emitted clock, its original producer/request/account
+bindings and equal physical index/time digests. A probe describes selected
+input/warmup, never substitutes for executed decisions. Missing/unequal clocks
+yield `unassessable` before economic deltas. This does not align legacy loop
+starts, replay old results, renew a question cap or grant authority.
+
 An optional per-candidate `specialist_council_runtime_v1` adds
 `declared -> validated -> shared_account_computed -> receipt_attested` under
 the same data/release/execution boundaries. Member positions and cost/capital

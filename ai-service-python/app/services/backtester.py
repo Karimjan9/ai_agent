@@ -51,6 +51,7 @@ from app.services.market_sessions import (
 )
 from app.services.historical_quotes import validate_historical_quotes
 from app.services.prospective_probe_window import assert_clean_discovery_boundary
+from app.services.replay_executed_clock import ReplayExecutedClock
 from app.services.monte_carlo import MonteCarloService
 from app.services.multitimeframe import annotate_regime_source, apply_signal_policy
 from app.services.multitimeframe_stack import (
@@ -1392,6 +1393,15 @@ def _run_prepared_simple_backtest(
         # Only the verified original transport run helper supplies this private
         # argument; there is no request flag or ordinary-evaluator bypass.
         original_account = OriginalSoloAccountObserver(payload, original_full_arm)
+    clock_probe = (payload.policy_context or {}).get("prospective_probe_window")
+    clock_policy = clock_probe if isinstance(clock_probe, dict) else (payload.policy_context or {}).get("full_replay_runtime_policy")
+    executed_clock = ReplayExecutedClock(
+        owner="authorized_original_council_arm_v1" if original_account is not None else "ordinary_single_position_v1",
+        input_rows=len(df), evaluation_offset=0, timeframe=payload.timeframe,
+        duration_seconds=int(_timeframe_duration_minutes(payload.timeframe) * 60),
+        dataset_hash=payload.replay_dataset_hash, execution_hash=execution_contract_metadata(payload)["execution_hash"],
+        policy=clock_policy, probe=clock_probe,
+    )
     gross_profit = 0.0
     gross_loss = 0.0
     # A loss streak is a finite risk-control state, never a permanent entry
@@ -1654,6 +1664,7 @@ def _run_prepared_simple_backtest(
     for index in range(1 if original_account is not None else 200, len(df)):
         candle = row_at(index)
         signal_row = row_at(index - 1)
+        executed_clock.observe(index, signal_row["time"], candle["time"])
         if original_account is not None:
             original_account.decision(signal_row['time'], candle['time'])
             original_account.sample(signal_row['close'], pd.Timestamp(signal_row['time'])
@@ -3239,6 +3250,7 @@ def _run_prepared_simple_backtest(
         ),
         data_quality={
             **dict(df.attrs.get("data_quality") or {}),
+            "replay_executed_clock": executed_clock.finish(),
             "decision_identity_receipt": _decision_identity_receipt(
                 payload, df, trades, accepted_decision_indices, accepted_entry_events, closed_execution_events,
             ),

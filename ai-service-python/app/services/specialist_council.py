@@ -300,6 +300,7 @@ def _passport_scope_reason(member: dict, payload: SimpleBacktestRequest, prior: 
 
 def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) -> SimpleBacktestResponse:
     from app.services import backtester as kernel
+    from app.services.replay_executed_clock import ReplayExecutedClock
 
     contract = validate_contract(payload)
     policy = contract["policy"]
@@ -340,6 +341,10 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         dataset_hash=payload.replay_dataset_hash,
         execution_hash=execution_contract_metadata(payload)["execution_hash"])
     duration = pd.Timedelta(minutes=kernel._timeframe_duration_minutes(payload.timeframe))
+    executed_clock = ReplayExecutedClock(owner="native_specialist_council_v1", input_rows=len(frame),
+        evaluation_offset=evaluation_start_index, timeframe=payload.timeframe, duration_seconds=int(duration.total_seconds()),
+        dataset_hash=payload.replay_dataset_hash, execution_hash=execution_contract_metadata(payload)["execution_hash"],
+        policy=selection_policy, probe=probe)
     versions = [(contract["council_version"], contract["members"])] + [
         (item["council_version"], item["members"]) for item in contract.get("upgrades", [])
     ]
@@ -515,6 +520,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
             break
         candle = rows[index]
         timestamp = candle["time"]
+        executed_clock.observe(index, rows[index - 1]["time"], timestamp)
         # Releases activate for decisions observed after their sealed boundary.
         signal_at = _utc(rows[index - 1]["time"]) + duration
         while upgrade_index < len(contract.get("upgrades", [])):
@@ -921,6 +927,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         "replay_end": _stamp(ending), "source_rows": len(rows),
         "source_attestation": attestation, "evaluated_scope": evaluated_scope,
         "decision_trace_identity": trace_identity,
+        "replay_executed_clock": executed_clock.finish(),
         "asof_policy": "previous_closed_candle_next_open",
         "status": "dependency" if dependencies else "computed",
         "dependency_reasons": sorted(set(dependencies)), "members": member_receipts,
@@ -963,7 +970,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         stages[f"{item['stage']}:{item['reason']}"] += 1
     data_quality = dict(frame.attrs.get("data_quality") or {})
     data_quality.update({"dataset_attestation": attestation, "research_release_receipt": release_receipt,
-        "specialist_council_receipt": receipt, "replay_evaluation_scope": evaluated_scope})
+        "specialist_council_receipt": receipt, "replay_evaluation_scope": evaluated_scope,
+        "replay_executed_clock": receipt["replay_executed_clock"]})
     data_quality['decision_trace'] = {'protocol': 'candle_decision_trace_v1', 'requested': emit_trace,
         'complete': emit_trace and not dependencies and decision_count == evaluated_scope['decision_rows'],
         'event_count': len(decision_trace), 'evaluated_candle_count': decision_count,

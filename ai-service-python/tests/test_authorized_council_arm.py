@@ -76,6 +76,11 @@ def test_actual_signed_full_solo_runs_original_engine_once_never_walkforward(arm
     assert scope['rows'] == 2 and scope['decision_rows'] == 1 and scope['warmup_rows'] == 0
     assert result['data_quality']['authorized_original_council_arm']['independent_evidence'] is False
     assert result['data_quality']['authorized_original_council_arm']['promotion_evidence'] is False
+    clock = result['data_quality']['replay_executed_clock']
+    assert clock['owner'] == 'authorized_original_council_arm_v1'
+    assert clock['complete'] and clock['decision_rows'] == 1 and clock['first_evaluation_index'] == 1
+    assert clock['policy_hash'] == scope['policy_hash'] and clock['evaluation_offset_rows'] == 0
+    assert json.loads(clock['receipt_json'])['execution_end'] == clock['execution_end']
     assert main._bounded_replay_seconds(arm, 'run_all') == 570
 
 

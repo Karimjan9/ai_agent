@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T04:27:44.275Z",
-  "source_digest": "2c984e07918afcb31369ebf1ee0e0f5578e0f0660e3fd29f49c5b431e7cd4775",
-  "source_file_count": 1542,
-  "git_head": "4cf2b47a9df609ddcd2c8b21990c4ccd784ecbcb",
+  "generated_at": "2026-10-08T07:09:49.856Z",
+  "source_digest": "81178fcf44e15cd7b09c2364c219a5e837cffe2b729602df139bbcda6ba701f3",
+  "source_file_count": 1545,
+  "git_head": "04386a5164e10a96878965a8e1de034feb58b4f9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -243,6 +243,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php",
         "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php",
@@ -627,6 +628,7 @@
         "ai-service-python/app/services/market_adaptive_replay.py",
         "ai-service-python/app/services/multitimeframe.py",
         "ai-service-python/app/services/backtester.py",
+        "ai-service-python/app/services/replay_executed_clock.py",
         "ai-service-python/app/services/research_program_tasks.py",
         "ai-service-python/app/services/specialist_council.py",
         "ai-service-python/app/services/authorized_council_arm.py",
@@ -657,6 +659,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "replay_executed_clock_v1 observes each actual loop's previous-closed signal and next-open execution indices/timestamps in constant space. Input-selection warmup/probe counts cannot attest executed clocks; ordinary/native/authorized producers are independently bound to their original request and account owner. Missing/stale/malformed clocks or unequal physical schedule/index digests make an original comparison unassessable before economic deltas, not a strategy loss. Legacy evaluator starts are not silently changed or historical receipts backfilled.",
         "A per-candidate specialist_council_runtime_v1 executes on one chronological account with shared reservations, costs, exposure and owner-pinned positions. Adding separately computed specialist PnLs is not a native council replay.",
         "Native specialist_council_receipt_v1 seals dataset, execution, member/version identities and actual account/position ledgers; original-request attestation precedes screen/full cache or learning consumption.",
         "typed_operator_decision_v1 binds a registered bounded AST/CALL program to actual closed inputs for confirmation, risk reduction or exit. Caller vectors, future inputs, risk increases and unsupported temporal semantics cannot enter the decision path. Exact JSON copies must agree with transported content before hash checking.",
@@ -687,6 +690,8 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_replay_executed_clock.py",
+        "backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
         "backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilTransportTest.php",
@@ -724,7 +729,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 34,
+      "source_file_count": 35,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {

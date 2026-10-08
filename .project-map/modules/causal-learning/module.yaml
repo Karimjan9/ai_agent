@@ -232,6 +232,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php
   - backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php

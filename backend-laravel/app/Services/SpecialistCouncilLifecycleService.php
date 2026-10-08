@@ -1276,7 +1276,8 @@ class SpecialistCouncilLifecycleService
                     }
                 }
                 $metrics = $this->metrics($response);
-                $arms[$armKey] = [...$arm, 'metrics' => $metrics, 'original_run_id' => $run->run_id];
+                $arms[$armKey] = [...$arm, 'metrics' => $metrics, 'original_run_id' => $run->run_id,
+                    'executed_clock' => data_get($response, 'data_quality.replay_executed_clock')];
                 if ($producer !== null) $arms[$armKey]['support_producer'] = $producer;
                 $sources[] = ['run_id' => $run->run_id, 'request_hash' => $run->request_hash,
                     'response_hash' => $run->response_hash, 'data_hash' => $run->data_hash,
@@ -1288,6 +1289,10 @@ class SpecialistCouncilLifecycleService
         $comparisons = []; $memoryComparisons = []; $positive = 0; $underpowered = false;
         foreach ($plan['windows'] as $windowKey => $window) {
             $windowArms = array_filter($arms, fn (array $arm): bool => $arm['window_key'] === $windowKey);
+            try { $this->assertPairedExecutedClocks($windowArms); }
+            catch (LogicException $error) {
+                $errors[] = $error->getMessage(); $originalErrors[] = $error->getMessage(); continue;
+            }
             $candidate = $this->findArm($windowArms, 'candidate');
             $guided = $this->findArm($windowArms, 'memory_guided');
             $blinded = $this->findArm($windowArms, 'memory_blinded');
@@ -2094,30 +2099,150 @@ class SpecialistCouncilLifecycleService
             'warmup_rows' => $probe['warmup_rows'] ?? null, 'policy_hash' => $this->epochs->parameterHash(array_diff_key($probe, ['complete' => true]))]);
     }
 
+    /** Pure physical execution parity; legitimate producer/storage/arm identities are not compared here. */
+    private function assertPairedExecutedClocks(array $arms): void
+    {
+        $digests = [];
+        $physicalKeys = array_flip(['protocol', 'semantics', 'index_basis', 'execution_timeframe', 'duration_seconds',
+            'decision_rows', 'first_evaluation_index', 'last_evaluation_index', 'signal_start', 'signal_end',
+            'execution_start', 'execution_end', 'index_set_hash', 'schedule_hash']);
+        foreach ($arms as $arm) {
+            $clock = $arm['executed_clock'] ?? null;
+            if (! is_array($clock) || count(array_intersect_key($clock, $physicalKeys)) !== count($physicalKeys)) {
+                throw new LogicException('ORIGINAL_PAIRED_ARM_EXECUTED_CLOCK_RECEIPT_MISSING');
+            }
+            $digests[] = $this->epochs->parameterHash(array_intersect_key($clock, $physicalKeys));
+        }
+        if (count(array_unique($digests)) > 1) throw new LogicException('ORIGINAL_PAIRED_ARM_PHYSICAL_EXECUTION_CLOCK_MISMATCH');
+    }
+
     /** Bounds come only from the original producer, never inferred from a shared file hash. */
     public function assertOriginalArmScope(array $arm, array $request, array $response, string $timeframe): void
     {
         if (! is_array($arm['evaluation_scope'] ?? null)) throw new LogicException('PLAN_EVALUATED_SCOPE_NOT_PREREGISTERED');
         $native = (array) ($response['specialist_council_receipt'] ?? []);
+        $clock = data_get($response, 'data_quality.replay_executed_clock');
+        if (! is_array($clock)) throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_RECEIPT_MISSING');
+        $clockKeys = ['protocol', 'owner', 'semantics', 'index_basis', 'input_rows', 'evaluation_offset_rows',
+            'execution_timeframe', 'duration_seconds', 'dataset_hash', 'execution_hash', 'policy_hash', 'probe_contract_hash',
+            'complete', 'decision_rows', 'first_evaluation_index', 'last_evaluation_index', 'signal_start', 'signal_end',
+            'execution_start', 'execution_end', 'index_set_hash', 'schedule_hash', 'promotion_evidence', 'receipt_hash', 'receipt_json'];
+        if (count($clock) !== count($clockKeys) || array_diff(array_keys($clock), $clockKeys) !== []
+            || ! is_string($clock['receipt_json'] ?? null) || strlen($clock['receipt_json']) > 8192) {
+            throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_SHAPE_INVALID');
+        }
+        $this->assertReceiptSeal($clock);
+        $scope = $this->normalizeEvaluationScope($arm['evaluation_scope']);
+        $seconds = $this->contracts->timeframeSeconds($timeframe);
+        $probe = data_get($request, 'policy_context.prospective_probe_window');
+        $probeHash = is_array($probe) ? ($probe['contract_hash'] ?? null) : null;
+        if (($clock['protocol'] ?? null) !== 'replay_executed_clock_v1' || ($clock['complete'] ?? null) !== true
+            || ($clock['semantics'] ?? null) !== 'previous_closed_candle_next_open_v1'
+            || ($clock['index_basis'] ?? null) !== 'evaluated_frame_zero_based_v1'
+            || ($clock['promotion_evidence'] ?? null) !== false
+            || ($clock['dataset_hash'] ?? null) !== ($request['replay_dataset_hash'] ?? null)
+            || ($clock['execution_hash'] ?? null) !== ($request['execution_hash'] ?? null)
+            || ($clock['execution_timeframe'] ?? null) !== $timeframe || ($clock['duration_seconds'] ?? null) !== $seconds
+            || ($clock['probe_contract_hash'] ?? null) !== $probeHash || ($clock['policy_hash'] ?? null) !== $scope['policy_hash']) {
+            throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_IDENTITY_INVALID');
+        }
+        foreach (['input_rows', 'evaluation_offset_rows', 'decision_rows', 'first_evaluation_index', 'last_evaluation_index'] as $field) {
+            if (! is_int($clock[$field] ?? null) || $clock[$field] < 0 || $clock[$field] > 2000000) {
+                throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_ROWS_INVALID');
+            }
+        }
+        $indexDigest = hash_init('sha256');
+        hash_update($indexDigest, "replay-executed-clock-v1:indices\n");
+        for ($index = 1; $index <= $scope['decision_rows']; $index++) hash_update($indexDigest, $index."\n");
+        if ($clock['first_evaluation_index'] !== 1 || $clock['last_evaluation_index'] !== $scope['decision_rows']
+            || $clock['decision_rows'] !== $scope['decision_rows']
+            || $clock['input_rows'] - $clock['evaluation_offset_rows'] !== $scope['rows']
+            || ($clock['index_set_hash'] ?? null) !== hash_final($indexDigest)
+            || preg_match('/^[a-f0-9]{64}$/D', (string) ($clock['schedule_hash'] ?? '')) !== 1) {
+            throw new LogicException('ORIGINAL_PAIRED_ARM_EXECUTED_CLOCK_MISMATCH');
+        }
         if ($native !== []) {
             $this->assertReceiptSeal($native);
             if (($native['status'] ?? null) !== 'computed') throw new LogicException('ORIGINAL_ARM_NATIVE_EXECUTION_DEPENDENCY');
-            $actual = $native['evaluated_scope'] ?? null;
+            if (($clock['owner'] ?? null) !== 'native_specialist_council_v1'
+                || ! $this->evidence->equivalentJsonValue($native['replay_executed_clock'] ?? null, $clock)) {
+                throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+            }
         } else {
-            $actual = data_get($response, 'data_quality.replay_evaluation_scope');
-            $probe = data_get($request, 'policy_context.prospective_probe_window');
-            if ($actual === null && is_array($probe)) {
-                $receipt = $response['prospective_probe_window_receipt'] ?? data_get($response, 'data_quality.prospective_probe_window_receipt');
-                if (! is_array($receipt) || ! app(ProspectiveRepairProbeWindowService::class)->attests($probe, $receipt)) {
-                    throw new LogicException('LEGACY_COMPARATOR_ORIGINAL_PROBE_RECEIPT_MISSING');
-                }
-                $actual = $this->scopeFromProbe($probe, $timeframe);
+            $expectedOwner = $this->originalComparatorClockOwner($request, $response, $scope);
+            if (($clock['owner'] ?? null) !== $expectedOwner || ! empty($request['specialist_council_contract'])) {
+                throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
             }
         }
-        if (! is_array($actual)) throw new LogicException('ORIGINAL_COMPARATOR_EVALUATED_SCOPE_RECEIPT_MISSING');
-        if (! $this->sameEvaluationScope($arm['evaluation_scope'], $actual)) {
+        $warmup = $native['evaluated_scope']['warmup_rows'] ?? 0;
+        if (is_array($probe)) {
+            $receipt = $response['prospective_probe_window_receipt'] ?? data_get($response, 'data_quality.prospective_probe_window_receipt');
+            if (! is_array($receipt) || ! app(ProspectiveRepairProbeWindowService::class)->attests($probe, $receipt)) {
+                throw new LogicException('LEGACY_COMPARATOR_ORIGINAL_PROBE_RECEIPT_MISSING');
+            }
+            $warmup = $receipt['warmup_rows'];
+        }
+        // Calendar/counts are actual loop observations. The input-selection
+        // receipt proves indicator warmup only; it cannot manufacture execution.
+        $actual = ['start_inclusive' => $clock['signal_start'] ?? null,
+            'end_exclusive' => $this->time($clock['execution_end'] ?? null)->addSeconds($seconds)->toIso8601String(),
+            'rows' => $clock['decision_rows'] + 1, 'decision_rows' => $clock['decision_rows'],
+            'warmup_rows' => $warmup, 'policy_hash' => $clock['policy_hash']];
+        if (! $this->sameEvaluationScope($scope, $actual)
+            || $this->time($clock['execution_start'] ?? null)->lessThan($this->time($clock['signal_start'] ?? null)->addSeconds($seconds))
+            || $this->time($clock['execution_end'] ?? null)->lessThan($this->time($clock['signal_end'] ?? null)->addSeconds($seconds))
+            || $this->time($clock['signal_end'] ?? null)->lessThan($this->time($clock['signal_start'] ?? null))
+            || $this->time($clock['execution_end'] ?? null)->lessThan($this->time($clock['execution_start'] ?? null))) {
             throw new LogicException('ORIGINAL_PAIRED_ARM_CALENDAR_OR_ROW_BUDGET_MISMATCH');
         }
+        $reported = $native['evaluated_scope'] ?? data_get($response, 'data_quality.replay_evaluation_scope');
+        if ($reported !== null && (! is_array($reported) || ! $this->sameEvaluationScope($actual, $reported))) {
+            throw new LogicException('ORIGINAL_COMPARATOR_REPORTED_SCOPE_EXECUTED_CLOCK_MISMATCH');
+        }
+    }
+
+    /** Match the existing original_full_arm issuer, not a caller's owner flag. */
+    private function originalComparatorClockOwner(array $request, array $response, array $scope): string
+    {
+        $transport = data_get($request, 'policy_context.authorized_research_transport');
+        $signed = data_get($transport, 'original_council_arm');
+        $declared = data_get($request, 'policy_context.specialist_council_authorized_arm');
+        if ($signed === null && $declared === null) return 'ordinary_single_position_v1';
+        $receipt = data_get($response, 'data_quality.authorized_original_council_arm');
+        $policy = data_get($request, 'policy_context.full_replay_runtime_policy');
+        if (! is_array($signed) || ! is_array($declared) || ! is_array($receipt) || ! is_array($policy)
+            || ($request['evaluation_mode'] ?? null) !== 'full'
+            || ($transport['protocol'] ?? null) !== InstrumentResearchWindowService::TRANSPORT_PROTOCOL
+            || ($signed['protocol'] ?? null) !== 'authorized_original_council_arm_v1' || ($signed['purpose'] ?? null) !== 'independent'
+            || ($signed['independent_evidence'] ?? null) !== false || ($signed['promotion_evidence'] ?? null) !== false
+            || ($receipt['protocol'] ?? null) !== 'authorized_original_council_arm_receipt_v1'
+            || ($receipt['independent_evidence'] ?? null) !== false || ($receipt['promotion_evidence'] ?? null) !== false
+            || ($policy['protocol'] ?? null) !== 'specialist_council_original_full_source_v1'
+            || ($policy['warmup_rows'] ?? null) !== 0 || $scope['warmup_rows'] !== 0
+            || ($signed['generation_id'] ?? null) !== ($transport['generation_id'] ?? null)
+            || ($signed['window_key'] ?? null) !== data_get($transport, 'window.window_key')
+            || $scope['policy_hash'] !== $this->epochs->parameterHash($policy)) {
+            throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+        }
+        foreach (['generation_id', 'work_item_id', 'model_version_id', 'version_id'] as $key) {
+            if (! is_int($signed[$key] ?? null) || $signed[$key] < 1) throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+        }
+        foreach (['generation_id', 'work_item_id', 'reservation_hash', 'arm_key', 'window_key', 'plan_hash', 'model_hash'] as $key) {
+            if (! isset($signed[$key]) || ($declared[$key] ?? null) !== $signed[$key]) throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+        }
+        foreach (['plan_hash', 'arm_key', 'window_key', 'model_hash'] as $key) {
+            if (($receipt[$key] ?? null) !== $signed[$key]) throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+        }
+        try {
+            $signedScope = json_decode($signed['evaluation_scope_json'] ?? '', true, flags: JSON_THROW_ON_ERROR);
+            if (! is_array($signedScope) || ! is_array($declared['evaluation_scope'] ?? null)
+                || ! $this->sameEvaluationScope($scope, $signedScope) || ! $this->sameEvaluationScope($scope, $declared['evaluation_scope'])) {
+                throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID');
+            }
+        } catch (\Throwable) { throw new LogicException('ORIGINAL_COMPARATOR_EXECUTED_CLOCK_OWNER_INVALID'); }
+        // HMAC/bytes/window authority remains with the existing transport
+        // owner and immutable-run gate. This only attests its clock-owner copy.
+        return 'authorized_original_council_arm_v1';
     }
 
     private function requestForRun(LabEvaluationRun $run, array $request): array

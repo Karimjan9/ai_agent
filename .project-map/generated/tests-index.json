@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T04:27:44.275Z",
-  "source_digest": "2c984e07918afcb31369ebf1ee0e0f5578e0f0660e3fd29f49c5b431e7cd4775",
-  "source_file_count": 1542,
-  "git_head": "4cf2b47a9df609ddcd2c8b21990c4ccd784ecbcb",
+  "generated_at": "2026-10-08T07:09:49.856Z",
+  "source_digest": "81178fcf44e15cd7b09c2364c219a5e837cffe2b729602df139bbcda6ba701f3",
+  "source_file_count": 1545,
+  "git_head": "04386a5164e10a96878965a8e1de034feb58b4f9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -436,6 +436,16 @@
         "test_foundation_dataset_participates_in_immutable_cache_identity",
         "test_php_execution_contract_hash_preserves_small_float_format",
         "test_sealed_execution_contract_fails_closed_when_parameters_drift"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_replay_executed_clock.py",
+      "tests": [
+        "test_same_physical_clock_does_not_depend_on_storage_offset_or_producer_identity",
+        "test_actual_missing_iterations_and_different_interior_times_change_the_clock",
+        "test_unknown_utc_duplicate_or_noncontiguous_clock_cannot_be_complete",
+        "test_ordinary_actual_backtester_retains_its_200_clock_without_inventing_native_coverage",
+        "test_native_actual_warmup_is_not_counted_as_executed_clock_and_receipt_is_account_bound"
       ]
     },
     {
@@ -3320,6 +3330,26 @@
         "test_descendant_comparator_rebind_preserves_every_other_carrier_basis_and_exact_p_pt",
         "fixture",
         "model"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php",
+      "tests": [
+        "seal",
+        "fixture",
+        "guard",
+        "test_python_php_clock_digest_domain_and_utc_scalar_encoding_are_pinned",
+        "test_equal_actual_physical_clock_passes_for_ordinary_solo_without_native_account_receipt",
+        "test_input_selection_receipt_alone_cannot_manufacture_executed_rows_or_scope",
+        "corruptions",
+        "test_rehashed_wrong_or_stale_clock_cannot_be_accepted",
+        "test_stale_scope_calendar_does_not_override_real_execution_observations",
+        "test_native_clock_copy_cannot_drift_from_original_account_seal",
+        "test_caller_authorized_marker_without_original_issuer_is_not_a_runtime_clock_owner",
+        "test_real_python_signed_transport_and_original_full_solo_clock_survive_php_serialization",
+        "paired",
+        "test_equal_endpoints_and_counts_do_not_hide_different_interior_execution_times",
+        "test_legacy_original_clock_is_diagnostic_not_equal_by_missing_fields"
       ]
     },
     {
