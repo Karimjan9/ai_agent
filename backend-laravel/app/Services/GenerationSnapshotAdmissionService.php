@@ -48,10 +48,13 @@ class GenerationSnapshotAdmissionService
             $nativeDiscoveryOwner = ! $academyDiscoveryOwner
                 && ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL
                 && app(SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($generation, $manifest)['allowed'];
+            $priceOwner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+            $unusedPriceDiscoveryOwner = $priceOwner->declares($generation)
+                && $priceOwner->inspectOwner($generation, $manifest)['allowed'];
             $reasons = array_merge($reasons, $this->mtfBundleReasons(
                 (string) data_get($generation->trigger_context, 'mtf_bundle_hash', ''),
                 $manifest,
-                $academyDiscoveryOwner || $nativeDiscoveryOwner,
+                $academyDiscoveryOwner || $nativeDiscoveryOwner || $unusedPriceDiscoveryOwner,
             ));
         }
         foreach ($generation->agents as $agent) {

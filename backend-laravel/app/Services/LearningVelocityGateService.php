@@ -355,6 +355,13 @@ class LearningVelocityGateService
         if (! in_array((string) $agent->lifecycle_status, ['evaluation_error', 'technical_quarantine'], true)) {
             return false;
         }
+        $agent->loadMissing('generation', 'modelVersion');
+        if (data_get($agent->modelVersion?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null
+            || app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {
+            // One original attempt is the declared ceiling. Integrity remains
+            // technical; this marker cannot create ordinary replay recovery.
+            return false;
+        }
         $decisionReason = strtolower((string) $agent->decision_reason);
         if (str_contains($decisionReason, 'cancelled detached recovery job quarantined after bounded operational canary')) {
             // The operator canary deliberately stopped these detached jobs and

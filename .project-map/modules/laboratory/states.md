@@ -30,6 +30,43 @@ Partial preparation stays reserved/draft and cannot dispatch. The 900-second
 limit is unchanged; derived operational deliveries are not another scientific
 allowance (ADR-034).
 
+## Explicit unused-draft attributed-price discovery
+
+`unused G263 twenty-model draft -> approved intent registered -> current arbiter
+PREPARE decision -> frozen mixed-price MTF owner -> current arbiter DISPATCH
+decision -> at most one original screening attempt/model -> own neutral
+dispositions -> owned queue drain -> settled or technical quarantine`.
+
+Registration preserves the original constructor, genomes, allocation, ten
+control pairs and native seventeen-gap dependency. It admits no queue work.
+Preparation requires the current RUNNING decision/control revision and canonical
+dispatch lease; a missing or invalid declared owner yields commandless WAIT,
+never ordinary native fallback. Explicit dispatch flags exclude other protected
+depth owners.
+
+A measured original requires stored `compressed_artifact_v2` request, response
+and decision-trace bytes, exact source/data/model bindings and true 14800 unique
+decision-candle coverage from 15000 evaluated rows, 512 feature warmup and the
+unchanged ordinary 200 execution warmup. ENTRY/WAIT/EXIT event counts are
+separate. A genuine terminal technical attempt remains technical; a candidate
+with a genuinely failed exact control records a pre-execution refusal with no
+fabricated candidate run or coverage. Neither is a measured zero effect.
+
+All twenty original mutation-selection episodes and ten cooperative pairs close
+in this owner's neutral namespace with zero reward. Canonical terminal closure
+requires known own dispositions and owned queue drain. No full validation,
+candidate gate, economic settlement, ordinary learning advice, causal credit,
+outbox or paper authority follows, even if a diagnostic gate would pass.
+Undelivered PREPARE/DISPATCH publication may retry at most twice; completed,
+running or semantically deferred execution never renews a scientific attempt.
+Terminal price originals cannot enter ordinary replay recovery or full/pair/
+successor fanout. Existing unrelated earned work keeps priority. Otherwise a
+commandless WAIT binds fresh canonical native readiness, actual current M5 bytes
+and calendar digest, while preserving the old seventeen-gap receipt and spent
+question. A later real native repair changes the dependency state, not permission
+to replay or grant authority to these old mixed-price observations.
+See ADR-035.
+
 ## Prospective native SOLO and spread-context studies
 
 An explicit `specialist_council_native_solo_v1` plan follows the existing

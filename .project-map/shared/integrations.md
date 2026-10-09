@@ -29,6 +29,35 @@ selection. A separate final reservation revalidates the selected source and
 all loaded input/warmup/potential-holding intervals. Neither producer stats nor
 a selection ranking replaces untouched authorized validation data.
 
+## Unused-draft attributed-price discovery boundary
+
+`UnusedDraftPriceDiscoveryPreparationService` registers an explicitly approved
+new research question on the unchanged G263 twenty-model draft. Existing
+`SecondaryM5ResearchRecoveryService::verify` owns mixed archive byte/row
+attribution proofs and `MultiTimeframeSnapshotService::forProspectiveCleanDiscovery`
+owns the bounded physical 15000+512 MTF input. The original native seventeen-gap
+dependency is immutable, not repaired or substituted into native full validation.
+
+The current arbiter/control revision prepares then the canonical dispatcher uses
+distinct expected price-owner flags. `LabAgentEvaluationService` binds the typed
+header before common source-release transport and runs unchanged Python/gates/
+parameters. Mixed native BID and secondary composite MID are modeled research
+prices, not native fills, quotes, spreads, volume or economic ground truth.
+
+`UnusedDraftPriceDiscoveryReceiptService` reopens actual compressed original
+request/response/trace bytes. It publishes measured ENTRY/WAIT/coverage only with
+the original 14800 unique decision candles (200 ordinary execution warmup), or a
+separate technical/pre-execution withheld disposition. Actual existing single
+and batch failed callbacks are intercepted before ordinary recovery/handoff;
+they cannot manufacture or repeat an attempt. Frozen-control admission consumes
+only the exact own original control receipt.
+
+Historical/projection consumers exclude the typed owner or surviving model seal
+from ordinary mutation advice, priors and authority. Canonical terminal closure
+requires twenty own neutral episode dispositions, ten own neutral pair
+dispositions and owned queue drain. No economic/causal settlement, full replay,
+gate, outbox, paper credit or ordinary ranking is emitted (ADR-035).
+
 `replay_executed_clock_v1` is sealed by the actual Python ordinary/native/
 authorized evaluator loop, not reconstructed from a nominal selection probe.
 Laravel's original council scope owner rechecks request/policy/probe/data/

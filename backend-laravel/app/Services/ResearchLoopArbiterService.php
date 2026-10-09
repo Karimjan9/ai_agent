@@ -267,6 +267,33 @@ class ResearchLoopArbiterService
                         'generation' => $generation, 'queue_reservation' => $reservation,
                     ], $dryRun);
             }
+            $priceProposal = app(UnusedDraftPriceDiscoveryPreparationService::class)->proposal($latest);
+            if ($priceProposal !== null) {
+                if (in_array($priceProposal['status'] ?? null, ['would_prepare', 'prepared'], true)
+                    && empty(data_get($latest->trigger_context, 'queue_batches.screening'))
+                    && ! $this->autonomy->enabled($symbol, $timeframe)) {
+                    return $this->decide($symbol, $timeframe, 'WAIT_UNUSED_DRAFT_PRICE_DISCOVERY', 100,
+                        null, [], null, ['UNUSED_PRICE_DISCOVERY_AUTONOMOUS_MODE_STOPPED'],
+                        ['generation' => $generation, 'price_discovery_proposal' => $priceProposal], $dryRun);
+                }
+                if (($priceProposal['status'] ?? null) === 'would_prepare') {
+                    return $this->decide($symbol, $timeframe, 'PREPARE_UNUSED_DRAFT_PRICE_DISCOVERY', 100,
+                        UnusedDraftPriceDiscoveryPreparationService::COMMAND, ['generation' => (int) $latest->id],
+                        'scheduler-constructor', ['EXPLICIT_UNOBSERVED_PRICE_DISCOVERY_INTENT'],
+                        ['generation' => $generation, 'price_discovery_proposal' => $priceProposal], $dryRun);
+                }
+                if (($priceProposal['status'] ?? null) === 'prepared' && empty(data_get($latest->trigger_context, 'queue_batches.screening'))) {
+                    return $this->decide($symbol, $timeframe, 'DISPATCH_UNUSED_DRAFT_PRICE_DISCOVERY', 100,
+                        UnusedDraftPriceDiscoveryPreparationService::COMMAND, ['generation' => (int) $latest->id, '--dispatch' => true],
+                        'scheduler-constructor', ['ORIGINAL_PRICE_DISCOVERY_PREPARATION_OWNS_DISPATCH'],
+                        ['generation' => $generation, 'price_discovery_proposal' => $priceProposal], $dryRun);
+                }
+                if (($priceProposal['status'] ?? null) === 'blocked') {
+                    return $this->decide($symbol, $timeframe, 'WAIT_UNUSED_DRAFT_PRICE_DISCOVERY', 100,
+                        null, [], null, [$priceProposal['reason']],
+                        ['generation' => $generation, 'price_discovery_proposal' => $priceProposal], $dryRun);
+                }
+            }
             $draftContinuity = $this->unadmittedHistoricalDraftContinuityReadiness($latest, $symbol);
             if ($draftContinuity !== null) {
                 return $this->decide($symbol, $timeframe, 'WAIT_DATASET_CONTINUITY', 100,
@@ -321,6 +348,8 @@ class ResearchLoopArbiterService
                 ], $dryRun);
         }
 
+        $terminalPriceOwner = $latest && app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($latest);
+
         $closure = $this->closure->inspect($symbol, $timeframe, ! $dryRun);
         $repair = (array) ($closure['next_repair'] ?? []);
         if (($closure['healthy'] ?? false) !== true) {
@@ -373,6 +402,8 @@ class ResearchLoopArbiterService
         }
 
         $instrumentDebt = app(InstrumentInvocationLedgerService::class)->pendingResearchPairs($symbol, $timeframe);
+        if ($terminalPriceOwner) $instrumentDebt = array_values(array_filter($instrumentDebt,
+            fn ($debt) => (int) $debt['generation_id'] !== (int) $latest->id));
         if ($instrumentDebt !== [] && ((int) $instrumentDebt[0]['generation_id'] === (int) $latest?->id
                 || (int) ($instrumentDebt[0]['pending_candidate_invocations'] ?? 0) > 0
                 || ! $this->recentAction('RECONCILE_EXACT_INSTRUMENT_PAIR', 30, $symbol))) {
@@ -386,7 +417,7 @@ class ResearchLoopArbiterService
 
         [$currentLearningPair, $historicalLearningPair, $priorityLearningPair] =
             $this->learningCurriculum($symbol, $timeframe, $latest);
-        if ($currentLearningPair) {
+        if ($currentLearningPair && ! $terminalPriceOwner) {
             return $this->decide($symbol, $timeframe, 'PUMP_CANONICAL_LEARNING_PAIR', 93,
                 'trading:pump-learning-lane', [0 => $symbol, '--timeframe' => $timeframe,
                     '--limit' => 1, '--pair-id' => (int) $currentLearningPair->id, '--autonomous' => true],
@@ -502,6 +533,21 @@ class ResearchLoopArbiterService
                     'generation' => $generation, 'academy_proposal' => $academy,
                     'academy_continuation' => $academyContinuation,
                 ], $dryRun);
+        }
+
+        // Unrelated earned work above retains priority. A spent attributed
+        // price question cannot open ordinary full/recovery/pair/successor work.
+        if ($terminalPriceOwner) {
+            $priceOwner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+            $priceProposal = $priceOwner->proposal($latest);
+            return $this->decide($symbol, $timeframe, 'WAIT_UNUSED_DRAFT_PRICE_DISCOVERY_DEPENDENCY', 89,
+                null, [], null, [($priceProposal['status'] ?? null) === 'blocked'
+                    ? $priceProposal['reason'] : 'UNUSED_PRICE_DISCOVERY_BOUNDED_QUESTION_TERMINAL'],
+                ['generation' => $generation, 'price_discovery_proposal' => $priceProposal,
+                    'price_discovery_terminal_disposition' => data_get($latest->trigger_context, 'generation_terminal_recovery.price_discovery_disposition'),
+                    'price_current_native_dependency' => $priceOwner->currentNativeDependency(),
+                    'native_full_dependency' => data_get($latest->trigger_context, 'unused_draft_native_full_dependency'),
+                    'independent_evidence' => false, 'promotion_evidence' => false], $dryRun);
         }
 
         // Unchanged source bytes with an original, immutable continuity
@@ -811,7 +857,8 @@ class ResearchLoopArbiterService
         $context = (array) $generation->trigger_context;
         foreach (['native_specialist_council_intent', 'authorized_specialist_council_panel_intent',
             'specialist_council_authorized_panel', 'specialist_council_preparation', 'native_spread_context_study',
-            'academy_trial_id', 'academy_experiment', 'academy_control_admission'] as $purpose) {
+            'academy_trial_id', 'academy_experiment', 'academy_control_admission',
+            UnusedDraftPriceDiscoveryPreparationService::INTENT, UnusedDraftPriceDiscoveryPreparationService::OWNER] as $purpose) {
             if (data_get($context, $purpose) !== null) return null;
         }
         foreach (['research_release', 'mtf_bundle_hash', 'mtf_bundle_manifest', 'mtf_runtime_contract', 'queue_batches'] as $seal) {
@@ -1028,7 +1075,10 @@ class ResearchLoopArbiterService
         }
 
         $sameState = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
-        $boundedPublication = $command === 'trading:admit-academy-experiment' || $action === 'RESUME_NATIVE_DEPTH_AUDIT';
+        $boundedPublication = $command === 'trading:admit-academy-experiment'
+            || $action === 'RESUME_NATIVE_DEPTH_AUDIT'
+            || ($command === UnusedDraftPriceDiscoveryPreparationService::COMMAND
+                && in_array($action, ['PREPARE_UNUSED_DRAFT_PRICE_DISCOVERY', 'DISPATCH_UNUSED_DRAFT_PRICE_DISCOVERY'], true));
         if ($boundedPublication && $sameState) {
             // Recover only an undelivered outbox publication, never a command
             // that ran and was scientifically/technically refused. Two bounded
@@ -1273,6 +1323,12 @@ class ResearchLoopArbiterService
         }
         if (data_get($evidence, 'data_readiness.source_dependency.protocol') === 'unadmitted_historical_draft_m5_continuity_v1') {
             $state['unadmitted_historical_draft_dependency'] = data_get($evidence, 'data_readiness.source_dependency');
+        }
+        if (is_array(data_get($evidence, 'price_discovery_proposal'))) {
+            $state['price_discovery_proposal'] = data_get($evidence, 'price_discovery_proposal');
+        }
+        if (is_array(data_get($evidence, 'price_current_native_dependency'))) {
+            $state['price_current_native_dependency'] = data_get($evidence, 'price_current_native_dependency');
         }
         if (data_get($evidence, 'academy_proposal.status') === 'pending_canonical_admission' && $generation) {
             // An executed typed refusal is not an undelivered publication.

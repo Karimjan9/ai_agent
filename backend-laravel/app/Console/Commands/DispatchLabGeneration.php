@@ -33,7 +33,7 @@ use Illuminate\Support\Facades\Cache;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1 : Internal storage key; XAUUSD aliases route to one organism} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD organism rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation} {--expected-generation-id= : Internal fence for one original native depth diagnostic phase}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1 : Internal storage key; XAUUSD aliases route to one organism} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD organism rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation} {--expected-generation-id= : Internal fence for one original native depth diagnostic phase} {--unused-price-discovery-owner= : Exact original prepared research-only owner hash} {--expected-price-discovery-generation-id= : Exact unused price discovery database generation id, never a depth flag}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
@@ -103,6 +103,23 @@ class DispatchLabGeneration extends Command
         $resumeDraftAgents = (bool) $this->option('resume-draft-agents');
         $requestedTimeframe = strtoupper((string) $this->option('timeframe'));
         $requestedSymbol = strtoupper((string) ($this->argument('symbol') ?: ''));
+        $priceOwnerHash = (string) $this->option('unused-price-discovery-owner');
+        $priceGenerationId = (int) $this->option('expected-price-discovery-generation-id');
+        // The isolated native-depth branch owns a distinct six-agent fence at merge.
+        $depthFence = $this->getDefinition()->hasOption('expected-generation-id')
+            && $this->option('expected-generation-id') !== null && (string) $this->option('expected-generation-id') !== '';
+        if (($priceOwnerHash !== '' || $priceGenerationId !== 0) && $depthFence) {
+            $this->warn('UNUSED_PRICE_DISCOVERY_NATIVE_DEPTH_FENCES_MUTUALLY_EXCLUSIVE');
+            return self::SUCCESS;
+        }
+        if (($priceOwnerHash !== '' || $priceGenerationId !== 0)
+            && ($requestedSymbol !== 'XAUUSD' || $requestedTimeframe !== 'H1' || ! $resumeDraftAgents
+                || $controlledRescue || $shadowResearch || $auditedDataEdge || $learningConfirmation || $this->option('force-generation')
+                || $priceGenerationId !== \App\Services\UnusedDraftPriceDiscoveryPreparationService::GENERATION_ID
+                || preg_match('/^[a-f0-9]{64}$/D', $priceOwnerHash) !== 1)) {
+            $this->warn('UNUSED_PRICE_DISCOVERY_EXACT_SINGLE_OWNER_FLAGS_REQUIRED');
+            return self::SUCCESS;
+        }
         $scopeTimeframe = $requestedSymbol === LearningProtocolSafetyService::LIGHTHOUSE_SYMBOL
             ? strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1'))
             : $requestedTimeframe;
@@ -227,6 +244,17 @@ class DispatchLabGeneration extends Command
             }
             $generation = $lab->generations()->with('agents')->latest('generation')->first();
             if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
+            $priceOwner = app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class);
+            if ($priceOwnerHash !== '' || ($generation && $priceOwner->declares($generation))) {
+                try {
+                    if (! $generation || (int) $generation->id !== $priceGenerationId) throw new \LogicException('UNUSED_PRICE_DISCOVERY_CURRENT_GENERATION_FLAG_REQUIRED');
+                    $prepared = $priceOwner->assertOwner($generation, (array) data_get($generation->trigger_context, 'mtf_bundle_manifest', []));
+                    if ($prepared['preparation_hash'] !== $priceOwnerHash) throw new \LogicException('UNUSED_PRICE_DISCOVERY_ORIGINAL_OWNER_FLAG_DRIFT');
+                } catch (\LogicException $error) {
+                    $this->warn($error->getMessage());
+                    continue;
+                }
+            }
             $nativePreparation = app(\App\Services\SpecialistCouncilPreparationService::class);
             if ($generation && $nativePreparation->hasNativeConstructorIntent($generation)) {
                 try { $nativePreparation->isResearchGeneration($generation); }
@@ -809,7 +837,9 @@ class DispatchLabGeneration extends Command
         $discovery = ($existingManifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
         $academyDiscoveryOwner = $generation->trigger_type === 'academy_experiment'
             && data_get($generation->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only';
-        if ($discovery && ! $academyDiscoveryOwner
+        $priceOwner = app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class);
+        $unusedPriceOwner = $priceOwner->declares($generation) && $priceOwner->inspectOwner($generation, $existingManifest)['allowed'];
+        if ($discovery && ! $academyDiscoveryOwner && ! $unusedPriceOwner
             && ! app(\App\Services\SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($generation, $existingManifest)['allowed']) {
             throw new \RuntimeException('GENERATION_DISCOVERY_BUNDLE_OWNER_INVALID');
         }

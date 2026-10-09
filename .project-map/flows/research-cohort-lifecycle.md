@@ -39,6 +39,15 @@ SOLO or newly labeled source establishes independence or paper authority.
 
 ## Invariants
 
+An explicitly approved unused G263 draft may take a separate research-only
+branch: `register attributed-price intent -> ordinary arbiter prepare ->
+canonical singleton dispatch -> original measured/technical/pre-execution
+receipts -> twenty neutral episodes/ten neutral pairs -> drained terminal
+boundary`. Exact old genomes and the unresolved native seventeen-gap dependency
+remain frozen. This branch cannot enter the ordinary full/gate/paper sequence,
+create a generation, renew an exhausted question or claim untouched validation.
+See `modules/laboratory/states.md` and ADR-035.
+
 - One protected construction boundary cannot silently open duplicate active work.
 - Before a valid champion, the existing arbiter selects ready learning/recovery
   first and archive-backed exploration next; research does not wait for live H1

@@ -1,5 +1,21 @@
 # Laboratory cohort lifecycle
 
+## Explicit unused-draft mixed-price question
+
+An approved intent registers only the exact unchanged G263 twenty-model snapshot
+and ten frozen pairs. No queue is admitted. Ordinary arbiter cadence issues a
+current PREPARE decision, then a separate canonical DISPATCH decision with exact
+price-owner flags. The verified secondary archive and bounded MTF owner supply
+attributed prices; original native seventeen-gap dependency remains immutable.
+
+Singleton evaluation binds the owner header before common source-release
+transport. One original screening attempt/model is the ceiling. Stored compressed
+artifacts support true 14800 unique decision-candle observations, while actual
+failed callbacks and failed exact controls support separate technical or
+pre-execution dispositions. Twenty own neutral episode closures and ten own pair
+dispositions, followed by owned queue drain, permit the canonical terminal
+boundary. No ordinary economics, credit, full/gate/paper fanout occurs. See ADR-035.
+
 The shared learning-velocity lookback exposes the actual technical generation
 and actionable IDs to the arbiter/lifecycle. Before bounded replay retry, the
 same recovery owner may retire at most two drained, originally sealed attempts

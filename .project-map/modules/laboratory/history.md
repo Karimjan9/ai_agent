@@ -13,6 +13,15 @@ New typed panels now retain one definition and append at most four original
 request digests per fresh lease before dispatch. Legacy paths and scientific
 allowance remain unchanged; see ADR-034.
 
+## 2026-10-09 - Explicit unused-draft attributed-price discovery
+
+An approved new bounded question can preserve G263's exact twenty genomes and
+ten cooperative pairs while consuming only verified mixed-price discovery input.
+The original native seventeen-gap dependency remains unresolved. Current arbiter
+preparation/dispatch and actual compressed original receipts lead only to own
+neutral measured, technical or pre-execution dispositions, never ordinary
+economic/causal authority, full validation or paper admission. See ADR-035.
+
 ## 2026-10-08 - Prospective native comparison and bounded consumption
 
 Explicit future SOLO preserves one original native member/allocation and its

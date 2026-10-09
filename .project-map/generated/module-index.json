@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:03:27.188Z",
-  "source_digest": "fa7564592c76c4c5d07f20ed4e0724910d1213b13ca38d5c459c7a575e57a133",
-  "source_file_count": 1568,
-  "git_head": "2f926e85ce26c96ea3dc0999034a180f99cd1f00",
+  "generated_at": "2026-10-09T11:08:34.960Z",
+  "source_digest": "ba8be9493157a0bb5900229ba3859c810fe90d39daa3d5e11aca6545953a4215",
+  "source_file_count": 1572,
+  "git_head": "3da36954bef41cc3d4d1fa7ef72be095e8200393",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -210,6 +210,7 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Explicit unused-draft mixed-price discovery preserves twenty original model/episode and ten pair identities but settles them only in its own neutral namespace. Genuine technical originals and unexecuted exact-control dependents are not measured zero effects; no ordinary mutation advice, pair effect, credit or economic handoff is emitted (ADR-035).",
         "Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).",
         "Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).",
         "The signed observed-completion projection withholding closes only its exact constructor mutation-selection episodes with append-only zero-authority settlements after all six immutable runs and original feedback are terminal. It never re-runs consolidation, rewrites decisions/assessment/feedback, grants credit or replenishes the root cap (ADR-031).",
@@ -387,6 +388,10 @@
         "qualified-solo"
       ],
       "paths": [
+        "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
+        "backend-laravel/app/Services/UnusedDraftPriceDiscoveryPreparationService.php",
+        "backend-laravel/app/Services/UnusedDraftPriceDiscoveryReceiptService.php",
+        "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php",
         "backend-laravel/app/Domains/Laboratory",
         "backend-laravel/app/Console/Commands/BuildLabGeneration.php",
@@ -483,6 +488,12 @@
         "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
       ],
       "entry_points": [
+        "trading:prepare-unused-price-discovery",
+        "UnusedDraftPriceDiscoveryPreparationService::registerIntent",
+        "UnusedDraftPriceDiscoveryPreparationService::prepareFromDecision",
+        "UnusedDraftPriceDiscoveryReceiptService::terminal",
+        "UnusedDraftPriceDiscoveryReceiptService::reconcileGeneration",
+        "UnusedDraftPriceDiscoveryPreparationService::currentNativeDependency",
         "trading:specialist-council",
         "SpecialistCouncilLifecycleService::registerDraft",
         "SpecialistCouncilLifecycleService::attachResearchModel",
@@ -554,6 +565,8 @@
         "Only new typed qualified-SOLO panels stage original request digests, at most four per genuine lease under the unchanged 900-second delivery budget. Original definition/model/plan/source seals and HMAC prefix are revalidated before all-digests dispatch; exact extra operational slots never replenish scientific allowance. Legacy panels stay atomic (ADR-034).",
         "Original native depth is a distinct six-slot purpose with four source references and cheap/deeper carriers. Actual producer opportunities, signed clock views and immutable whole-pool/seeded sample precede one canonical deferred continuation; ordinary/full replay cannot borrow a short view. Diagnostic neutral closure grants no economic learning or independent authority (ADR-033).",
         "Best-qualified SOLO requires separate original scoped standalone qualification, a server-owned bounded as-of eligible roster and original ranking panel, then a disjoint final panel. Caller flags/shortlists and old chosen/matched SOLO grant nothing; original physical input/warmup/context/holding exposure and immutable selected-source proof own every stage (ADR-033).",
+        "Explicit unused_draft_price_discovery_preparation_v1 preserves the exact G263 twenty genomes, allocation, ten cooperative controls and original seventeen-gap native dependency. Persisted operator approval registers a new bounded attributed-price question only; the current arbiter decision alone prepares and dispatches it. Mixed native BID/secondary composite MID prices grant no native quote, volume, economic, full, independent or paper authority (ADR-035).",
+        "Price discovery consumes at most one original screening attempt per unchanged model. Actual compressed request/response/trace bytes own measured receipts; 15000 selected rows plus 512 feature warmup retain the ordinary 200 execution warmup and 14800 unique decision candles. Event counts are not candle coverage. Genuine technical originals and unexecuted exact-control refusals receive separate neutral dispositions; twenty own episodes and ten own pair dispositions close only after owned queue drain, with zero ordinary credit or gate fanout.",
         "specialist_council_native_chosen_solo_v1 is an original preregistered chosen_source_unqualified full-account comparison. The server preserves and hashes the exact source member and derives only capital_weight 1.0; observed sources, old plans, follow-up reuse and caller best-qualified claims are refused. Actual native account/trace/clock parity still owns comparison.",
         "Controlled native spread-study traces retain canonical audit projection, but their typed generation/carrier/run/request/response declarations exclude ordinary historical mutation advice and causal priors. Old mixed aggregate cache identities and tainted append-only insights are not consumed; dedicated original paired measurement is the result owner.",
         "Prospective matched-member SOLO is an explicit specialist_council_native_solo_v1 declaration. The owner derives one unchanged native member from the original stored council, preserves its allocation, passport, cost and risk, and attests the same actual account clock and metrics. A legacy plan or later follow-up signature cannot add that declaration; matched allocation is not best full-budget standalone proof (ADR-032).",
@@ -596,6 +609,7 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
         "backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php",
@@ -640,7 +654,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 92,
+      "source_file_count": 96,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -726,6 +740,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).",
         "Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.",
         "native_spread_context_study_v1 changes only the computed instrument spread context, never raw quotes, prices, execution fees or hard risk. Its in-loop receipt distinguishes shared eligible gate events, unreached gates and account-diverged coverage; complete immutable original arms must share physical clock/source/program/cost before research-only Entry/WAIT sensitivity can settle.",
         "Optional native member liquidity_atr_binding is a fixed-vocabulary closed input port compiled from the original source membership cell, not a study-only fallback. Both the actual gate and observer consume that same explicit field and receipt its source/value hash; signed study identity must match the native member. Unknown, absent or invalid inputs do not manufacture liquidity, and legacy undeclared context behavior remains unchanged.",
@@ -881,6 +896,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "The explicit unchanged G263 price-discovery owner reuses verified secondary archive attribution and bounded MTF readiness without repairing the old native seventeen-gap dependency. Native BID/secondary composite MID remain modeled research prices; no quotes, native volume, untouched window, full validation or paper eligibility is inferred (ADR-035).",
         "Native training backfill commands fetch Dukascopy and accept only the exact dukascopy provider identity before any archive creation; a secondary-provider label cannot rename native price rows. Separate secondary observations do not repair an immutable Dukascopy dataset or establish unused validation data.",
         "Only the configured canonical provider repairs canonical continuity.",
         "Scheduled market closures are interpreted through the shared session calendar.",
@@ -929,6 +945,8 @@
         "recovery"
       ],
       "paths": [
+        "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
+        "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
         "backend-laravel/app/Services/RuntimeMonitoringService.php",
         "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
@@ -984,6 +1002,7 @@
         "docs/operations"
       ],
       "entry_points": [
+        "trading:prepare-unused-price-discovery --register-intent",
         "trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID",
         "LabLifecycleWatchdogService::reconcileSupersededRuns",
         "TechnicalFailureClassifierService::forAgents",
@@ -1011,6 +1030,8 @@
         "laboratory"
       ],
       "invariants": [
+        "Price-discovery registration occurs only after explicit approval and named unused-draft/source/boot checks. Registration admits no work; current arbiter/control revision alone prepares and dispatches. Its PREPARE and DISPATCH commands permit at most two undelivered publication retries, never executed/semantic-deferred replay or question-cap renewal (ADR-035).",
+        "Spent price-discovery originals remain outside ordinary technical replay recovery, full/pair and successor fanout. Unrelated earned work retains priority; terminal commandless WAIT binds current canonical native physical byte/calendar dependency, so real later source repair changes the state without replaying or upgrading old price evidence.",
         "Explicit unsealed-draft cold maintenance accepts only one named fully constructed unused draft under drain-first STOP, with absent constructor ownership, no source/admission/replay seals or attempted arms and all queues known-empty. Default rolling reload and sealed native owners remain strict. Read-only preflight, two authenticated idle probes and actual new worker boot seals are required; the original data dependency and draft are not rewritten (ADR-032).",
         "Default rolling reload still requires no active generation. Explicit terminal-projection cold maintenance accepts only one named signed observed-completion cohort whose original arms/feedback are terminal, all queues are known-empty and control is drain-first STOP; it still requires fresh authenticated replay-idle probes. It grants neither replay nor another completion (ADR-031).",
         "An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.",
@@ -1036,6 +1057,7 @@
         "Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
         "backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php",
         "backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php",
@@ -1061,7 +1083,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 52,
+      "source_file_count": 54,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {

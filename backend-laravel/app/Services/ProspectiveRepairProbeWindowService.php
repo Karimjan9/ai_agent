@@ -16,6 +16,9 @@ class ProspectiveRepairProbeWindowService
     public function requiresSingleCandidateScreening(array $modelMetadata, string $triggerType, array $generationContext): bool
     {
         return data_get($modelMetadata, 'causal_learning_cohort.experiment_kind') === ProspectiveRepairExperimentService::KIND
+            || data_get($generationContext, UnusedDraftPriceDiscoveryPreparationService::INTENT) !== null
+            || data_get($generationContext, UnusedDraftPriceDiscoveryPreparationService::OWNER) !== null
+            || data_get($modelMetadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null
             || ($triggerType === 'academy_experiment'
                 && data_get($generationContext, 'mtf_bundle_manifest.validation_bundle_protocol') === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL
                 && data_get($generationContext, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only');

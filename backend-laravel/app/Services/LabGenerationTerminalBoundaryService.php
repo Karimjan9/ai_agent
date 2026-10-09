@@ -128,6 +128,11 @@ class LabGenerationTerminalBoundaryService
                 'queue_total' => (int) $backlog['total'],
             ]);
         }
+        $priceDisposition = app(UnusedDraftPriceDiscoveryReceiptService::class)->reconcileGeneration($generation);
+        if (($priceDisposition['status'] ?? null) === 'blocked') {
+            return $this->blocked('UNUSED_PRICE_DISCOVERY_ORIGINAL_PROJECTION_NOT_TERMINAL', $generation,
+                ['price_discovery_disposition' => $priceDisposition]);
+        }
 
         // A terminal agent projection is not enough: every learning episode
         // must have exactly one terminal settlement (or an explicit technical
@@ -158,7 +163,7 @@ class LabGenerationTerminalBoundaryService
         $this->contexts->updateWithAttributes($generation, [
             'status' => $status,
             'completed_at' => now(),
-        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds, $fullValidationBoundary, $observedDisposition): array {
+        ], function (array $context) use ($fromStatus, $status, $watermark, $technicalAgentIds, $fullValidationBoundary, $observedDisposition, $priceDisposition): array {
             $receipt = [
                 'protocol' => self::PROTOCOL,
                 'recovered_from_status' => $fromStatus,
@@ -175,6 +180,10 @@ class LabGenerationTerminalBoundaryService
             $context['generation_terminal_recovery'] = $receipt;
             if (($observedDisposition['status'] ?? null) === 'settled_zero_authority') {
                 $receipt['observed_episode_disposition'] = $observedDisposition;
+                $context['generation_terminal_recovery'] = $receipt;
+            }
+            if (($priceDisposition['status'] ?? null) === 'settled_zero_authority') {
+                $receipt['price_discovery_disposition'] = $priceDisposition;
                 $context['generation_terminal_recovery'] = $receipt;
             }
             if ($fullValidationBoundary) {

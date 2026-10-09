@@ -638,6 +638,13 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $agent->loadMissing('generation', 'modelVersion');
+        if (app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {
+            app(\App\Services\UnusedDraftPriceDiscoveryReceiptService::class)->failed($agent, $e);
+            report($e);
+            return;
+        }
+
         // A transport/provider/runtime failure is not evidence that the
         // strategy failed.  Keep it out of rejection statistics and make the
         // recovery path explicit so it can be safely requeued after repair.
@@ -745,6 +752,12 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 
     private function markEvaluationError(LabAgent $agent, Throwable $e, ?LabEvaluationRun $run = null, ?LabImmutableEvidenceService $evidence = null): void
     {
+        $agent->loadMissing('generation', 'modelVersion');
+        if (app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {
+            app(\App\Services\UnusedDraftPriceDiscoveryReceiptService::class)->failed($agent, $e, $run);
+            report($e);
+            return;
+        }
         $evidence ??= app(LabImmutableEvidenceService::class);
         $reasonCode = $this->technicalFailureReason($e);
         $technicalQuarantine = app(\App\Services\LearningTechnicalCircuitBreakerService::class)->record(

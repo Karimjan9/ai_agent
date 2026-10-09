@@ -64,6 +64,21 @@ class LabImmutableEvidenceService
     public function beginRun(LabAgent $agent, string $phase, string $mode, array $context = []): LabEvaluationRun
     {
         $agent->loadMissing('generation', 'modelVersion');
+        $owner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+        $owner->assertAttempt($agent, $phase);
+        if ($owner->declares($agent->generation)) {
+            return DB::transaction(function () use ($agent, $phase, $mode, $context, $owner): LabEvaluationRun {
+                \App\Models\LabGeneration::whereKey($agent->lab_generation_id)->lockForUpdate()->firstOrFail();
+                $owner->assertAttempt($agent, $phase);
+                return $this->beginAdmittedRun($agent, $phase, $mode, $context);
+            });
+        }
+        return $this->beginAdmittedRun($agent, $phase, $mode, $context);
+    }
+
+    private function beginAdmittedRun(LabAgent $agent, string $phase, string $mode, array $context = []): LabEvaluationRun
+    {
+        $agent->loadMissing('generation', 'modelVersion');
         if ($agent->generation) app(ResearchReleaseSealService::class)->assertCurrent($agent->generation);
         $started = now();
         $run = LabEvaluationRun::create([
@@ -766,6 +781,13 @@ class LabImmutableEvidenceService
     public function learningEligibility(LabEvaluationRun|string|null $run): array
     {
         if (is_string($run)) $run = $this->findRun($run);
+        if ($run && (data_get($run->request_meta, 'payload.policy_context.'.UnusedDraftPriceDiscoveryPreparationService::OWNER) !== null
+            || data_get($run->metadata, 'reason_code') === UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY
+            || data_get($run->modelVersion?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null
+            || app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($run->agent?->generation))) {
+            return ['complete' => false, 'reason_codes' => [UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY],
+                'run_id' => $run->run_id, 'promotion_evidence' => false];
+        }
         if (! $run) {
             return [
                 'complete' => false,

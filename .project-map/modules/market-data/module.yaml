@@ -66,6 +66,7 @@ data_tables:
   - market_training_candles
 dependencies:
 invariants:
+  - The explicit unchanged G263 price-discovery owner reuses verified secondary archive attribution and bounded MTF readiness without repairing the old native seventeen-gap dependency. Native BID/secondary composite MID remain modeled research prices; no quotes, native volume, untouched window, full validation or paper eligibility is inferred (ADR-035).
   - Native training backfill commands fetch Dukascopy and accept only the exact dukascopy provider identity before any archive creation; a secondary-provider label cannot rename native price rows. Separate secondary observations do not repair an immutable Dukascopy dataset or establish unused validation data.
   - Only the configured canonical provider repairs canonical continuity.
   - Scheduled market closures are interpreted through the shared session calendar.

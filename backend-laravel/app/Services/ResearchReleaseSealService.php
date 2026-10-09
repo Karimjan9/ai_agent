@@ -84,6 +84,7 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/LabHistoricalLearningTest.php',
         'backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php',
         'backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php',
+        'backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php',
         'backend-laravel/tests/Feature/SpecialistPaperAccountTest.php',
         'backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php',
         'backend-laravel/tests/Feature/SpecialistCouncilObservedProjectionGuardTest.php',

@@ -779,6 +779,11 @@ class CandidateGateDecisionService
         array $metrics,
         ?string $attributionOverride = null,
     ): CandidateGateDecision {
+        $model = $agent?->modelVersion ?? ($performance ? \App\Models\ModelVersion::find($performance->model_version_id) : null);
+        if (data_get($model?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null
+            || ($agent && app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation))) {
+            throw new \RuntimeException(UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY.':CANDIDATE_GATE_FORBIDDEN');
+        }
         $attribution = $attributionOverride ?? match (true) {
             $stage === 'statistical_forward_gate' && $agent !== null => 'deterministic',
             $stage === 'statistical_forward_gate' => 'ATTRIBUTION_MISSING',

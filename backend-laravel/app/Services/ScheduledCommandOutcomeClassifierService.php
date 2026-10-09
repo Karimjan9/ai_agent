@@ -36,6 +36,12 @@ class ScheduledCommandOutcomeClassifierService
             return $this->result('technical_failure', true, $exitCode, 'native_depth_exact_dispatch_marker_missing_or_conflicting');
         }
         if ($exitCode === 0) {
+            if ($command === UnusedDraftPriceDiscoveryPreparationService::COMMAND) {
+                $payload = json_decode(trim($output), true);
+                $achieved = is_array($payload) && in_array($payload['status'] ?? null, ['prepared', 'admitted'], true);
+                return $this->result($achieved ? 'completed' : 'deferred', false, $exitCode,
+                    $achieved ? 'unused_price_discovery_transition_achieved' : 'unused_price_discovery_withheld');
+            }
             if ($command === 'trading:admit-academy-experiment') {
                 $payload = json_decode(trim($output), true);
                 $achieved = is_array($payload) && in_array(($payload['status'] ?? ''), ['prepared', 'admitted'], true);

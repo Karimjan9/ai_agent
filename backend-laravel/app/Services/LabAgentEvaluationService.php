@@ -26,6 +26,10 @@ class LabAgentEvaluationService
         if ($agent->modelVersion && app(NativeReachabilityDepthAuditService::class)->declares($agent->modelVersion)) {
             throw new RuntimeException('NATIVE_DEPTH_AUDIT_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
         }
+        if (app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)
+            || data_get($agent->modelVersion?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null) {
+            throw new RuntimeException(UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY.':FULL_VALIDATION_FORBIDDEN');
+        }
         if ($agent->modelVersion && app(NativeSpreadContextStudyService::class)->declares($agent->modelVersion)) {
             throw new RuntimeException('NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
         }
@@ -1017,6 +1021,8 @@ class LabAgentEvaluationService
     /** Fast, pair-local filter. Promotion never happens from this result. */
     public function screen(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
+        $agent->loadMissing('modelVersion', 'generation');
+        app(UnusedDraftPriceDiscoveryPreparationService::class)->assertAttempt($agent, 'screening', $run);
         $run ??= $this->evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'direct_screen']);
         $agent->load('modelVersion', 'generation');
         $model = $agent->modelVersion;
@@ -1202,6 +1208,7 @@ class LabAgentEvaluationService
         // Seal the manifest from that final, owner-validated request, never from
         // the preliminary Academy probe or the evaluator's later response.
         if ($cleanDiscovery) $manifest['prospective_probe_window'] = $request['policy_context']['prospective_probe_window'];
+        $request = app(UnusedDraftPriceDiscoveryPreparationService::class)->bindRequest($agent, $request);
         $request = app(ResearchReleaseSealService::class)->bindRequest($run, $request);
         $this->evidence->attachRequest($run, $request, ['request_id' => $requestId, 'data_hash' => $manifest['data_hash'], 'dataset_manifest' => $manifest]);
         $this->assertAiReplayHealthy($requestId, $run, true);
@@ -1272,6 +1279,7 @@ class LabAgentEvaluationService
         }
         if ($this->finishNativeReachabilityDepthAudit($agent, $run, $screenResult)) return;
         if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
+        if ($this->finishUnusedPriceDiscovery($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
             $screenResult,
@@ -1472,6 +1480,10 @@ class LabAgentEvaluationService
                 (array) ($agent->modelVersion?->metadata ?? []), (string) $agent->generation?->trigger_type,
                 (array) ($agent->generation?->trigger_context ?? []))))) {
             throw new RuntimeException('PROSPECTIVE_SCREEN_REQUIRES_SINGLE_CANDIDATE_JOB');
+        }
+        if ($first->generation && app(UnusedDraftPriceDiscoveryPreparationService::class)->declares($first->generation)) {
+            $this->screen($first);
+            return;
         }
         // A guard seat is a pre-registered WAIT policy, not a strategy replay.
         // Resolve it locally before snapshots, health admission and HTTP so it
@@ -2119,6 +2131,7 @@ class LabAgentEvaluationService
         }
         if ($this->finishNativeReachabilityDepthAudit($agent, $run, $screenResult)) return;
         if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
+        if ($this->finishUnusedPriceDiscovery($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
             $screenResult,
@@ -2448,7 +2461,11 @@ class LabAgentEvaluationService
         $discovery = ($manifest['validation_bundle_protocol'] ?? null) === MultiTimeframeSnapshotService::DISCOVERY_BUNDLE_PROTOCOL;
         $academyDiscoveryOwner = $agent->generation?->trigger_type === 'academy_experiment'
             && data_get($agent->generation?->trigger_context, 'prospective_source_identity.data_role') === 'pre_2026_discovery_only';
+        $priceOwner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+        $unusedPriceDiscoveryOwner = $agent->generation && $priceOwner->declares($agent->generation)
+            && $priceOwner->inspectOwner($agent->generation, $manifest)['allowed'];
         if ($discovery && (! $allowDiscovery || $edgeGenesisReplay || (! $academyDiscoveryOwner
+            && ! $unusedPriceDiscoveryOwner
             && (! $agent->generation || ! app(SpecialistCouncilPreparationService::class)->inspectDiscoveryOwner($agent->generation, $manifest)['allowed'])))) {
             throw new RuntimeException('DISCOVERY_ONLY_BUNDLE_REPLAY_SCOPE_FORBIDDEN');
         }
@@ -3044,6 +3061,22 @@ class LabAgentEvaluationService
     }
 
     /** Native feature sensitivity closes only original diagnostic evidence, without economic/skill fan-out. */
+    private function finishUnusedPriceDiscovery(LabAgent $agent, LabEvaluationRun $run, array $result): bool
+    {
+        $owner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+        if (! $owner->declares($agent->generation)) return false;
+        $owner->assertAttempt($agent, 'screening', $run);
+        $updated = LabAgent::query()->whereKey($agent->id)
+            ->whereNotIn('lifecycle_status', ['quarantined', 'technical_quarantine', 'legacy_quarantine'])
+            ->update(['lifecycle_status' => 'screened', 'decision_reason' => UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY]);
+        $this->evidence->finishRun($run, $updated === 1 ? 'completed' : 'technical_error', $result, [],
+            ['reason_code' => $updated === 1 ? UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY : 'TECHNICAL_QUARANTINE_RACE_GUARD',
+                'economic_authority' => false, 'skill_authority' => false, 'promotion_evidence' => false]);
+        if ($updated === 1) app(UnusedDraftPriceDiscoveryReceiptService::class)->terminal($run->fresh());
+        $this->closeScreeningGenerationIfTerminal($agent->fresh(['modelVersion', 'generation']));
+        return true;
+    }
+
     private function finishNativeSpreadContextStudy(LabAgent $agent, LabEvaluationRun $run, array $result): bool
     {
         $owner = app(NativeSpreadContextStudyService::class);

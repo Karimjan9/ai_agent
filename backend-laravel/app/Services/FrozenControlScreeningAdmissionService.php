@@ -79,6 +79,10 @@ class FrozenControlScreeningAdmissionService
             if ($run === null || (string) $run->status === 'started') {
                 return ['agent_id' => $agent->id, 'status' => 'waiting', 'reason' => 'FROZEN_CONTROL_REPLAY_PENDING', 'control_agent_id' => $control->id];
             }
+            $priceOwner = app(UnusedDraftPriceDiscoveryPreparationService::class);
+            if ($priceOwner->declares($agent->generation)) {
+                return app(UnusedDraftPriceDiscoveryReceiptService::class)->controlAdmission($agent, (int) $control->id);
+            }
             if ((string) $run->status !== 'completed') {
                 return ['agent_id' => $agent->id, 'status' => 'blocked', 'reason' => 'FROZEN_CONTROL_REPLAY_INCOMPLETE', 'control_agent_id' => $control->id];
             }

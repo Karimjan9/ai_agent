@@ -140,6 +140,12 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
             return;
         }
         if ($admission['status'] === 'blocked') {
+            foreach ($admission['blocked'] as $refusal) {
+                $agent = LabAgent::with('modelVersion', 'generation')->find((int) $refusal['agent_id']);
+                if ($agent && app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {
+                    app(\App\Services\UnusedDraftPriceDiscoveryReceiptService::class)->refuseControl($agent, (int) ($refusal['control_agent_id'] ?? 0));
+                }
+            }
             $reasons = collect($admission['blocked'])->pluck('reason')->unique()->implode(', ');
             LabAgent::query()->whereIn('id', $this->labAgentIds)
                 ->where('lifecycle_status', 'queued')
@@ -206,6 +212,17 @@ class EvaluateLabScreeningBatchJob implements ShouldBeUnique, ShouldQueue
 
     public function failed(Throwable $exception): void
     {
+        $agents = LabAgent::with('modelVersion', 'generation')->whereIn('id', $this->labAgentIds)->get();
+        if ($agents->contains(fn ($agent) => app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation))) {
+            foreach ($agents as $agent) {
+                if (! app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {
+                    throw new \LogicException('UNUSED_PRICE_DISCOVERY_MIXED_FAILED_JOB_OWNER');
+                }
+                app(\App\Services\UnusedDraftPriceDiscoveryReceiptService::class)->failed($agent, $exception);
+            }
+            report($exception);
+            return;
+        }
         LabAgent::query()->whereIn('id', $this->labAgentIds)
             ->whereIn('lifecycle_status', ['queued', 'screening'])
             ->update([

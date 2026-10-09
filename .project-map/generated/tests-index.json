@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:03:27.188Z",
-  "source_digest": "fa7564592c76c4c5d07f20ed4e0724910d1213b13ca38d5c459c7a575e57a133",
-  "source_file_count": 1568,
-  "git_head": "2f926e85ce26c96ea3dc0999034a180f99cd1f00",
+  "generated_at": "2026-10-09T11:08:34.960Z",
+  "source_digest": "ba8be9493157a0bb5900229ba3859c810fe90d39daa3d5e11aca6545953a4215",
+  "source_file_count": 1572,
+  "git_head": "3da36954bef41cc3d4d1fa7ef72be095e8200393",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -4251,6 +4251,42 @@
         "test_quant_laws_dashboard_and_manual_discovery_work",
         "test_law_discovery_command_runs",
         "createLawEvidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "fixture",
+        "registered",
+        "decision",
+        "prepared",
+        "test_original_twenty_genomes_pairs_constructor_and_native_seventeen_dependency_are_unchanged",
+        "test_preview_labels_and_deployment_hash_do_not_renew_physical_question_and_root1_is_not_opened",
+        "test_registration_requires_persisted_exact_approval_not_caller_permission_boolean",
+        "test_queue_or_constructor_ownership_blocks_registration_before_any_seal",
+        "test_original_model_or_allocation_drift_blocks_preparation_without_partial_models_or_bundle",
+        "test_preparation_requires_running_original_arbiter_and_current_control_revision",
+        "test_full_direct_gate_and_stale_multi_agent_batch_are_denied_before_evidence_or_authority",
+        "test_persisted_model_seals_keep_deleted_context_fail_closed",
+        "test_attempt_cap_is_original_physical_agent_not_label_or_code_retry",
+        "originalScreen",
+        "test_original_artifact_receipt_measures_true_14800_decisions_and_neutrally_closes_original_pair",
+        "test_close_safeguard_requires_twenty_real_originals_not_status_projection_or_empty_watermark",
+        "test_classifier_cannot_call_a_typed_refusal_or_registration_a_completed_preparation",
+        "test_foreign_generation_copied_model_seal_cannot_screen_or_create_an_ordinary_run",
+        "test_genuine_failed_job_keeps_one_original_envelope_and_uses_only_neutral_owned_technical_projection",
+        "test_failed_control_has_real_pre_execution_candidate_refusal_without_manufactured_run_or_coverage",
+        "test_missing_or_legacy_inline_original_artifacts_cannot_close_a_new_owner",
+        "test_price_publication_retries_are_two_undelivered_transports_not_executed_question_retries",
+        "test_completed_malformed_original_response_is_preserved_but_only_technical_disposition_is_published",
+        "test_executed_and_semantically_deferred_price_commands_never_receive_publication_retry",
+        "test_stored_trace_must_match_physical_m5_utc_not_only_claimed_index_coverage",
+        "test_multiple_original_events_per_candle_are_counted_separately_from_unique_coverage",
+        "test_single_agent_failed_callback_does_not_manufacture_an_attempt_and_original_failure_avoids_ordinary_fanout",
+        "test_twenty_known_terminal_technical_and_pre_execution_dispositions_close_only_after_owned_queue_drain",
+        "test_terminal_price_question_waits_on_fresh_native_dependency_without_replay_or_ordinary_recovery"
       ]
     },
     {

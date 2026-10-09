@@ -10,6 +10,10 @@ aliases:
   - native-depth-audit
   - qualified-solo
 paths:
+  - backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php
+  - backend-laravel/app/Services/UnusedDraftPriceDiscoveryPreparationService.php
+  - backend-laravel/app/Services/UnusedDraftPriceDiscoveryReceiptService.php
+  - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php
   - backend-laravel/app/Domains/Laboratory
   - backend-laravel/app/Console/Commands/BuildLabGeneration.php
@@ -105,6 +109,12 @@ paths:
   - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
 entry_points:
+  - trading:prepare-unused-price-discovery
+  - UnusedDraftPriceDiscoveryPreparationService::registerIntent
+  - UnusedDraftPriceDiscoveryPreparationService::prepareFromDecision
+  - UnusedDraftPriceDiscoveryReceiptService::terminal
+  - UnusedDraftPriceDiscoveryReceiptService::reconcileGeneration
+  - UnusedDraftPriceDiscoveryPreparationService::currentNativeDependency
   - trading:specialist-council
   - SpecialistCouncilLifecycleService::registerDraft
   - SpecialistCouncilLifecycleService::attachResearchModel
@@ -176,6 +186,8 @@ invariants:
   - Only new typed qualified-SOLO panels stage original request digests, at most four per genuine lease under the unchanged 900-second delivery budget. Original definition/model/plan/source seals and HMAC prefix are revalidated before all-digests dispatch; exact extra operational slots never replenish scientific allowance. Legacy panels stay atomic (ADR-034).
   - Original native depth is a distinct six-slot purpose with four source references and cheap/deeper carriers. Actual producer opportunities, signed clock views and immutable whole-pool/seeded sample precede one canonical deferred continuation; ordinary/full replay cannot borrow a short view. Diagnostic neutral closure grants no economic learning or independent authority (ADR-033).
   - Best-qualified SOLO requires separate original scoped standalone qualification, a server-owned bounded as-of eligible roster and original ranking panel, then a disjoint final panel. Caller flags/shortlists and old chosen/matched SOLO grant nothing; original physical input/warmup/context/holding exposure and immutable selected-source proof own every stage (ADR-033).
+  - Explicit unused_draft_price_discovery_preparation_v1 preserves the exact G263 twenty genomes, allocation, ten cooperative controls and original seventeen-gap native dependency. Persisted operator approval registers a new bounded attributed-price question only; the current arbiter decision alone prepares and dispatches it. Mixed native BID/secondary composite MID prices grant no native quote, volume, economic, full, independent or paper authority (ADR-035).
+  - Price discovery consumes at most one original screening attempt per unchanged model. Actual compressed request/response/trace bytes own measured receipts; 15000 selected rows plus 512 feature warmup retain the ordinary 200 execution warmup and 14800 unique decision candles. Event counts are not candle coverage. Genuine technical originals and unexecuted exact-control refusals receive separate neutral dispositions; twenty own episodes and ten own pair dispositions close only after owned queue drain, with zero ordinary credit or gate fanout.
   - specialist_council_native_chosen_solo_v1 is an original preregistered chosen_source_unqualified full-account comparison. The server preserves and hashes the exact source member and derives only capital_weight 1.0; observed sources, old plans, follow-up reuse and caller best-qualified claims are refused. Actual native account/trace/clock parity still owns comparison.
   - Controlled native spread-study traces retain canonical audit projection, but their typed generation/carrier/run/request/response declarations exclude ordinary historical mutation advice and causal priors. Old mixed aggregate cache identities and tainted append-only insights are not consumed; dedicated original paired measurement is the result owner.
   - Prospective matched-member SOLO is an explicit specialist_council_native_solo_v1 declaration. The owner derives one unchanged native member from the original stored council, preserves its allocation, passport, cost and risk, and attests the same actual account clock and metrics. A legacy plan or later follow-up signature cannot add that declaration; matched allocation is not best full-budget standalone proof (ADR-032).
@@ -223,6 +235,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php
   - backend-laravel/tests/Feature/NativeDecisionTraceCompletenessTest.php

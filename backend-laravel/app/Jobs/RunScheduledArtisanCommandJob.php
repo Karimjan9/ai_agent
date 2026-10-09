@@ -236,7 +236,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
                 }
             }
             $executionArguments = $this->arguments;
-            if ($this->command === 'trading:admit-academy-experiment') {
+            if (in_array($this->command, ['trading:admit-academy-experiment', \App\Services\UnusedDraftPriceDiscoveryPreparationService::COMMAND], true)) {
                 $executionArguments['--research-loop-decision'] = (int) $this->researchLoopDecisionId;
             }
             if (app()->runningUnitTests()) {

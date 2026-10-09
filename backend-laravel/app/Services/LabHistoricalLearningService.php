@@ -706,7 +706,8 @@ class LabHistoricalLearningService
                 ->orWhereNotNull('metadata->native_spread_context_study')
                 ->orWhereNotNull('metadata->native_spread_context_study_contract')
                 ->orWhereNotNull('metadata->native_reachability_depth_audit')
-                ->orWhereNotNull('metadata->native_reachability_depth_audit_contract'))
+                ->orWhereNotNull('metadata->native_reachability_depth_audit_contract')
+                ->orWhereNotNull('metadata->unused_draft_price_discovery_seal'))
             ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
                 ->whereIn('run_id', $this->studyRunIds())));
     }
@@ -716,7 +717,9 @@ class LabHistoricalLearningService
         return $query->where(fn ($generation) => $generation
             ->whereIn('trigger_context->native_specialist_council_intent->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
             ->orWhereNotNull('trigger_context->native_spread_context_study')
-            ->orWhereNotNull('trigger_context->native_reachability_depth_audit'));
+            ->orWhereNotNull('trigger_context->native_reachability_depth_audit')
+            ->orWhereNotNull('trigger_context->unused_draft_price_discovery_intent')
+            ->orWhereNotNull('trigger_context->unused_draft_price_discovery'));
     }
 
     private function studyRunIds(): Builder
@@ -733,7 +736,9 @@ class LabHistoricalLearningService
             ->orWhereNotNull('request_meta->payload->strategies[0]->native_spread_context_study_contract')
             ->orWhereNotNull('metrics->native_spread_context_study_receipt')
             ->orWhereNotNull('response_meta->native_spread_context_study_receipt')
-            ->orWhereNotNull('response_meta->data_quality->native_spread_context_study_receipt'));
+            ->orWhereNotNull('response_meta->data_quality->native_spread_context_study_receipt')
+            ->orWhereNotNull('request_meta->payload->policy_context->unused_draft_price_discovery')
+            ->orWhere('metadata->reason_code', UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY));
     }
 
     /** Old append-only insights remain visible in SQL, but cannot be reused. */

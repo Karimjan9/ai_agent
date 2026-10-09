@@ -9,6 +9,8 @@ aliases:
   - backup
   - recovery
 paths:
+  - backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php
+  - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/RuntimeMonitoringService.php
   - backend-laravel/app/Services/LabLifecycleErrorLogger.php
@@ -63,6 +65,7 @@ paths:
   - scripts/restart_mt5.sh
   - docs/operations
 entry_points:
+  - trading:prepare-unused-price-discovery --register-intent
   - "trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID"
   - LabLifecycleWatchdogService::reconcileSupersededRuns
   - TechnicalFailureClassifierService::forAgents
@@ -87,6 +90,8 @@ data_tables:
 dependencies:
   - laboratory
 invariants:
+  - Price-discovery registration occurs only after explicit approval and named unused-draft/source/boot checks. Registration admits no work; current arbiter/control revision alone prepares and dispatches. Its PREPARE and DISPATCH commands permit at most two undelivered publication retries, never executed/semantic-deferred replay or question-cap renewal (ADR-035).
+  - Spent price-discovery originals remain outside ordinary technical replay recovery, full/pair and successor fanout. Unrelated earned work retains priority; terminal commandless WAIT binds current canonical native physical byte/calendar dependency, so real later source repair changes the state without replaying or upgrading old price evidence.
   - Explicit unsealed-draft cold maintenance accepts only one named fully constructed unused draft under drain-first STOP, with absent constructor ownership, no source/admission/replay seals or attempted arms and all queues known-empty. Default rolling reload and sealed native owners remain strict. Read-only preflight, two authenticated idle probes and actual new worker boot seals are required; the original data dependency and draft are not rewritten (ADR-032).
   - Default rolling reload still requires no active generation. Explicit terminal-projection cold maintenance accepts only one named signed observed-completion cohort whose original arms/feedback are terminal, all queues are known-empty and control is drain-first STOP; it still requires fresh authenticated replay-idle probes. It grants neither replay nor another completion (ADR-031).
   - An exact admitted generation reservation can precede its immutable run and waits only within actual transport visibility plus the original serialized retry deadline. The canonical backend-neutral generation lab membership digest owns deduplication; unknown/expired/unrelated jobs and scheduler-child noise cannot renew progress, and genuine no-work settlement retains its bounded safety halt.
@@ -117,6 +122,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php
   - backend-laravel/tests/Feature/LabLifecycleWatchdogTest.php
