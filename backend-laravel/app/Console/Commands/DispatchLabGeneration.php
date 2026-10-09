@@ -427,14 +427,18 @@ class DispatchLabGeneration extends Command
                 // harmless duplicate dispatch into a false operational failure.
                 $generation = $generation->fresh(['agents.modelVersion']);
                 if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
+                $depthPhaseIds = data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === NativeReachabilityDepthAuditService::PURPOSE
+                    ? $nativePreparation->nativeDiagnosticDispatchAgentIds($generation) : null;
                 $draftAgents = $generation->agents->where('lifecycle_status', 'draft');
                 if ($this->expectedNativeGenerationId !== null) $draftAgents = $draftAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
+                if ($depthPhaseIds !== null) $draftAgents = $draftAgents->whereIn('id', $depthPhaseIds);
                 $strandedQueuedAgents = ($resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation))
                     ? $this->strandedQueuedAgents($generation, $queueState)
                     : collect();
                 if ($this->expectedNativeGenerationId !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
+                if ($depthPhaseIds !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $depthPhaseIds);
                 $continuation = $resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation)
@@ -460,15 +464,19 @@ class DispatchLabGeneration extends Command
                 // draft agents twice.
                 $generation = $generation->fresh(['agents.modelVersion']);
                 if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
+                $depthPhaseIds = data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === NativeReachabilityDepthAuditService::PURPOSE
+                    ? $nativePreparation->nativeDiagnosticDispatchAgentIds($generation) : null;
                 $strandedQueuedAgents = ($resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation))
                     ? $this->strandedQueuedAgents($generation, $queueState)
                     : collect();
                 if ($this->expectedNativeGenerationId !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
+                if ($depthPhaseIds !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $depthPhaseIds);
                 $draftIntegrityQuarantines = [];
                 $preflightAgents = $generation->agents->where('lifecycle_status', 'draft');
                 if ($this->expectedNativeGenerationId !== null) $preflightAgents = $preflightAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
+                if ($depthPhaseIds !== null) $preflightAgents = $preflightAgents->whereIn('id', $depthPhaseIds);
                 foreach ($preflightAgents as $agent) {
                     $contractRepair = $this->repairDifferentialContractCoordinate($agent);
                     if ($contractRepair !== []) {

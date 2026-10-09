@@ -22,6 +22,13 @@ job. Its single typed marker owns command success; exit zero without admitted
 original carrier is not progress. Publication-only recovery is bounded; an
 executed command or observed replay cannot acquire another attempt (ADR-033).
 
+A crash after marking the original deeper carrier queued but before Bus
+publication is recovered by ordinary `--resume-draft-agents`, not a state reset.
+The native owner admits only that same queued ID with zero runs, known-empty
+screening/full queues, no agent job and unchanged original sample/source proof.
+Phase IDs filter draft/stranded sets before preflight; unrelated source refs
+remain untouched. The expected-generation command cannot borrow this path.
+
 An exact admitted generation reservation is checked before no-op settlement,
 even when no immutable replay run has opened. The canonical queue inspector
 supplies transport semantics and generation-owned lab membership; original

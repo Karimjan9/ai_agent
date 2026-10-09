@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:10:30.905Z",
-  "source_digest": "13eb3e9cf70a845a19b598b1dd6487783588d74b214f9dd95cd3d4a993535ffc",
+  "generated_at": "2026-10-09T11:58:07.670Z",
+  "source_digest": "1988c3677e985eb073edcae8d26ed66ccab8e5ecf4ba991afb04ffa15678f894",
   "source_file_count": 1572,
-  "git_head": "2a13c4b2f987b965bd4e4ed55a84dc64d52fd0b1",
+  "git_head": "0084ce9f86178df453d5d494027fecb752dcb661",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
@@ -283,43 +283,43 @@
       "symbol": "repairDifferentialContractCoordinate",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1000
+      "line": 1008
     },
     {
       "symbol": "isFrozenRepairControl",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1052
+      "line": 1060
     },
     {
       "symbol": "strandedQueuedAgents",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1074
+      "line": 1082
     },
     {
       "symbol": "constructorCompleteForDraftContinuation",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1102
+      "line": 1110
     },
     {
       "symbol": "draftIntegrityViolations",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1134
+      "line": 1142
     },
     {
       "symbol": "causal",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1200
+      "line": 1208
     },
     {
       "symbol": "councilRoleIntegrityViolations",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 1255
+      "line": 1263
     },
     {
       "symbol": "DispatchLabGeneration",
@@ -337,31 +337,31 @@
       "symbol": "assertExpectedNativeDepthGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 775
+      "line": 783
     },
     {
       "symbol": "sealAutonomousMtfRuntime",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 830
+      "line": 838
     },
     {
       "symbol": "screeningDatasetContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 876
+      "line": 884
     },
     {
       "symbol": "screeningJobs",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 892
+      "line": 900
     },
     {
       "symbol": "normalCausalAdmission",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/DispatchLabGeneration.php",
-      "line": 937
+      "line": 945
     },
     {
       "symbol": "handleCanonical",
@@ -4714,16 +4714,10 @@
       "line": 267
     },
     {
-      "symbol": "reconcileGeneration",
+      "symbol": "originalQueuedDeeperPublicationIds",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 279
-    },
-    {
-      "symbol": "sealSample",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 288
+      "line": 281
     },
     {
       "symbol": "__construct",
@@ -4732,10 +4726,16 @@
       "line": 30
     },
     {
-      "symbol": "readSelection",
+      "symbol": "reconcileGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 313
+      "line": 306
+    },
+    {
+      "symbol": "sealSample",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
+      "line": 315
     },
     {
       "symbol": "preregister",
@@ -4744,166 +4744,172 @@
       "line": 33
     },
     {
+      "symbol": "readSelection",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
+      "line": 340
+    },
+    {
       "symbol": "contract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 345
+      "line": 372
     },
     {
       "symbol": "assertClock",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 360
+      "line": 387
     },
     {
       "symbol": "assertPool",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 374
+      "line": 401
     },
     {
       "symbol": "nativeRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 408
+      "line": 435
     },
     {
       "symbol": "generationSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 417
+      "line": 444
     },
     {
       "symbol": "modelSeal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 438
+      "line": 465
     },
     {
       "symbol": "terminalOriginalRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 451
+      "line": 478
     },
     {
       "symbol": "originalPayload",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 468
+      "line": 495
     },
     {
       "symbol": "publish",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 481
+      "line": 508
     },
     {
       "symbol": "publishedWitness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 501
+      "line": 528
     },
     {
       "symbol": "historicalPublishedWitness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 551
+      "line": 578
     },
     {
       "symbol": "originalStrategy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 653
+      "line": 680
     },
     {
       "symbol": "originalContractBody",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 661
+      "line": 688
     },
     {
       "symbol": "historicalSample",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 670
+      "line": 697
     },
     {
       "symbol": "closeReferences",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 693
+      "line": 720
     },
     {
       "symbol": "physicalQuestionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 734
+      "line": 761
     },
     {
       "symbol": "withoutLabels",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 764
+      "line": 791
     },
     {
       "symbol": "readModernArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 775
+      "line": 802
     },
     {
       "symbol": "assertObserverTraceJoin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 785
+      "line": 812
     },
     {
       "symbol": "sealed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 816
+      "line": 843
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 822
+      "line": 849
     },
     {
       "symbol": "key",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 823
+      "line": 850
     },
     {
       "symbol": "same",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 824
+      "line": 851
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 825
+      "line": 852
     },
     {
       "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 826
+      "line": 853
     },
     {
       "symbol": "canonical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 827
+      "line": 854
     },
     {
       "symbol": "refuse",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/NativeReachabilityDepthAuditService.php",
-      "line": 828
+      "line": 855
     },
     {
       "symbol": "assertKnownQuote",
@@ -8068,34 +8074,70 @@
       "line": 191
     },
     {
-      "symbol": "test_default_command_keeps_ordinary_exit_zero_without_a_depth_marker",
+      "symbol": "test_original_queued_deeper_publication_requires_empty_all_stage_queues_and_no_run",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
       "line": 196
     },
     {
+      "symbol": "test_queued_deeper_publication_never_repairs_unknown_active_or_changed_ownership",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 215
+    },
+    {
+      "symbol": "unsafeQueuedPublicationCases",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 254
+    },
+    {
+      "symbol": "test_existing_ordinary_cli_repairs_only_original_unused_queued_deeper_publication_without_reset",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 261
+    },
+    {
+      "symbol": "routingRecoverySeal",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 287
+    },
+    {
+      "symbol": "queuedPublicationIds",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 293
+    },
+    {
+      "symbol": "test_default_command_keeps_ordinary_exit_zero_without_a_depth_marker",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "line": 299
+    },
+    {
       "symbol": "dispatch",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
-      "line": 207
+      "line": 310
     },
     {
       "symbol": "assertRefused",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
-      "line": 221
+      "line": 324
     },
     {
       "symbol": "generation",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
-      "line": 228
+      "line": 331
     },
     {
       "symbol": "installRoutingServices",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
-      "line": 250
+      "line": 353
     },
     {
       "symbol": "NativeDepthDispatchFenceTest",

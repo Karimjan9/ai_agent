@@ -193,6 +193,109 @@ class NativeDepthDispatchFenceTest extends TestCase
         return [['cheap_pending', 4], ['deeper_ready', 5]];
     }
 
+    public function test_original_queued_deeper_publication_requires_empty_all_stage_queues_and_no_run(): void
+    {
+        [$generation, $agents] = $this->generation();
+        $deeper = $agents[5]; $deeper->update(['lifecycle_status' => 'queued']);
+        config(['services.lab_queue.screening_queue' => 'fixture-screen', 'services.lab_queue.full_queue' => 'fixture-full',
+            'services.lab_queue.full_validation_queue' => 'fixture-other-full']);
+        $queues = ['fixture-screen', 'fixture-full', 'fixture-other-full'];
+        $inspector = Mockery::mock(LabQueueJobInspector::class);
+        $inspector->shouldReceive('queueSnapshot')->with($queues)->once()->andReturn(['available' => true, 'total' => 0]);
+        $inspector->shouldReceive('hasAgentJob')->with($deeper->id, $queues)->once()->andReturn(false);
+        $this->instance(LabQueueJobInspector::class, $inspector);
+        $before = $deeper->fresh()->toArray();
+        $this->assertSame([$deeper->id], $this->queuedPublicationIds($this->routingRecoverySeal($generation, $deeper)));
+        $this->assertSame($before, $deeper->fresh()->toArray());
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        Bus::assertNothingBatched(); Http::assertNothingSent();
+    }
+
+    #[DataProvider('unsafeQueuedPublicationCases')]
+    public function test_queued_deeper_publication_never_repairs_unknown_active_or_changed_ownership(string $case): void
+    {
+        [$generation, $agents] = $this->generation();
+        $deeper = $agents[5]; $deeper->update(['lifecycle_status' => 'queued']);
+        $seal = $this->routingRecoverySeal($generation, $deeper);
+        $snapshot = ['available' => true, 'total' => 0]; $hasJob = false;
+        $beforeQueueGuard = false;
+        switch ($case) {
+            case 'generation_drift': $seal['generation_id']++; $beforeQueueGuard = true; break;
+            case 'model_drift': $seal['members']['deeper']['model_id'] = $agents[4]->model_version_id; $beforeQueueGuard = true; break;
+            case 'missing_owner': unset($seal['members']['deeper']); $beforeQueueGuard = true; break;
+            case 'draft': case 'technical_quarantine':
+                $deeper->update(['lifecycle_status' => $case]); $beforeQueueGuard = true; break;
+            case 'existing_screening_run': case 'existing_full_run':
+                LabEvaluationRun::create(['run_id' => (string) \Illuminate\Support\Str::uuid(), 'lab_generation_id' => $generation->id,
+                    'lab_agent_id' => $deeper->id, 'model_version_id' => $deeper->model_version_id,
+                    'phase' => $case === 'existing_full_run' ? 'full' : 'screening', 'status' => 'started']);
+                $beforeQueueGuard = true; break;
+            case 'unknown_queue': $snapshot = ['available' => false]; break;
+            case 'missing_count': $snapshot = ['available' => true]; break;
+            case 'string_count': $snapshot['total'] = '0'; break;
+            case 'nonempty_full_or_screening_queue': $snapshot['total'] = 1; break;
+            case 'owned_job_despite_zero_snapshot': $hasJob = true; break;
+            case 'empty_queue_alias': config()->set('services.lab_queue.full_queue', ''); $beforeQueueGuard = true; break;
+        }
+        $inspector = Mockery::mock(LabQueueJobInspector::class);
+        if ($beforeQueueGuard) $inspector->shouldNotReceive('queueSnapshot');
+        else $inspector->shouldReceive('queueSnapshot')->once()->andReturn($snapshot);
+        if (($snapshot['available'] ?? null) === true && ($snapshot['total'] ?? null) === 0 && ! $beforeQueueGuard) {
+            $inspector->shouldReceive('hasAgentJob')->once()->andReturn($hasJob);
+        } else $inspector->shouldNotReceive('hasAgentJob');
+        $this->instance(LabQueueJobInspector::class, $inspector);
+        $before = $deeper->fresh()->toArray(); $runCount = LabEvaluationRun::count();
+        $this->assertSame([], $this->queuedPublicationIds($seal), $case);
+        $this->assertSame($before, $deeper->fresh()->toArray());
+        $this->assertDatabaseCount('lab_evaluation_runs', $runCount);
+        Bus::assertNothingBatched(); Http::assertNothingSent();
+    }
+
+    public static function unsafeQueuedPublicationCases(): array
+    {
+        return array_map(fn ($case) => [$case], ['generation_drift', 'model_drift', 'missing_owner', 'draft', 'technical_quarantine',
+            'existing_screening_run', 'existing_full_run', 'unknown_queue', 'missing_count', 'string_count',
+            'nonempty_full_or_screening_queue', 'owned_job_despite_zero_snapshot', 'empty_queue_alias']);
+    }
+
+    public function test_existing_ordinary_cli_repairs_only_original_unused_queued_deeper_publication_without_reset(): void
+    {
+        [$generation, $agents] = $this->generation();
+        $generation->update(['status' => 'screening']);
+        $agents[4]->update(['lifecycle_status' => 'screened']);
+        $deeper = $agents[5]; $deeper->update(['lifecycle_status' => 'queued']);
+        $others = $agents->reject(fn ($agent) => $agent->id === $deeper->id)
+            ->mapWithKeys(fn ($agent) => [$agent->id => $agent->fresh()->toArray()]);
+        $seal = $this->routingRecoverySeal($generation, $deeper);
+        $this->installRoutingServices($generation, $deeper->id, 'deeper_in_flight', permitPublication: true,
+            queuedRecoverySeal: $seal);
+        $result = $this->dispatch(['--expected-generation-id' => null], requireMarker: false);
+        $this->assertSame(0, $result['exit'], $result['output']);
+        $this->assertSame([], $result['markers']);
+        Bus::assertBatched(fn ($batch): bool => count($batch->jobs) === 1
+            && $batch->jobs[0] instanceof EvaluateLabScreeningBatchJob
+            && $batch->jobs[0]->labAgentIds === [$deeper->id] && $batch->jobs[0]->labGenerationId === $generation->id);
+        $this->assertSame('queued', $deeper->fresh()->lifecycle_status, 'Publication recovery never resets an original arm to draft.');
+        foreach ($others as $id => $before) $this->assertSame($before, LabAgent::findOrFail($id)->toArray());
+        $this->assertSame($seal, $this->routingRecoverySeal($generation->fresh(), $deeper->fresh()));
+        $this->assertDatabaseCount('lab_generations', 1); $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('agent_learning_settlements', 0); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertNothingSent();
+    }
+
+    /** Conditional routing proof only; the original source/selection owner is tested separately. */
+    private function routingRecoverySeal(LabGeneration $generation, LabAgent $deeper): array
+    {
+        return ['generation_id' => (int) $generation->id,
+            'members' => ['deeper' => ['agent_id' => (int) $deeper->id, 'model_id' => (int) $deeper->model_version_id]]];
+    }
+
+    private function queuedPublicationIds(array $seal): array
+    {
+        $reader = (new \ReflectionClass(NativeReachabilityDepthAuditService::class))->newInstanceWithoutConstructor();
+        return (new \ReflectionMethod($reader, 'originalQueuedDeeperPublicationIds'))->invoke($reader, $seal);
+    }
+
     public function test_default_command_keeps_ordinary_exit_zero_without_a_depth_marker(): void
     {
         $this->installRoutingServices();
@@ -248,7 +351,8 @@ class NativeDepthDispatchFenceTest extends TestCase
     }
 
     private function installRoutingServices(?LabGeneration $generation = null, ?int $selectedId = null,
-        string $phase = 'cheap_pending', bool $prepared = true, ?array $snapshot = null, bool $permitPublication = false): void
+        string $phase = 'cheap_pending', bool $prepared = true, ?array $snapshot = null, bool $permitPublication = false,
+        ?array $queuedRecoverySeal = null): void
     {
         foreach ([LabPopulationService::class, LabDatasetExportService::class, MultiTimeframeSnapshotService::class,
             MarketDataContinuityService::class, LabImmutableEvidenceService::class, CandidateHandoffService::class,
@@ -258,7 +362,8 @@ class NativeDepthDispatchFenceTest extends TestCase
             SpecialistCouncilPreparationService::class, NativeReachabilityDepthAuditService::class, ResearchReleaseSealService::class] as $class) {
             $this->instance($class, Mockery::mock($class));
         }
-        app(LabPopulationService::class)->shouldNotReceive('ensureLaboratories');
+        if ($queuedRecoverySeal === null) app(LabPopulationService::class)->shouldNotReceive('ensureLaboratories');
+        else app(LabPopulationService::class)->shouldReceive('ensureLaboratories')->once();
         app(LabPopulationService::class)->shouldNotReceive('build');
         app(LearningProtocolSafetyService::class)->shouldReceive('generationCreationPaused')->andReturn(false);
         app(LearningTechnicalCircuitBreakerService::class)->shouldReceive('blocked')->andReturn(false);
@@ -267,7 +372,12 @@ class NativeDepthDispatchFenceTest extends TestCase
             ? ['available' => true, 'total' => 0] : ($snapshot ?? ['available' => false]));
         app(SpecialistCouncilPreparationService::class)->shouldReceive('hasNativeConstructorIntent')->andReturn(true);
         app(SpecialistCouncilPreparationService::class)->shouldReceive('isResearchGeneration')->andReturn($prepared);
-        app(SpecialistCouncilPreparationService::class)->shouldReceive('nativeDiagnosticDispatchAgentIds')->andReturn($selectedId === null ? [] : [$selectedId]);
+        if ($queuedRecoverySeal === null) {
+            app(SpecialistCouncilPreparationService::class)->shouldReceive('nativeDiagnosticDispatchAgentIds')->andReturn($selectedId === null ? [] : [$selectedId]);
+        } else {
+            app(SpecialistCouncilPreparationService::class)->shouldReceive('nativeDiagnosticDispatchAgentIds')
+                ->andReturnUsing(fn () => $this->queuedPublicationIds($queuedRecoverySeal));
+        }
         app(NativeReachabilityDepthAuditService::class)->shouldReceive('inspectContinuation')->andReturn(['status' => $phase,
             'generation_id' => $generation?->id, 'same_original_question' => true]);
         if (! $permitPublication) return;
@@ -276,7 +386,8 @@ class NativeDepthDispatchFenceTest extends TestCase
             ->with(Mockery::on(fn (LabAgent $agent): bool => $agent->id === $selectedId), 'screening')->once()
             ->andReturn(['passed' => true, 'errors' => []]);
         app(StrategyParameterSchemaService::class)->shouldReceive('canonicalizeForIdentity')->andReturn([]);
-        app(LabDatasetExportService::class)->shouldReceive('export')->once();
+        if ($queuedRecoverySeal === null) app(LabDatasetExportService::class)->shouldReceive('export')->once();
+        else app(LabDatasetExportService::class)->shouldNotReceive('export');
         app(LabDatasetExportService::class)->shouldReceive('ensureGenerationFoundationSnapshot')->once()->andReturn([]);
         app(LabDatasetExportService::class)->shouldReceive('ensureGenerationSnapshot')->once()->andReturn([]);
         app(LabDatasetExportService::class)->shouldReceive('assertGenerationDataPartition')->once();
@@ -284,6 +395,8 @@ class NativeDepthDispatchFenceTest extends TestCase
             ->andReturn(['bundle_hash' => str_repeat('a', 64), 'manifest' => data_get($generation->trigger_context, 'mtf_bundle_manifest')]);
         app(ResearchReleaseSealService::class)->shouldReceive('seal')->once()->andReturnUsing(fn ($model) => $model);
         app(GenerationSnapshotAdmissionService::class)->shouldReceive('inspect')->once()->andReturn(['allowed' => true, 'reasons' => []]);
-        app(LabImmutableEvidenceService::class)->shouldReceive('recordAgentStatusChanged')->once();
+        if ($queuedRecoverySeal === null) app(LabImmutableEvidenceService::class)->shouldReceive('recordAgentStatusChanged')->once();
+        else app(LabImmutableEvidenceService::class)->shouldNotReceive('recordAgentStatusChanged');
+        if ($queuedRecoverySeal !== null) app(LabImmutableEvidenceService::class)->shouldReceive('recordLifecycle')->once();
     }
 }

@@ -12,6 +12,14 @@ execution view and actual received trace/clock are re-attested before consumptio
 Queued/in-flight continuation retains the same original carrier and watermark;
 publication recovery cannot create another scientific attempt (ADR-033).
 
+A queued original deeper carrier with zero immutable runs may re-enter only
+the existing ordinary stranded-queue publication path when every screening/full
+queue view is known-empty and no agent job exists. The original owner/sample/
+phase/current source proof is revalidated and only that ID reaches preflight.
+No queued-to-draft reset, resampling, source change or new attempt occurs.
+Unknown/present queues or any original run refuse publication repair. The
+explicit expected-generation phase command remains draft-only.
+
 Qualified SOLO follows `original scoped standalone panel -> complete original
 qualification certificates -> as-of full eligible roster -> preregistered ranking
 panel -> immutable selected source -> separate untouched final comparison`.

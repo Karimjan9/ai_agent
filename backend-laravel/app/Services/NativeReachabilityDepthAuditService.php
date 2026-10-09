@@ -272,8 +272,35 @@ class NativeReachabilityDepthAuditService
         return match ($state['status']) {
             'cheap_pending' => [$seal['members']['cheap']['agent_id']],
             'deeper_ready' => $state['dispatch_agent_ids'],
+            'deeper_in_flight' => $this->originalQueuedDeeperPublicationIds($seal),
             default => [],
         };
+    }
+
+    /** Repair publication only: the original phase, programme and sample stay sealed. */
+    private function originalQueuedDeeperPublicationIds(array $seal): array
+    {
+        $generationId = $seal['generation_id'] ?? null;
+        $agentId = data_get($seal, 'members.deeper.agent_id');
+        $modelId = data_get($seal, 'members.deeper.model_id');
+        if (! is_int($generationId) || $generationId <= 0 || ! is_int($agentId) || $agentId <= 0
+            || ! is_int($modelId) || $modelId <= 0) return [];
+        $agent = LabAgent::find($agentId);
+        if (! $agent || (int) $agent->lab_generation_id !== $generationId || (int) $agent->model_version_id !== $modelId
+            || $agent->lifecycle_status !== 'queued' || LabEvaluationRun::where('lab_agent_id', $agentId)->exists()) return [];
+        $queues = array_values(array_unique([
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.full_queue', 'lab-full-validation'),
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+        ]));
+        if (in_array('', $queues, true)) return [];
+        $inspector = app(LabQueueJobInspector::class);
+        $snapshot = $inspector->queueSnapshot($queues);
+        if (($snapshot['available'] ?? null) !== true || ! is_int($snapshot['total'] ?? null)
+            || $snapshot['total'] !== 0 || $inspector->hasAgentJob($agentId, $queues) !== false) return [];
+        // No status reset and no second evaluation: the canonical stranded
+        // queued owner must still pass lease, release and singleton admission.
+        return [$agentId];
     }
 
     public function reconcileGeneration(LabGeneration $generation): ?array
