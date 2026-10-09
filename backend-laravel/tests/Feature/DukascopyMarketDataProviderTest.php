@@ -18,6 +18,26 @@ class DukascopyMarketDataProviderTest extends TestCase
         $this->assertFalse((bool) config('services.dukascopy.m15_node_enabled'));
     }
 
+    public function test_empty_accepted_response_never_becomes_a_native_absence_or_candle_inventory(): void
+    {
+        config(['services.dukascopy.transport' => 'jetta',
+            'services.dukascopy.jetta_base_url' => 'https://jetta.test',
+            'services.dukascopy.http_retry_attempts' => 1, 'services.dukascopy.tick_fallback_enabled' => false]);
+        Http::preventStrayRequests();
+        Http::fake(['https://jetta.test/v1/candles/trade/hour/EUR-USD/BID*'
+            => Http::response('', 202, ['Content-Type' => 'text/html'])]);
+        try {
+            app(DukascopyMarketDataProvider::class)->fetchCandles('EURUSD', 'EUR/USD', 'H1', 100,
+                CarbonImmutable::parse('2020-01-01T01:00:00Z'), CarbonImmutable::parse('2020-01-01T03:00:00Z'));
+            $this->fail('Unresolved transport became native data.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: no completed native price/tick evidence', $error->getMessage());
+        }
+        // Existing monthly-to-timestamp fallback is bounded and remains a
+        // transport attempt, not evidence that an empty hour was observed.
+        Http::assertSentCount(2);
+    }
+
     public function test_it_decodes_jettas_h1_history_without_a_child_process(): void
     {
         config([

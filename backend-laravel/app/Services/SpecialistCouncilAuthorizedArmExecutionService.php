@@ -74,6 +74,10 @@ class SpecialistCouncilAuthorizedArmExecutionService
             $strategy = $this->compiler->specialistCouncilMemberPayload(
                 $model, $timeframe, $bundle, $window['dataset_sha256'], $agent->symbol);
             $strategy['lab_agent_id'] = (int) $agent->id;
+            if (isset($basis['arm']['standalone_source'])) {
+                $strategy['specialist_council_contract'] = $this->lifecycle->runtimeContractForModel(
+                    $model, $timeframe, $window['dataset_sha256'], $execution['execution_hash'], $bundle, $agent->symbol);
+            }
         } else {
             $assignment = (array) data_get($model->metadata, 'instrument_research_assignment', []);
             $strategy = [
@@ -90,6 +94,8 @@ class SpecialistCouncilAuthorizedArmExecutionService
             ];
         }
         $strategy['specialist_council_evaluation'] = $basis['binding'];
+        $qualification = $this->lifecycle->standaloneQualificationDeclarationForModel($model, $window['dataset_sha256']);
+        if ($qualification !== null) $strategy['native_standalone_qualification'] = $qualification;
         $armPolicy = [
             'protocol' => self::PROTOCOL, 'generation_id' => (int) $cohort->id,
             'work_item_id' => (int) $work->id, 'reservation_hash' => $basis['owner']['reservation_hash'],
@@ -131,6 +137,7 @@ class SpecialistCouncilAuthorizedArmExecutionService
         string $worker, string $leaseToken, int $leaseFence): array
     {
         $this->assertLease($work, $worker, $leaseToken, $leaseFence);
+        app(SpecialistCouncilPanelReservationService::class)->assertNativeExecutionBarrier($work, $cohort, $unit);
         app(SpecialistCouncilPanelReservationService::class)->assertExecutionUnit($work, $cohort, $unit);
         $basis = $this->basis($cohort, $unit, $work);
         $existing = data_get($work->fresh()->result, 'panel_units.'.$unit['arm_key']);

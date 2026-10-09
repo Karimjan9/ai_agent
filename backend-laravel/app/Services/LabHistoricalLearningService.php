@@ -700,11 +700,13 @@ class LabHistoricalLearningService
         return LabAgent::query()->select('id')->where(fn ($query) => $query
             ->whereHas('generation', fn ($generation) => $this->studyGenerationScope($generation))
             ->orWhereHas('modelVersion', fn ($model) => $model
-                ->where('metadata->native_specialist_council_seed->research_purpose', 'spread_context_study')
+                ->whereIn('metadata->native_specialist_council_seed->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
                 // A malformed reserved owner is still excluded: failure to
                 // attest it must not turn counterfactual data into advice.
                 ->orWhereNotNull('metadata->native_spread_context_study')
-                ->orWhereNotNull('metadata->native_spread_context_study_contract'))
+                ->orWhereNotNull('metadata->native_spread_context_study_contract')
+                ->orWhereNotNull('metadata->native_reachability_depth_audit')
+                ->orWhereNotNull('metadata->native_reachability_depth_audit_contract'))
             ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
                 ->whereIn('run_id', $this->studyRunIds())));
     }
@@ -712,14 +714,21 @@ class LabHistoricalLearningService
     private function studyGenerationScope(Builder $query): Builder
     {
         return $query->where(fn ($generation) => $generation
-            ->where('trigger_context->native_specialist_council_intent->research_purpose', 'spread_context_study')
-            ->orWhereNotNull('trigger_context->native_spread_context_study'));
+            ->whereIn('trigger_context->native_specialist_council_intent->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
+            ->orWhereNotNull('trigger_context->native_spread_context_study')
+            ->orWhereNotNull('trigger_context->native_reachability_depth_audit'));
     }
 
     private function studyRunIds(): Builder
     {
         return LabEvaluationRun::query()->select('run_id')->whereNotNull('run_id')->where(fn ($run) => $run
             ->where('metadata->reason_code', 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY')
+            ->orWhere('metadata->reason_code', 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY')
+            ->orWhereNotNull('request_meta->payload->native_reachability_depth_audit_contract')
+            ->orWhereNotNull('request_meta->payload->strategies[0]->native_reachability_depth_audit_contract')
+            ->orWhereNotNull('metrics->native_reachability_depth_audit_receipt')
+            ->orWhereNotNull('response_meta->native_reachability_depth_audit_receipt')
+            ->orWhereNotNull('response_meta->data_quality->native_reachability_depth_audit_receipt')
             ->orWhereNotNull('request_meta->payload->native_spread_context_study_contract')
             ->orWhereNotNull('request_meta->payload->strategies[0]->native_spread_context_study_contract')
             ->orWhereNotNull('metrics->native_spread_context_study_receipt')

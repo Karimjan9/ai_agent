@@ -17,7 +17,7 @@ acceptance. The 2026 paper-only policy remains unchanged.
 | Skill enabling graph | XauusdEdgeFormationAcademyService | Original prerequisite trial/run hashes and actually completed downstream stage observations; no cycle or assumed unlock |
 | Behavioral diversity | TypedInstrumentFoundryService, committed screening projection | Original immutable request/model/response, compatible data/execution/evaluator scope and bounded latency/holding/context/error descriptors |
 | Applicability boundary | ResearchKnowledgePortfolioService | Exact-context verified positive/negative/unknown research cells; unknown adjacent context gets a prospective probe, never automatic authority |
-| Bounded fidelity and rejection audit | MultiModalLearningPortfolioService, ResearchLoopArbiterService | Purpose-specific ceilings and prospective pool/sample reader exist; native fidelity-witness publication and deferred cheap-to-deeper execution remain an explicit unimplemented boundary. Synthetic receipt tests are not runtime delivery. |
+| Bounded fidelity and rejection audit | NativeReachabilityDepthAuditService, MultiModalLearningPortfolioService, ResearchLoopArbiterService | Original native opportunity/gate producer, signed clock views, immutable seeded sample and exact deferred dispatch; software fixtures are not actual market or population-rate evidence. |
 | Measurement value | MultiModalLearningPortfolioService | Competing sealed hypotheses plus same-event masked/unmasked original observations with as-of/provenance/cost; otherwise an explicit dependency |
 | Declarative policy challengers | ResearchKnowledgePortfolioService, CausalGoldenWorldHarnessService | Finite whitelisted weights/caps, fixed six-world evaluator, prospectively fixed real question panel and original outcomes; self-activation forbidden |
 
@@ -93,15 +93,20 @@ utility and independent economic authority remain unproven.
 
 ## Delivery and scientific limits
 
-The current native spread-context study does not replace the rejection-fidelity
-audit. Repository audit found `fidelity_witness` only in the consumer and
-synthetic test publisher. A real future audit requires a prospectively declared
-diagnostic reachability criterion, explicit cheap/deeper source-clock views and
-budgets, semantic program/member identity, original in-loop witness publication,
-and lawful deferred canonical dispatch after pool/sample sealing. Deeper
-same-data observation must not be called independent validation or economic
-`POSITIVE_CANDIDATE`. Until that owner path exists, no native false-rejection
-rate or all-ten-mechanisms runtime completion is claimed.
+The native spread-context study and native reachability-depth audit are separate
+original purposes. The latter declares criteria, cheap/deeper signed clock
+views, budgets and unchanged programme/member identity before outcomes. The
+actual producer records raw, quote-known opportunities and gate reachability;
+the consumer reopens original request/response artifacts and seals the whole
+pool plus its seeded capped sample before the existing arbiter can dispatch the
+original deeper carrier. Missing quotes/power and an empty rejection pool close
+as explicit dependencies or neutral diagnostics, never invented misses.
+
+Deeper same-data observation is not independent validation or economic
+`POSITIVE_CANDIDATE`. Canonical constructor/dispatcher/closure tests, deployment
+boot proofs and actual market studies remain different acceptance levels. No
+population-wide false-rejection rate or all-ten-mechanisms market completion is
+claimed from one deterministic software fixture.
 
 Run focused positive, poisoned, missing-proof, changed-source, scope-drift,
 duplicate-delivery and future/as-of tests. Run Project Map impact/generate/check.

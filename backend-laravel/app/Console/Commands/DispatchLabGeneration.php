@@ -23,6 +23,7 @@ use App\Services\LearningProtocolSafetyService;
 use App\Services\LearningTechnicalCircuitBreakerService;
 use App\Services\MarketData\MarketDataContinuityService;
 use App\Services\MultiTimeframeSnapshotService;
+use App\Services\NativeReachabilityDepthAuditService;
 use App\Services\ProspectiveRepairProbeWindowService;
 use App\Services\ResearchAllocationPolicyService;
 use App\Services\StrategyParameterSchemaService;
@@ -32,13 +33,69 @@ use Illuminate\Support\Facades\Cache;
 
 class DispatchLabGeneration extends Command
 {
-    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1 : Internal storage key; XAUUSD aliases route to one organism} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD organism rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation}';
+    protected $signature = 'trading:dispatch-lab {symbol?} {--timeframe=H1 : Internal storage key; XAUUSD aliases route to one organism} {--force-generation} {--controlled-rescue : Dispatch an already-approved XAUUSD organism rescue only} {--shadow-research : Dispatch only an already-approved shadow-research generation} {--audited-data-edge : Dispatch only an explicitly audited data-edge generation while normal creation remains paused} {--learning-confirmation : Build/dispatch one bounded guided-vs-blinded-vs-frozen-control confirmation triplet} {--resume-draft-agents : Continue stranded draft agents after a complete constructor has already opened the generation} {--expected-generation-id= : Internal fence for one original native depth diagnostic phase}';
 
     protected $description = 'Dispatch pair-local incremental screening for each draft laboratory agent';
 
+    private ?int $expectedNativeGenerationId = null;
+    private ?array $nativeDepthFailureDiagnostic = null;
+
+    private array $nativeDepthExpectedAgentIds = [];
+
+    private array $nativeDepthQueuedAgentIds = [];
+
+    private string $nativeDepthRefusalReason = 'NATIVE_DEPTH_CANONICAL_DISPATCH_DEFERRED';
+
     public function handle(LabPopulationService $populations, LabDatasetExportService $datasets, MultiTimeframeSnapshotService $mtfSnapshots, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission, GenerationConstructionAdmissionService $constructionAdmission): int
     {
-        $populations->ensureLaboratories();
+        $expected = $this->option('expected-generation-id');
+        $this->expectedNativeGenerationId = null;
+        $this->nativeDepthFailureDiagnostic = null;
+        $this->nativeDepthExpectedAgentIds = $this->nativeDepthQueuedAgentIds = [];
+        $this->nativeDepthRefusalReason = 'NATIVE_DEPTH_CANONICAL_DISPATCH_DEFERRED';
+        if ($expected === null) {
+            return $this->handleCanonical($populations, $datasets, $mtfSnapshots, $continuity, $evidence, $handoffs,
+                $preflight, $protocolSafety, $technicalBreaker, $evidenceGate, $queueState, $schemas, $generationContext,
+                $snapshotAdmission, $constructionAdmission);
+        }
+        $exit = self::FAILURE;
+        try {
+            $expectedText = is_int($expected) || is_string($expected) ? (string) $expected : '';
+            if (! preg_match('/^[1-9][0-9]*$/D', $expectedText)
+                || strlen($expectedText) > strlen((string) PHP_INT_MAX)
+                || (strlen($expectedText) === strlen((string) PHP_INT_MAX) && strcmp($expectedText, (string) PHP_INT_MAX) > 0)) {
+                throw new \LogicException('NATIVE_DEPTH_EXPECTED_GENERATION_ID_INVALID');
+            }
+            $this->expectedNativeGenerationId = (int) $expectedText;
+            $this->assertExpectedNativeDepthGeneration(null, $queueState);
+            $exit = $this->handleCanonical($populations, $datasets, $mtfSnapshots, $continuity, $evidence, $handoffs,
+                $preflight, $protocolSafety, $technicalBreaker, $evidenceGate, $queueState, $schemas, $generationContext,
+                $snapshotAdmission, $constructionAdmission);
+        } catch (\Throwable $error) {
+            $this->nativeDepthFailureDiagnostic = ['error_class' => $error::class,
+                'file' => basename($error->getFile()), 'line' => $error->getLine(),
+                'message_sha256' => hash('sha256', $error->getMessage()),
+                'frames' => array_map(static fn ($frame) => array_filter([
+                    'class' => $frame['class'] ?? null, 'function' => $frame['function'] ?? null,
+                    'file' => isset($frame['file']) ? basename($frame['file']) : null, 'line' => $frame['line'] ?? null,
+                ], static fn ($value) => $value !== null), array_slice($error->getTrace(), 0, 8))];
+            $reason = $error->getMessage();
+            $this->nativeDepthRefusalReason = preg_match('/^[A-Z][A-Z0-9_]{0,159}$/D', $reason)
+                ? $reason : 'NATIVE_DEPTH_CANONICAL_DISPATCH_FAILED';
+        }
+        $admitted = $exit === self::SUCCESS && count($this->nativeDepthQueuedAgentIds) === 1
+            && $this->nativeDepthQueuedAgentIds === $this->nativeDepthExpectedAgentIds;
+        $this->line(json_encode(['protocol' => 'native_depth_audit_dispatch_v1',
+            'status' => $admitted ? 'admitted' : 'refused', 'generation_id' => $this->expectedNativeGenerationId ?? 0,
+            'reason_code' => $admitted ? 'NATIVE_DEPTH_ORIGINAL_PHASE_ADMITTED' : $this->nativeDepthRefusalReason,
+            'agent_ids' => $admitted ? $this->nativeDepthQueuedAgentIds : []], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+        return $admitted ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function handleCanonical(LabPopulationService $populations, LabDatasetExportService $datasets, MultiTimeframeSnapshotService $mtfSnapshots, MarketDataContinuityService $continuity, LabImmutableEvidenceService $evidence, CandidateHandoffService $handoffs, LabAgentPreflightService $preflight, LearningProtocolSafetyService $protocolSafety, LearningTechnicalCircuitBreakerService $technicalBreaker, LearningEvidenceGate $evidenceGate, LabQueueJobInspector $queueState, StrategyParameterSchemaService $schemas, LabGenerationContextService $generationContext, GenerationSnapshotAdmissionService $snapshotAdmission, GenerationConstructionAdmissionService $constructionAdmission): int
+    {
+        if ($this->expectedNativeGenerationId === null) $populations->ensureLaboratories();
         $controlledRescue = (bool) $this->option('controlled-rescue');
         $shadowResearch = (bool) $this->option('shadow-research');
         $auditedDataEdge = (bool) $this->option('audited-data-edge');
@@ -100,6 +157,7 @@ class DispatchLabGeneration extends Command
         // turns the scheduler into a source of noisy, duplicated experiments.
         $queueSnapshot = $queueState->queueSnapshot();
         if (($queueSnapshot['available'] ?? true) === false) {
+            $this->nativeDepthRefusalReason = 'NATIVE_DEPTH_QUEUE_STATE_UNAVAILABLE';
             $this->warn('Lab queue state unavailable; generation dispatch deferred fail-closed.');
 
             return self::SUCCESS;
@@ -108,6 +166,7 @@ class DispatchLabGeneration extends Command
             $pending = (int) ($queueSnapshot['total'] ?? 0);
             $limit = max(1, (int) config('services.lab_selection.max_screening_jobs', 40));
             if ($pending >= $limit) {
+                $this->nativeDepthRefusalReason = 'NATIVE_DEPTH_SCREENING_BACKLOG';
                 $this->warn("Lab screening backlog {$pending} >= {$limit}; dispatch deferred.");
 
                 return self::SUCCESS;
@@ -167,6 +226,7 @@ class DispatchLabGeneration extends Command
                 continue;
             }
             $generation = $lab->generations()->with('agents')->latest('generation')->first();
+            if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
             $nativePreparation = app(\App\Services\SpecialistCouncilPreparationService::class);
             if ($generation && $nativePreparation->hasNativeConstructorIntent($generation)) {
                 try { $nativePreparation->isResearchGeneration($generation); }
@@ -237,6 +297,7 @@ class DispatchLabGeneration extends Command
                 || ($this->option('force-generation')
                     && ! in_array((string) $generation->status, $activeStatuses, true));
             if ($shouldBuildGeneration) {
+                if ($this->expectedNativeGenerationId !== null) throw new \LogicException('NATIVE_DEPTH_NEW_GENERATION_FORBIDDEN');
                 $generation = $learningConfirmation
                     // Learning is a reserved triplet inside the ordinary
                     // twenty-seat organism generation. The other seventeen
@@ -337,12 +398,15 @@ class DispatchLabGeneration extends Command
                 // belongs to the active evaluator and re-exporting can turn a
                 // harmless duplicate dispatch into a false operational failure.
                 $generation = $generation->fresh(['agents.modelVersion']);
+                if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
                 $draftAgents = $generation->agents->where('lifecycle_status', 'draft');
+                if ($this->expectedNativeGenerationId !== null) $draftAgents = $draftAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
                 $strandedQueuedAgents = ($resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation))
                     ? $this->strandedQueuedAgents($generation, $queueState)
                     : collect();
+                if ($this->expectedNativeGenerationId !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
                 $continuation = $resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation)
@@ -367,13 +431,17 @@ class DispatchLabGeneration extends Command
                 // after export so no concurrent dispatcher can queue the same
                 // draft agents twice.
                 $generation = $generation->fresh(['agents.modelVersion']);
+                if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
                 $strandedQueuedAgents = ($resumeDraftAgents
                     && in_array((string) $generation->status, ['queued', 'screening'], true)
                     && $this->constructorCompleteForDraftContinuation($generation))
                     ? $this->strandedQueuedAgents($generation, $queueState)
                     : collect();
+                if ($this->expectedNativeGenerationId !== null) $strandedQueuedAgents = $strandedQueuedAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
                 $draftIntegrityQuarantines = [];
-                foreach ($generation->agents->where('lifecycle_status', 'draft') as $agent) {
+                $preflightAgents = $generation->agents->where('lifecycle_status', 'draft');
+                if ($this->expectedNativeGenerationId !== null) $preflightAgents = $preflightAgents->whereIn('id', $this->nativeDepthExpectedAgentIds);
+                foreach ($preflightAgents as $agent) {
                     $contractRepair = $this->repairDifferentialContractCoordinate($agent);
                     if ($contractRepair !== []) {
                         $agent = $agent->fresh(['modelVersion']);
@@ -500,12 +568,18 @@ class DispatchLabGeneration extends Command
                     ])
                     ->values();
                 $dispatchAgents = $draftAgents->concat($strandedQueuedAgents)->values();
-                $studyCarrierIds = app(\App\Services\SpecialistCouncilPreparationService::class)->spreadStudyDispatchAgentIds($generation);
+                $studyCarrierIds = app(\App\Services\SpecialistCouncilPreparationService::class)->nativeDiagnosticDispatchAgentIds($generation);
                 if ($studyCarrierIds !== null) {
                     $draftAgents = $draftAgents->whereIn('id', $studyCarrierIds)->values();
                     $dispatchAgents = $dispatchAgents->whereIn('id', $studyCarrierIds)->values();
                 }
                 $agentIds = $dispatchAgents->pluck('id');
+                if ($this->expectedNativeGenerationId !== null) {
+                    $this->assertExpectedNativeDepthGeneration($generation, $queueState);
+                    if ($agentIds->map(fn ($id): int => (int) $id)->all() !== $this->nativeDepthExpectedAgentIds) {
+                        throw new \LogicException('NATIVE_DEPTH_PHASE_AGENT_SET_DRIFT');
+                    }
+                }
                 if ($agentIds->isEmpty()) {
                     if ($draftIntegrityQuarantines !== []) {
                         $generation->update(['status' => 'technical_quarantine', 'completed_at' => now()]);
@@ -564,9 +638,11 @@ class DispatchLabGeneration extends Command
                     $datasets->ensureGenerationRegimeSnapshot($generation);
                 }
                 $generation = $generation->fresh(['agents.modelVersion']);
+                if ($this->expectedNativeGenerationId !== null) $this->assertExpectedNativeDepthGeneration($generation, $queueState);
                 $generation = app(\App\Services\ResearchReleaseSealService::class)->seal($generation);
                 $snapshotCheck = $snapshotAdmission->inspect($generation);
                 if (! $snapshotCheck['allowed']) {
+                    $this->nativeDepthRefusalReason = 'NATIVE_DEPTH_SNAPSHOT_ADMISSION_REFUSED';
                     $this->warn(sprintf(
                         '%s: G%s immutable snapshot/execution admission failed; screening was not queued (%s).',
                         $symbol,
@@ -576,12 +652,6 @@ class DispatchLabGeneration extends Command
 
                     continue;
                 }
-                $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
-                foreach ($generation->agents->whereIn('id', $draftAgents->pluck('id')) as $agent) {
-                    $agent->lifecycle_status = 'queued';
-                    $evidence->recordAgentStatusChanged($agent, 'draft', 'queued', 'DispatchLabGeneration.bulk_dispatch');
-                }
-                $generation->update(['status' => 'screening']);
                 $configuredBatchSize = max(1, min(6, (int) config('services.lab_queue.screening_batch_size', 4)));
                 // Differential/volume/portfolio lanes have materially more
                 // stateful diagnostic work than a plain specialist. Keep those
@@ -615,7 +685,24 @@ class DispatchLabGeneration extends Command
                         ? min($configuredBatchSize, 2)
                         : $configuredBatchSize);
                 $orderedIds = $agentIds->map(fn ($id): int => (int) $id)->all();
+                if ($this->expectedNativeGenerationId !== null && $orderedIds !== $this->nativeDepthExpectedAgentIds) {
+                    throw new \LogicException('NATIVE_DEPTH_PHASE_AGENT_SET_DRIFT');
+                }
                 $jobs = $this->screeningJobs($generation, $dispatchAgents, $orderedIds, $batchSize, $symbol, $timeframe);
+                // Resolve the original diagnostic phase before a queued write
+                // makes its owner correctly report that phase as in flight.
+                if ($this->expectedNativeGenerationId !== null) {
+                    $this->assertExpectedNativeDepthGeneration($generation, $queueState);
+                    if (count($jobs) !== 1 || $jobs[0]->labAgentIds !== $this->nativeDepthExpectedAgentIds) {
+                        throw new \LogicException('NATIVE_DEPTH_SINGLE_PHASE_JOB_REQUIRED');
+                    }
+                }
+                $generation->agents()->whereIn('id', $agentIds)->update(['lifecycle_status' => 'queued']);
+                foreach ($generation->agents->whereIn('id', $draftAgents->pluck('id')) as $agent) {
+                    $agent->lifecycle_status = 'queued';
+                    $evidence->recordAgentStatusChanged($agent, 'draft', 'queued', 'DispatchLabGeneration.bulk_dispatch');
+                }
+                $generation->update(['status' => 'screening']);
 
                 $batch = Bus::batch($jobs)
                     ->name("{$symbol} {$timeframe} Lab G{$generation->generation} screening")
@@ -637,6 +724,7 @@ class DispatchLabGeneration extends Command
 
                     return $context;
                 });
+                if ($this->expectedNativeGenerationId !== null) $this->nativeDepthQueuedAgentIds = $orderedIds;
 
                 $this->info(sprintf(
                     '%s: %s, %d agents in %d bounded screening batches dispatched (batch_size=%d, heavy_lane=%s).',
@@ -653,6 +741,57 @@ class DispatchLabGeneration extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /** Read-only same-generation fence; admission still uses every canonical gate. */
+    private function assertExpectedNativeDepthGeneration(?LabGeneration $selected, LabQueueJobInspector $queueState): LabGeneration
+    {
+        if (strtoupper((string) $this->argument('symbol')) !== 'XAUUSD'
+            || strtoupper((string) $this->option('timeframe')) !== 'H1'
+            || strtoupper((string) config('services.xauusd_organism.laboratory_storage_timeframe', 'H1')) !== 'H1'
+            || ! $this->option('resume-draft-agents')) {
+            throw new \LogicException('NATIVE_DEPTH_EXACT_SCOPE_AND_RESUME_REQUIRED');
+        }
+        foreach (['force-generation', 'controlled-rescue', 'shadow-research', 'audited-data-edge', 'learning-confirmation'] as $flag) {
+            if ($this->option($flag)) throw new \LogicException('NATIVE_DEPTH_ALTERNATIVE_CREATION_FLAG_FORBIDDEN');
+        }
+        $lab = AiLaboratory::where('symbol', 'XAUUSD')->where('timeframe', 'H1')->first();
+        $latest = $lab?->generations()->with('agents')->latest('generation')->first();
+        if (! $latest || (int) $latest->id !== $this->expectedNativeGenerationId
+            || ($selected !== null && (int) $selected->id !== (int) $latest->id)) {
+            throw new \LogicException('NATIVE_DEPTH_EXPECTED_GENERATION_NOT_LATEST');
+        }
+        if (! in_array((string) $latest->status, ['draft', 'queued', 'screening'], true)
+            || data_get($latest->trigger_context, 'native_specialist_council_intent.research_purpose') !== NativeReachabilityDepthAuditService::PURPOSE) {
+            throw new \LogicException('NATIVE_DEPTH_ORIGINAL_PURPOSE_REQUIRED');
+        }
+        $preparation = app(\App\Services\SpecialistCouncilPreparationService::class);
+        if (! $preparation->hasNativeConstructorIntent($latest) || ! $preparation->isResearchGeneration($latest)) {
+            throw new \LogicException('NATIVE_DEPTH_PREPARED_OWNER_REQUIRED');
+        }
+        $state = app(NativeReachabilityDepthAuditService::class)->inspectContinuation($latest);
+        if (! in_array($state['status'] ?? null, ['cheap_pending', 'deeper_ready'], true)) {
+            throw new \LogicException('NATIVE_DEPTH_ORIGINAL_PHASE_NOT_READY');
+        }
+        if ($state['status'] === 'deeper_ready' && (($state['generation_id'] ?? null) !== (int) $latest->id
+            || ($state['same_original_question'] ?? false) !== true)) {
+            throw new \LogicException('NATIVE_DEPTH_ORIGINAL_SELECTION_REQUIRED');
+        }
+        $ids = $preparation->nativeDiagnosticDispatchAgentIds($latest);
+        if (! is_array($ids) || count($ids) !== 1 || ! is_int($ids[0] ?? null) || $ids[0] <= 0
+            || ($this->nativeDepthExpectedAgentIds !== [] && $ids !== $this->nativeDepthExpectedAgentIds)) {
+            throw new \LogicException('NATIVE_DEPTH_SINGLE_ORIGINAL_PHASE_REQUIRED');
+        }
+        $agent = $latest->agents->firstWhere('id', $ids[0]);
+        if (! $agent || (string) $agent->lifecycle_status !== 'draft'
+            || LabEvaluationRun::where('lab_agent_id', $ids[0])->exists()
+            || $queueState->hasAgentJob($ids[0], [(string) config('services.lab_queue.screening_queue', 'lab-screening'),
+                (string) config('services.lab_queue.full_queue', 'lab-full-validation')])) {
+            throw new \LogicException('NATIVE_DEPTH_ORIGINAL_PHASE_ALREADY_ADMITTED');
+        }
+        $this->nativeDepthExpectedAgentIds = $ids;
+
+        return $latest;
     }
 
     /**
@@ -723,7 +862,7 @@ class DispatchLabGeneration extends Command
     private function screeningJobs(LabGeneration $generation, \Illuminate\Support\Collection $dispatchAgents,
         array $orderedIds, int $ordinaryBatchSize, string $symbol, string $timeframe): array
     {
-        $studyIds = app(\App\Services\SpecialistCouncilPreparationService::class)->spreadStudyDispatchAgentIds($generation);
+        $studyIds = app(\App\Services\SpecialistCouncilPreparationService::class)->nativeDiagnosticDispatchAgentIds($generation);
         if ($studyIds !== null) {
             $dispatchAgents = $dispatchAgents->whereIn('id', $studyIds)->values();
             $orderedIds = array_values(array_intersect($orderedIds, $studyIds));

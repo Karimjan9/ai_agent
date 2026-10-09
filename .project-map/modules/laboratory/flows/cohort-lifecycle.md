@@ -18,6 +18,14 @@ loss or permission to resubmit the same invalid arm.
 
 ## Declared native specialist council
 
+New typed SOLO panels prepare through one original definition/seal delivery,
+then at most four ordered request digests per genuine lease. All three original
+cohorts stay reserved/draft until the HMAC-bound prefix covers every unit.
+Source/data/model/plan/release and prefix guards are fresh per delivery; a
+complete barrier precedes the next original arm lease. The delivery ceiling is
+900 seconds; derived operational slots do not renew scientific allowance.
+Legacy panel preparation is unchanged (ADR-034).
+
 Prospective matched-member SOLO declares `specialist_council_native_solo_v1`
 before original preparation. The stored council supplies one unchanged native
 member and its allocation; actual native clock/account attestation precedes
@@ -29,6 +37,24 @@ derive allocation 1.0 from one unused stored source. The exact source member
 snapshot/hash and unchanged programme/passport/horizon/account/cost/hard-risk
 identity precede runtime compilation. It is `chosen_source_unqualified`, not
 best-qualified SOLO; old observed sources and follow-ups cannot acquire it.
+
+Prospective standalone qualification, eligible-roster selection and final
+validation are distinct original panel modes. The server projects each trading
+source at full allocation under unchanged programme/account/cost/external-risk
+identity. Actual authorized disjoint windows, mature uncensored NET outcomes and
+the preregistered power/bootstrap/risk criteria precede an append-only scoped
+research certificate. This is not the impossible removal of a singleton's sole
+trader, whole-council approval, causal skill or paper authority.
+
+The server inventories original certificates as of the sealed selection time,
+revalidates the complete bounded scoped eligible roster and seals all ranking
+arms before outcomes. An empty or overflowing roster cannot fall back to an
+unqualified choice. Original ranking fixes the objective/tie rule and consumes
+real account/clock evidence; lower-risk-at-equal-return requires an original
+return floor rather than a post-hoc target. Final reservation uses the selected
+certificate on separate authorized physical input/context/warmup/holding
+intervals. Original selection exposure is published after whole-panel closure;
+its narrow historical self-projection exception cannot hide outside exposure.
 
 A prospectively sealed native spread-context pair uses two genuinely unused
 same-draft carriers of one unchanged native program. Existing construction,
@@ -79,6 +105,14 @@ pending owned queue/settlement saves a terminal-projection checkpoint and defers
 completion; retry consumes the same original runs and exam, with no extra HTTP.
 Missing authorized data remains blocked; discovery is not relabelled as
 independent confirmation. Legacy caller-shaped references remain refused.
+
+Original native replay exposure inspection reuses the actual hash-verified CSV
+parser used by replay-use recording. Its read-only intervals include all
+supported MTF/warmup rows plus a clearly labelled conservative potential-holding
+fence; this is not observed-outcome or independence proof. Inline primary or
+untracked auxiliary sources are refused rather than silently omitted. A
+selection/final-window consumer still verifies original owner, request/response,
+archive and persisted usage before relying on that inventory.
 Descendant transfer additionally needs a qualified original parent and exact
 P/P+T/P+T+U/P+U program provenance. Its typed server reservation accepts the
 original component T and bounded legal member deltas U, never caller results

@@ -23,6 +23,9 @@ class LabAgentEvaluationService
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
         $agent->loadMissing('modelVersion', 'generation');
+        if ($agent->modelVersion && app(NativeReachabilityDepthAuditService::class)->declares($agent->modelVersion)) {
+            throw new RuntimeException('NATIVE_DEPTH_AUDIT_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
+        }
         if ($agent->modelVersion && app(NativeSpreadContextStudyService::class)->declares($agent->modelVersion)) {
             throw new RuntimeException('NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
         }
@@ -1267,6 +1270,7 @@ class LabAgentEvaluationService
             ]);
             throw new RuntimeException('SCREENING_EVIDENCE_INCOMPLETE: '.implode(',', $screenEvidence['reason_codes']));
         }
+        if ($this->finishNativeReachabilityDepthAudit($agent, $run, $screenResult)) return;
         if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
@@ -2113,6 +2117,7 @@ class LabAgentEvaluationService
             ]);
             throw new RuntimeException('SCREENING_EVIDENCE_INCOMPLETE: '.implode(',', $screenEvidence['reason_codes']));
         }
+        if ($this->finishNativeReachabilityDepthAudit($agent, $run, $screenResult)) return;
         if ($this->finishNativeSpreadContextStudy($agent, $run, $screenResult)) return;
         $screenResult = $this->appendDifferentialNoRegressionEvidence(
             $model,
@@ -2998,8 +3003,44 @@ class LabAgentEvaluationService
             if ($model instanceof ModelVersion && data_get($model->metadata, 'specialist_council_evaluation') !== null) {
                 $request = app(SpecialistCouncilLifecycleService::class)->bindEvaluationRequestForModel($model, $request);
             }
+            if ($model instanceof ModelVersion && ($request['evaluation_mode'] ?? null) === 'full') {
+                $declaration = app(SpecialistCouncilLifecycleService::class)->standaloneQualificationDeclarationForModel(
+                    $model, (string) ($request['replay_dataset_hash'] ?? ''));
+                if ($declaration !== null) {
+                    if (isset($request['strategies'])) {
+                        $agentIds = LabAgent::where('model_version_id', $model->id)->pluck('id')->all();
+                        $matches = [];
+                        foreach ($request['strategies'] as $index => $strategy) {
+                            if (in_array($strategy['lab_agent_id'] ?? null, $agentIds, true)) $matches[] = $index;
+                        }
+                        if (count($matches) !== 1) throw new RuntimeException('NATIVE_STANDALONE_QUALIFICATION_BATCH_OWNER_AMBIGUOUS');
+                        $request['strategies'][$matches[0]]['native_standalone_qualification'] = $declaration;
+                    } else {
+                        $request['native_standalone_qualification'] = $declaration;
+                    }
+                }
+            }
         }
-        return app(NativeSpreadContextStudyService::class)->bindRequest($request, $models);
+        $request = app(NativeSpreadContextStudyService::class)->bindRequest($request, $models);
+        return app(NativeReachabilityDepthAuditService::class)->bindRequest($request, $models);
+    }
+
+    /** An explicit execution view closes diagnostic evidence only, never ordinary learning. */
+    private function finishNativeReachabilityDepthAudit(LabAgent $agent, LabEvaluationRun $run, array $result): bool
+    {
+        $owner = app(NativeReachabilityDepthAuditService::class);
+        if (! $agent->modelVersion || ! $owner->declares($agent->modelVersion)) return false;
+        $receipt = $owner->attestResult($agent->modelVersion, $run, $result);
+        $updated = LabAgent::query()->whereKey($agent->id)
+            ->whereNotIn('lifecycle_status', ['quarantined', 'technical_quarantine', 'legacy_quarantine'])
+            ->update(['lifecycle_status' => 'screened', 'decision_reason' => 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY:'.($receipt['status'] ?? 'unassessable')]);
+        $this->evidence->finishRun($run, $updated === 1 ? 'completed' : 'technical_error', $result, [], [
+            'reason_code' => $updated === 1 ? 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY' : 'TECHNICAL_QUARANTINE_RACE_GUARD',
+            'quality_verdict' => $updated === 1 ? 'research_only' : 'withheld', 'economic_authority' => false,
+            'skill_authority' => false, 'independent_evidence' => false, 'promotion_evidence' => false]);
+        $owner->settleOriginalPhase($run->fresh());
+        $this->closeScreeningGenerationIfTerminal($agent->fresh(['modelVersion', 'generation']));
+        return true;
     }
 
     /** Native feature sensitivity closes only original diagnostic evidence, without economic/skill fan-out. */
@@ -3095,10 +3136,13 @@ class LabAgentEvaluationService
         // Use the original transported request, also on cache/recovery paths.
         // Reconstructing a contract from current model metadata after replay
         // would silently bless a version switch or a receipt from another run.
-        $request = (array) data_get($run->request_meta, 'payload', []);
+        $depthOwner = app(NativeReachabilityDepthAuditService::class);
+        $request = $depthOwner->declares($model) ? $depthOwner->originalTransportRequest($run)
+            : (array) data_get($run->request_meta, 'payload', []);
         $owner = app(SpecialistCouncilLifecycleService::class);
         $receipt = $owner->attestReplayResult($model, $request, $result);
-        if ($receipt !== null && ($version = $owner->researchVersionForModel($model)) !== null) {
+        if ($receipt !== null && ($version = $owner->replayEvidenceVersionForModel($model,
+            (string) ($request['replay_dataset_hash'] ?? ''))) !== null) {
             app(SpecialistCouncilDataUseService::class)->recordReplayUse($version, $request, $run->run_id, $receipt);
         }
     }

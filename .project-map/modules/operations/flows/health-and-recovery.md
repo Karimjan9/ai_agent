@@ -13,6 +13,15 @@ prerequisite failure.
 
 ## Sequence
 
+A signed native depth owner can select `RESUME_NATIVE_DEPTH_AUDIT` only after
+the actual original cheap receipt and sample are sealed. The existing arbiter
+requires known-empty generation queues, running control and one original draft
+deeper carrier. `trading:dispatch-lab --resume-draft-agents
+--expected-generation-id=N` rechecks the same owner and publishes exactly one
+job. Its single typed marker owns command success; exit zero without admitted
+original carrier is not progress. Publication-only recovery is bounded; an
+executed command or observed replay cannot acquire another attempt (ADR-033).
+
 An exact admitted generation reservation is checked before no-op settlement,
 even when no immutable replay run has opened. The canonical queue inspector
 supplies transport semantics and generation-owned lab membership; original

@@ -18,6 +18,17 @@ Lane-owned data readiness (validated historical archive or live continuity)
   -> Arbiter-owned successor + immutable autonomy receipt
 ```
 
+Typed research diagnostics do not traverse the ordinary economic/paper chain.
+An original native depth purpose executes its cheap carrier, seals the actual
+pool/sample, then lets the same arbiter/dispatcher admit the original deeper
+carrier. Original diagnostic comparison and neutral episode dispositions own
+terminal closure; source references are not fabricated replay products. Signed
+short execution views cannot relax ordinary full-source validation (ADR-033).
+
+Best-qualified SOLO separates original standalone qualification, as-of eligible
+roster/ranking and final disjoint evaluation. No selected source, legacy chosen
+SOLO or newly labeled source establishes independence or paper authority.
+
 ## Modules
 
 - `market-data`: certifies the data-continuity precondition.

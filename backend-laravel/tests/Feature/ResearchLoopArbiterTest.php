@@ -1566,6 +1566,103 @@ class ResearchLoopArbiterTest extends TestCase
             fn (RunScheduledArtisanCommandJob $job): bool => $job->command === 'trading:lab-generation');
     }
 
+    public function test_native_deferred_depth_phase_precedes_generic_settlement_and_uses_exact_existing_cli(): void
+    {
+        Queue::fake();
+        [$generation, $phase] = $this->nativeDepthRoutingFixture();
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $result = app(ResearchLoopArbiterService::class)->tick();
+        $this->assertSame('RESUME_NATIVE_DEPTH_AUDIT', $result['action']);
+        $this->assertSame('trading:dispatch-lab', $result['command']);
+        $this->assertSame(['symbol' => 'XAUUSD', '--timeframe' => 'H1', '--resume-draft-agents' => true,
+            '--expected-generation-id' => $generation->id], $result['arguments']);
+        $this->assertSame($phase, $result['state_snapshot']['native_depth_continuation']);
+        $this->assertSame('duplicate_suppressed', app(ResearchLoopArbiterService::class)->tick()['status']);
+        $this->assertSame(1, LabGeneration::count());
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
+    public function test_native_phase_requires_known_empty_queue_and_does_not_dispatch_under_stop(): void
+    {
+        Queue::fake();
+        [$generation, $phase] = $this->nativeDepthRoutingFixture(['available' => false, 'total' => null, 'rows' => []]);
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $owner = app(ResearchLoopArbiterService::class);
+        $result = $owner->tick();
+        $this->assertSame('WAIT_NATIVE_DEPTH_AUDIT', $result['action']);
+        $this->assertContains('NATIVE_DEPTH_GENERATION_QUEUE_UNKNOWN', $result['reason_codes']);
+        $this->assertNull($result['command']);
+        $this->app->instance(\App\Services\LabQueueJobInspector::class, Mockery::mock(\App\Services\LabQueueJobInspector::class)
+            ->shouldReceive('generationQueueBacklog')->andReturn(['available' => true, 'total' => 1, 'rows' => []])->getMock());
+        $pending = $owner->tick();
+        $this->assertContains('NATIVE_DEPTH_GENERATION_QUEUE_NOT_DRAINED', $pending['reason_codes']);
+        app(AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'drain');
+        $stopped = $owner->tick();
+        $this->assertContains('NATIVE_DEPTH_ADMISSION_CONTROL_DISABLED', $stopped['reason_codes']);
+        $this->assertNull($stopped['command']);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_native_phase_checkpoint_changes_decision_key_but_scheduler_minutes_do_not(): void
+    {
+        Queue::fake();
+        [$generation, $phase, $mock] = $this->nativeDepthRoutingFixture();
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
+        $owner = app(ResearchLoopArbiterService::class);
+        $first = $owner->tick('XAUUSD', 'H1', true);
+        $this->travel(1)->minutes();
+        $this->assertSame($first['decision_key'], $owner->tick('XAUUSD', 'H1', true)['decision_key']);
+        $phase['checkpoint_hash'] = hash('sha256', 'a-different-original-checkpoint');
+        $mock->shouldReceive('inspectContinuation')->andReturn($phase);
+        $this->app->instance(\App\Services\NativeReachabilityDepthAuditService::class,
+            Mockery::mock(\App\Services\NativeReachabilityDepthAuditService::class)
+                ->shouldReceive('inspectContinuation')->andReturn($phase)->getMock());
+        $this->assertNotSame($first['decision_key'], $owner->tick('XAUUSD', 'H1', true)['decision_key']);
+        $this->assertSame(0, ResearchLoopDecision::count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_native_exact_dispatch_classifier_requires_one_original_marker_not_exit_zero(): void
+    {
+        $owner = app(ScheduledCommandOutcomeClassifierService::class);
+        $args = ['--expected-generation-id' => 42];
+        $marker = ['protocol' => 'native_depth_audit_dispatch_v1', 'generation_id' => 42,
+            'status' => 'admitted', 'agent_ids' => [7]];
+        $wire = 'ordinary diagnostic text'."\n".json_encode($marker);
+        $this->assertSame('completed', $owner->classify('trading:dispatch-lab', $args, 0, $wire)['status']);
+        $refusal = [...$marker, 'status' => 'refused', 'agent_ids' => []];
+        $this->assertSame('deferred', $owner->classify('trading:dispatch-lab', $args, 1, json_encode($refusal))['status']);
+        foreach (['no actual queue marker', $wire."\n".json_encode($marker), json_encode([...$marker, 'generation_id' => 43]),
+            json_encode([...$marker, 'agent_ids' => []])] as $bad) {
+            $this->assertSame('technical_failure', $owner->classify('trading:dispatch-lab', $args, 0, $bad)['status']);
+        }
+        $this->assertSame('technical_failure', $owner->classify('trading:dispatch-lab', $args, 1, $wire)['status']);
+        $this->assertSame('completed', $owner->classify('trading:dispatch-lab', [], 0, 'legacy default unchanged')['status']);
+    }
+
+    private function nativeDepthRoutingFixture(?array $queue = null): array
+    {
+        $generation = LabGeneration::create(['ai_laboratory_id' => $this->lab()->id, 'generation' => 1,
+            'trigger_type' => 'native_depth_test', 'status' => 'screening', 'population_size' => 6,
+            'trigger_context' => [\App\Services\NativeReachabilityDepthAuditService::MARKER => ['protocol' => 'test_owner']]]);
+        $model = ModelVersion::create(['name' => 'depth-routing', 'strategy' => 'hybrid', 'version' => 'test',
+            'generation' => 1, 'status' => 'testing', 'parameters' => [], 'metadata' => []]);
+        $agent = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid', 'origin' => 'test',
+            'lifecycle_status' => 'draft', 'parameter_diff' => []]);
+        $phase = ['status' => 'deeper_ready', 'generation_id' => $generation->id, 'audit_id' => 'original-fixture',
+            'sample_hash' => hash('sha256', 'sample'), 'checkpoint_hash' => hash('sha256', 'checkpoint'),
+            'physical_question_hash' => hash('sha256', 'original-physical-question'),
+            'dispatch_agent_ids' => [$agent->id], 'same_original_question' => true, 'promotion_evidence' => false];
+        $mock = Mockery::mock(\App\Services\NativeReachabilityDepthAuditService::class);
+        $mock->shouldReceive('inspectContinuation')->andReturn($phase);
+        $this->app->instance(\App\Services\NativeReachabilityDepthAuditService::class, $mock);
+        $inspector = Mockery::mock(\App\Services\LabQueueJobInspector::class);
+        $inspector->shouldReceive('generationQueueBacklog')->andReturn($queue ?? ['available' => true, 'total' => 0, 'rows' => []]);
+        $this->app->instance(\App\Services\LabQueueJobInspector::class, $inspector);
+        return [$generation, $phase, $mock];
+    }
+
     private function lab(): AiLaboratory
     {
         return AiLaboratory::create(['name' => 'arbiter lab', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',

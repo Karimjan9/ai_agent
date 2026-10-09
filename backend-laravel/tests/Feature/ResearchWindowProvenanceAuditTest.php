@@ -187,4 +187,47 @@ class ResearchWindowProvenanceAuditTest extends TestCase
         $this->assertSame('RESEARCH_TRAINING_SELECTION_PROVENANCE_UNVERIFIED', $audit['reason_code']);
         $this->assertFalse($audit['candidate_unused_demonstrated']);
     }
+
+    public function test_six_future_months_are_explicit_drafts_not_available_or_authorized_data(): void
+    {
+        $service = app(ResearchWindowProvenanceAuditService::class);
+        $schedule = $service->futureSchedule();
+        $this->assertCount(6, $schedule['windows']);
+        $this->assertSame('2027-01-01T00:00:00+00:00', $schedule['windows'][0]['start_inclusive']);
+        $this->assertSame('2027-07-01T00:00:00+00:00', $schedule['windows'][5]['end_exclusive']);
+        foreach ($schedule['windows'] as $index => $window) {
+            $this->assertNull($window['source_dataset_sha256']);
+            $this->assertNull($window['evaluated_rows']);
+            $this->assertFalse($window['executable']);
+            $this->assertTrue($window['disjoint_from_paper']);
+            $this->assertSame('actual_closed_rows_inside_this_reserved_window_only', $window['warmup_policy']);
+            if ($index > 0) $this->assertSame($schedule['windows'][$index - 1]['end_exclusive'], $window['start_inclusive']);
+        }
+        foreach (['source_design_selected', 'original_preregistration_persisted', 'earlier_paper_warmup_eligible',
+            'paper_2026_research_eligible', 'executable', 'independent_evidence', 'server_authorization_created', 'data_writes'] as $key) {
+            $this->assertFalse($schedule[$key]);
+        }
+        $this->assertSame('draft_collection_schedule_not_authorization', $schedule['status']);
+        $this->travelTo(now()->addMinute());
+        $this->assertSame($schedule['schedule_hash'], $service->futureSchedule()['schedule_hash']);
+        $this->assertSame(0, DB::table('research_experiment_work_items')->count());
+        $this->artisan('trading:audit-research-window-provenance', ['--future-schedule' => true, '--json' => true])
+            ->expectsOutputToContain('future_collection_schedule')->assertSuccessful();
+    }
+
+    public function test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes(): void
+    {
+        config()->set('services.research_paper_epochs.authorized_paper_epochs', [[
+            'protocol' => 'authorized_prospective_paper_epoch_v1', 'purpose' => 'prospective_paper_forward',
+            'window_key' => 'paper_2027', 'authorization_id' => 'approved-paper-2027',
+            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2028-01-01T00:00:00Z',
+            'authorized_at' => '2026-10-01T00:00:00Z', 'approved' => true,
+            'candidate_must_be_frozen_before_observation' => true, 'research_uses_forbidden' => true]]);
+        $service = app(ResearchWindowProvenanceAuditService::class);
+        $this->assertSame('RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH', $service->futureSchedule()['reason_code']);
+        $this->travelTo(CarbonImmutable::parse('2027-01-01T00:00:00Z'));
+        $schedule = $service->futureSchedule();
+        $this->assertSame('PROSPECTIVE_REGISTRATION_DEADLINE_PASSED', $schedule['reason_code']);
+        $this->assertFalse($schedule['executable']);
+    }
 }

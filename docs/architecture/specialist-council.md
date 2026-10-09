@@ -385,13 +385,13 @@ from retained capability, transfer, economic value and equal-budget learning.
 | Roles, horizons and passports | Stored specialist contracts and role-specific original exams | MTF sensors do not qualify four trading horizons. |
 | Parallel team and version changes | Native shared-account replay, owner-pinned position management, original adoption/rollback guards | Summing independent PnLs is not a team result; a draft is not active. |
 | Common paper capital/risk/cost | Locked integer reservations, fresh closed position marks, pinned exit/carry costs and observed peak | Floating gains do not fund new risk; unknown historical peaks are not backfilled. |
-| Original council controls | Native candidate, explicit native matched-member or preregistered chosen full-account SOLO, member/operator ablation and retention | Neither a matched member nor an unqualified full-account choice proves best eligible standalone superiority. |
+| Original council controls | Native candidate, explicit matched-member/chosen full-account SOLO, separate standalone qualification, original eligible-roster selection and untouched final panel | Old chosen/matched plans are not qualified; selection observations cannot serve as the final exam. |
 | Useful learned programs | Typed AST/CALL decision operators and actual entry/risk/exit behavior tests | Invocation or compression alone does not prove profit or general transfer. |
 | Forecast, explanation, curriculum and skill graph | Preregistered predictions/probes, original outcome calibration and bounded Academy trials | A proposed explanation is not a verified market cause. |
 | Archive, negative knowledge and research policy | Pure original archive reinspection, bounded selected-block consumption and scoped original policy exams | Selection is research-only; withheld technical runs cannot feed a side door. |
 | Library effort | Prospectively sealed finite-pool native library/blinded search products and original paired settlement | One finite task is not general synthesis speedup or improved trading. |
 | Observation value | Native matched spread-context Entry/WAIT study, actual gate/coverage receipts | Only the computed instrument context is hidden; this is not full feature blindness, acquisition value or profit. |
-| Rejection-filter depth audit | Existing prospective pool/sample and strict original-witness consumer | Native `fidelity_witness` publication and lawful deferred cheap-to-deeper dispatch are not delivered by this release; synthetic hand-built witnesses are not runtime proof. |
+| Rejection-filter depth audit | Original six-slot native cheap/deeper purpose, actual in-loop opportunities, immutable seeded sample and canonical deferred dispatch | Same-data reachability is not economic or independent evidence; an empty powered rejection pool closes neutrally, not as a false-negative rate. |
 | Exposure and independent qualification | Original physical event-use records and authorized untouched-window reservations | New labels, providers, hashes or generations do not create independence. |
 | Precision and broker behavior | Candle/hedging checks and typed external capability dependencies | M5 replay does not certify second-scale latency/fills, broker netting or broker-specific rollover. |
 
@@ -417,9 +417,53 @@ Observed sources, old plans and continuation remapping cannot acquire this
 choice retrospectively. Actual original trace/account attestation is required.
 
 This supports an equal-account chosen-source comparison, not best-qualified
-SOLO selection. The original eligible-roster, as-of qualification, prospective
-panel ranking and separate evaluation owner for a **best** claim remain an
-explicit engineering boundary; a caller cannot assert that status.
+SOLO selection. The separate `NativeQualifiedSoloSelectionService` owns three
+prospective stages: original standalone qualification, bounded as-of eligible
+roster/ranking, and a final panel on disjoint authorized observations. The server
+derives the original source programme and changes only allocation to 1.0. A
+caller cannot supply a shortlist, a qualification flag or a post-outcome metric.
+
+Standalone qualification is scoped research evidence, not whole-council,
+paper or economic authority. It retains the preregistered power, maturity,
+bootstrap and external-risk requirements across three original windows. All
+original runs finish before their selection-use projection is appended; exact
+self-projection exclusion cannot hide unrelated exposure. The final panel must
+exclude physical source, warmup, context and potential holding exposure from
+the qualification and ranking panels. `originalReplayIntervals` verifies actual
+CSV bytes/rows and rejects untracked auxiliary inputs; a new label/provider
+does not make an event independent. No eligible original evidence means WAIT,
+not a fallback to an unqualified source.
+
+Ranking uses equal external capital/risk limits, not a claim of equal realized
+drawdown. Lower-risk-at-equal-return requires an original preregistered return
+floor. Completed software tests do not imply that a market-qualified roster or
+a best-qualified final comparison already exists.
+
+New typed SOLO panels prepare definitions/source/model/plan seals once, then
+append at most four ordered request digests per genuine lease. Their original
+cohorts remain reserved/draft until every HMAC-bound digest is complete. Fresh
+prefix/source/data/model/release guards prevent drift; no replay precedes the
+complete barrier. Each delivery retains the 900-second budget, with only derived
+extra operational deliveries. Exact request bytes/hashes remain stable across
+fresh leases. Legacy panel preparation and scientific allowances are unchanged.
+
+### Native cheap-to-deeper reachability audit
+
+`native_reachability_depth_audit` is an original six-slot research purpose:
+four unchanged source references plus cheap and deeper native carriers. Its
+physical contract remains 15000 evaluated plus 512 warmup rows. Separately
+signed prefix views define the bounded actual execution clock; ordinary or full
+replay cannot borrow this exception. Quote-known original opportunities and
+actual instrument-gate reachability are observed in-loop, without forcing entry.
+
+The complete cheap pool and seeded capped rejection sample are sealed before
+the deeper run. The existing arbiter selects `RESUME_NATIVE_DEPTH_AUDIT`; the
+exact generation-fenced dispatcher publishes one original deeper job. A
+missing/tampered original product, wrong clock, changed source or duplicate
+carrier cannot produce a measured witness. An empty or unpowered sample has a
+typed neutral terminal result. Comparison and all six constructor episodes
+close without ordinary advice, credit or trading authority. This diagnostic
+does not estimate population-wide filter performance or validate market profit.
 
 ### Marked equity and observed paper peak
 

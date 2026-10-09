@@ -443,6 +443,27 @@ def _candidate_cache_contract_is_current(
         probe = (payload.policy_context or {}).get("prospective_probe_window")
         budget = (payload.policy_context or {}).get("full_replay_runtime_policy")
         policy = probe if isinstance(probe, dict) else budget if isinstance(budget, dict) else None
+        if payload.native_reachability_depth_audit_contract:
+            from app.services.native_reachability_depth_audit import validate_depth_audit, RECEIPT_PROTOCOL as DEPTH_RECEIPT_PROTOCOL
+            depth = validate_depth_audit(payload, contract)
+            policy = depth['execution_view']
+            witness = result.get('native_reachability_depth_audit_receipt')
+            quality_witness = (result.get('data_quality') or {}).get('native_reachability_depth_audit_receipt')
+            if not isinstance(witness, dict) or witness != quality_witness or not receipt_hash_is_current(witness) \
+                    or witness.get('protocol') != DEPTH_RECEIPT_PROTOCOL or witness.get('contract_hash') != depth['contract_hash'] \
+                    or witness.get('audit_id') != depth['audit_id'] or witness.get('arm') != depth['arm'] \
+                    or witness.get('identity_hash') != depth['identity_hash'] or witness.get('declaration') != depth['declaration'] \
+                    or witness.get('execution_view') != policy or witness.get('selection') != depth['selection'] \
+                    or witness.get('replay_executed_clock') != receipt.get('replay_executed_clock') \
+                    or witness.get('evaluated_scope') != scope or witness.get('physical_source_rows') != 15512 \
+                    or receipt.get('source_rows') != 15512 or scope.get('warmup_rows') != 512 \
+                    or scope.get('rows') != policy['evaluated_rows'] \
+                    or witness.get('execution_input_rows') != 512 + policy['evaluated_rows'] \
+                    or receipt.get('execution_input_rows') != witness.get('execution_input_rows') \
+                    or (receipt.get('replay_executed_clock') or {}).get('input_rows') != witness.get('execution_input_rows') \
+                    or witness.get('pool_hash') != canonical_hash(witness.get('pool')) \
+                    or witness.get('events_hash') != canonical_hash(witness.get('events')):
+                return False
         if payload.evaluation_mode == "incremental" and not isinstance(probe, dict):
             limit = 5000 if receipt.get("source_rows", 0) >= 5000 else 2000
             if scope.get("rows") != min(receipt.get("source_rows", 0), limit) or scope.get("warmup_rows") != max(0, receipt.get("source_rows", 0) - limit):
@@ -451,6 +472,12 @@ def _candidate_cache_contract_is_current(
                 policy = scope.get("selector_policy")
         if scope.get("policy_hash") != (canonical_hash(policy) if isinstance(policy, dict) else None):
             return False
+        if payload.native_standalone_qualification:
+            from app.services.native_reachability_depth_audit import validate_standalone_qualification, standalone_qualification_statistics
+            declaration = validate_standalone_qualification(payload, contract)
+            if receipt.get('standalone_qualification_statistics') != standalone_qualification_statistics(
+                    declaration, contract, payload, receipt.get('position_ledger') or []):
+                return False
         if payload.native_spread_context_study_contract:
             from app.services.native_spread_context_study import validate_study, RECEIPT_PROTOCOL
             study = validate_study(payload, contract)
@@ -729,10 +756,29 @@ def _screening_insufficient_robustness_profile(
     }
 
 
+def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest) -> None:
+    """Authenticate optional diagnostic declarations before any API cache return."""
+    if payload.native_reachability_depth_audit_contract or payload.native_standalone_qualification:
+        from app.services.specialist_council import validate_contract
+        validate_contract(payload)
+    for config in payload.strategies:
+        config = config.model_dump() if hasattr(config, 'model_dump') else dict(config)
+        depth = config.get('native_reachability_depth_audit_contract') or payload.native_reachability_depth_audit_contract
+        standalone = config.get('native_standalone_qualification') or payload.native_standalone_qualification
+        if depth or standalone:
+            from app.services.specialist_council import validate_contract
+            candidate = payload.model_copy(update={
+                'specialist_council_contract': config.get('specialist_council_contract') or payload.specialist_council_contract,
+                'native_spread_context_study_contract': config.get('native_spread_context_study_contract') or payload.native_spread_context_study_contract,
+                'native_reachability_depth_audit_contract': depth, 'native_standalone_qualification': standalone})
+            validate_contract(candidate)
+
+
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
     # Direct child/standalone paths also authenticate before any checkpoint or
     # candidate-cache return, not just after a cache miss loads source_df.
     _assert_clean_discovery_boundary(payload)
+    _validate_native_diagnostics_before_cache(payload)
     transport = verify_research_transport(payload, _internal_api_token())
     authorized_arm = original_arm_identity(payload, transport)
     if payload.specialist_council_contract and len(payload.strategies) > 1:
@@ -993,6 +1039,12 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "native_spread_context_study_contract": dict(
                         config.get("native_spread_context_study_contract") or payload.native_spread_context_study_contract
                     ),
+                    "native_reachability_depth_audit_contract": dict(
+                        config.get("native_reachability_depth_audit_contract") or payload.native_reachability_depth_audit_contract
+                    ),
+                    "native_standalone_qualification": dict(
+                        config.get("native_standalone_qualification") or payload.native_standalone_qualification
+                    ),
                     "specialist_context_contract": dict(
                         config.get("specialist_context_contract") or {}
                     ),
@@ -1011,7 +1063,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
             candidate_payload = _candidate_cache_payload(
                 payload, strategy_payload, candidate_label
             )
-            if strategy_payload.native_spread_context_study_contract:
+            if strategy_payload.native_spread_context_study_contract or strategy_payload.native_reachability_depth_audit_contract or strategy_payload.native_standalone_qualification:
                 from app.services.specialist_council import validate_contract
                 validate_contract(strategy_payload)
             candidate_cache_key = _replay_cache_key("candidate", candidate_payload)
@@ -2097,6 +2149,7 @@ def _run_bounded_replay(
     gives us a hard parent-controlled deadline and a deterministic kill path.
     """
     _assert_clean_discovery_boundary(payload)
+    _validate_native_diagnostics_before_cache(payload)
     assert_sealed_dataset_transport(payload)
     global \
         _last_replay_finished_at, \

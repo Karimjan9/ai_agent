@@ -359,6 +359,13 @@ class SpecialistCouncilIndependentPanelService
     private function assertOriginalComparators(SpecialistCouncilVersion $parent, array $plan): void
     {
         foreach (['solo', 'champion'] as $kind) {
+            if ($kind === 'solo' && (isset($plan['standalone_qualification_panel']) || isset($plan['solo_selection_panel']) || isset($plan['best_qualified_solo_selection']))) {
+                foreach ($plan['arms'] as $arm) if ($arm['kind'] === 'solo') {
+                    $model = ModelVersion::findOrFail($arm['model_version_id']);
+                    app(SpecialistCouncilPanelReservationService::class)->assertWindowComparator($plan, $arm, $model);
+                }
+                continue;
+            }
             $sourceId = (int) ($parent->manifest['evaluation_policy'][$kind.'_model_version_id'] ?? 0);
             // A founding council has no earned champion. Its unchanged solo
             // is the explicitly frozen founding control, not a caller's newly

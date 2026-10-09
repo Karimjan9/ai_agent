@@ -1,5 +1,13 @@
 # Operations states
 
+`deeper_ready -> RESUME_NATIVE_DEPTH_AUDIT -> exact_generation_dispatch_admitted`
+uses the original immutable sample/checkpoint watermark, not a minute clock.
+STOP, unavailable/pending queues or invalid original proof produces commandless
+`WAIT_NATIVE_DEPTH_AUDIT`. Missing/conflicting typed dispatch markers or an
+exit/status mismatch is technical, never a completed scientific writer.
+Duplicate admitted/in-flight phases remain in their canonical lifecycle;
+bounded undelivered publication retries do not replay a completed arm.
+
 Native specialist evaluation delivery is separate from original replay state:
 `pending -> completed` after all earliest preregistered original arms settle;
 consumer failure retains a bounded durable dependency without rewriting a

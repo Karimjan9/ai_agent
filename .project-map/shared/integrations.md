@@ -1,5 +1,34 @@
 # Integrations and runtime boundaries
 
+New native standalone transport is an original server-owned panel unit, not a
+plain SOLO upgraded by a caller flag. Its signed
+`native_standalone_source_transport_v1` scope requires current work/fence/plan,
+exact allocation-only programme and original statistics; authority stays false.
+Typed SOLO preparation seals original definitions once, then appends at most four
+byte-stable request digests per genuine lease under the same 900-second limit.
+HMAC prefix/source/data/model/release revalidation and an all-digests barrier
+precede any replay; old panel paths and scientific budgets stay unchanged.
+
+Native depth diagnostics keep full physical source/exposure separate from an
+explicit signed execution prefix. Laravel owns original six-slot registration,
+whole cheap reject-pool/sample sealing and current phase admission; Python owns
+actual closed-input opportunities, reached-gate events, account/clock and effort.
+The original receipt validator verifies actual input/event/clock facts before
+the generic trace reader accepts the view-local budget. The existing arbiter
+uses only `trading:dispatch-lab`'s exact expected-generation fence for the same
+deeper carrier under RUNNING/known-drained queues. One typed admission marker,
+not exit zero, establishes dispatch. Publication recovery is capped and cannot
+replay observed products or create another scientific question.
+
+The original authorized panel request compiler installs standalone statistics
+before its transport signature. Qualification/selection certificates use actual
+archived original requests/responses and an explicit research-only authority.
+Whole-panel selection exposure is idempotent; historical self-projection checks
+are certificate/plan/run/event-bound and do not suppress foreign training or
+selection. A separate final reservation revalidates the selected source and
+all loaded input/warmup/potential-holding intervals. Neither producer stats nor
+a selection ranking replaces untouched authorized validation data.
+
 `replay_executed_clock_v1` is sealed by the actual Python ordinary/native/
 authorized evaluator loop, not reconstructed from a nominal selection probe.
 Laravel's original council scope owner rechecks request/policy/probe/data/

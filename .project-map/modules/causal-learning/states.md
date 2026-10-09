@@ -119,6 +119,13 @@ dataset SHA or server authorization and cannot execute or grant authority.
 The immutable owner preregistration must precede validation outcomes; actual
 authorized data and original exposure proof remain required.
 
+`future_research_collection_schedule_draft_v1` is an explicit six-month,
+non-persisted planning view, not executable work or available data. Actual
+dataset/MTF hashes and evaluation bounds remain unknown. Pre-outcome original
+design and prospective data-use approval, same-window warmup, holding maturity,
+actual authorized bytes and existing cost/risk/power guards precede execution.
+Paper overlap and a passed prospective deadline remain explicit dependencies.
+
 Clean-discovery cold cohorts seal the stored bundle and `pre_2026_discovery_only`
 identity before admission. Their allowance binds foundation, physical parent
 fork/economic rows and execution; new slice, quote coverage, code or label cannot

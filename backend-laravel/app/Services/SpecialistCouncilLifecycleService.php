@@ -66,6 +66,96 @@ class SpecialistCouncilLifecycleService
         return $this->qualifiedOriginalResearchProof($version);
     }
 
+    /** Original native panel evidence, not a caller metric, passport label or later projection. */
+    public function originalNativePanelOutcome(SpecialistCouncilVersion $version, LabEvaluationRun $run): array
+    {
+        $version = $this->verified($version); $owner = $this->plan($version); $plan = $owner['plan'];
+        if ($plan['purpose'] !== 'independent' || $run->status !== 'completed' || ! $run->started_at || ! $run->finished_at
+            || $run->started_at->lt($owner['sealed_at']) || ! $this->evidence->learningEligibility($run)['complete']
+            || ! $this->evidence->verifiedModelRuntimeIdentity($run)) throw new LogicException('SOLO_PANEL_ORIGINAL_COMPLETED_NATIVE_RUN_REQUIRED');
+        $request = $this->requestForRun($run, $this->originalArtifact($run, 'evaluation_request'));
+        $response = $this->originalArtifact($run, 'evaluation_response');
+        $binding = (array) ($request['specialist_council_evaluation'] ?? []);
+        $arm = $plan['arms'][$binding['arm_key'] ?? ''] ?? null;
+        $window = $plan['windows'][$arm['window_key'] ?? ''] ?? null;
+        $model = ModelVersion::find($run->model_version_id);
+        if (! $arm || ! $window || ! $model || (int) $arm['model_version_id'] !== (int) $model->id
+            || ($binding['version_id'] ?? null) !== (int) $version->id || ($binding['plan_hash'] ?? null) !== $owner['hash']
+            || ($binding['manifest_hash'] ?? null) !== $version->manifest_hash || $run->phase !== $arm['evaluation_phase']
+            || $run->data_hash !== $window['dataset_sha256'] || $this->contracts->modelHash($model) !== $arm['model_hash']) {
+            throw new LogicException('SOLO_PANEL_ORIGINAL_NATIVE_ARM_IDENTITY_MISMATCH');
+        }
+        $archive = $this->assertArchivedOriginalRelease($run, $request, $response, $plan);
+        if (! $this->authorizedOriginalPlanWindow($window, $run, $request, $response, $plan, $archive)) {
+            throw new LogicException('SOLO_PANEL_ORIGINAL_AUTHORIZED_WINDOW_REQUIRED');
+        }
+        $this->bindEvaluationRequestOwned($version, $arm['arm_key'], $request, $run);
+        $this->assertOriginalArmScope($arm, $request, $response, $plan['execution_timeframe']);
+        $receipt = $this->attestReplayResult($model, $request, $response);
+        if (isset($plan['standalone_qualification_panel']) && $arm['kind'] === 'solo') {
+            $declared = $request['native_standalone_qualification'] ?? null;
+            if ($declared === null) {
+                $declaredCopies = array_values(array_filter(array_map(fn ($strategy) =>
+                    (($strategy['specialist_council_evaluation']['arm_key'] ?? null) === $arm['arm_key'])
+                        ? ($strategy['native_standalone_qualification'] ?? null) : null, (array) ($request['strategies'] ?? [])), 'is_array'));
+                if (count($declaredCopies) === 1) $declared = $declaredCopies[0];
+            }
+            $expectedDeclaration = $this->standaloneQualificationDeclarationForModel($model, $run->data_hash);
+            $stats = $receipt['standalone_qualification_statistics'] ?? null;
+            if (! is_array($expectedDeclaration) || ! $this->evidence->equivalentJsonValue($declared, $expectedDeclaration)
+                || ! is_array($stats) || ($stats['protocol'] ?? null) !== 'native_standalone_qualification_statistics_v1'
+                || ($stats['declaration_hash'] ?? null) !== $expectedDeclaration['declaration_hash']
+                || ($stats['criteria_hash'] ?? null) !== $expectedDeclaration['criteria_hash']
+                || ! $this->evidence->equivalentJsonValue($stats['criteria'] ?? null, $expectedDeclaration['criteria'])
+                || ($stats['economic_authority'] ?? null) !== false || ($stats['skill_authority'] ?? null) !== false
+                || ($stats['independent_evidence'] ?? null) !== false || ($stats['promotion_evidence'] ?? null) !== false
+                || ($stats['panel_plan_hash'] ?? null) !== $owner['hash']
+                || ($stats['source_projection_hash'] ?? null) !== $arm['standalone_source']['source_projection_hash']
+                || ($stats['dataset_hash'] ?? null) !== $run->data_hash || ($stats['execution_hash'] ?? null) !== $plan['execution_hash']
+                || ($stats['native_contract_hash'] ?? null) !== $receipt['contract_hash']) {
+                throw new LogicException('SOLO_ORIGINAL_STATISTICS_DECLARATION_IDENTITY_MISMATCH');
+            }
+            $values = []; $censored = 0; $unknown = 0;
+            foreach ($receipt['position_ledger'] as $position) {
+                $reasons = array_map(fn ($field) => strtolower(trim((string) ($position[$field] ?? ''))), ['exit_reason', 'closure_reason', 'close_reason']);
+                $mature = $position['outcome_matured'] ?? null;
+                $forced = array_filter($reasons, fn ($reason) => str_contains($reason, 'force') || str_contains($reason, 'end_of_data')
+                    || in_array($reason, ['replay_end', 'end_of_replay', 'hard_drawdown', 'hard_daily_loss', 'hard_gross_exposure', 'hard_account_risk'], true)) !== []
+                    || ($position['force_closed'] ?? false) === true || ($position['is_forced_close'] ?? false) === true || $mature === false;
+                $validNet = (is_int($position['net_pnl'] ?? null) || is_float($position['net_pnl'] ?? null)) && is_finite((float) $position['net_pnl']);
+                if (! is_bool($mature) || ! $validNet) $unknown++;
+                if ($forced) $censored++;
+                if ($mature === true && ! $forced && $validNet) $values[] = (float) $position['net_pnl'];
+            }
+            if (($stats['input_hash'] ?? null) !== $this->epochs->parameterHash($values)
+                || ($stats['trade_count'] ?? null) !== count($receipt['position_ledger']) || ($stats['mature_trade_count'] ?? null) !== count($values)
+                || ($stats['censored_trade_count'] ?? null) !== $censored || ($stats['unknown_maturity_count'] ?? null) !== $unknown) {
+                throw new LogicException('SOLO_ORIGINAL_STATISTICS_ACTUAL_LEDGER_MISMATCH');
+            }
+        }
+        $runtimeOwner = $this->researchVersionForModel($model) ?? $version;
+        return ['arm' => $arm, 'metrics' => $this->metrics($response), 'native_receipt' => $receipt,
+            'executed_clock' => data_get($response, 'data_quality.replay_executed_clock'),
+            'physical_intervals' => app(SpecialistCouncilDataUseService::class)->originalReplayIntervals($runtimeOwner, $request, $receipt)];
+    }
+
+    /** Pure reinspection of the original complete panel; a hand-written evaluated flag is insufficient. */
+    public function verifiedOriginalPanelAssessment(SpecialistCouncilVersion $version, array $runIds): array
+    {
+        $version = $this->verified($version->fresh()); $owner = $this->plan($version);
+        $row = DB::table('specialist_council_evaluations')->where('specialist_council_version_id', $version->id)->sole();
+        $stored = json_decode($row->assessment, true, 512, JSON_THROW_ON_ERROR);
+        $assessment = $this->assessOriginalRuns($version, $owner, $runIds);
+        if ($version->state !== 'evaluated' || $row->evaluator_id !== $owner['evaluator_id']
+            || json_decode($row->original_run_ids, true, 512, JSON_THROW_ON_ERROR) !== array_values($runIds)
+            || $row->assessment_hash !== $this->epochs->parameterHash($stored)
+            || $row->assessment_hash !== $version->assessment_hash || $row->assessment_hash !== $this->epochs->parameterHash($assessment)
+            || ($assessment['research_observation_status'] ?? null) === 'technical_unassessable') {
+            throw new LogicException('SOLO_ORIGINAL_PANEL_ASSESSMENT_PRODUCER_REQUIRED');
+        }
+        return $assessment;
+    }
+
     /** Original native calls/behavior, not a component label or support-role qualification. */
     public function executedOriginalTraitProof(SpecialistCouncilVersion $version, string $componentId): array
     {
@@ -337,6 +427,9 @@ class SpecialistCouncilLifecycleService
 
     public function runtimeContractForModel(ModelVersion $model, string $timeframe, string $datasetHash, string $executionHash, ?array $mtfBundle = null, ?string $symbol = null): ?array
     {
+        $standalone = $this->standaloneSourceForModel($model, $datasetHash);
+        if ($standalone !== null) return $this->runtimeContractForStandaloneSource($standalone['source'], $datasetHash,
+            $executionHash, $timeframe, $mtfBundle, $symbol);
         if (data_get($model->metadata, 'specialist_council') === null) {
             $binding = $this->evaluationBindingForModel($model, $datasetHash);
             if ($binding === null) return null;
@@ -385,9 +478,73 @@ class SpecialistCouncilLifecycleService
         return [...$body, 'contract_hash' => $this->epochs->parameterHash($body), 'contract_json' => $this->json($body)];
     }
 
+    /** Fresh panel carriers use a server-derived allocation-only view, never a caller best-qualified label. */
+    private function standaloneSourceForModel(ModelVersion $model, string $datasetHash): ?array
+    {
+        $binding = $this->evaluationBindingForModel($model, $datasetHash);
+        if ($binding === null) return null;
+        $version = SpecialistCouncilVersion::findOrFail($binding['version_id']); $owner = $this->plan($version);
+        $arm = $owner['plan']['arms'][$binding['arm_key']]; $source = $arm['standalone_source'] ?? null;
+        if ($source === null) return null;
+        if (! is_array($source) || $arm['kind'] !== 'solo' || $owner['plan']['purpose'] !== 'independent'
+            || ! isset($owner['plan']['panel_reservation_hash'])
+            || (! isset($owner['plan']['standalone_qualification_panel']) && ! isset($owner['plan']['solo_selection_panel'])
+                && ! isset($owner['plan']['best_qualified_solo_selection']))
+            || ($source['source_projection_hash'] ?? null) !== $this->epochs->parameterHash(array_diff_key($source, ['source_projection_hash' => true]))) {
+            throw new LogicException('SOLO_NATIVE_PROJECTION_ORIGINAL_PANEL_REQUIRED');
+        }
+        return ['source' => $source, 'owner' => $owner, 'version' => $version, 'arm' => $arm];
+    }
+
+    private function runtimeContractForStandaloneSource(array $source, string $datasetHash, string $executionHash,
+        string $timeframe, ?array $mtfBundle, ?string $symbol): array
+    {
+        $version = $this->verified(SpecialistCouncilVersion::findOrFail($source['source_version_id']));
+        if ($version->manifest_hash !== $source['source_manifest_hash']) throw new LogicException('SOLO_NATIVE_ORIGINAL_SOURCE_MANIFEST_DRIFT');
+        $member = collect($version->manifest['members'])->firstWhere('specialist_id', $source['specialist_id']);
+        if (! $member || $member['source_model_hash'] !== $source['source_model_hash'] || $member['passport_hash'] !== $source['passport_hash']
+            || (int) $member['model_version_id'] !== $source['source_model_version_id']) throw new LogicException('SOLO_NATIVE_ORIGINAL_MEMBER_PROGRAMME_DRIFT');
+        $body = array_diff_key($this->runtimeContract($version, $datasetHash, $executionHash, $timeframe, $mtfBundle, $symbol), array_flip(['contract_hash', 'contract_json']));
+        $native = collect($body['members'])->firstWhere('specialist_id', $source['specialist_id']);
+        if (! is_array($native)) throw new LogicException('SOLO_NATIVE_ORIGINAL_MEMBER_PROGRAMME_DRIFT');
+        $body['solo_source_member'] = $native; $body['solo_source_member_hash'] = $this->epochs->parameterHash($native);
+        $body['members'] = [[...$native, 'capital_weight' => 1.0]];
+        $body['solo_comparison'] = ['protocol' => SpecialistCouncilContractService::NATIVE_CHOSEN_SOLO_PROTOCOL,
+            'comparison_kind' => 'chosen_source_full_account_allocation', 'specialist_id' => $member['specialist_id'],
+            'model_version_id' => (int) $member['model_version_id'], 'source_model_hash' => $member['source_model_hash'],
+            'passport_hash' => $member['passport_hash'], 'capital_weight' => 1.0, 'risk_per_trade_percent' => $member['risk_per_trade_percent'],
+            'initial_account_capital_equal' => true, 'member_allocation_unchanged' => false, 'best_solo_full_budget_proven' => false,
+            'source_capital_weight' => $member['capital_weight'], 'programme_unchanged_except_capital_weight' => true,
+            'selection_status' => 'chosen_source_unqualified', 'selection_timing' => 'preregistered_before_outcomes', 'promotion_evidence' => false];
+        return [...$body, 'contract_hash' => $this->epochs->parameterHash($body), 'contract_json' => $this->json($body)];
+    }
+
+    public function standaloneQualificationDeclarationForModel(ModelVersion $model, string $datasetHash): ?array
+    {
+        $source = $this->standaloneSourceForModel($model, $datasetHash);
+        if ($source === null || ! isset($source['owner']['plan']['standalone_qualification_panel'])) return null;
+        $body = ['protocol' => NativeQualifiedSoloSelectionService::QUALIFICATION_PROTOCOL,
+            'panel_plan_hash' => $source['owner']['hash'], 'source_projection_hash' => $source['source']['source_projection_hash'],
+            'criteria_hash' => $this->epochs->parameterHash($source['owner']['plan']['standalone_qualification_panel']['criteria']),
+            'criteria' => $source['owner']['plan']['standalone_qualification_panel']['criteria']];
+        $key = (string) config('services.internal_api.token');
+        if (strlen($key) < 32) throw new LogicException('SOLO_NATIVE_SERVER_KEY_UNAVAILABLE');
+        $hash = $this->epochs->parameterHash($body);
+        return [...$body, 'declaration_json' => $this->json($body), 'declaration_hash' => $hash,
+            'server_seal' => hash_hmac('sha256', "native_standalone_qualification_server_seal_v1\n".$hash, $key)];
+    }
+
+    /** Evaluation/exposure owner is distinct from the unchanged original native programme owner. */
+    public function replayEvidenceVersionForModel(ModelVersion $model, string $datasetHash): ?SpecialistCouncilVersion
+    {
+        $source = $this->standaloneSourceForModel($model, $datasetHash);
+        return $source ? $source['version'] : $this->researchVersionForModel($model);
+    }
+
     /** Verify actual member dispatch and the reconciled shared account against the original transported seal. */
     public function attestReplayResult(ModelVersion $model, array $originalRequest, array $result): ?array
     {
+        $standalone = $this->standaloneSourceForModel($model, (string) ($originalRequest['replay_dataset_hash'] ?? ''));
         $declared = data_get($model->metadata, 'specialist_council');
         $soloVersion = null;
         if ($declared === null && data_get($model->metadata, 'specialist_council_evaluation') !== null) {
@@ -401,11 +558,11 @@ class SpecialistCouncilLifecycleService
         }
         $receipt = $result['specialist_council_receipt'] ?? data_get($result, 'data_quality.specialist_council_receipt');
         $qualityReceipt = data_get($result, 'data_quality.specialist_council_receipt');
-        if ($declared === null && $soloVersion === null && ($receipt === null || $receipt === [])
+        if ($declared === null && $soloVersion === null && $standalone === null && ($receipt === null || $receipt === [])
             && ($qualityReceipt === null || $qualityReceipt === [])
             && ! $this->requestDeclaresNativeCouncilForModel($model, $originalRequest)) return null;
-        if (($declared === null && $soloVersion === null) || ! is_array($receipt) || $receipt === []) throw new LogicException('SPECIALIST_COUNCIL_RECEIPT_OR_BINDING_MISSING');
-        $version = $soloVersion ?? $this->researchVersionForModel($model);
+        if (($declared === null && $soloVersion === null && $standalone === null) || ! is_array($receipt) || $receipt === []) throw new LogicException('SPECIALIST_COUNCIL_RECEIPT_OR_BINDING_MISSING');
+        $version = $standalone ? SpecialistCouncilVersion::findOrFail($standalone['source']['source_version_id']) : ($soloVersion ?? $this->researchVersionForModel($model));
         if (! $version) throw new LogicException('DECLARED_SPECIALIST_COUNCIL_BINDING_INVALID');
         $runtime = $originalRequest['specialist_council_contract'] ?? null;
         if (! is_array($runtime)) {
@@ -437,6 +594,8 @@ class SpecialistCouncilLifecycleService
                 (string) ($body['execution_hash'] ?? ''), (string) ($body['execution_timeframe'] ?? ''), $mtfBundle,
                 (string) ($originalRequest['symbol'] ?? ''));
         }
+        if ($standalone !== null) $expected = $this->runtimeContractForStandaloneSource($standalone['source'], (string) $body['replay_dataset_hash'],
+            (string) $body['execution_hash'], (string) $body['execution_timeframe'], $mtfBundle, (string) ($originalRequest['symbol'] ?? ''));
         if (isset($body['ablation_removed_id'])) {
             $binding = $this->evaluationBindingForModel($model, (string) $body['replay_dataset_hash']);
             $owner = $this->plan($version); $arm = $owner['plan']['arms'][$binding['arm_key'] ?? ''] ?? null;
@@ -619,6 +778,7 @@ class SpecialistCouncilLifecycleService
         $this->contracts->timeframeSeconds((string) ($plan['execution_timeframe'] ?? ''));
         $soloComparison = $this->contracts->sealNativeSoloComparison($version->manifest, $plan);
         if ($soloComparison !== null) $plan['solo_comparison'] = $soloComparison;
+        app(NativeQualifiedSoloSelectionService::class)->assertDeclaredPlan($plan);
         $windows = []; $symbols = [];
         foreach ($version->manifest['members'] as $member) $symbols = [...$symbols, ...$member['scope']['symbols']];
         foreach ((array) ($plan['windows'] ?? []) as $window) {
@@ -687,6 +847,7 @@ class SpecialistCouncilLifecycleService
                 throw new InvalidArgumentException('Ablation must remove a sealed member or component.');
             }
             $arms[$key] = [...$arm, 'model_hash' => $this->contracts->modelHash($model)];
+            if (isset($arm['standalone_source'])) app(SpecialistCouncilPanelReservationService::class)->assertWindowComparator($plan, $arm, $model);
             $phase = $arm['evaluation_phase'] ?? $plan['evaluation_phase'] ?? ($plan['purpose'] === 'independent' ? 'full_validation' : 'screening');
             if (! in_array($phase, ['screening', 'full_validation'], true)) throw new InvalidArgumentException('Evaluation arm phase is unsupported.');
             $arms[$key]['evaluation_phase'] = $phase;
@@ -783,6 +944,23 @@ class SpecialistCouncilLifecycleService
         if (! $model || $this->contracts->modelHash($model) !== $arm['model_hash']) throw new LogicException('Evaluation model changed after preregistration.');
         $plan = $owner['plan'];
         $soloComparison = $this->contracts->assertNativeSoloComparison($version->manifest, $plan);
+        if (isset($arm['standalone_source'])) {
+            $runtimes = array_values(array_filter([$request['specialist_council_contract'] ?? null,
+                ...array_map(fn ($s) => (($s['specialist_council_evaluation']['arm_key'] ?? null) === $armKey
+                    && ($s['specialist_council_evaluation']['plan_hash'] ?? null) === $owner['hash']) ? ($s['specialist_council_contract'] ?? null) : null,
+                    (array) ($request['strategies'] ?? []))], 'is_array'));
+            $bundle = empty($request['mtf_snapshot_manifest']) ? null : ['bundle_hash' => $request['replay_dataset_hash'], 'manifest' => $request['mtf_snapshot_manifest']];
+            $expected = $this->runtimeContractForStandaloneSource($arm['standalone_source'], $request['replay_dataset_hash'], $plan['execution_hash'],
+                $plan['execution_timeframe'], $bundle, $request['symbol'] ?? null);
+            if (count($runtimes) !== 1 || ! $this->evidence->equivalentJsonValue($expected, $runtimes[0])) {
+                throw new LogicException('SOLO_NATIVE_ORIGINAL_FULL_ACCOUNT_PROGRAMME_NOT_APPLIED');
+            }
+            $declared = $request['native_standalone_qualification'] ?? null;
+            if ($declared !== null && ! $this->evidence->equivalentJsonValue($declared,
+                $this->standaloneQualificationDeclarationForModel($model, $request['replay_dataset_hash']))) {
+                throw new LogicException('SOLO_NATIVE_ORIGINAL_QUALIFICATION_CRITERIA_NOT_APPLIED');
+            }
+        }
         if ($soloComparison !== null && $arm['kind'] === 'solo') {
             $runtimes = [$request['specialist_council_contract'] ?? null];
             foreach ((array) ($request['strategies'] ?? []) as $strategy) {
@@ -1308,8 +1486,11 @@ class SpecialistCouncilLifecycleService
                 }
                 foreach ($version->manifest['members'] as $member) {
                     foreach ($member['scope']['symbols'] as $symbol) {
-                        if ($plan['purpose'] === 'independent' && app(SpecialistCouncilDataUseService::class)->intervalExposed($version, $symbol,
-                            $window['start_inclusive'], $window['end_exclusive'])) throw new LogicException('INDEPENDENT_EVENT_EXPOSURE_DETECTED');
+                        if ($plan['purpose'] === 'independent' && ((isset($plan['standalone_qualification_panel']) || isset($plan['solo_selection_panel']))
+                            ? app(NativeQualifiedSoloSelectionService::class)->hasForeignExposure($version, $symbol, $window['start_inclusive'], $window['end_exclusive'])
+                            : app(SpecialistCouncilDataUseService::class)->intervalExposed($version, $symbol, $window['start_inclusive'], $window['end_exclusive']))) {
+                            throw new LogicException('INDEPENDENT_EVENT_EXPOSURE_DETECTED');
+                        }
                     }
                 }
                 $this->assertOriginalArmScope($arm, $request, $response, $plan['execution_timeframe']);
@@ -1472,6 +1653,9 @@ class SpecialistCouncilLifecycleService
                 ...($transfer ? ['descendant_transfer' => $transfer] : [])];
         }
         if ($plan['purpose'] !== 'independent') $errors[] = 'RESEARCH_COMPARISON_HAS_NO_INDEPENDENT_PROMOTION_AUTHORITY';
+        if (isset($plan['standalone_qualification_panel']) || isset($plan['solo_selection_panel'])) {
+            $errors[] = 'SOLO_ORIGINAL_SOURCE_OR_SELECTION_PANEL_IS_NOT_FINAL_COUNCIL_QUALIFICATION';
+        }
         if (count($plan['windows']) < $version->manifest['evaluation_policy']['minimum_independent_windows']) $errors[] = 'INSUFFICIENT_INDEPENDENT_WINDOWS';
         if ($positive < 2) $errors[] = 'INDEPENDENT_BENEFIT_NOT_REPLICATED';
         $errors = array_values(array_unique($errors));
@@ -1506,6 +1690,11 @@ class SpecialistCouncilLifecycleService
             $assessment['solo_comparison'] = $plan['solo_comparison'];
             $assessment['best_solo_full_budget_proven'] = false;
         }
+        if (isset($plan['standalone_qualification_panel']) || isset($plan['solo_selection_panel'])) {
+            $assessment['native_solo_panel_purpose'] = isset($plan['standalone_qualification_panel']) ? 'standalone_research_exam' : 'qualified_roster_selection';
+            $assessment['independent_evidence'] = false;
+        }
+        if (isset($plan['best_qualified_solo_selection'])) $assessment['best_qualified_solo_selection'] = $plan['best_qualified_solo_selection'];
         if (! empty($plan['support_role_trials'])) $assessment['support_role_qualifications'] = $support;
         return $assessment;
     }

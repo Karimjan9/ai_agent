@@ -12,6 +12,7 @@ class AuditResearchWindowProvenance extends Command
         {--candidate-start= : UTC physical-event start, inclusive}
         {--candidate-end= : UTC physical-event end, exclusive}
         {--proposal= : JSON design file for a dry-run future preregistration}
+        {--future-schedule : Include six calendar-month collection drafts without authorizing data}
         {--json : Print the complete bounded read-only receipt}';
 
     protected $description = 'Audit historical exposure and draft an existing-owner future reservation without authorizing replay';
@@ -21,6 +22,7 @@ class AuditResearchWindowProvenance extends Command
         try {
             $audit = $service->audit($this->option('candidate-start'), $this->option('candidate-end'));
             $result = ['audit' => $audit];
+            if ($this->option('future-schedule')) $result['future_collection_schedule'] = $service->futureSchedule();
             if (is_string($path = $this->option('proposal')) && $path !== '') {
                 if (! is_file($path) || filesize($path) > 65536) throw new InvalidArgumentException('PROPOSAL_FILE_MISSING_OR_TOO_LARGE');
                 $proposal = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
@@ -29,6 +31,12 @@ class AuditResearchWindowProvenance extends Command
             }
             $this->line($this->option('json') ? json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
                 : $audit['dependency_status'].': '.$audit['reason_code'].'; historical unused windows demonstrated=0; audit='.$audit['audit_hash']);
+            if (! $this->option('json') && isset($result['future_collection_schedule'])) {
+                $schedule = $result['future_collection_schedule'];
+                $this->line('future_schedule_draft: '.$schedule['windows'][0]['start_inclusive'].' -> '
+                    .$schedule['windows'][5]['end_exclusive'].'; '.$schedule['reason_code']
+                    .'; executable=false; authorization=false; schedule='.$schedule['schedule_hash']);
+            }
             // A successful audit may honestly report a blocked dependency. It never admits work.
             return self::SUCCESS;
         } catch (InvalidArgumentException|\JsonException $error) {

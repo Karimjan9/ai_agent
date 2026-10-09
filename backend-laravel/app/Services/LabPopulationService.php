@@ -5425,7 +5425,7 @@ class LabPopulationService
     {
         $keys = ['protocol', 'purpose', 'symbol', 'storage_timeframe', 'population_size', 'research_question', 'creator_id'];
         $followupKeys = ['followup_work_item_id', 'followup_resolution_hash'];
-        if (array_diff(array_keys($intent), [...$keys, ...$followupKeys, 'research_purpose', 'study_context_declaration']) !== [] || array_diff($keys, array_keys($intent)) !== []
+        if (array_diff(array_keys($intent), [...$keys, ...$followupKeys, 'research_purpose', 'study_context_declaration', 'depth_audit_declaration']) !== [] || array_diff($keys, array_keys($intent)) !== []
             || ($intent['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
             || ($intent['purpose'] ?? null) !== 'research'
             || ($intent['symbol'] ?? null) !== 'XAUUSD' || $symbol !== 'XAUUSD'
@@ -5437,14 +5437,20 @@ class LabPopulationService
             || ($populationLimit !== null && $populationLimit !== 6)) {
             throw new \InvalidArgumentException('NATIVE_COUNCIL_REQUIRES_EXACT_UNFORCED_SIX_SEAT_RESEARCH_INTENT');
         }
-        if ((array_key_exists('research_purpose', $intent) && ! in_array($intent['research_purpose'], ['council_comparison', 'spread_context_study'], true))
-            || (($intent['research_purpose'] ?? '') === 'spread_context_study' && array_intersect($followupKeys, array_keys($intent)) !== [])) {
+        if ((array_key_exists('research_purpose', $intent) && ! in_array($intent['research_purpose'], ['council_comparison', 'spread_context_study', 'native_reachability_depth_audit'], true))
+            || (in_array($intent['research_purpose'] ?? '', ['spread_context_study', 'native_reachability_depth_audit'], true)
+                && array_intersect($followupKeys, array_keys($intent)) !== [])) {
             throw new \InvalidArgumentException('NATIVE_COUNCIL_ORIGINAL_RESEARCH_PURPOSE_INVALID');
         }
         if (($intent['research_purpose'] ?? '') === 'spread_context_study') {
             self::assertNativeStudyContextDeclaration((array) ($intent['study_context_declaration'] ?? []));
         } elseif (array_key_exists('study_context_declaration', $intent)) {
             throw new \InvalidArgumentException('NATIVE_COUNCIL_STUDY_DECLARATION_REQUIRES_ORIGINAL_STUDY_PURPOSE');
+        }
+        if (($intent['research_purpose'] ?? '') === 'native_reachability_depth_audit') {
+            self::assertNativeDepthAuditDeclaration((array) ($intent['depth_audit_declaration'] ?? []));
+        } elseif (array_key_exists('depth_audit_declaration', $intent)) {
+            throw new \InvalidArgumentException('NATIVE_COUNCIL_DEPTH_DECLARATION_REQUIRES_ORIGINAL_DEPTH_PURPOSE');
         }
         foreach (['research_question' => 500, 'creator_id' => 120] as $key => $limit) {
             if (! is_string($intent[$key]) || trim($intent[$key]) === ''
@@ -5635,8 +5641,46 @@ class LabPopulationService
     public static function nativeCouncilSlotRoles(array $intent): array
     {
         return ['source_scalp', 'source_hour', 'source_day', 'source_swing',
-            ...(($intent['research_purpose'] ?? '') === 'spread_context_study'
-                ? ['study_masked_carrier', 'study_unmasked_carrier'] : ['candidate_carrier', 'ablation_carrier'])];
+            ...match ($intent['research_purpose'] ?? 'council_comparison') {
+                'spread_context_study' => ['study_masked_carrier', 'study_unmasked_carrier'],
+                'native_reachability_depth_audit' => ['audit_cheap_carrier', 'audit_deeper_carrier'],
+                default => ['candidate_carrier', 'ablation_carrier'],
+            }];
+    }
+
+    public static function assertNativeDepthAuditDeclaration(array $declaration): void
+    {
+        $keys = ['protocol', 'criterion', 'minimum_observed_opportunities', 'contexts', 'cheap_evaluated_rows',
+            'deeper_evaluated_rows', 'sample_cap', 'seed', 'initial_capital'];
+        if (count($declaration) !== count($keys) || array_diff(array_keys($declaration), $keys) !== []
+            || ($declaration['protocol'] ?? null) !== 'native_reachability_depth_declaration_v1'
+            || ($declaration['criterion'] ?? null) !== 'instrument_gate_reached'
+            || ! is_int($declaration['minimum_observed_opportunities'] ?? null)
+            || $declaration['minimum_observed_opportunities'] < 1 || $declaration['minimum_observed_opportunities'] > 15000
+            || ! is_int($declaration['cheap_evaluated_rows'] ?? null) || $declaration['cheap_evaluated_rows'] < 2 || $declaration['cheap_evaluated_rows'] > 1024
+            || ! is_int($declaration['deeper_evaluated_rows'] ?? null) || $declaration['deeper_evaluated_rows'] <= $declaration['cheap_evaluated_rows'] || $declaration['deeper_evaluated_rows'] > 15000
+            || ! is_int($declaration['sample_cap'] ?? null) || $declaration['sample_cap'] < 1 || $declaration['sample_cap'] > 2
+            || ! is_string($declaration['seed'] ?? null) || strlen($declaration['seed']) < 1 || strlen($declaration['seed']) > 128
+            || trim($declaration['seed']) !== $declaration['seed']
+            || (! is_int($declaration['initial_capital'] ?? null) && ! is_float($declaration['initial_capital'] ?? null))
+            || ! is_finite((float) $declaration['initial_capital'])
+            || $declaration['initial_capital'] <= 0 || $declaration['initial_capital'] > 1e12
+            || ! is_array($declaration['contexts'] ?? null) || count($declaration['contexts']) !== 4
+            || array_diff(array_keys($declaration['contexts']), SpecialistCouncilContractService::TRADING_ROLES) !== []) {
+            throw new \InvalidArgumentException('NATIVE_COUNCIL_ORIGINAL_DEPTH_AUDIT_DECLARATION_REQUIRED');
+        }
+        foreach ($declaration['contexts'] as $context) {
+            if (! is_array($context) || count($context) !== 5
+                || array_diff(array_keys($context), ['regime', 'volatility', 'session', 'venue_phase', 'direction']) !== []) {
+                throw new \InvalidArgumentException('NATIVE_COUNCIL_DEPTH_CONTEXT_INVALID');
+            }
+            $canonical = app(ContextContractV2Service::class)->canonicalDeclaredAxes($context);
+            if (isset($canonical['direction'])) $canonical['direction'] = strtoupper($canonical['direction']);
+            if (count($canonical) !== 5 || ! in_array($context['direction'] ?? null, ['BUY', 'SELL'], true)
+                || app(ResearchPaperEpochContractService::class)->parameterHash($canonical) !== app(ResearchPaperEpochContractService::class)->parameterHash($context)) {
+                throw new \InvalidArgumentException('NATIVE_COUNCIL_DEPTH_CONTEXT_INVALID');
+            }
+        }
     }
 
     public static function assertNativeStudyContextDeclaration(array $declaration): void
@@ -5684,8 +5728,8 @@ class LabPopulationService
                 'native_specialist_council_seed' => [
                     'protocol' => self::NATIVE_COUNCIL_INTENT_PROTOCOL,
                     'intent_hash' => $intent['intent_hash'], 'slot_role' => $roles[$index],
-                    ...(($intent['research_purpose'] ?? '') === 'spread_context_study'
-                        ? ['research_purpose' => 'spread_context_study', 'construction_slot' => $index + 1] : []),
+                    ...(in_array($intent['research_purpose'] ?? '', ['spread_context_study', 'native_reachability_depth_audit'], true)
+                        ? ['research_purpose' => $intent['research_purpose'], 'construction_slot' => $index + 1] : []),
                     'prospective_horizon' => $index < 4 ? substr($roles[$index], 7) : null,
                     'qualified_specialist' => false, 'authority' => 'research_only',
                     'followup_work_item_id' => $intent['followup_work_item_id'] ?? null,
@@ -7161,8 +7205,8 @@ class LabPopulationService
                 || ($nativeIntent['promotion_evidence'] ?? null) !== false
                 || ($nativeSeed['protocol'] ?? null) !== self::NATIVE_COUNCIL_INTENT_PROTOCOL
                 || ($nativeSeed['slot_role'] ?? null) !== $expectedRole
-                || (($nativeIntent['research_purpose'] ?? '') === 'spread_context_study'
-                    && (($nativeSeed['research_purpose'] ?? null) !== 'spread_context_study'
+                || (in_array($nativeIntent['research_purpose'] ?? '', ['spread_context_study', 'native_reachability_depth_audit'], true)
+                    && (($nativeSeed['research_purpose'] ?? null) !== $nativeIntent['research_purpose']
                         || ($nativeSeed['construction_slot'] ?? null) !== $slot || isset($nativeIntent['followup_work_item_id'])))
                 || ($nativeSeed['intent_hash'] ?? null) !== ($nativeIntent['intent_hash'] ?? null)
                 || ($nativeIntent['intent_hash'] ?? null) !== app(ResearchPaperEpochContractService::class)->parameterHash($nativeSeal)) {

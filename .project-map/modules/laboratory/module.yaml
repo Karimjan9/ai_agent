@@ -7,6 +7,8 @@ aliases:
   - population
   - cohort
   - mutation
+  - native-depth-audit
+  - qualified-solo
 paths:
   - backend-laravel/app/Console/Commands/ManageSpecialistCouncil.php
   - backend-laravel/app/Domains/Laboratory
@@ -25,8 +27,17 @@ paths:
   - backend-laravel/app/Services/SpecialistCouncilContractService.php
   - backend-laravel/app/Services/SpecialistCouncilLifecycleService.php
   - backend-laravel/app/Services/SpecialistCouncilDataUseService.php
+  - backend-laravel/app/Services/NativeQualifiedSoloSelectionService.php
+  - backend-laravel/app/Models/NativeQualifiedSoloSelection.php
+  - backend-laravel/database/migrations/2026_10_09_100000_create_native_qualified_solo_selections.php
+  - backend-laravel/tests/Feature/NativeQualifiedSoloSelectionTest.php
   - backend-laravel/app/Services/SpecialistCouncilPreparationService.php
   - backend-laravel/app/Services/NativeSpreadContextStudyService.php
+  - backend-laravel/app/Services/NativeReachabilityDepthAuditService.php
+  - backend-laravel/app/Services/NativeReachabilityDepthReceiptValidatorService.php
+  - backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php
+  - backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php
+  - backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php
   - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php
   - backend-laravel/tests/Feature/NativeDecisionTraceHashTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php
@@ -99,8 +110,11 @@ entry_points:
   - SpecialistCouncilLifecycleService::attachResearchModel
   - SpecialistCouncilLifecycleService::sealEvaluationPlan
   - SpecialistCouncilLifecycleService::evaluateOriginalRuns
+  - NativeQualifiedSoloSelectionService
+  - SpecialistCouncilDataUseService::originalReplayIntervals
   - SpecialistCouncilPreparationService::prepare
   - NativeSpreadContextStudyService
+  - NativeReachabilityDepthAuditService
   - LabPopulationService::build nativeCouncilIntent
   - SpecialistCouncilPreparationService::isResearchGeneration
   - SpecialistCouncilPreparationService::inspectDiscoveryOwner
@@ -143,6 +157,7 @@ data_tables:
   - specialist_council_data_locks
   - specialist_council_data_events
   - specialist_council_data_uses
+  - native_qualified_solo_selections
   - ai_laboratories
   - lab_generations
   - lab_agents
@@ -158,6 +173,9 @@ dependencies:
 # see shared/integrations.md rather than adding a reverse ownership edge to
 # causal-learning (which already depends on laboratory).
 invariants:
+  - Only new typed qualified-SOLO panels stage original request digests, at most four per genuine lease under the unchanged 900-second delivery budget. Original definition/model/plan/source seals and HMAC prefix are revalidated before all-digests dispatch; exact extra operational slots never replenish scientific allowance. Legacy panels stay atomic (ADR-034).
+  - Original native depth is a distinct six-slot purpose with four source references and cheap/deeper carriers. Actual producer opportunities, signed clock views and immutable whole-pool/seeded sample precede one canonical deferred continuation; ordinary/full replay cannot borrow a short view. Diagnostic neutral closure grants no economic learning or independent authority (ADR-033).
+  - Best-qualified SOLO requires separate original scoped standalone qualification, a server-owned bounded as-of eligible roster and original ranking panel, then a disjoint final panel. Caller flags/shortlists and old chosen/matched SOLO grant nothing; original physical input/warmup/context/holding exposure and immutable selected-source proof own every stage (ADR-033).
   - specialist_council_native_chosen_solo_v1 is an original preregistered chosen_source_unqualified full-account comparison. The server preserves and hashes the exact source member and derives only capital_weight 1.0; observed sources, old plans, follow-up reuse and caller best-qualified claims are refused. Actual native account/trace/clock parity still owns comparison.
   - Controlled native spread-study traces retain canonical audit projection, but their typed generation/carrier/run/request/response declarations exclude ordinary historical mutation advice and causal priors. Old mixed aggregate cache identities and tainted append-only insights are not consumed; dedicated original paired measurement is the result owner.
   - Prospective matched-member SOLO is an explicit specialist_council_native_solo_v1 declaration. The owner derives one unchanged native member from the original stored council, preserves its allocation, passport, cost and risk, and attests the same actual account clock and metrics. A legacy plan or later follow-up signature cannot add that declaration; matched allocation is not best full-budget standalone proof (ADR-032).

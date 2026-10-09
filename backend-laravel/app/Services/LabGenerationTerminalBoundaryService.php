@@ -51,6 +51,20 @@ class LabGenerationTerminalBoundaryService
             return $this->blocked('GENERATION_ALREADY_TERMINAL', $generation);
         }
 
+        try { $depthDisposition = app(NativeReachabilityDepthAuditService::class)->reconcileGeneration($generation); }
+        catch (\Throwable $error) {
+            return $this->blocked('NATIVE_DEPTH_AUDIT_ORIGINAL_EVIDENCE_INVALID', $generation,
+                ['native_depth_audit_reason' => str_starts_with($error->getMessage(), 'NATIVE_DEPTH_AUDIT_')
+                    ? $error->getMessage() : 'ORIGINAL_DEPTH_OWNER_UNAVAILABLE']);
+        }
+        if ($depthDisposition !== null) {
+            if (($depthDisposition['status'] ?? null) !== 'recorded') {
+                return $this->blocked('NATIVE_DEPTH_AUDIT_ORIGINAL_PHASE_NOT_TERMINAL', $generation,
+                    ['native_depth_audit_disposition' => $depthDisposition]);
+            }
+            $generation = $generation->fresh(['agents']);
+        }
+
         // Four original study sources are references, not replay candidates.
         // The original pair owner alone can close them neutrally after both
         // immutable arm envelopes are terminal; missing/queued work stays open.

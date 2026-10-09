@@ -15,6 +15,26 @@ class ScheduledCommandOutcomeClassifierService
     /** @param array<string,mixed> $arguments @return array<string,mixed> */
     public function classify(string $command, array $arguments, int $exitCode, string $output): array
     {
+        if ($command === 'trading:dispatch-lab' && isset($arguments['--expected-generation-id'])) {
+            $markers = [];
+            foreach (explode("\n", $output) as $line) {
+                if (strlen($line) > 8192) continue;
+                $body = json_decode(trim($line), true);
+                if (is_array($body) && ($body['protocol'] ?? '') === 'native_depth_audit_dispatch_v1') $markers[] = $body;
+            }
+            if (count($markers) === 1 && ($markers[0]['generation_id'] ?? null) === (int) $arguments['--expected-generation-id']) {
+                $body = $markers[0];
+                if (($body['status'] ?? '') === 'refused' && $exitCode !== 0 && ($body['agent_ids'] ?? null) === []) {
+                    return $this->result('deferred', false, $exitCode, 'native_depth_original_phase_admission_withheld');
+                }
+                if (($body['status'] ?? '') === 'admitted' && $exitCode === 0
+                    && is_array($body['agent_ids'] ?? null) && count($body['agent_ids']) === 1
+                    && is_int($body['agent_ids'][0]) && $body['agent_ids'][0] > 0) {
+                    return $this->result('completed', false, $exitCode, 'native_depth_original_phase_admitted');
+                }
+            }
+            return $this->result('technical_failure', true, $exitCode, 'native_depth_exact_dispatch_marker_missing_or_conflicting');
+        }
         if ($exitCode === 0) {
             if ($command === 'trading:admit-academy-experiment') {
                 $payload = json_decode(trim($output), true);

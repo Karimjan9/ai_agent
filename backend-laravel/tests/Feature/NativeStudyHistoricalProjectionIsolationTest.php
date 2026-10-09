@@ -87,9 +87,11 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
 
     public static function studyDeclarations(): array
     {
-        return array_combine($keys = ['purpose', 'generation_owner', 'malformed_generation_owner',
+        $base = ['purpose', 'generation_owner', 'malformed_generation_owner',
             'carrier_seed', 'carrier_owner', 'malformed_carrier_owner', 'run_reason', 'request_owner',
-            'batch_request_owner', 'response_owner'], array_map(fn ($key): array => [$key], $keys));
+            'batch_request_owner', 'response_owner'];
+        $keys = [...$base, ...array_map(fn ($key) => 'depth_'.$key, $base)];
+        return array_combine($keys, array_map(fn ($key): array => [$key], $keys));
     }
 
     private function assertAndExecuteOnlyProjectionJobs(array $runs): void
@@ -124,21 +126,27 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
 
     private function projectionRun(string $declaration, string $rejection, string $arm = 'unmasked'): LabEvaluationRun
     {
+        $depth = str_starts_with($declaration, 'depth_');
+        if ($depth) $declaration = substr($declaration, 6);
+        $purpose = $depth ? \App\Services\NativeReachabilityDepthAuditService::PURPOSE : 'spread_context_study';
+        $marker = $depth ? \App\Services\NativeReachabilityDepthAuditService::MARKER : 'native_spread_context_study';
+        $field = $marker.'_contract'; $receiptField = $marker.'_receipt';
+        $protocol = $depth ? \App\Services\NativeReachabilityDepthAuditService::PROTOCOL : 'native_spread_context_study_v1';
         $lab = AiLaboratory::firstOrCreate(['symbol' => 'XAUUSD', 'timeframe' => 'H1'],
             ['name' => 'Synthetic projection boundary', 'strategy_families' => ['hybrid']]);
         $trigger = match ($declaration) {
-            'purpose' => ['native_specialist_council_intent' => ['research_purpose' => 'spread_context_study']],
-            'generation_owner' => ['native_spread_context_study' => ['protocol' => 'native_spread_context_study_v1']],
-            'malformed_generation_owner' => ['native_spread_context_study' => 'UNATTESTED_RESERVED_OWNER'],
+            'purpose' => ['native_specialist_council_intent' => ['research_purpose' => $purpose]],
+            'generation_owner' => [$marker => ['protocol' => $protocol]],
+            'malformed_generation_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
             default => [],
         };
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
             'generation' => LabGeneration::where('ai_laboratory_id', $lab->id)->count() + 1,
             'trigger_type' => 'synthetic_projection_fixture_only', 'trigger_context' => $trigger, 'status' => 'screened']);
         $metadata = match ($declaration) {
-            'carrier_seed' => ['native_specialist_council_seed' => ['research_purpose' => 'spread_context_study']],
-            'carrier_owner' => ['native_spread_context_study' => ['protocol' => 'native_spread_context_study_v1', 'arm' => $arm]],
-            'malformed_carrier_owner' => ['native_spread_context_study' => 'UNATTESTED_RESERVED_OWNER'],
+            'carrier_seed' => ['native_specialist_council_seed' => ['research_purpose' => $purpose]],
+            'carrier_owner' => [$marker => ['protocol' => $protocol, 'arm' => $arm]],
+            'malformed_carrier_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
             default => ['audit_note' => 'The prose native_spread_context_study must not exclude ordinary evidence.'],
         };
         $model = ModelVersion::create(['name' => 'Projection fixture-'.$generation->id, 'strategy' => 'hybrid',
@@ -151,8 +159,8 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             ['synthetic_fixture_only' => true, 'economic_authority' => false, 'skill_authority' => false, 'promotion_evidence' => false]);
         $request = ['symbol' => 'XAUUSD', 'timeframe' => 'H1',
             'candles' => array_fill(0, 202, ['time' => '2025-10-01T00:00:00Z', 'close' => 2000])];
-        if ($declaration === 'request_owner') $request['native_spread_context_study_contract'] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
-        if ($declaration === 'batch_request_owner') $request['strategies'] = [['native_spread_context_study_contract' => ['protocol' => 'UNATTESTED_RESERVED_OWNER']]];
+        if ($declaration === 'request_owner') $request[$field] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
+        if ($declaration === 'batch_request_owner') $request['strategies'] = [[$field => ['protocol' => 'UNATTESTED_RESERVED_OWNER']]];
         $evidence->attachRequest($run, $request);
         $trace = [];
         for ($index = 0; $index < 2; $index++) $trace[] = ['candle_index' => 200 + $index,
@@ -163,9 +171,9 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1', 'requested' => true,
                 'complete' => true, 'event_count' => 2, 'evaluated_candle_count' => 2,
                 'trace_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($trace)]]];
-        if ($declaration === 'response_owner') $response['native_spread_context_study_receipt'] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
+        if ($declaration === 'response_owner') $response[$receiptField] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
         $evidence->finishRun($run, 'completed', $response, $declaration === 'response_owner' ? $response : [], $declaration === 'run_reason'
-            ? ['reason_code' => 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY'] : []);
+            ? ['reason_code' => $depth ? 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY' : 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY'] : []);
         return $run->fresh();
     }
 }

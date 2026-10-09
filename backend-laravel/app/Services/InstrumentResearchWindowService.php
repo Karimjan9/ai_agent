@@ -170,12 +170,35 @@ class InstrumentResearchWindowService
                 throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_RUNTIME_PROGRAM_DRIFT:'.$key);
             }
         }
-        if ($native !== null && ! $evidence->equivalentJsonValue((array) ($strategies[0]['specialist_council_contract'] ?? []),
+        $standaloneScope = null;
+        if (isset($arm['standalone_source'])) {
+            // A non-aggregate carrier is native only for this original,
+            // server-owned allocation-only panel projection. Plain/matched
+            // SOLO models cannot borrow the exception or a caller label.
+            $work = \App\Models\ResearchExperimentWorkItem::find((int) ($marker['work_item_id'] ?? 0));
+            if (! $work || ($marker['work_key'] ?? null) !== $work->work_key) {
+                throw new RuntimeException('RESEARCH_TRANSPORT_STANDALONE_ORIGINAL_WORK_REQUIRED');
+            }
+            app(SpecialistCouncilPanelReservationService::class)->assertExecutionUnit($work, $generation, $unit);
+            $qualification = $lifecycle->standaloneQualificationDeclarationForModel($model, $window['dataset_sha256']);
+            if (! $evidence->equivalentJsonValue($strategies[0]['native_standalone_qualification'] ?? null, $qualification)) {
+                throw new RuntimeException('RESEARCH_TRANSPORT_STANDALONE_ORIGINAL_STATISTICS_DRIFT');
+            }
+            $standaloneScope = [
+                'protocol' => 'native_standalone_source_transport_v1',
+                'source_projection_hash' => $arm['standalone_source']['source_projection_hash'],
+                'original_panel_plan_hash' => $row->plan_hash,
+                'programme_delta' => 'declared_allocation_only_to_full_account',
+                'research_only' => true, 'qualified_evidence' => false,
+                'economic_authority' => false, 'independent_evidence' => false, 'promotion_evidence' => false,
+            ];
+        }
+        if (($native !== null || $standaloneScope !== null) && ! $evidence->equivalentJsonValue((array) ($strategies[0]['specialist_council_contract'] ?? []),
             $lifecycle->runtimeContractForModel($model, $request['timeframe'], $window['dataset_sha256'],
                 $plan['execution_hash'], $bundle, $request['symbol']))) {
             throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_NATIVE_PROGRAM_DRIFT');
         }
-        if ($native === null && ! empty($strategies[0]['specialist_council_contract'])) {
+        if ($native === null && $standaloneScope === null && ! empty($strategies[0]['specialist_council_contract'])) {
             throw new RuntimeException('RESEARCH_TRANSPORT_SOLO_CANNOT_BECOME_NATIVE_COUNCIL');
         }
         // Reapply the original owner: this verifies actual cash, cost/risk and
@@ -196,6 +219,7 @@ class InstrumentResearchWindowService
         $json = static fn (array $value): string => json_encode($value,
             JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
         return ['protocol' => 'authorized_original_council_arm_v1', 'purpose' => 'independent',
+            ...($standaloneScope === null ? [] : ['native_standalone_source' => $standaloneScope]),
             'generation_id' => (int) $generation->id, 'work_item_id' => (int) $marker['work_item_id'],
             'reservation_hash' => $marker['reservation_hash'], 'version_id' => (int) $binding['version_id'],
             'manifest_hash' => $binding['manifest_hash'], 'plan_hash' => $binding['plan_hash'],

@@ -466,6 +466,11 @@ class DukascopyMarketDataProvider implements MarketDataProviderInterface
             )
             ->get($url);
 
+        if ($response->status() === 202) {
+            // Accepted/deferred or blocked transport is not a completed native
+            // price inventory, even when a success-class status has no body.
+            throw new RuntimeException('DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: no completed native price/tick evidence');
+        }
         if ($response->failed()) {
             throw new RuntimeException("Dukascopy Jetta candle fetch failed: HTTP {$response->status()}");
         }

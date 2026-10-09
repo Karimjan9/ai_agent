@@ -33,7 +33,15 @@ paths:
   - ai-service-python/app/services/research_program_tasks.py
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/native_spread_context_study.py
+  - ai-service-python/app/services/native_reachability_depth_audit.py
+  - ai-service-python/tests/test_native_reachability_depth_audit.py
+  - ai-service-python/tests/support/native_reachability_depth_audit_fixture.py
   - backend-laravel/app/Services/NativeSpreadContextStudyService.php
+  - backend-laravel/app/Services/NativeReachabilityDepthAuditService.php
+  - backend-laravel/app/Services/NativeReachabilityDepthReceiptValidatorService.php
+  - backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php
+  - backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php
+  - backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php
   - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php
   - backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php
   - ai-service-python/tests/test_native_spread_context_study.py

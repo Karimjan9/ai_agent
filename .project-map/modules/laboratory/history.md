@@ -1,5 +1,18 @@
 # Laboratory history
 
+## 2026-10-09 - Original depth audit and qualified SOLO selection
+
+Prospective native depth studies bind original physical sources to separately
+signed execution views and defer one sampled continuation through the existing
+arbiter/dispatcher. Standalone qualification, roster selection and final
+comparison have separate original evidence and physical exposure boundaries.
+Old matched/chosen SOLO and observed studies are not upgraded. See ADR-033.
+
+The original 33-unit SOLO preparation exceeded its 900-second delivery budget.
+New typed panels now retain one definition and append at most four original
+request digests per fresh lease before dispatch. Legacy paths and scientific
+allowance remain unchanged; see ADR-034.
+
 ## 2026-10-08 - Prospective native comparison and bounded consumption
 
 Explicit future SOLO preserves one original native member/allocation and its

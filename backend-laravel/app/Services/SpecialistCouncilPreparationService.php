@@ -31,6 +31,11 @@ class SpecialistCouncilPreparationService
      */
     public function prepare(LabGeneration $generation, array $request): array
     {
+        if (($request['research_purpose'] ?? null) === NativeReachabilityDepthAuditService::PURPOSE
+            || data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === NativeReachabilityDepthAuditService::PURPOSE
+            || array_key_exists('depth_audit_spec', $request)) {
+            return $this->prepareDepthAudit($generation, $request);
+        }
         if (($request['research_purpose'] ?? null) === 'spread_context_study'
             || data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === 'spread_context_study'
             || array_key_exists('study_spec', $request)) {
@@ -270,6 +275,9 @@ class SpecialistCouncilPreparationService
     private function verifiedGeneration(LabGeneration $generation, bool $requiresOpenDraft = false): array
     {
         $receipt = data_get($generation->trigger_context, 'specialist_council_preparation');
+        if (is_array($receipt) && ($receipt['research_purpose'] ?? null) === NativeReachabilityDepthAuditService::PURPOSE) {
+            return $this->verifiedDepthAuditGeneration($generation);
+        }
         if (is_array($receipt) && ($receipt['research_purpose'] ?? null) === 'spread_context_study') {
             return $this->verifiedSpreadStudyGeneration($generation);
         }
@@ -344,8 +352,8 @@ class SpecialistCouncilPreparationService
                 || ($seed['authority'] ?? null) !== 'research_only' || ($seed['qualified_specialist'] ?? null) !== false) {
                 throw new LogicException('CANONICAL_COUNCIL_NATIVE_CONSTRUCTOR_SEED_DRIFT');
             }
-            if (($intent['research_purpose'] ?? '') === 'spread_context_study'
-                && (($seed['research_purpose'] ?? null) !== 'spread_context_study' || ($seed['construction_slot'] ?? null) !== $index + 1
+            if (in_array($intent['research_purpose'] ?? '', ['spread_context_study', 'native_reachability_depth_audit'], true)
+                && (($seed['research_purpose'] ?? null) !== $intent['research_purpose'] || ($seed['construction_slot'] ?? null) !== $index + 1
                     || ($seed['slot_role'] ?? null) !== LabPopulationService::nativeCouncilSlotRoles($intent)[$index]
                     || isset($intent['followup_work_item_id']) || isset($intent['followup_resolution_hash']))) {
                 throw new LogicException('CANONICAL_SPREAD_STUDY_ORIGINAL_SLOT_OR_VECTOR_DRIFT');
@@ -362,7 +370,7 @@ class SpecialistCouncilPreparationService
 
     private function assertNativeIntentRequest(array $intent, array $request, $models): void
     {
-        if (($intent['research_purpose'] ?? '') === 'spread_context_study') throw new LogicException('CANONICAL_COUNCIL_STUDY_PURPOSE_REQUIRES_ORIGINAL_STUDY_PREPARATION');
+        if (in_array($intent['research_purpose'] ?? '', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE], true)) throw new LogicException('CANONICAL_COUNCIL_STUDY_PURPOSE_REQUIRES_ORIGINAL_STUDY_PREPARATION');
         $carrier = $models[(int) $request['carrier_model_version_id']] ?? null;
         if ($request['creator_id'] !== $intent['creator_id'] || $request['research_question'] !== $intent['research_question']
             || data_get($carrier?->metadata, 'native_specialist_council_seed.slot_role') !== 'candidate_carrier') {
@@ -582,10 +590,23 @@ class SpecialistCouncilPreparationService
     /** Only the original new six-slot constructor can supply this carrier proof. */
     public function assertOriginalSpreadStudyCarriers(LabGeneration $generation, LabAgent $masked, LabAgent $unmasked): array
     {
+        return $this->assertOriginalDiagnosticCarriers($generation, $masked, $unmasked, 'spread_context_study',
+            'study_context_declaration', 'study_masked_carrier', 'study_unmasked_carrier');
+    }
+
+    public function assertOriginalDepthAuditCarriers(LabGeneration $generation, LabAgent $cheap, LabAgent $deeper): array
+    {
+        return $this->assertOriginalDiagnosticCarriers($generation, $cheap, $deeper, 'native_reachability_depth_audit',
+            'depth_audit_declaration', 'audit_cheap_carrier', 'audit_deeper_carrier');
+    }
+
+    private function assertOriginalDiagnosticCarriers(LabGeneration $generation, LabAgent $masked, LabAgent $unmasked,
+        string $purpose, string $declarationKey, string $firstRole, string $secondRole): array
+    {
         $agents = $generation->agents()->with('modelVersion')->orderBy('id')->get();
         $models = $agents->mapWithKeys(fn ($agent) => [(int) $agent->model_version_id => $agent->modelVersion]);
         $intent = $this->nativeConstructorIntent($generation, $models, $agents);
-        if (($intent['research_purpose'] ?? null) !== 'spread_context_study' || isset($intent['followup_work_item_id'])
+        if (($intent['research_purpose'] ?? null) !== $purpose || isset($intent['followup_work_item_id'])
             || isset($intent['followup_resolution_hash']) || $masked->id === $unmasked->id
             || $masked->lab_generation_id !== $generation->id || $unmasked->lab_generation_id !== $generation->id
             || data_get($generation->trigger_context, 'authorized_specialist_council_panel_intent') !== null
@@ -593,16 +614,17 @@ class SpecialistCouncilPreparationService
             throw new LogicException('CANONICAL_SPREAD_STUDY_ORIGINAL_UNUSED_CONSTRUCTOR_REQUIRED');
         }
         $plan = (array) data_get($generation->trigger_context, 'generation_plan', []);
-        $declaration = (array) ($intent['study_context_declaration'] ?? []);
-        LabPopulationService::assertNativeStudyContextDeclaration($declaration);
+        $declaration = (array) ($intent[$declarationKey] ?? []);
+        if ($purpose === 'spread_context_study') LabPopulationService::assertNativeStudyContextDeclaration($declaration);
+        else LabPopulationService::assertNativeDepthAuditDeclaration($declaration);
         if (count($plan) !== 6) throw new LogicException('CANONICAL_SPREAD_STUDY_ORIGINAL_SIX_SLOT_PLAN_REQUIRED');
         $sources = []; $carriers = []; $episodes = []; $roles = LabPopulationService::nativeCouncilSlotRoles($intent);
         foreach ($agents as $index => $agent) {
             $model = $agent->modelVersion; $seed = (array) data_get($model->metadata, 'native_specialist_council_seed', []);
             $planned = (array) data_get($plan[$index], 'niche.native_specialist_council_seed', []);
-            if (($seed['slot_role'] ?? null) !== $roles[$index] || ($seed['research_purpose'] ?? null) !== 'spread_context_study'
+            if (($seed['slot_role'] ?? null) !== $roles[$index] || ($seed['research_purpose'] ?? null) !== $purpose
                 || ($seed['construction_slot'] ?? null) !== $index + 1 || ($planned['intent_hash'] ?? null) !== $intent['intent_hash']
-                || ($planned['slot_role'] ?? null) !== $roles[$index] || ($planned['research_purpose'] ?? null) !== 'spread_context_study'
+                || ($planned['slot_role'] ?? null) !== $roles[$index] || ($planned['research_purpose'] ?? null) !== $purpose
                 || ($planned['construction_slot'] ?? null) !== $index + 1 || count((array) $agent->parameter_diff) !== 0
                 || data_get($model->metadata, 'parent_mentor_broker.parameter_baseline_source') !== 'schema_defaults'
                 || $agent->lifecycle_status !== 'draft' || LabEvaluationRun::where('model_version_id', $model->id)->exists()) {
@@ -626,8 +648,8 @@ class SpecialistCouncilPreparationService
             $reference = ['agent_id' => (int) $agent->id, 'model_version_id' => (int) $model->id];
             if ($index < 4) $sources[$roles[$index]] = $reference; else $carriers[$roles[$index]] = $reference;
         }
-        if ($carriers['study_masked_carrier']['agent_id'] !== (int) $masked->id
-            || $carriers['study_unmasked_carrier']['agent_id'] !== (int) $unmasked->id) throw new LogicException('CANONICAL_SPREAD_STUDY_EXACT_CARRIER_ROLES_REQUIRED');
+        if ($carriers[$firstRole]['agent_id'] !== (int) $masked->id
+            || $carriers[$secondRole]['agent_id'] !== (int) $unmasked->id) throw new LogicException('CANONICAL_SPREAD_STUDY_EXACT_CARRIER_ROLES_REQUIRED');
         $day = $models[$sources['source_day']['model_version_id']];
         $dayAgent = $agents->firstWhere('id', $sources['source_day']['agent_id']);
         foreach ([$masked, $unmasked] as $carrier) {
@@ -636,9 +658,123 @@ class SpecialistCouncilPreparationService
                 throw new LogicException('CANONICAL_SPREAD_STUDY_EXACT_PRISTINE_DAY_VECTOR_REQUIRED');
             }
         }
-        return ['intent_hash' => $intent['intent_hash'], 'research_purpose' => 'spread_context_study', 'source_ids' => $sources,
-            'carrier_role_ids' => $carriers, 'constructor_episode_ids' => $episodes, 'study_context_declaration' => $declaration,
+        return ['intent_hash' => $intent['intent_hash'], 'research_purpose' => $purpose, 'source_ids' => $sources,
+            'carrier_role_ids' => $carriers, 'constructor_episode_ids' => $episodes, $declarationKey => $declaration,
             'promotion_evidence' => false];
+    }
+
+    private function prepareDepthAudit(LabGeneration $generation, array $request): array
+    {
+        $keys = ['protocol', 'research_purpose', 'creator_id', 'evaluator_id', 'research_question', 'manifest', 'depth_audit_spec', 'discovery_bundle_manifest'];
+        $spec = (array) ($request['depth_audit_spec'] ?? []);
+        if (count($request) !== count($keys) || array_diff(array_keys($request), $keys) !== []
+            || ($request['protocol'] ?? null) !== self::PROTOCOL || ($request['research_purpose'] ?? null) !== NativeReachabilityDepthAuditService::PURPOSE
+            || ! is_array($request['manifest'] ?? null) || ! is_array($request['discovery_bundle_manifest'] ?? null)
+            || ! is_string($request['creator_id'] ?? null) || ! is_string($request['evaluator_id'] ?? null)
+            || $request['creator_id'] === '' || $request['evaluator_id'] === '' || $request['creator_id'] === $request['evaluator_id']
+            || count($spec) !== 2 || array_diff(array_keys($spec), ['declaration', 'prospective_probe_window']) !== []) {
+            throw new InvalidArgumentException('CANONICAL_DEPTH_AUDIT_PREPARATION_INPUT_INVALID');
+        }
+        LabPopulationService::assertNativeDepthAuditDeclaration((array) ($spec['declaration'] ?? []));
+        $lease = Cache::lock("lab-generation-dispatch:{$generation->ai_laboratory_id}:H1:{$generation->id}",
+            max(300, (int) config('services.lab_queue.dispatch_lease_seconds', 3600)));
+        if (! $lease->get()) throw new LogicException('CANONICAL_COUNCIL_DISPATCH_LEASE_BUSY');
+        try { return DB::transaction(function () use ($generation, $request, $spec): array {
+            $draft = LabGeneration::whereKey($generation->id)->lockForUpdate()->firstOrFail();
+            $prior = data_get($draft->trigger_context, 'specialist_council_preparation');
+            if ($prior !== null) {
+                if (($prior['request_hash'] ?? null) !== $this->epochs->parameterHash($request)) throw new LogicException('CANONICAL_COUNCIL_PREPARATION_IMMUTABLE');
+                [$verified] = $this->verifiedDepthAuditGeneration($draft); return $verified;
+            }
+            if ($draft->status !== 'draft' || LabPopulationService::constructionIncomplete($draft)
+                || LabEvaluationRun::where('lab_generation_id', $draft->id)->exists()) throw new LogicException('CANONICAL_DEPTH_AUDIT_UNUSED_COMPLETE_DRAFT_REQUIRED');
+            foreach (['snapshot_path', 'foundation_snapshot_path', 'research_release', 'dispatch_started_at', 'queued_agent_ids',
+                'cooperative_experiment_manifest', 'causal_learning_cohort', 'academy_experiment'] as $key) {
+                if (! empty(data_get($draft->trigger_context, $key))) throw new LogicException('CANONICAL_DEPTH_AUDIT_EXISTING_OWNER_FORBIDDEN');
+            }
+            $agents = $draft->agents()->with('modelVersion')->orderBy('id')->get();
+            $models = $agents->mapWithKeys(fn ($agent) => [(int) $agent->model_version_id => $agent->modelVersion]);
+            $cheap = $agents[4]; $deeper = $agents[5];
+            $proof = $this->assertOriginalDepthAuditCarriers($draft, $cheap, $deeper);
+            if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($spec['declaration'], $proof['depth_audit_declaration'])
+                || data_get($draft->trigger_context, 'native_specialist_council_intent.creator_id') !== $request['creator_id']
+                || data_get($draft->trigger_context, 'native_specialist_council_intent.research_question') !== $request['research_question']) throw new LogicException('CANONICAL_DEPTH_AUDIT_ORIGINAL_INTENT_MISMATCH');
+            $manifestMembers = (array) ($request['manifest']['members'] ?? []);
+            if (count($manifestMembers) !== 4) throw new LogicException('CANONICAL_DEPTH_AUDIT_FOUR_ORIGINAL_SOURCES_REQUIRED');
+            foreach ($manifestMembers as $member) {
+                $source = $proof['source_ids']['source_'.($member['specialist_id'] ?? '')] ?? null;
+                if (! $source || (int) ($member['model_version_id'] ?? 0) !== $source['model_version_id']) throw new LogicException('CANONICAL_DEPTH_AUDIT_SOURCE_ROLE_MISMATCH');
+            }
+            $manifest = $request['discovery_bundle_manifest'];
+            $readiness = app(MultiTimeframeSnapshotService::class)->inspectAndRestoreDiscoveryBundle($manifest);
+            if (! (bool) data_get($readiness, 'readiness.allowed', false)) throw new LogicException('CANONICAL_COUNCIL_DISCOVERY_BUNDLE_NOT_READY');
+            $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
+            $probe = (array) $spec['prospective_probe_window'];
+            $plan = $this->spreadStudyDataPlan($manifest, $probe, $execution['execution_hash']);
+            $plan['windows'][0]['window_key'] = 'original-native-depth-audit';
+            $this->assertDiscoveryPlan($plan, $manifest);
+            $this->materializeOriginalInstrumentAssignments($draft, $agents, $models);
+            $version = $this->lifecycle->registerDraft($request['manifest'], $request['creator_id']);
+            foreach ([$cheap, $deeper] as $agent) $this->lifecycle->attachResearchModel($version, $models[(int) $agent->model_version_id]->fresh());
+            $base = ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'evaluation_mode' => 'incremental',
+                'initial_balance' => $spec['declaration']['initial_capital'], 'execution' => $execution['parameters'], 'execution_contract' => $execution,
+                'replay_dataset_hash' => $manifest['bundle_hash'], 'mtf_snapshot_manifest' => $manifest,
+                'policy_context' => ['prospective_probe_window' => $probe, 'prospective_clean_discovery_scope' => $manifest['discovery_scope']],
+                'dataset_tail_rows' => null, 'emit_decision_trace' => true, 'include_trades' => true,
+                'mtf_pilot' => app(MultiTimeframePilotService::class)->requestPayload('XAUUSD', 'M5', (string) $cheap->modelVersion->strategy, $manifest['bundle_hash'])];
+            $base['specialist_council_contract'] = $this->lifecycle->runtimeContractForModel($models[(int) $cheap->model_version_id]->fresh(),
+                'M5', $manifest['bundle_hash'], $execution['execution_hash'], ['bundle_hash' => $manifest['bundle_hash'], 'manifest' => $manifest], 'XAUUSD');
+            $registration = app(NativeReachabilityDepthAuditService::class)->preregister($cheap, $deeper, $base, $spec['declaration']);
+            $hashes = []; foreach ($models as $model) $hashes[(string) $model->id] = $this->contracts->modelHash($model->fresh());
+            $receipt = ['protocol' => self::PROTOCOL, 'status' => 'prepared_for_canonical_dispatch', 'research_purpose' => NativeReachabilityDepthAuditService::PURPOSE,
+                'lab_generation_id' => (int) $draft->id, 'request_hash' => $this->epochs->parameterHash($request), 'version_id' => (int) $version->id,
+                'manifest_hash' => $version->manifest_hash, 'creator_id' => $request['creator_id'], 'evaluator_id' => $request['evaluator_id'],
+                'research_question' => $request['research_question'], 'native_intent_hash' => $proof['intent_hash'], 'original_constructor' => $proof,
+                'plan_hash' => $this->epochs->parameterHash($plan), 'data_plan' => $plan, 'depth_audit_spec' => $spec,
+                'generation_agent_ids' => $agents->pluck('id')->all(), 'generation_model_hashes' => $hashes,
+                'depth_registration' => $registration, 'base_request' => $base, 'dispatch_agent_ids' => [(int) $cheap->id, (int) $deeper->id],
+                'discovery_bundle_hash' => $manifest['bundle_hash'], 'discovery_manifest_hash' => $this->epochs->parameterHash($manifest),
+                'preparation_source_hash' => app(LabImmutableEvidenceService::class)->codeHash(), 'prepared_at' => now()->utc()->toIso8601String(),
+                'next_owner' => 'canonical_lab_dispatcher', 'promotion_evidence' => false, 'paper_authority_granted' => false];
+            $receipt = json_decode(json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+            $receipt['receipt_hash'] = $this->epochs->parameterHash($receipt);
+            $draft->refresh()->update(['trigger_context' => [...(array) $draft->trigger_context, 'specialist_council_preparation' => $receipt,
+                'mtf_bundle_hash' => $manifest['bundle_hash'], 'mtf_bundle_manifest' => $manifest]]);
+            return $receipt;
+        }, 1); } finally { $lease->release(); }
+    }
+
+    private function verifiedDepthAuditGeneration(LabGeneration $generation): array
+    {
+        $receipt = (array) data_get($generation->trigger_context, 'specialist_council_preparation', []);
+        $agents = $generation->agents()->with('modelVersion')->orderBy('id')->get();
+        $models = $agents->mapWithKeys(fn ($agent) => [(int) $agent->model_version_id => $agent->modelVersion]);
+        $intent = $this->nativeConstructorIntent($generation, $models, $agents);
+        LabPopulationService::assertNativeDepthAuditDeclaration((array) ($intent['depth_audit_declaration'] ?? []));
+        $version = SpecialistCouncilVersion::find($receipt['version_id'] ?? 0);
+        if (($receipt['protocol'] ?? null) !== self::PROTOCOL || ($receipt['research_purpose'] ?? null) !== NativeReachabilityDepthAuditService::PURPOSE
+            || ($receipt['status'] ?? null) !== 'prepared_for_canonical_dispatch' || ($receipt['lab_generation_id'] ?? null) !== (int) $generation->id
+            || ($receipt['native_intent_hash'] ?? null) !== $intent['intent_hash'] || ($receipt['creator_id'] ?? null) !== $intent['creator_id']
+            || ($receipt['research_question'] ?? null) !== $intent['research_question'] || ! $version || $version->state !== 'draft'
+            || $version->manifest_hash !== ($receipt['manifest_hash'] ?? null) || ! $this->contracts->manifestValid($version->manifest)
+            || $receipt['generation_agent_ids'] !== $agents->pluck('id')->all() || count($receipt['generation_model_hashes'] ?? []) !== 6
+            || $this->epochs->parameterHash(array_diff_key($receipt, ['receipt_hash' => true])) !== ($receipt['receipt_hash'] ?? null)
+            || ($receipt['preparation_source_hash'] ?? null) !== app(LabImmutableEvidenceService::class)->codeHash()
+            || ! app(LabImmutableEvidenceService::class)->equivalentJsonValue($intent['depth_audit_declaration'], data_get($receipt, 'depth_audit_spec.declaration'))
+            || ($receipt['paper_authority_granted'] ?? null) !== false || ($receipt['promotion_evidence'] ?? null) !== false) throw new LogicException('CANONICAL_DEPTH_AUDIT_ORIGINAL_PREPARATION_DRIFT');
+        foreach ($agents as $agent) if (($receipt['generation_model_hashes'][(string) $agent->model_version_id] ?? null) !== $this->contracts->modelHash($agent->modelVersion)) throw new LogicException('CANONICAL_DEPTH_AUDIT_ORIGINAL_MODEL_DRIFT');
+        if (count($receipt['dispatch_agent_ids'] ?? []) !== 2) throw new LogicException('CANONICAL_DEPTH_AUDIT_EXACT_TWO_CARRIERS_REQUIRED');
+        app(NativeReachabilityDepthAuditService::class)->inspectContinuation($generation);
+        return [$receipt, $receipt['data_plan']];
+    }
+
+    public function nativeDiagnosticDispatchAgentIds(LabGeneration $generation): ?array
+    {
+        if (data_get($generation->trigger_context, 'native_specialist_council_intent.research_purpose') === NativeReachabilityDepthAuditService::PURPOSE) {
+            $this->verifiedDepthAuditGeneration($generation);
+            return app(NativeReachabilityDepthAuditService::class)->dispatchAgentIds($generation);
+        }
+        return $this->spreadStudyDispatchAgentIds($generation);
     }
 
     private function prepareSpreadContextStudy(LabGeneration $generation, array $request): array

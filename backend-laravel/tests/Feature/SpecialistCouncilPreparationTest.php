@@ -1137,7 +1137,370 @@ PY;
 
     public static function originalSpreadStudyTerminalCases(): array { return ['original_complete_pair' => [false], 'original_typed_transport_failures' => [true]]; }
 
-    private function syntheticOriginalStudyBundle(): array
+    public function test_original_depth_audit_constructor_seals_physical_inventory_and_dispatches_only_cheap(): void
+    {
+        Queue::fake(); Storage::fake('local');
+        config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request, $models] = $this->originalDepthFixture();
+        $preparation = app(SpecialistCouncilPreparationService::class);
+        $changed = $request; $changed['depth_audit_spec']['declaration']['seed'] = 'late-reselection';
+        try { $preparation->prepare($generation, $changed); $this->fail('Original seed changed.'); }
+        catch (\LogicException $error) { $this->assertSame('CANONICAL_DEPTH_AUDIT_ORIGINAL_INTENT_MISMATCH', $error->getMessage()); }
+        $receipt = $preparation->prepare($generation, $request);
+        $this->assertSame('prepared_for_canonical_dispatch', $receipt['status']);
+        $this->assertCount(6, $receipt['generation_model_hashes']);
+        $this->assertCount(6, $receipt['original_constructor']['constructor_episode_ids']);
+        $this->assertSame(15512, $receipt['depth_audit_spec']['prospective_probe_window']['loaded_rows']);
+        $this->assertSame(15000, $receipt['depth_audit_spec']['prospective_probe_window']['evaluated_rows']);
+        $owner = app(\App\Services\NativeReachabilityDepthAuditService::class);
+        $this->assertSame('cheap_pending', $owner->inspectContinuation($generation->fresh())['status']);
+        $this->assertSame([$generation->agents()->orderBy('id')->get()[4]->id], $preparation->nativeDiagnosticDispatchAgentIds($generation->fresh()));
+        $base = $receipt['base_request'];
+        $bound = $owner->bindRequest($base, [$models[4]->fresh()]);
+        $this->assertSame(32, $bound[$owner::FIELD]['execution_view']['evaluated_rows']);
+        $this->assertSame(15000, $bound['policy_context']['prospective_probe_window']['evaluated_rows']);
+        $this->assertSame(15512, $bound['mtf_snapshot_manifest']['entry_rows']);
+        $physicalQuestion = new \ReflectionMethod($owner, 'physicalQuestionHash');
+        $native = $base['specialist_council_contract']; $renamed = $native;
+        $renamed['council_id'] = 'administratively-renamed'; $renamed['council_version'] = 'renamed-release';
+        foreach ($renamed['members'] as &$member) {
+            $member['model_version_id'] += 1000; $member['strategy_version'] = 'new-label';
+            $member['tactic_version'] = 'new-label'; $member['management_version'] = 'new-label'; $member['member_version_hash'] = str_repeat('e', 64);
+        }
+        unset($member);
+        $differentSeed = $request['depth_audit_spec']['declaration']; $differentSeed['seed'] = 'different-seed';
+        $differentSeed['sample_cap'] = 1; $differentSeed['cheap_evaluated_rows'] = 16;
+        $this->assertSame($physicalQuestion->invoke($owner, $base, $native, $request['depth_audit_spec']['declaration']),
+            $physicalQuestion->invoke($owner, $base, $renamed, $differentSeed), 'Administrative names/seed/view cap cannot reserve a fresh physical question.');
+        try { $owner->bindRequest($base, [$models[5]->fresh()]); $this->fail('Deeper arm preceded original cheap sample.'); }
+        catch (\LogicException $error) { $this->assertSame('NATIVE_DEPTH_AUDIT_DEEPER_BEFORE_ORIGINAL_CHEAP_SAMPLE', $error->getMessage()); }
+        $this->assertSame($receipt, $preparation->prepare($generation->fresh(), $request));
+        $this->assertDatabaseCount('specialist_council_evaluation_plans', 0);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('agent_learning_settlements', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Queue::assertNothingPushed();
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalDepthNativeCadences')]
+    public function test_original_depth_real_native_view_consumes_empty_or_sealed_deferred_phase(bool $deferred): void
+    {
+        Queue::fake(); \Illuminate\Support\Facades\Bus::fake(); Storage::fake('local');
+        config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request, $models, $bundle] = $this->originalDepthFixture(nativeCadence: $deferred);
+        $receipt = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $sourceArtifact = app(\App\Services\ResearchReleaseSealService::class)->buildSourceArtifact();
+        $releases = \Mockery::mock(\App\Services\ResearchReleaseSealService::class)->makePartial();
+        // Hold this invocation's fully verified real archive. Other isolated
+        // tests may publish their own current.json; no source proof is copied.
+        $releases->shouldReceive('currentSourceArtifact')->andReturnUsing(function () use ($releases, $sourceArtifact) {
+            $releases->verifySourceArtifact($sourceArtifact['reference'], true);
+            return $sourceArtifact['reference'];
+        });
+        $this->app->instance(\App\Services\ResearchReleaseSealService::class, $releases);
+        $datasets = \Mockery::mock(LabDatasetExportService::class)->makePartial();
+        $datasets->shouldReceive('export')->andReturn($bundle['entry_dataset_path']);
+        $datasets->shouldReceive('ensureGenerationSnapshot')->andReturn(['path' => '/fixture/paper-never-read.csv', 'sha256' => str_repeat('f', 64)]);
+        $datasets->shouldReceive('ensureGenerationFoundationSnapshot')->andReturn(['path' => '/fixture/foundation-never-read.csv', 'sha256' => str_repeat('a', 64)]);
+        $datasets->shouldReceive('assertGenerationDataPartition')->andReturn([]);
+        $this->app->instance(LabDatasetExportService::class, $datasets); $this->app->forgetInstance(LabAgentEvaluationService::class);
+        app(\App\Services\ResearchReleaseSealService::class)->seal($generation->fresh());
+        $generation->update(['status' => 'screening']);
+        $queue = \Mockery::mock(\App\Services\LabQueueJobInspector::class)->makePartial();
+        $queue->shouldReceive('generationQueueBacklog')->andReturn(['available' => true, 'total' => 0, 'rows' => []]);
+        $queue->shouldReceive('queueSnapshot')->andReturn(['available' => true, 'total' => 0, 'rows' => []]);
+        $queue->shouldReceive('hasAgentJob')->andReturn(false); $this->app->instance(\App\Services\LabQueueJobInspector::class, $queue);
+        $productions = []; $requests = [];
+        Http::preventStrayRequests(); Http::fake([
+            '*/api/replay-status' => Http::response(['protocol' => 'replay_liveness_v2_bounded_worker', 'active_requests' => 0,
+                'screening_active' => 0, 'screening_capacity' => 1, 'full_active' => 0]),
+            '*/api/backtest/run-all' => function ($http) use (&$productions, &$requests) {
+                $batch = $http->data(); $this->assertCount(1, $batch['strategies']); $requests[] = $batch;
+                $strategy = $batch['strategies'][0]; $native = [...array_diff_key($batch, ['strategies' => true]), ...$strategy];
+                $environment = ['INTERNAL_API_TOKEN' => config('services.internal_api.token'), 'INTERNAL_API_TOKEN_FILE' => ''];
+                $selector = new \Symfony\Component\Process\Process(['python', '-B', '-c',
+                    "import json,sys;from app.schemas import SimpleBacktestRequest;from app.main import _bounded_replay_seconds;"
+                    ."print(_bounded_replay_seconds(SimpleBacktestRequest.model_validate(json.load(sys.stdin)),'run_all'))"],
+                    dirname(base_path()).'/ai-service-python', $environment);
+                $selector->setTimeout(30); $selector->setInput(json_encode($native, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+                $selector->mustRun(); $budget = (float) trim($selector->getOutput());
+                $this->assertGreaterThan(0, $budget); $this->assertLessThanOrEqual(1800, $budget);
+                $process = new \Symfony\Component\Process\Process(['python', '-B', '-c',
+                    "import runpy;runpy.run_path('tests/support/native_reachability_depth_audit_fixture.py',run_name='__main__')"],
+                    dirname(base_path()).'/ai-service-python', $environment);
+                $process->setTimeout($budget); $process->setInput(json_encode(['mode' => 'replay', 'request' => $native], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION));
+                $process->mustRun(); $result = json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR); $productions[] = $result;
+                return Http::response(json_encode(['leaderboard' => [['strategy' => $strategy['strategy'], 'version' => $strategy['version'],
+                    'lab_agent_id' => $strategy['lab_agent_id'], 'score' => 0, 'result' => $result]]],
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION), 200, ['Content-Type' => 'application/json']);
+            }]);
+        $owner = app(\App\Services\NativeReachabilityDepthAuditService::class);
+        $dispatcher = app(\App\Console\Commands\DispatchLabGeneration::class);
+        $cheap = LabAgent::findOrFail($receipt['dispatch_agent_ids'][0]);
+        $jobs = (new \ReflectionMethod($dispatcher, 'screeningJobs'))->invoke($dispatcher, $generation->fresh(),
+            $generation->agents()->with('modelVersion')->orderBy('id')->get(), $generation->agents()->pluck('id')->all(), 6, 'XAUUSD', 'H1');
+        $this->assertCount(1, $jobs); $cheap->update(['lifecycle_status' => 'queued']);
+        $jobs[0]->handle(app(LabAgentEvaluationService::class), app(\App\Services\FrozenControlScreeningAdmissionService::class), app(\App\Services\LearningTechnicalCircuitBreakerService::class));
+        $runs = LabEvaluationRun::where('lab_generation_id', $generation->id)->get();
+        $facts = ['synthetic_only' => true, 'products' => count($productions), 'runs' => $runs->map(fn ($run) => [
+            'status' => $run->status, 'reason' => data_get($run->metadata, 'reason_code'), 'error' => $run->error_message,
+            'evidence' => data_get($run->metadata, 'evidence_quality')])->all(),
+            'pool' => data_get($productions, '0.native_reachability_depth_audit_receipt.pool')];
+        $diagnostic = app(LabImmutableEvidenceService::class)->recordArtifact(null, 'native_depth_test_terminal_diagnostic', $facts,
+            ['synthetic_only' => true, 'promotion_evidence' => false], $cheap);
+        $why = json_encode([...$facts, 'diagnostic_path' => $diagnostic->storage_path]);
+        $this->assertCount(1, $productions, $why); $this->assertSame('completed', $runs[0]->status, $why);
+        $phase = $owner->inspectContinuation($generation->fresh());
+        if ($deferred) {
+            $this->assertSame('deeper_ready', $phase['status'], $why);
+            $this->assertDatabaseCount('agent_learning_settlements', 0);
+            $this->assertSame($phase, $owner->inspectContinuation($generation->fresh()));
+            // Actual original cheap receipt/checkpoint, not a hand-built phase
+            // dictionary, wakes the existing arbiter's next publication lease.
+            $arbiter = app(\App\Services\ResearchLoopArbiterService::class);
+            $select = new \ReflectionMethod($arbiter, 'nativeDepthContinuationDecision');
+            $decision = $select->invoke($arbiter, $generation->fresh(), ['id' => $generation->id], 'XAUUSD', 'H1', false);
+            $this->assertSame('RESUME_NATIVE_DEPTH_AUDIT', $decision['action']);
+            $this->assertSame($phase, $decision['state_snapshot']['native_depth_continuation']);
+            $this->assertSame('duplicate_suppressed', $select->invoke($arbiter, $generation->fresh(), ['id' => $generation->id], 'XAUUSD', 'H1', false)['status']);
+            $this->assertSame($generation->id, $decision['arguments']['--expected-generation-id']);
+            \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\RunScheduledArtisanCommandJob::class, 1);
+            // The outer routing fixture supplies no global market readiness;
+            // the real depth owner independently checks every physical byte,
+            // native source/vector, original programme and signed view.
+            $this->mock(\App\Services\GenerationSnapshotAdmissionService::class,
+                fn ($mock) => $mock->shouldReceive('inspect')->andReturn(['allowed' => true, 'reasons' => []]));
+            $this->mock(\App\Services\LabAgentPreflightService::class,
+                fn ($mock) => $mock->shouldReceive('inspect')->andReturn(['passed' => true, 'errors' => []]));
+            $exit = \Illuminate\Support\Facades\Artisan::call($decision['command'], $decision['arguments']);
+            $output = \Illuminate\Support\Facades\Artisan::output();
+            $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()['trading:dispatch-lab'];
+            $privateDiagnostic = (new \ReflectionProperty($command, 'nativeDepthFailureDiagnostic'))->getValue($command);
+            $this->assertSame(0, $exit, $output."\n".json_encode(['private_sanitized_diagnostic' => $privateDiagnostic]));
+            $markers = array_values(array_filter(explode("\n", trim($output)), fn ($line) => str_starts_with(trim($line), '{')));
+            $this->assertCount(1, $markers, $output); $marker = json_decode($markers[0], true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('native_depth_audit_dispatch_v1', $marker['protocol']); $this->assertSame('admitted', $marker['status']);
+            $this->assertSame($phase['dispatch_agent_ids'], $marker['agent_ids']);
+            $batches = \Illuminate\Support\Facades\Bus::batched(fn ($batch) => count($batch->jobs) === 1);
+            $this->assertCount(1, $batches); $deeperJob = $batches->first()->jobs[0];
+            $this->assertSame($phase['dispatch_agent_ids'], $deeperJob->labAgentIds);
+            $this->assertSame('deeper_in_flight', $owner->inspectContinuation($generation->fresh())['status']);
+            $deeperJob->handle(app(LabAgentEvaluationService::class), app(\App\Services\FrozenControlScreeningAdmissionService::class), app(\App\Services\LearningTechnicalCircuitBreakerService::class));
+            $runs = LabEvaluationRun::where('lab_generation_id', $generation->id)->get();
+            $this->assertCount(2, $productions); $this->assertCount(2, $runs);
+            foreach ($runs as $run) $this->assertSame('completed', $run->status, json_encode([$run->metadata, $run->error_message]));
+            $this->assertSame('terminal', $owner->inspectContinuation($generation->fresh())['status']);
+            $this->assertDatabaseCount('agent_learning_settlements', 6);
+            $this->assertSame(4, $generation->agents()->where('lifecycle_status', 'completed')->count());
+            $publication = \App\Models\ResearchExperimentReceipt::where('source_type', $owner::class)->firstOrFail();
+            $this->assertSame('INCONCLUSIVE', $publication->classification);
+            $this->assertSame('measured_native_reachability_depth_audit', data_get($publication->payload, 'evidence.outcome.status'));
+            $this->assertSame(0, data_get($publication->payload, 'evidence.outcome.false_negative_count'));
+            $assessment = app(\App\Services\MultiModalLearningPortfolioService::class)->assessNativeReachabilityDepthAudit($publication->receipt_key);
+            $this->assertSame('measured_native_stage', $assessment['status']);
+            $this->assertSame(0, $assessment['native_witness']['outcome']['false_negative_count']);
+            $this->assertFalse($assessment['native_witness']['independent_evidence']);
+            $futureEvidence = \Mockery::mock(LabImmutableEvidenceService::class)->makePartial();
+            $futureEvidence->shouldReceive('codeHash')->andReturn(str_repeat('f', 64));
+            $historical = new \App\Services\NativeReachabilityDepthAuditService($futureEvidence, app(SpecialistCouncilLifecycleService::class), app(ResearchPaperEpochContractService::class));
+            $oldWitness = $historical->publishedWitness($publication);
+            $this->assertSame('original_archived_release', $oldWitness['source_basis']);
+            $this->assertSame(0, $oldWitness['outcome']['false_negative_count']);
+            $this->assertFalse($oldWitness['independent_evidence']);
+            $this->assertTrue(app(\App\Services\SettlementWatermarkService::class)->reconcile('XAUUSD', 'H1', $generation->fresh())['generation_close_allowed']);
+            $this->assertDatabaseCount('research_experiment_work_items', 0);
+            $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+            $this->assertDatabaseCount('candidate_gate_decisions', 0);
+            return;
+        }
+        $this->assertSame('terminal', $phase['status'], $why);
+        $this->assertDatabaseCount('agent_learning_settlements', 6);
+        $this->assertSame($phase, $owner->inspectContinuation($generation->fresh()));
+        $decision = (new \ReflectionMethod(\App\Services\ResearchLoopArbiterService::class, 'nativeDepthContinuationDecision'))->invoke(
+            app(\App\Services\ResearchLoopArbiterService::class), $generation->fresh(), null, 'XAUUSD', 'H1', true);
+        $this->assertNull($decision, 'An empty original rejection pool cannot wake deeper dispatch.');
+        $this->assertSame([], $owner->dispatchAgentIds($generation->fresh()));
+        $this->assertSame(5, $generation->agents()->where('lifecycle_status', 'completed')->count());
+        $this->assertSame(6, \App\Models\AgentLearningEpisode::where('status', 'settled')->count());
+        $this->assertSame(0.0, (float) \App\Models\AgentLearningSettlement::sum('selection_reward'));
+        $publication = \App\Models\ResearchExperimentReceipt::where('source_type', $owner::class)->firstOrFail();
+        $this->assertSame('INCONCLUSIVE', $publication->classification);
+        $this->assertSame('NO_POWERED_CHEAP_REJECTION_SAMPLE', data_get($publication->payload, 'evidence.outcome.reason'));
+        $this->assertSame('blocked_dependency', app(\App\Services\MultiModalLearningPortfolioService::class)->assessNativeReachabilityDepthAudit($publication->receipt_key)['status']);
+        $this->assertTrue(app(\App\Services\SettlementWatermarkService::class)->reconcile('XAUUSD', 'H1', $generation->fresh())['generation_close_allowed']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+        $this->assertFalse($phase['promotion_evidence']);
+    }
+
+    public static function originalDepthNativeCadences(): array { return ['empty_pool' => [false], 'deferred_original' => [true]]; }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('originalDepthTechnicalResponses')]
+    public function test_original_depth_technical_cheap_closes_unused_deeper_and_six_episodes_without_fanout(?array $response): void
+    {
+        Queue::fake(); Storage::fake('local'); config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request] = $this->originalDepthFixture();
+        $receipt = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $cheap = LabAgent::findOrFail($receipt['dispatch_agent_ids'][0]);
+        $generation->update(['status' => 'screening']);
+        $cheap->update(['lifecycle_status' => 'evaluation_error']);
+        $evidence = app(LabImmutableEvidenceService::class); $owner = app(\App\Services\NativeReachabilityDepthAuditService::class);
+        $run = $evidence->beginRun($cheap, 'screening', 'incremental', ['source' => 'conditional_transport_fault']);
+        $evidence->attachRequest($run, $owner->bindRequest($receipt['base_request'], [$cheap->modelVersion]));
+        $evidence->finishRun($run, 'technical_error', $response, [], ['reason_code' => 'CONDITIONAL_TRANSPORT_FAULT']);
+        $this->assertSame('recorded', $owner->reconcileGeneration($generation->fresh())['status']);
+        $this->assertSame('recorded', $owner->reconcileGeneration($generation->fresh())['status']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1);
+        $this->assertDatabaseCount('agent_learning_settlements', 6);
+        $this->assertSame(6, \App\Models\AgentLearningEpisode::where('status', 'settled')->count());
+        $this->assertSame(5, $generation->agents()->where('lifecycle_status', 'completed')->count());
+        $this->assertSame('technical_quarantine', $cheap->fresh()->lifecycle_status);
+        $this->assertDatabaseCount('research_experiment_receipts', 1);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+        $this->assertSame(0.0, (float) \App\Models\AgentLearningSettlement::sum('selection_reward'));
+        $publication = \App\Models\ResearchExperimentReceipt::first();
+        $this->assertSame('TECHNICAL_QUARANTINE', $publication->classification);
+        $this->assertSame('blocked_dependency', app(\App\Services\MultiModalLearningPortfolioService::class)->assessNativeReachabilityDepthAudit($publication->receipt_key)['status']);
+        $this->assertTrue(app(\App\Services\LabGenerationTerminalBoundaryService::class)->closeIfTerminal($generation->fresh())['closed']);
+    }
+
+    public static function originalDepthTechnicalResponses(): array
+    {
+        return ['unavailable' => [null], 'present_invalid' => [['data_quality' => ['decision_trace' => ['complete' => false]]]]];
+    }
+
+    public function test_original_depth_request_projection_and_legacy_inline_registry_cannot_authorize_a_phase(): void
+    {
+        Queue::fake(); Storage::fake('local'); config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request] = $this->originalDepthFixture();
+        $receipt = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $cheap = LabAgent::findOrFail($receipt['dispatch_agent_ids'][0]);
+        $owner = app(\App\Services\NativeReachabilityDepthAuditService::class); $evidence = app(LabImmutableEvidenceService::class);
+        $run = $evidence->beginRun($cheap, 'screening', 'incremental');
+        $evidence->attachRequest($run, $owner->bindRequest($receipt['base_request'], [$cheap->modelVersion]));
+        $meta = $run->fresh()->request_meta; $meta['payload']['native_reachability_depth_audit_contract']['execution_view']['evaluated_rows'] = 15000;
+        $run->update(['request_meta' => $meta]);
+        try { $owner->originalTransportRequest($run->fresh()); $this->fail('Mutable request projection changed original scope.'); }
+        catch (\LogicException $error) { $this->assertSame('NATIVE_DEPTH_AUDIT_ORIGINAL_REQUEST_PROJECTION_DRIFT', $error->getMessage()); }
+        $artifact = \App\Models\LabEvidenceArtifact::where('artifact_type', $owner::ARTIFACT)->firstOrFail();
+        $payload = $evidence->readArtifactPayload($artifact);
+        $artifact->update(['storage_path' => null, 'payload' => $payload]);
+        try { $owner->inspectContinuation($generation->fresh()); $this->fail('Legacy inline data became an original phase owner.'); }
+        catch (\LogicException $error) { $this->assertSame('NATIVE_DEPTH_AUDIT_MODERN_ORIGINAL_ARTIFACT_BYTES_REQUIRED', $error->getMessage()); }
+        $this->assertDatabaseCount('agent_learning_settlements', 0); $this->assertDatabaseCount('research_experiment_receipts', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0); Queue::assertNothingPushed();
+    }
+
+    public function test_original_depth_archived_technical_witness_survives_source_change_without_phase_authority(): void
+    {
+        Queue::fake(); Storage::fake('local'); config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request] = $this->originalDepthFixture();
+        $prepared = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $cheap = LabAgent::findOrFail($prepared['dispatch_agent_ids'][0]);
+        $owner = app(\App\Services\NativeReachabilityDepthAuditService::class); $evidence = app(LabImmutableEvidenceService::class);
+        $source = $evidence->codeHash(); $python = app(\App\Services\ResearchReleaseSealService::class)->pythonHash();
+        // Conditional archive-reader fixture, not a retrospectively exported
+        // source proof or a native/market product. Existing archive ZIP byte
+        // verification is covered by ResearchSourceArtifactTest.
+        $reference = ['protocol' => 'research_source_artifact_reference_v1', 'artifact_hash' => str_repeat('a', 64),
+            'archive_sha256' => str_repeat('b', 64), 'source_hash' => $source, 'python_source_hash' => $python,
+            'archive_path' => 'research-source-artifacts/'.str_repeat('a', 64).'.zip'];
+        $release = ['protocol' => \App\Services\ResearchReleaseSealService::PROTOCOL, 'source_hash' => $source,
+            'python_source_hash' => $python, 'dataset_hash' => $prepared['base_request']['replay_dataset_hash'], 'source_artifact' => $reference];
+        $release['release_hash'] = app(ExecutionContractService::class)->hashParameters($release);
+        $base = $owner->bindRequest($prepared['base_request'], [$cheap->modelVersion]); $base['research_release'] = $release;
+        $run = $evidence->beginRun($cheap, 'screening', 'incremental'); $evidence->attachRequest($run, $base);
+        $evidence->finishRun($run, 'technical_error', null, [], ['reason_code' => 'CONDITIONAL_TRANSPORT_FAULT']);
+        $owner->settleOriginalPhase($run->fresh());
+        $publication = \App\Models\ResearchExperimentReceipt::where('source_type', $owner::class)->firstOrFail();
+        $archives = \Mockery::mock(\App\Services\ResearchReleaseSealService::class)->makePartial();
+        $archives->shouldReceive('verifySourceArtifact')->once()->with($reference, false)->andReturn(['status' => 'verified',
+            'artifact_hash' => $reference['artifact_hash'], 'manifest' => ['source_identity' => ['source_hash' => $source, 'python_source_hash' => $python], 'files' => []]]);
+        $this->app->instance(\App\Services\ResearchReleaseSealService::class, $archives);
+        $futureEvidence = \Mockery::mock(LabImmutableEvidenceService::class)->makePartial(); $futureEvidence->shouldReceive('codeHash')->andReturn(str_repeat('f', 64));
+        $this->app->instance(LabImmutableEvidenceService::class, $futureEvidence);
+        $historical = new \App\Services\NativeReachabilityDepthAuditService($futureEvidence, app(SpecialistCouncilLifecycleService::class), app(ResearchPaperEpochContractService::class));
+        $witness = $historical->publishedWitness($publication);
+        $this->assertSame('original_archived_release', $witness['source_basis']); $this->assertSame('technical', $witness['status']);
+        $this->assertFalse($witness['economic_authority']); $this->assertFalse($witness['independent_evidence']);
+        try { $historical->inspectContinuation($generation->fresh()); $this->fail('An archived source admitted a new current phase.'); }
+        catch (\LogicException $error) { $this->assertSame('NATIVE_DEPTH_AUDIT_ORIGINAL_SOURCE_OR_GENERATION_DRIFT', $error->getMessage()); }
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); $this->assertDatabaseCount('agent_learning_settlements', 6);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0); $this->assertDatabaseCount('research_experiment_work_items', 0);
+    }
+
+    public function test_original_prepared_depth_cheap_cli_publishes_one_job_without_replay(): void
+    {
+        Queue::fake(); \Illuminate\Support\Facades\Bus::fake(); Storage::fake('local');
+        config()->set('services.internal_api.token', str_repeat('x', 32));
+        [$generation, $request, , $bundle] = $this->originalDepthFixture(nativeCadence: true);
+        $prepared = app(SpecialistCouncilPreparationService::class)->prepare($generation, $request);
+        $datasets = \Mockery::mock(LabDatasetExportService::class)->makePartial();
+        $datasets->shouldReceive('export')->andReturn($bundle['entry_dataset_path']);
+        $datasets->shouldReceive('ensureGenerationSnapshot')->andReturn(['path' => '/fixture/paper-never-read.csv', 'sha256' => str_repeat('f', 64)]);
+        $datasets->shouldReceive('ensureGenerationFoundationSnapshot')->andReturn(['path' => '/fixture/foundation-never-read.csv', 'sha256' => str_repeat('a', 64)]);
+        $datasets->shouldReceive('assertGenerationDataPartition')->andReturn([]); $this->app->instance(LabDatasetExportService::class, $datasets);
+        $queue = \Mockery::mock(\App\Services\LabQueueJobInspector::class)->makePartial();
+        $queue->shouldReceive('generationQueueBacklog')->andReturn(['available' => true, 'total' => 0, 'rows' => []]);
+        $queue->shouldReceive('queueSnapshot')->andReturn(['available' => true, 'total' => 0, 'rows' => []]);
+        $queue->shouldReceive('hasAgentJob')->andReturn(false); $this->app->instance(\App\Services\LabQueueJobInspector::class, $queue);
+        $this->mock(\App\Services\GenerationSnapshotAdmissionService::class, fn ($mock) => $mock->shouldReceive('inspect')->andReturn(['allowed' => true, 'reasons' => []]));
+        $this->mock(\App\Services\LabAgentPreflightService::class, fn ($mock) => $mock->shouldReceive('inspect')->andReturn(['passed' => true, 'errors' => []]));
+        Http::preventStrayRequests(); Http::fake();
+        $exit = \Illuminate\Support\Facades\Artisan::call('trading:dispatch-lab', ['symbol' => 'XAUUSD', '--timeframe' => 'H1',
+            '--resume-draft-agents' => true, '--expected-generation-id' => $generation->id]);
+        $output = \Illuminate\Support\Facades\Artisan::output();
+        $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()['trading:dispatch-lab'];
+        $privateDiagnostic = (new \ReflectionProperty($command, 'nativeDepthFailureDiagnostic'))->getValue($command);
+        $this->assertSame(0, $exit, $output."\n".json_encode(['private_sanitized_diagnostic' => $privateDiagnostic]));
+        $markers = array_values(array_filter(explode("\n", trim($output)), fn ($line) => str_starts_with(trim($line), '{')));
+        $this->assertCount(1, $markers, $output); $marker = json_decode($markers[0], true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('admitted', $marker['status']); $this->assertSame([$prepared['dispatch_agent_ids'][0]], $marker['agent_ids']);
+        $batches = \Illuminate\Support\Facades\Bus::batched(fn ($batch) => count($batch->jobs) === 1);
+        $this->assertCount(1, $batches); $this->assertSame($marker['agent_ids'], $batches->first()->jobs[0]->labAgentIds);
+        $this->assertSame(5, $generation->agents()->where('lifecycle_status', 'draft')->count());
+        $this->assertDatabaseCount('lab_evaluation_runs', 0); $this->assertDatabaseCount('agent_learning_settlements', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0); Http::assertNothingSent();
+    }
+
+    private function originalDepthFixture(?array $declaration = null, bool $nativeCadence = false): array
+    {
+        $declaration ??= $this->depthDeclaration();
+        [$generation, $ordinary, $models] = $this->fixture(true, false, $declaration);
+        [, $bundle, $probe] = $this->syntheticOriginalStudyBundle(true);
+        $mtf = \Mockery::mock(MultiTimeframeSnapshotService::class)->makePartial();
+        $mtf->shouldReceive('inspectAndRestoreDiscoveryBundle')->andReturn(['readiness' => ['allowed' => true], 'bundle' => $bundle]);
+        $this->app->instance(MultiTimeframeSnapshotService::class, $mtf);
+        $this->app->instance(LabDatasetExportService::class, \Mockery::mock(LabDatasetExportService::class)->makePartial());
+        $request = array_intersect_key($ordinary, array_flip(['protocol', 'manifest', 'creator_id', 'evaluator_id', 'research_question']));
+        if ($nativeCadence) foreach ($request['manifest']['members'] as &$member) {
+            // Original programme declaration, before assignment/preparation or
+            // any cheap outcome. Native default parameters remain pristine.
+            $member['horizon']['decision_interval_seconds'] = match ($member['role']) {
+                'scalp' => 300, 'hour' => 3600, 'day' => 14400, 'swing' => 28800,
+            };
+        }
+        unset($member);
+        $request['research_purpose'] = \App\Services\NativeReachabilityDepthAuditService::PURPOSE;
+        $request['discovery_bundle_manifest'] = $bundle['manifest'];
+        $request['depth_audit_spec'] = ['declaration' => $declaration, 'prospective_probe_window' => $probe];
+        $mtf->shouldReceive('restoreAgentOwnedConfirmationValidationBundle')->with($bundle['manifest'], true)->andReturn($bundle);
+        return [$generation, $request, $models, $bundle];
+    }
+
+    private function depthDeclaration(): array
+    {
+        return ['protocol' => 'native_reachability_depth_declaration_v1', 'criterion' => 'instrument_gate_reached',
+            'minimum_observed_opportunities' => 1, 'contexts' => array_fill_keys(['scalp', 'hour', 'day', 'swing'],
+                ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'new_york', 'venue_phase' => 'comex_active', 'direction' => 'BUY']),
+            'cheap_evaluated_rows' => 32, 'deeper_evaluated_rows' => 96, 'sample_cap' => 2, 'seed' => 'original-synthetic-depth', 'initial_capital' => 10000];
+    }
+
+    private function syntheticOriginalStudyBundle(bool $depth = false): array
     {
         // The ordinary immutable replay-use owner permits only canonical
         // frozen dataset roots. Use a unique isolated conditional-test root;
@@ -1147,7 +1510,9 @@ PY;
         $start = CarbonImmutable::parse('2025-01-06T02:00:00Z'); $rows = [];
         // Prespecified sparse synthetic opportunities: a quiescent input
         // followed by a bounded active segment. No strategy/signal is patched.
-        $priceAt = static fn ($index): float => $index < 14000 ? 2000.0 : 2000.0 + 10 * sin(($index - 14000) / 12) + ($index - 14000) * .025;
+        $priceAt = $depth
+            ? static fn ($index): float => $index > 1024 ? 2000.0 : 2000.0 + 10 * sin($index / 12) + $index * .025
+            : static fn ($index): float => $index < 14000 ? 2000.0 : 2000.0 + 10 * sin(($index - 14000) / 12) + ($index - 14000) * .025;
         for ($i = 0; $i < 15512; $i++) {
             $time = $start->addMinutes(5 * $i); $price = $priceAt($i);
             $rows[] = ['time' => $time->toIso8601String(), 'open' => $price, 'high' => $price + .5, 'low' => $price - .5,
@@ -1365,7 +1730,7 @@ PY;
         $this->assertDatabaseCount('paper_authority_admissions', 0);
     }
 
-    private function fixture(bool $nativeConstructor = false, bool $spreadStudy = false): array
+    private function fixture(bool $nativeConstructor = false, bool $spreadStudy = false, ?array $depthDeclaration = null): array
     {
         if ($nativeConstructor) {
             config()->set('services.xauusd_organism.historical_research_until_champion', true);
@@ -1388,6 +1753,10 @@ PY;
                 $intent['study_context_declaration'] = ['specialist_id' => 'day', 'exact_context' => ['regime' => 'trend_up',
                     'volatility' => 'normal', 'session' => 'london', 'venue_phase' => 'london_interfix', 'direction' => 'BUY'],
                     'spread_context_predicate' => 'normal', 'liquidity_atr_binding' => 'closed_m5_management_atr_v1'];
+            }
+            if ($depthDeclaration !== null) {
+                $intent['research_purpose'] = \App\Services\NativeReachabilityDepthAuditService::PURPOSE;
+                $intent['depth_audit_declaration'] = $depthDeclaration;
             }
             $population = app(LabPopulationService::class);
             $generation = $population->build('XAUUSD', 'historical_research', false, 'H1', [], false, false,

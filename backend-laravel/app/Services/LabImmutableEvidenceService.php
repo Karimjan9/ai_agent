@@ -586,6 +586,7 @@ class LabImmutableEvidenceService
             if ($native === null && $declared === null && $signed === null && ! isset($producer['scope_owner'])) return null;
             $expectedScope = null;
             $sourceRows = null;
+            $executionInputRows = null;
             if ($declared !== null || $signed !== null) {
                 if (! is_array($declared) || ! is_array($signed) || ($request['evaluation_mode'] ?? null) !== 'full'
                     || ($signed['protocol'] ?? null) !== 'authorized_original_council_arm_v1'
@@ -620,12 +621,29 @@ class LabImmutableEvidenceService
                 if ($sourceRows !== ($native['source_rows'] ?? null)) throw new RuntimeException('NATIVE_SOURCE_ROW_DRIFT');
                 $probe = data_get($request, 'policy_context.prospective_probe_window');
                 $policy = is_array($probe) ? $probe : data_get($request, 'policy_context.full_replay_runtime_policy');
-                if (is_array($probe) && (($probe['loaded_rows'] ?? null) !== $sourceRows
+                $depthReceipt = null;
+                $depthRequested = array_key_exists(NativeReachabilityDepthAuditService::FIELD, $request);
+                foreach ((array) ($request['strategies'] ?? []) as $candidate) {
+                    if (is_array($candidate) && (int) ($candidate['lab_agent_id'] ?? 0) === (int) $run->lab_agent_id
+                        && array_key_exists(NativeReachabilityDepthAuditService::FIELD, $candidate)) $depthRequested = true;
+                }
+                if ($depthRequested) {
+                    // Only the original six-slot diagnostic registry can own
+                    // an explicit view. A copied response flag cannot shorten
+                    // ordinary/full native evidence or its physical exposure.
+                    $model = \App\Models\ModelVersion::findOrFail($run->model_version_id);
+                    $depthReceipt = app(NativeReachabilityDepthAuditService::class)->attestResult($model, $run, $response);
+                    if (! is_array($depthReceipt) || ($request['evaluation_mode'] ?? null) !== 'incremental'
+                        || ($depthReceipt['physical_source_rows'] ?? null) !== $sourceRows) throw new RuntimeException('NATIVE_DEPTH_ORIGINAL_VIEW_REQUIRED');
+                    $executionInputRows = $depthReceipt['execution_input_rows'];
+                    $policy = $depthReceipt['execution_view'];
+                }
+                if ($depthReceipt === null && is_array($probe) && (($probe['loaded_rows'] ?? null) !== $sourceRows
                     || ($probe['warmup_rows'] ?? null) !== ($expectedScope['warmup_rows'] ?? null)
                     || ($probe['evaluated_rows'] ?? null) !== ($expectedScope['rows'] ?? null))) {
                     throw new RuntimeException('NATIVE_PROBE_CLOCK_DRIFT');
                 }
-                if (is_array($probe)) {
+                if ($depthReceipt === null && is_array($probe)) {
                     $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800,
                         'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$request['timeframe'] ?? ''] ?? null;
                     if ($seconds === null || ! CarbonImmutable::parse($expectedScope['start_inclusive'])->equalTo(CarbonImmutable::parse($probe['evaluated_start']))
@@ -655,7 +673,7 @@ class LabImmutableEvidenceService
                     || ($identity['warmup_rows'] ?? null) !== ($expectedScope['warmup_rows'] ?? null)
                     || ($identity['source_rows'] ?? null) !== $sourceRows
                     || ($identity['first_candle_index'] ?? null) !== ($expectedScope['warmup_rows'] ?? 0) + 1
-                    || ($identity['last_candle_index'] ?? null) !== $sourceRows - 1
+                    || ($identity['last_candle_index'] ?? null) !== ($executionInputRows ?? $sourceRows) - 1
                     || ($identity['scope_policy_hash'] ?? null) !== ($expectedScope['policy_hash'] ?? null)) {
                     throw new RuntimeException('NATIVE_TRACE_RECEIPT_DRIFT');
                 }
@@ -664,7 +682,7 @@ class LabImmutableEvidenceService
             if (! is_array($expectedScope) || ! is_int($sourceRows) || $sourceRows < 2
                 || ! is_int($expectedScope['rows'] ?? null) || $expectedScope['rows'] < 2
                 || ! is_int($expectedScope['warmup_rows'] ?? null) || $expectedScope['warmup_rows'] < 0
-                || $expectedScope['rows'] + $expectedScope['warmup_rows'] !== $sourceRows
+                || $expectedScope['rows'] + $expectedScope['warmup_rows'] !== ($executionInputRows ?? $sourceRows)
                 || ($expectedScope['decision_rows'] ?? null) !== $expectedScope['rows'] - 1) {
                 throw new RuntimeException('OWNED_SCOPE_ROW_BUDGET_INVALID');
             }

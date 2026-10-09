@@ -589,6 +589,83 @@ PY;
         return [$version, $carrier, $plan, $request];
     }
 
+    public function test_original_input_intervals_include_mtf_warmup_and_a_conservative_holding_fence_without_writes(): void
+    {
+        $version = $this->draft();
+        $directory = storage_path('app/lab-datasets/intervals-'.\Illuminate\Support\Str::uuid());
+        mkdir($directory, 0777, true);
+        $paths = ['M5' => $directory.'/entry.csv', 'H4' => $directory.'/context.csv'];
+        try {
+            file_put_contents($paths['M5'], "time,open,high,low,close\n2025-01-06T00:00:00Z,1,2,1,2\n2025-01-06T00:05:00Z,1,2,1,2\n");
+            file_put_contents($paths['H4'], "time,open,high,low,close\n2025-01-03T00:00:00Z,1,2,1,2\n");
+            $hashes = array_map(fn ($path) => hash_file('sha256', $path), $paths);
+            $request = ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'replay_dataset_hash' => str_repeat('d', 64),
+                'dataset_path' => $paths['M5'], 'mtf_dataset_paths' => $paths,
+                'mtf_snapshot_manifest' => ['streams' => ['M5' => ['sha256' => $hashes['M5']], 'H4' => ['sha256' => $hashes['H4']]]]];
+            $body = ['protocol' => 'specialist_council_receipt_v1', 'dataset_hash' => str_repeat('d', 64),
+                'source_attestation' => ['actual_source_sha256' => $hashes['M5'], 'source_rows' => 2]];
+            $receipt = [...$body, 'receipt_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($body)];
+            $service = app(SpecialistCouncilDataUseService::class);
+            $inventory = $service->originalReplayIntervals($version, $request, $receipt);
+            $this->assertCount(2, $inventory['intervals']);
+            $this->assertSame(['M5', 'H4'], array_column($inventory['intervals'], 'stream'));
+            $this->assertSame([2, 1], array_column($inventory['intervals'], 'event_count'));
+            $this->assertSame('2025-01-03T00:00:00+00:00', $inventory['intervals'][1]['start_inclusive']);
+            $this->assertSame('2025-01-03T04:00:00+00:00', $inventory['intervals'][1]['observed_end_exclusive']);
+            $this->assertSame('2025-01-03T05:00:00+00:00', $inventory['intervals'][1]['end_exclusive']);
+            $this->assertSame(3600, $inventory['intervals'][1]['holding_fence_seconds']);
+            $this->assertFalse($inventory['data_writes']);
+            $this->assertFalse($inventory['independent_evidence']);
+            $this->assertSame(0, DB::table('specialist_council_data_uses')->count());
+            $this->assertSame($inventory, $service->originalReplayIntervals($version, $request, $receipt));
+            file_put_contents($paths['H4'], "time,open,high,low,close\n2025-01-04T00:00:00Z,1,2,1,2\n");
+            $this->expectExceptionMessage('ORIGINAL_REPLAY_DATA_SOURCE_HASH_MISMATCH');
+            $service->originalReplayIntervals($version, $request, $receipt);
+        } finally {
+            foreach ($paths as $path) if (is_file($path)) unlink($path);
+            rmdir($directory);
+        }
+    }
+
+    public function test_original_interval_inventory_refuses_wrong_physical_loaded_row_count(): void
+    {
+        $version = $this->draft();
+        $directory = storage_path('app/lab-datasets/intervals-'.\Illuminate\Support\Str::uuid());
+        mkdir($directory, 0777, true); $path = $directory.'/entry.csv';
+        try {
+            file_put_contents($path, "time,open,high,low,close\n2025-01-06T00:00:00Z,1,2,1,2\n");
+            $sha = hash_file('sha256', $path);
+            $body = ['protocol' => 'specialist_council_receipt_v1', 'dataset_hash' => $sha,
+                'source_attestation' => ['actual_source_sha256' => $sha, 'source_rows' => 2]];
+            $receipt = [...$body, 'receipt_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($body)];
+            $this->expectExceptionMessage('REPLAY_USE_LOADED_SOURCE_ROW_COUNT_MISMATCH');
+            app(SpecialistCouncilDataUseService::class)->originalReplayIntervals($version,
+                ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'replay_dataset_hash' => $sha, 'dataset_path' => $path], $receipt);
+        } finally {
+            if (is_file($path)) unlink($path);
+            rmdir($directory);
+        }
+    }
+
+    public function test_original_interval_inventory_never_silently_omits_inline_or_auxiliary_exposure(): void
+    {
+        $version = $this->draft();
+        $body = ['protocol' => 'specialist_council_receipt_v1', 'dataset_hash' => str_repeat('d', 64)];
+        $receipt = [...$body, 'receipt_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($body)];
+        foreach (['candles' => [['time' => '2025-01-06T00:00:00Z']], 'foundation_dataset_path' => '/untracked.csv',
+            'related_mtf_dataset_paths' => ['H1' => '/untracked.csv'], 'regime_candles' => [['time' => '2025-01-06T00:00:00Z']]] as $key => $value) {
+            try {
+                app(SpecialistCouncilDataUseService::class)->originalReplayIntervals($version,
+                    ['replay_dataset_hash' => str_repeat('d', 64), $key => $value], $receipt);
+                $this->fail('An untracked source was accepted.');
+            } catch (\LogicException $error) {
+                $this->assertSame($key === 'candles' ? 'ORIGINAL_NATIVE_EXPOSURE_REQUIRES_HASHED_CSV'
+                    : 'ORIGINAL_NATIVE_EXPOSURE_AUXILIARY_SOURCE_UNSUPPORTED:'.$key, $error->getMessage());
+            }
+        }
+        $this->assertSame(0, DB::table('specialist_council_data_uses')->count());
+    }
+
     private function model(string $name): ModelVersion
     {
         return ModelVersion::create(['name' => $name, 'strategy' => 'ema_rsi_v1', 'version' => 'v1-'.$name,

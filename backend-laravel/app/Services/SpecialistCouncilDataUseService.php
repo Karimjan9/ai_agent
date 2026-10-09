@@ -120,6 +120,56 @@ class SpecialistCouncilDataUseService
                 || ! isset($plan['arms'][$binding['arm_key'] ?? ''])) throw new LogicException('REPLAY_USE_PREREGISTRATION_MISSING');
             $use = $plan['purpose'] === 'independent' ? 'evaluation' : 'selection';
         }
+        $observations = $this->replayObservations($version, $request, $runId, $receipt);
+        return $this->recordUse($version, $observations, $use, 'replay:'.$runId, now()->utc()->toIso8601String(), $runId);
+    }
+
+    /**
+     * Read the same verified original input bytes as recordReplayUse, including every
+     * MTF/warmup row. The conservative holding fence is a potential influence bound,
+     * not a claim that an outcome was observed or that a window was untouched.
+     * Callers must independently verify the persisted original run and recorded use.
+     */
+    public function originalReplayIntervals(SpecialistCouncilVersion $version, array $request, array $receipt): array
+    {
+        if (($receipt['protocol'] ?? '') !== 'specialist_council_receipt_v1'
+            || ($receipt['dataset_hash'] ?? '') !== ($request['replay_dataset_hash'] ?? '')
+            || ! app(SpecialistCouncilContractService::class)->manifestValid($version->manifest)) {
+            throw new LogicException('REPLAY_USE_CONSUMPTION_RECEIPT_INVALID');
+        }
+        app(SpecialistCouncilLifecycleService::class)->assertReceiptSeal($receipt);
+        if (! empty($request['candles'])) throw new LogicException('ORIGINAL_NATIVE_EXPOSURE_REQUIRES_HASHED_CSV');
+        // This native inventory owns the canonical four streams and optional
+        // hash-bound H1 regime path. Never silently omit an auxiliary source.
+        foreach (['foundation_dataset_path', 'related_mtf_dataset_paths', 'related_mtf_streams', 'regime_candles'] as $field) {
+            $value = $request[$field] ?? null;
+            if (! empty(is_object($value) ? (array) $value : $value)) throw new LogicException('ORIGINAL_NATIVE_EXPOSURE_AUXILIARY_SOURCE_UNSUPPORTED:'.$field);
+        }
+        $holding = max(array_map(fn (array $member): int => (int) data_get($member, 'horizon.max_holding_seconds', 0), $version->manifest['members']));
+        $intervals = [];
+        foreach ($this->replayObservations($version, $request, 'original-interval-inspection', $receipt) as $event) {
+            $intervals[] = [
+                'symbol' => $event['symbol'], 'start_inclusive' => $event['event_start'],
+                'end_exclusive' => CarbonImmutable::parse($event['event_end'])->addSeconds($holding)->toIso8601String(),
+                'observed_end_exclusive' => $event['event_end'],
+                'holding_fence_seconds' => $holding,
+                'source_sha256' => $event['provenance']['source_sha256'] ?? null,
+                'stream' => $event['provenance']['stream'] ?? strtoupper((string) ($request['timeframe'] ?? 'H1')),
+                'event_count' => $event['provenance']['event_count'],
+                'event_identities_hash' => $event['provenance']['event_identities_hash'],
+            ];
+        }
+        $identity = ['protocol' => 'original_native_replay_exposure_intervals_v1',
+            'version_id' => $version->id, 'dataset_hash' => $receipt['dataset_hash'],
+            'receipt_hash' => $receipt['receipt_hash'], 'intervals' => $intervals,
+            'policy' => 'conservative_whole_source_including_warmup_plus_potential_holding',
+            'unsupported_auxiliary_sources_refused' => true,
+            'independent_evidence' => false, 'data_writes' => false];
+        return [...$identity, 'inventory_hash' => $this->epochs->parameterHash($identity)];
+    }
+
+    private function replayObservations(SpecialistCouncilVersion $version, array $request, string $runId, ?array $receipt): array
+    {
         $timeframe = (string) ($request['timeframe'] ?? 'H1');
         $seconds = app(SpecialistCouncilContractService::class)->timeframeSeconds($timeframe);
         $holding = max(array_map(fn (array $member): int => (int) data_get($member, 'horizon.max_holding_seconds', 0), $version->manifest['members']));
@@ -193,7 +243,8 @@ class SpecialistCouncilDataUseService
                 } finally { fclose($handle); }
             }
         }
-        return $this->recordUse($version, $observations, $use, 'replay:'.$runId, now()->utc()->toIso8601String(), $runId);
+        if ($observations === []) throw new LogicException('ORIGINAL_REPLAY_DATA_SOURCE_EMPTY');
+        return $observations;
     }
 
     /** Hash exactly the bytes subsequently parsed; source replacement cannot relabel the event ledger. */

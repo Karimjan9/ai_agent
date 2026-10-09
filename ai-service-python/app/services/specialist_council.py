@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
@@ -276,6 +277,10 @@ def validate_contract(payload: SimpleBacktestRequest) -> dict:
     if payload.native_spread_context_study_contract:
         from app.services.native_spread_context_study import validate_study
         validate_study(payload, validated)
+    if payload.native_reachability_depth_audit_contract or payload.native_standalone_qualification:
+        from app.services.native_reachability_depth_audit import validate_depth_audit, validate_standalone_qualification
+        validate_depth_audit(payload, validated)
+        validate_standalone_qualification(payload, validated)
     return validated
 
 
@@ -360,10 +365,15 @@ def _passport_scope_reason(member: dict, payload: SimpleBacktestRequest, prior: 
 
 
 def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) -> SimpleBacktestResponse:
+    depth_started_cpu = time.process_time() if payload.native_reachability_depth_audit_contract else None
+    depth_started_elapsed = time.perf_counter() if payload.native_reachability_depth_audit_contract else None
     from app.services import backtester as kernel
     from app.services.replay_executed_clock import ReplayExecutedClock
 
     contract = validate_contract(payload)
+    from app.services.native_reachability_depth_audit import validate_depth_audit, validate_standalone_qualification
+    depth_contract = validate_depth_audit(payload, contract)
+    standalone_declaration = validate_standalone_qualification(payload, contract)
     policy = contract["policy"]
     policy_boundary = enforce_policy_boundary(payload)
     frame = kernel._prepare_simple_dataframe(payload, frame)
@@ -383,16 +393,24 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         warmup_rows = max(0, len(frame) - limit)
         selector_policy.update({"selection": "canonical_survival_tail" if limit == 5000 else "canonical_opportunity_tail",
             "maximum_evaluated_rows": limit})
-    # Compile every member over the full immutable stream so indicators retain
-    # warmup. Warmup has no account, intents or P&L, and its last signal cannot
+    # Every member retains the original indicator warmup. A separately signed
+    # diagnostic view can compile the prefix only after full physical inventory
+    # attestation below. Warmup has no account, intents or P&L, and its last signal cannot
     # enter at the first evaluated open (the legacy next-open clock is N-1).
     evaluation_start_index = warmup_rows
+    execution_input_rows = len(frame)
+    if depth_contract is not None:
+        execution_input_rows = warmup_rows + depth_contract['execution_view']['evaluated_rows']
+        selector_policy.update(selection='sealed_native_reachability_prefix', physical_source_rows=len(frame),
+            execution_input_rows=execution_input_rows)
     selection_policy = probe if probe_receipt is not None else (payload.policy_context or {}).get("full_replay_runtime_policy")
+    if depth_contract is not None:
+        selection_policy = depth_contract['execution_view']
     if selection_policy is None and payload.evaluation_mode == "incremental":
         selection_policy = selector_policy
     evaluated_scope = {"start_inclusive": _stamp(frame.iloc[evaluation_start_index]["time"]),
-        "end_exclusive": _stamp(_utc(frame.iloc[-1]["time"]) + pd.Timedelta(minutes=kernel._timeframe_duration_minutes(payload.timeframe))),
-        "rows": len(frame) - warmup_rows, "decision_rows": len(frame) - warmup_rows - 1,
+        "end_exclusive": _stamp(_utc(frame.iloc[execution_input_rows - 1]["time"]) + pd.Timedelta(minutes=kernel._timeframe_duration_minutes(payload.timeframe))),
+        "rows": execution_input_rows - warmup_rows, "decision_rows": execution_input_rows - warmup_rows - 1,
         "warmup_rows": warmup_rows,
         "policy_hash": canonical_hash(selection_policy) if isinstance(selection_policy, dict) else None,
         "selector_policy": selector_policy}
@@ -402,7 +420,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         dataset_hash=payload.replay_dataset_hash,
         execution_hash=execution_contract_metadata(payload)["execution_hash"])
     duration = pd.Timedelta(minutes=kernel._timeframe_duration_minutes(payload.timeframe))
-    executed_clock = ReplayExecutedClock(owner="native_specialist_council_v1", input_rows=len(frame),
+    executed_clock = ReplayExecutedClock(owner="native_specialist_council_v1", input_rows=execution_input_rows,
         evaluation_offset=evaluation_start_index, timeframe=payload.timeframe, duration_seconds=int(duration.total_seconds()),
         dataset_hash=payload.replay_dataset_hash, execution_hash=execution_contract_metadata(payload)["execution_hash"],
         policy=selection_policy, probe=probe)
@@ -429,11 +447,16 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                 dependencies.append("MARKET_DEPTH_EXECUTION_UNAVAILABLE")
             if requirements.get("partial_order_fills"):
                 dependencies.append("PARTIAL_ORDER_FILL_REPLAY_UNAVAILABLE")
+    member_frame = frame.iloc[:execution_input_rows].copy() if depth_contract is not None else frame
     runtimes = {
-        version: [_compile_member(payload, frame, member, version) for member in members]
+        version: [_compile_member(payload, member_frame, member, version) for member in members]
         for version, members in versions
     } if not dependencies else {}
     study = None
+    depth_audit = None
+    if depth_contract is not None:
+        from app.services.native_reachability_depth_audit import NativeReachabilityDepthAudit
+        depth_audit = NativeReachabilityDepthAudit(depth_contract, payload, contract, attestation)
     if payload.native_spread_context_study_contract:
         from app.services.native_spread_context_study import NativeSpreadContextStudy, validate_study
         study = NativeSpreadContextStudy(validate_study(payload, contract), payload, attestation)
@@ -587,7 +610,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         position_ledger.append(ledger)
         event(runtime, timestamp, "execution", "closed", position_id=pos["position_id"], exit_reason=reason, net_pnl=net_pnl)
 
-    for index in range(evaluation_start_index + 1, len(rows)):
+    for index in range(evaluation_start_index + 1, execution_input_rows):
         if study is not None:
             study.current = None
         if dependencies:
@@ -689,6 +712,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         for runtime in active:
             member = runtime.declaration
             prior = runtime.rows[index - 1]
+            if depth_audit is not None:
+                depth_audit.begin(runtime, prior, index - evaluation_start_index, index, timestamp)
             if study is not None:
                 study.begin(runtime, prior, index - evaluation_start_index, timestamp,
                     {'cash': cash, 'reserved_capital': reserved, 'loss_streak': runtime.loss_streak,
@@ -771,6 +796,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                     'positions': [{'position_id': key, 'owner': position['runtime'].identity,
                         'direction': position['direction'], 'units': position['units'], 'risk_amount': position['risk_amount']}
                         for key, position in sorted(positions.items())]}
+            if depth_audit is not None:
+                depth_audit.gate(runtime, signal)
             scope_allowed, _owners = kernel._instrument_owner_scope_allows(runtime.instrument_state, prior, signal, runtime.identity)
             if not scope_allowed:
                 event(runtime, timestamp, "risk", "instrument_context_outside_scope")
@@ -952,13 +979,13 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         equity_curve.append(equity)
 
     # Replay-end settlement uses the last observed close, never a later candle.
-    last = rows[-1]
+    last = rows[execution_input_rows - 1]
     ending = _utc(last["time"]) + duration
     force_close_count = len(positions)
     for pos in list(positions.values()):
         market_exit = float(last["close"])
         close_position(pos, market_exit, kernel._exit_price(market_exit, pos["direction"], pos["runtime"].payload),
-                       "end_of_data", ending, len(rows) - 1)
+                       "end_of_data", ending, execution_input_rows - 1)
     equity_curve[-1] = cash
     if account_ledger:
         account_ledger[-1].update({"cash": cash, "equity": cash, "free_capital": cash,
@@ -1010,7 +1037,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     trace_identity = {'protocol': 'native_council_decision_trace_v1', 'contract_hash': contract['contract_hash'],
         'trace_hash': canonical_hash(decision_trace), 'source_rows': len(rows), 'decision_rows': decision_count,
         'warmup_rows': warmup_rows, 'first_candle_index': evaluation_start_index + 1,
-        'last_candle_index': len(rows) - 1 if decision_count else None, 'scope_policy_hash': evaluated_scope['policy_hash']}
+        'last_candle_index': execution_input_rows - 1 if decision_count else None, 'scope_policy_hash': evaluated_scope['policy_hash']}
     receipt_body = {
         "protocol": RECEIPT_PROTOCOL, "contract_hash": contract["contract_hash"],
         "council_id": contract["council_id"], "council_version": contract["council_version"],
@@ -1055,6 +1082,12 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         "scientific_evidence": False, "research_only": True, "promotion_evidence": False,
         "independent_evaluation": "required",
     }
+    if depth_contract is not None:
+        receipt_body['execution_input_rows'] = execution_input_rows
+    if standalone_declaration is not None:
+        from app.services.native_reachability_depth_audit import standalone_qualification_statistics
+        receipt_body['standalone_qualification_statistics'] = standalone_qualification_statistics(
+            standalone_declaration, contract, payload, position_ledger)
     receipt_body = _receipt_json_value(receipt_body)
     receipt = {**receipt_body, "receipt_hash": canonical_hash(receipt_body), "receipt_json": canonical_json(receipt_body)}
     wins = sum(trade.result == "WIN" for trade in trades)
@@ -1068,6 +1101,12 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
     study_receipt = study.finish(receipt['replay_executed_clock']) if study is not None else {}
     if study is not None:
         data_quality['native_spread_context_study_receipt'] = study_receipt
+    depth_effort = {'process_cpu_seconds': max(0.0, time.process_time() - depth_started_cpu),
+        'elapsed_seconds': max(0.0, time.perf_counter() - depth_started_elapsed),
+        'executed_decision_rows': decision_count} if depth_audit is not None else None
+    depth_receipt = depth_audit.finish(receipt['replay_executed_clock'], evaluated_scope, dependencies, depth_effort) if depth_audit is not None else {}
+    if depth_audit is not None:
+        data_quality['native_reachability_depth_audit_receipt'] = depth_receipt
     data_quality['decision_trace'] = {'protocol': 'candle_decision_trace_v1', 'requested': emit_trace,
         'complete': emit_trace and not dependencies and decision_count == evaluated_scope['decision_rows'],
         'event_count': len(decision_trace), 'evaluated_candle_count': decision_count,
@@ -1090,7 +1129,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
         top_mistakes=[], conclusion="Specialist council research replay; independent evaluation is required.",
         execution_assumptions=payload.execution.model_dump(),
         execution_contract=execution_contract_metadata(payload), policy_boundary=policy_boundary,
-        specialist_council_receipt=receipt, native_spread_context_study_receipt=study_receipt, data_quality=data_quality,
+        specialist_council_receipt=receipt, native_spread_context_study_receipt=study_receipt,
+        native_reachability_depth_audit_receipt=depth_receipt, data_quality=data_quality,
         decision_trace=decision_trace, trade_ledger=trades, displayed_trade_count=len(trades),
         prospective_probe_window_receipt=probe_receipt or {},
         entry_funnel={"strategy_signals": stages["intent:created"],

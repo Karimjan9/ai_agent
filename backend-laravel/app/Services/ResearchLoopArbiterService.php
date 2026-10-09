@@ -231,6 +231,9 @@ class ResearchLoopArbiterService
                 ['generation' => $generation, 'work_item_id' => $pending?->id, 'work_status' => $pending?->status,
                     'work_dependency_reason' => $pending?->last_error], $dryRun);
         }
+        if ($latest && ($depth = $this->nativeDepthContinuationDecision($latest, $generation, $symbol, $timeframe, $dryRun)) !== null) {
+            return $depth;
+        }
         if ($latest && (in_array((string) $latest->status, self::ACTIVE_GENERATION_STATUSES, true)
             || LabPopulationService::constructionIncomplete($latest))) {
             // A sealed replay can legitimately outlive several scheduler ticks.
@@ -723,6 +726,51 @@ class ResearchLoopArbiterService
     }
 
     /** Selection is planning evidence; consumption is recorded only by the actual unit owner. */
+    /** A sealed cheap rejection sample owns its existing deferred phase, not a new generation. */
+    private function nativeDepthContinuationDecision(LabGeneration $generation, ?array $summary,
+        string $symbol, string $timeframe, bool $dryRun): ?array
+    {
+        if (data_get($generation->trigger_context, NativeReachabilityDepthAuditService::MARKER) === null) return null;
+        try {
+            $phase = app(NativeReachabilityDepthAuditService::class)->inspectContinuation($generation);
+        } catch (Throwable $error) {
+            $phase = ['status' => 'dependency', 'reason_code' => 'NATIVE_DEPTH_ORIGINAL_PROOF_UNAVAILABLE',
+                'error_class' => get_class($error), 'promotion_evidence' => false];
+        }
+        // First-phase publication and in-flight/terminal recovery retain the
+        // existing lifecycle owners. Only the verified deferred phase is new.
+        if (in_array($phase['status'] ?? '', ['not_applicable', 'cheap_pending', 'deeper_in_flight', 'settle_only', 'terminal'], true)) return null;
+        $reason = $phase['reason_code'] ?? 'NATIVE_DEPTH_PHASE_NOT_READY';
+        $queue = $this->generationLabQueueSnapshot($generation);
+        $enabled = $this->autonomy->enabled($symbol, $timeframe);
+        $allowed = ($phase['status'] ?? '') === 'deeper_ready'
+            && ($phase['generation_id'] ?? null) === (int) $generation->id
+            && ($phase['same_original_question'] ?? null) === true
+            && count((array) ($phase['dispatch_agent_ids'] ?? [])) === 1;
+        foreach (['sample_hash', 'checkpoint_hash', 'physical_question_hash'] as $field) {
+            $allowed = $allowed && is_string($phase[$field] ?? null) && preg_match('/^[a-f0-9]{64}$/D', $phase[$field]);
+        }
+        if ($allowed) {
+            $allowed = $generation->agents()->where('id', $phase['dispatch_agent_ids'][0])->where('lifecycle_status', 'draft')->count() === 1;
+        }
+        if (! $enabled) $reason = 'NATIVE_DEPTH_ADMISSION_CONTROL_DISABLED';
+        elseif (($queue['available'] ?? false) !== true || ! is_numeric($queue['total'] ?? null)) $reason = 'NATIVE_DEPTH_GENERATION_QUEUE_UNKNOWN';
+        elseif ((int) $queue['total'] !== 0) $reason = 'NATIVE_DEPTH_GENERATION_QUEUE_NOT_DRAINED';
+        elseif (! $allowed) $reason = $phase['reason_code'] ?? 'NATIVE_DEPTH_ORIGINAL_PHASE_NOT_READY';
+        else $reason = 'ORIGINAL_CHEAP_SAMPLE_OWNS_DEFERRED_DEEPER_PHASE';
+        $ready = $allowed && $enabled && ($queue['available'] ?? false) === true
+            && is_numeric($queue['total'] ?? null) && (int) $queue['total'] === 0;
+        return $this->decide($symbol, $timeframe, $ready ? 'RESUME_NATIVE_DEPTH_AUDIT' : 'WAIT_NATIVE_DEPTH_AUDIT', 100,
+            $ready ? 'trading:dispatch-lab' : null,
+            $ready ? ['symbol' => $symbol, '--timeframe' => $timeframe, '--resume-draft-agents' => true,
+                '--expected-generation-id' => (int) $generation->id] : [],
+            $ready ? 'scheduler-constructor' : null, [$reason],
+            ['generation' => $summary, 'native_depth_continuation' => $phase,
+                'phase_queue_available' => ($queue['available'] ?? false) === true,
+                'phase_queue_total' => $queue['total'] ?? null, 'admission_control_enabled' => $enabled,
+                'promotion_evidence' => false], $dryRun);
+    }
+
     private function researchPolicyEvidence(ResearchExperimentWorkItem $work): array
     {
         return array_filter([
@@ -980,7 +1028,8 @@ class ResearchLoopArbiterService
         }
 
         $sameState = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
-        if ($command === 'trading:admit-academy-experiment' && $sameState) {
+        $boundedPublication = $command === 'trading:admit-academy-experiment' || $action === 'RESUME_NATIVE_DEPTH_AUDIT';
+        if ($boundedPublication && $sameState) {
             // Recover only an undelivered outbox publication, never a command
             // that ran and was scientifically/technically refused. Two bounded
             // transport retries keep a crash between DB commit and Redis from
@@ -991,7 +1040,8 @@ class ResearchLoopArbiterService
                     || $this->hasLiveScheduledCommandLock($sameState)
                     || Cache::get($probe->statusCacheKey()) !== null) break;
                 if ($sameState->status !== 'publication_failed') $sameState->update(['status' => 'publication_failed', 'completed_at' => now()]);
-                $decisionKey = $this->hash([$baseDecisionKey, 'bounded_academy_publication_retry', $attempt]);
+                $retryKind = $action === 'RESUME_NATIVE_DEPTH_AUDIT' ? 'bounded_native_depth_publication_retry' : 'bounded_academy_publication_retry';
+                $decisionKey = $this->hash([$baseDecisionKey, $retryKind, $attempt]);
                 $payload['decision_key'] = $decisionKey;
                 $sameState = ResearchLoopDecision::query()->where('decision_key', $decisionKey)->first();
             }
@@ -1054,7 +1104,7 @@ class ResearchLoopArbiterService
             try {
                 RunScheduledArtisanCommandJob::dispatch($command, $arguments, $queue, (int) $decision->id);
             } catch (Throwable $exception) {
-                $decision->update(['status' => $command === 'trading:admit-academy-experiment'
+                $decision->update(['status' => $boundedPublication
                     ? 'publication_failed' : 'failed', 'completed_at' => now()]);
                 throw $exception;
             }
@@ -1207,6 +1257,9 @@ class ResearchLoopArbiterService
             'settlement_watermark' => $settlementWatermark,
             'run_control_revision' => data_get(app(AutonomousModeService::class)->status($symbol ?? 'XAUUSD', $timeframe ?? 'H1'), 'changed_at'),
         ];
+        if (is_array(data_get($evidence, 'native_depth_continuation'))) {
+            $state['native_depth_continuation'] = data_get($evidence, 'native_depth_continuation');
+        }
         if (is_array(data_get($evidence, 'technical_recovery_target'))) {
             // Each bounded terminal disposition removes actual actionable IDs,
             // even when the latest generation's status/count stays unchanged.

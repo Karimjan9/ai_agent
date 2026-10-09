@@ -22,6 +22,21 @@ class MultiModalLearningPortfolioService
 
     public const FIDELITY_PROTOCOL = 'question_bounded_fidelity_v1';
 
+    /** Native depth is a measured stage witness; INCONCLUSIVE is not a trade verdict. */
+    public function assessNativeReachabilityDepthAudit(string $receiptKey): array
+    {
+        $receipt = $this->verifiedPlanningReceipt($receiptKey);
+        if (! $receipt || $receipt->source_type !== NativeReachabilityDepthAuditService::class) {
+            return $this->planningBlocked('ORIGINAL_NATIVE_DEPTH_AUDIT_WITNESS_REQUIRED');
+        }
+        try { $witness = app(NativeReachabilityDepthAuditService::class)->publishedWitness($receipt); }
+        catch (\Throwable $error) { return $this->planningBlocked('ORIGINAL_NATIVE_DEPTH_AUDIT_WITNESS_INVALID'); }
+        return ['protocol' => self::FIDELITY_PROTOCOL, 'status' => ($witness['status'] ?? null) === 'measured_native_reachability_depth_audit'
+            ? 'measured_native_stage' : 'blocked_dependency', 'native_witness' => $witness,
+            'false_rejection_rate' => null, 'population_rate_estimated' => false,
+            'cheap_negative_is_final_skill_verdict' => false, 'independence_attested' => false, 'promotion_evidence' => false];
+    }
+
     /** These are proposal ceilings, never overrides of an executor's admission policy. */
     private const FIDELITIES = [
         'semantic' => [0, 30, 'semantic_equivalence_only'],
@@ -357,6 +372,7 @@ class MultiModalLearningPortfolioService
             (array) ($contextualEvidence['__planning_identity'] ?? []));
         $references = $this->sourceReferences($lab);
         $plan['behavior_archive_consumption'] = $behavior;
+        $plan['native_depth_audit_witnesses'] = $this->nativeDepthAuditWitnesses($lab);
         if ($behavior['matched_pairs'] !== []) {
             $references['previous_archive_reference'] = $references['archive'] ?? null;
             $references['observed_behavior_archive'] = ['source_type' => 'original_observed_behavior_archive',
@@ -652,6 +668,21 @@ class MultiModalLearningPortfolioService
     {
         return ['protocol' => self::FIDELITY_PROTOCOL, 'status' => 'blocked_dependency',
             'reason' => $reason, 'execution_status' => 'not_executed', 'promotion_evidence' => false];
+    }
+
+    /** Bounded published diagnostic observations; never ordinary success/credit labels. */
+    private function nativeDepthAuditWitnesses(AiLaboratory $lab): array
+    {
+        if (! Schema::hasTable('research_experiment_receipts')) return [];
+        $keys = ResearchExperimentReceipt::where('source_type', NativeReachabilityDepthAuditService::class)
+            ->where('symbol', $lab->symbol)->where('laboratory_timeframe', $lab->timeframe)
+            ->latest('id')->limit(4)->pluck('receipt_key');
+        $observations = [];
+        foreach ($keys as $key) {
+            $assessment = $this->assessNativeReachabilityDepthAudit($key);
+            if (isset($assessment['native_witness'])) $observations[] = $assessment;
+        }
+        return $observations;
     }
 
     /** Immutable local journal; duplicate delivery never moves the preregistration timestamp. */

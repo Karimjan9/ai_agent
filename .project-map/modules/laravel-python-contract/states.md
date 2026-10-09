@@ -1,5 +1,24 @@
 # Cross-runtime contract states
 
+The diagnostic native depth protocol follows `original six-slot declaration ->
+signed cheap prefix -> original powered rejection pool -> immutable seeded
+sample -> existing deferred dispatcher -> signed deeper prefix -> diagnostic
+receipt`. Both prefixes retain the same four-member programme and original
+15000+512 physical inventory; their actual clocks/evaluated inputs differ
+explicitly. Only the original registry/HMAC/event/clock proof authorizes the
+diagnostic view exception. Ordinary/full replay cannot borrow it. Empty pools,
+missing opportunities/quotes and technical refusals never become economic or
+independent success. Masked/diagnostic audit projections stay out of ordinary
+economic mutation advice and credit.
+
+`native_standalone_qualification` installs only a prospectively owned original
+full-allocation source projection's statistics descriptor. The actual producer
+uses ordered unrounded mature NET PnL under fixed bootstrap seed/caps and marks
+forced/censored/unknown outcomes. Original receipts, native ledger/clock and
+authorization precede standalone research qualification; caller statistics or
+old unqualified matched/chosen plans supply none. Selection and final evaluation
+use separate original physical input/context/warmup/holding intervals.
+
 `specialist_council_native_chosen_solo_v1` follows `unused original source ->
 preregistered unqualified choice -> exact source-member/allocation derivation ->
 native account/trace/clock attestation`. Only allocation becomes 1.0; original

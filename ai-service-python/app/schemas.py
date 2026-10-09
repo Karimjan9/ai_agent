@@ -91,6 +91,8 @@ class StrategyRuntimeConfig(BaseModel):
     research_release: dict[str, Any] = Field(default_factory=dict)
     specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
     native_spread_context_study_contract: dict[str, Any] = Field(default_factory=dict)
+    native_reachability_depth_audit_contract: dict[str, Any] = Field(default_factory=dict)
+    native_standalone_qualification: dict[str, Any] = Field(default_factory=dict)
     # Original PHP plan binding survives validation, but grants no authority
     # without the server-signed full-window transport and immutable exam.
     specialist_council_evaluation: dict[str, Any] = Field(default_factory=dict)
@@ -196,6 +198,8 @@ class SimpleBacktestRequest(BaseModel):
     # account. Undeclared requests retain the original portfolio router.
     specialist_council_contract: dict[str, Any] = Field(default_factory=dict)
     native_spread_context_study_contract: dict[str, Any] = Field(default_factory=dict)
+    native_reachability_depth_audit_contract: dict[str, Any] = Field(default_factory=dict)
+    native_standalone_qualification: dict[str, Any] = Field(default_factory=dict)
     # Canonical XAUUSD multi-timeframe routing contract. H1 remains a closed
     # regime context and M15 remains the independent entry population.
     mtf_pilot: dict[str, Any] = Field(default_factory=dict)
@@ -210,6 +214,12 @@ class SimpleBacktestRequest(BaseModel):
     # Paper twin calls are sent to separate lane endpoints. The field is
     # transport metadata only and never changes the canonical market data.
     twin_lane: Literal["champion", "council"] | None = None
+
+    @model_validator(mode='after')
+    def native_diagnostics_require_original_account(self):
+        if (self.native_reachability_depth_audit_contract or self.native_standalone_qualification) and not self.specialist_council_contract:
+            raise ValueError('NATIVE_DIAGNOSTIC_COUNCIL_CONTRACT_REQUIRED')
+        return self
 
 
 class Metrics(BaseModel):
@@ -344,6 +354,7 @@ class SimpleBacktestResponse(BaseModel):
     policy_boundary: dict[str, Any] = Field(default_factory=dict)
     specialist_council_receipt: dict[str, Any] = Field(default_factory=dict)
     native_spread_context_study_receipt: dict[str, Any] = Field(default_factory=dict)
+    native_reachability_depth_audit_receipt: dict[str, Any] = Field(default_factory=dict)
     core_replay_gate: dict[str, Any] = Field(default_factory=dict)
     data_quality: dict[str, Any] = Field(default_factory=dict)
     volume_quality: dict[str, Any] = Field(default_factory=dict)

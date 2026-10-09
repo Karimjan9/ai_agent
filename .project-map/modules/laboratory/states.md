@@ -1,5 +1,35 @@
 # Laboratory lifecycle states
 
+## Original native depth and qualified SOLO
+
+Native depth follows `unused six-slot intent -> atomic original preparation ->
+cheap canonical replay -> immutable whole-pool/sample -> deeper_ready -> fresh
+arbiter decision -> exact generation-fenced dispatch -> original deeper replay
+-> INCONCLUSIVE diagnostic -> six neutral episode/source dispositions -> terminal`.
+Empty/unpowered samples and original technical products have typed neutral
+closure; they do not force a deeper replay or an economic result. Selection,
+execution view and actual received trace/clock are re-attested before consumption.
+Queued/in-flight continuation retains the same original carrier and watermark;
+publication recovery cannot create another scientific attempt (ADR-033).
+
+Qualified SOLO follows `original scoped standalone panel -> complete original
+qualification certificates -> as-of full eligible roster -> preregistered ranking
+panel -> immutable selected source -> separate untouched final comparison`.
+All original panel products complete before their selection-use projection.
+No qualified roster means dependency, not chosen-source fallback. Actual full
+input/warmup/context and conservative holding exposure fence the final windows.
+The three stages grant no paper, live or inherited economic authority by
+themselves. Old matched/chosen SOLO and legacy evidence are not upgraded.
+
+New typed SOLO preparation additionally follows `unprepared ->
+native_original_definition_sealed -> native_original_request_digests_pending[n/units]
+-> native_original_request_digests_complete -> prepared -> fresh arm lease`.
+At most four ordered digests are appended per real fence. All original cohorts,
+model/source/plan seals and HMAC prefix stay fixed; source or prefix drift blocks.
+Partial preparation stays reserved/draft and cannot dispatch. The 900-second
+limit is unchanged; derived operational deliveries are not another scientific
+allowance (ADR-034).
+
 ## Prospective native SOLO and spread-context studies
 
 An explicit `specialist_council_native_solo_v1` plan follows the existing

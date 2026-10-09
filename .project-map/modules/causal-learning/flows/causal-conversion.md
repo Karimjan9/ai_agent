@@ -75,6 +75,14 @@ retain its immutable owner preregistration before validation outcomes. Existing
 paper disjointness, post-paper data and all independent evidence gates still own
 execution. No historical generic instrument route is created.
 
+`--future-schedule` adds six explicit monthly collection drafts under the
+existing post-paper policy. Every dataset/MTF hash and evaluated-row receipt
+remains null; the draft grants neither preregistration nor authorization.
+Warmup must be inside its own reserved research window, never borrowed from
+2026 paper data. Holding/outcome maturity and actual powered windows still need
+original evidence. A future paper overlap or missed pre-outcome deadline is
+reported rather than skipped or relabelled as a usable holdout.
+
 An explicitly selected clean-discovery Academy cohort may observe local stage
 behavior on a new calendar-selected 15000+512 four-stream scope. Its cold cap
 binds physical parent/foundation/execution, not the slice/code/quote label.

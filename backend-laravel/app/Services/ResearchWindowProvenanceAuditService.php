@@ -14,6 +14,47 @@ class ResearchWindowProvenanceAuditService
 
     public const RESERVATION_PROTOCOL = 'research_window_preregistration_draft_v1';
 
+    /** Collection planning only; actual bytes, original design and authorization remain absent. */
+    public function futureSchedule(): array
+    {
+        $plan = app(ActivationValidationPlanService::class)->reserve([]);
+        $start = CarbonImmutable::parse($plan['validation_start_inclusive'])->utc();
+        $windows = [];
+        for ($index = 0; $index < 6; $index++) {
+            $from = $start->addMonths($index); $until = $start->addMonths($index + 1);
+            $windows[] = [
+                'ordinal' => $index + 1, 'start_inclusive' => $from->toIso8601String(),
+                'end_exclusive' => $until->toIso8601String(),
+                'disjoint_from_paper' => app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                    $from->toIso8601String(), $until->toIso8601String()),
+                'source_dataset_sha256' => null, 'mtf_bundle_hash' => null,
+                'evaluated_start_inclusive' => null, 'evaluated_rows' => null,
+                'warmup_policy' => 'actual_closed_rows_inside_this_reserved_window_only',
+                'holding_policy' => 'entry_cutoff_and_outcome_maturity_must_fit_the_declared_window',
+                'executable' => false,
+            ];
+        }
+        $before = $start->greaterThan(now()->utc());
+        $disjoint = ! in_array(false, array_column($windows, 'disjoint_from_paper'), true);
+        $identity = ['protocol' => 'future_research_collection_schedule_draft_v1',
+            'symbol' => 'XAUUSD', 'timezone' => 'UTC', 'windows' => $windows,
+            'execution_timeframe' => 'M5', 'context_timeframes' => ['H4', 'H1', 'M15'],
+            'source_design_selected' => false, 'original_preregistration_persisted' => false,
+            'calendar_months_are_not_powered_windows' => true,
+            'required_before_first_outcome' => ['persisted_original_control_intervention_context_and_stopping_rule',
+                'prospective_server_data_use_policy_and_authorization', 'sealed_selection_and_validation_separation'],
+            'required_before_execution' => ['actual_provider_bytes_and_immutable_SHA256_for_all_streams',
+                'verified_training_selection_context_and_holding_exposure', 'actual_warmup_and_evaluated_row_receipts',
+                'completed_authorized_research_window_and_existing_cost_risk_power_gates'],
+            'earlier_paper_warmup_eligible' => false, 'paper_2026_research_eligible' => false,
+            'executable' => false, 'independent_evidence' => false, 'promotion_evidence' => false,
+            'server_authorization_created' => false, 'data_writes' => false,
+            'status' => 'draft_collection_schedule_not_authorization',
+            'reason_code' => ! $before ? 'PROSPECTIVE_REGISTRATION_DEADLINE_PASSED'
+                : (! $disjoint ? 'RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH' : 'AWAITING_ORIGINAL_DESIGN_AND_ACTUAL_AUTHORIZED_DATA')];
+        return [...$identity, 'schedule_hash' => $this->hash($identity), 'observed_at' => now()->utc()->toIso8601String()];
+    }
+
     public function audit(?string $candidateStart = null, ?string $candidateEnd = null): array
     {
         $candidate = $this->candidate($candidateStart, $candidateEnd);

@@ -94,6 +94,7 @@ paths:
   - backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php
   - backend-laravel/tests/Feature/ResearchFidelityMeasurementTest.php
   - docs/operations/research-meta-learning.md
+  - docs/operations/future-research-collection-draft.md
   - backend-laravel/app/Services/SkillMentorService.php
   - backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php
   - backend-laravel/app/Models/CausalFoldReceipt.php
@@ -170,6 +171,8 @@ entry_points:
   - CanonicalSkillCartridgeService::planTransplant
   - CanonicalSkillCartridgeService::settleTransplantOutcome
   - ResearchPaperEpochContractService
+  - ResearchWindowProvenanceAuditService::futureSchedule
+  - "trading:audit-research-window-provenance --future-schedule"
   - trading:causal-golden-worlds
   - trading:reconcile-instrument-pairs
 data_tables:

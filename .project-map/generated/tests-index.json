@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-08T20:19:14.993Z",
-  "source_digest": "b7f56ccf0d9e44b05c7c9d8e552dd25b6500059e587735e8cad54e2d57f7d7f9",
-  "source_file_count": 1557,
-  "git_head": "1616b2db713996dbe5be306733b8726739b8b703",
+  "generated_at": "2026-10-09T11:03:27.188Z",
+  "source_digest": "fa7564592c76c4c5d07f20ed4e0724910d1213b13ca38d5c459c7a575e57a133",
+  "source_file_count": 1568,
+  "git_head": "2f926e85ce26c96ea3dc0999034a180f99cd1f00",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -14,6 +14,10 @@
     },
     {
       "path": "ai-service-python/tests/support/authorized_research_transport_fixture.py",
+      "tests": []
+    },
+    {
+      "path": "ai-service-python/tests/support/native_reachability_depth_audit_fixture.py",
       "tests": []
     },
     {
@@ -344,6 +348,25 @@
         "test_m15_only_ablation_bypasses_h1_veto_but_remains_explicit",
         "test_m5_execution_uses_the_closed_h1_context_from_the_full_stack",
         "test_autonomous_m5_replay_accepts_one_exact_closed_mtf_manifest"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_native_reachability_depth_audit.py",
+      "tests": [
+        "test_native_prefix_preserves_physical_inventory_original_probe_and_four_member_account",
+        "test_terminal_forceclose_uses_actual_view_last_close_never_physical_future_tail",
+        "test_pure_observer_deeper_selection_keeps_whole_programme_and_account",
+        "test_no_signal_unknown_quotes_and_underpower_are_dependencies_never_negative",
+        "test_powered_exact_raw_quotes_before_cadence_can_produce_valid_rejected_pool",
+        "test_invalid_depth_cannot_load_sources_or_return_api_cache",
+        "test_original_bounded_string_seed_is_preserved_without_coercion_or_hash_change",
+        "test_seed_must_be_an_original_nonempty_trimmed_bounded_string_before_source_loading",
+        "test_signed_view_cannot_bypass_any_physical_stream_byte_hash",
+        "test_cache_requires_current_actual_diagnostic_view_and_complete_receipt",
+        "test_actual_upstream_closed_port_survives_wait_without_inventing_gate_reach",
+        "test_standalone_statistics_hash_ordered_full_precision_actual_net_pnl_and_detect_all_censors",
+        "test_full_native_statistics_are_inside_actual_native_receipt_seal",
+        "test_standalone_unsigned_changed_threshold_or_nonfull_views_refuse_before_source"
       ]
     },
     {
@@ -1532,6 +1555,7 @@
       "path": "backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php",
       "tests": [
         "test_windows_uses_the_http_m15_adapter_without_a_node_child_process",
+        "test_empty_accepted_response_never_becomes_a_native_absence_or_candle_inventory",
         "test_it_decodes_jettas_h1_history_without_a_child_process",
         "test_it_rebuilds_a_sparse_h1_archive_hour_from_ticks",
         "test_it_aggregates_jettas_minute_history_into_m15_tick_volume",
@@ -2564,6 +2588,31 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
+      "tests": [
+        "setUp",
+        "test_invalid_expected_id_refuses_once_before_any_laboratory_creation",
+        "invalidIds",
+        "test_missing_or_changed_latest_never_builds_a_fallback_generation",
+        "test_scope_and_other_writer_flags_refuse_before_owner_or_snapshot",
+        "incompatibleOptions",
+        "test_an_ordinary_generation_cannot_acquire_the_depth_fence",
+        "test_completed_unprepared_or_in_flight_original_owner_cannot_requeue",
+        "unreadyPhases",
+        "test_missing_prepared_owner_refuses_without_queue_or_snapshot_writes",
+        "test_already_queued_target_is_not_repaired_or_mutated",
+        "test_canonical_exit_zero_queue_deferral_becomes_one_refused_nonzero_marker",
+        "queueRefusals",
+        "test_only_one_original_phase_gets_a_canonical_singleton_batch_and_marker",
+        "originalPhases",
+        "test_default_command_keeps_ordinary_exit_zero_without_a_depth_marker",
+        "dispatch",
+        "assertRefused",
+        "generation",
+        "installRoutingServices"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/NativePolicyPhysicalExposureTest.php",
       "tests": [
         "setUp",
@@ -2579,6 +2628,25 @@
         "program",
         "savePlan",
         "observationRun"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/NativeQualifiedSoloSelectionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_empty_original_qualified_roster_blocks_without_unqualified_fallback_or_dispatch",
+        "test_original_native_qualification_reservation_derives_all_sources_and_fixed_strict_exam_before_any_dispatch",
+        "test_caller_ranking_qualification_and_threshold_flags_are_refused",
+        "test_native_preparation_budget_is_server_derived_and_cannot_be_expanded_by_a_resealed_flag",
+        "test_exact_original_fixture_source_artifact_build_and_current_byte_verification_succeed_before_canonical_preparation",
+        "test_canonical_constructor_prepares_all_three_qualified_source_exam_windows_and_exact_full_requests_without_http",
+        "test_public_full_compiler_installs_original_native_projection_for_nonaggregate_standalone_carrier",
+        "test_original_eligible_task_requires_the_same_role_scope_and_qualified_horizon",
+        "test_a_resealed_source_projection_cannot_change_original_parameter_or_horizon",
+        "test_ranking_uses_original_fixed_objective_and_stable_tie_break_not_caller_best_label",
+        "test_original_selection_receipt_cannot_be_rewritten_or_deleted",
+        "test_scoped_exam_requires_positive_aggregate_power_maturity_statistical_and_external_risk_guards_together"
       ]
     },
     {
@@ -3098,6 +3166,11 @@
         "test_deferred_targeted_handoff_does_not_monopolise_the_arbiter",
         "test_historical_dispatched_targeted_decision_without_a_live_queue_lock_does_not_block_successor_selection",
         "test_target_aligned_causal_lesson_outranks_market_drift_generation",
+        "test_native_deferred_depth_phase_precedes_generic_settlement_and_uses_exact_existing_cli",
+        "test_native_phase_requires_known_empty_queue_and_does_not_dispatch_under_stop",
+        "test_native_phase_checkpoint_changes_decision_key_but_scheduler_minutes_do_not",
+        "test_native_exact_dispatch_classifier_requires_one_original_marker_not_exit_zero",
+        "nativeDepthRoutingFixture",
         "lab",
         "test_exact_instrument_projection_debt_is_one_bounded_action_before_fresh_exploration",
         "contract",
@@ -3188,7 +3261,9 @@
         "test_future_paper_overlap_stays_an_explicit_blocked_reservation",
         "test_operator_command_prints_dependency_and_rejects_half_interval_without_writes",
         "test_invalid_calendar_date_and_implicit_timezone_are_not_accepted_as_utc_candidates",
-        "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap"
+        "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap",
+        "test_six_future_months_are_explicit_drafts_not_available_or_authorized_data",
+        "test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes"
       ]
     },
     {
@@ -3433,6 +3508,9 @@
         "test_prepared_source_drift_is_rejected_before_original_replay",
         "test_current_prepared_source_can_bind_original_request",
         "boundPlanFixture",
+        "test_original_input_intervals_include_mtf_warmup_and_a_conservative_holding_fence_without_writes",
+        "test_original_interval_inventory_refuses_wrong_physical_loaded_row_count",
+        "test_original_interval_inventory_never_silently_omits_inline_or_auxiliary_exposure",
         "model",
         "passport",
         "draft",
@@ -3776,6 +3854,16 @@
         "test_original_spread_study_constructor_prepares_only_two_carriers_on_one_draft_native_version",
         "test_original_six_slot_study_jobs_consume_real_native_products_and_close_neutrally",
         "originalSpreadStudyTerminalCases",
+        "test_original_depth_audit_constructor_seals_physical_inventory_and_dispatches_only_cheap",
+        "test_original_depth_real_native_view_consumes_empty_or_sealed_deferred_phase",
+        "originalDepthNativeCadences",
+        "test_original_depth_technical_cheap_closes_unused_deeper_and_six_episodes_without_fanout",
+        "originalDepthTechnicalResponses",
+        "test_original_depth_request_projection_and_legacy_inline_registry_cannot_authorize_a_phase",
+        "test_original_depth_archived_technical_witness_survives_source_change_without_phase_authority",
+        "test_original_prepared_depth_cheap_cli_publishes_one_job_without_replay",
+        "originalDepthFixture",
+        "depthDeclaration",
         "syntheticOriginalStudyBundle",
         "test_future_native_constructor_refuses_missing_solo_declaration_without_partial_seals",
         "test_future_native_constructor_seals_exact_matched_allocation_solo_without_model_mutation",
@@ -4391,6 +4479,22 @@
       "tests": [
         "test_h4_is_formed_only_from_four_complete_utc_h1_candles",
         "test_d1_is_formed_only_from_twenty_four_complete_utc_h1_candles"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
+      "tests": [
+        "test_physical_inventory_and_actual_execution_view_are_distinct_and_matching_counts_are_derived",
+        "test_changed_clock_identity_event_semantics_quote_physics_or_recount_is_refused",
+        "poisonedFields",
+        "test_unavailable_quotes_are_preserved_as_dependencies_even_if_actual_gate_was_reached",
+        "test_original_csv_prefix_binds_clock_schedule_and_event_to_execution_index_minus_one",
+        "fixture",
+        "validator",
+        "test_observer_closed_input_is_bound_to_exact_native_trace_member_and_index",
+        "observerTracePoisons",
+        "hash",
+        "sealClock"
       ]
     },
     {
