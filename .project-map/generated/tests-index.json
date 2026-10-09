@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:58:07.670Z",
-  "source_digest": "1988c3677e985eb073edcae8d26ed66ccab8e5ecf4ba991afb04ffa15678f894",
-  "source_file_count": 1572,
-  "git_head": "0084ce9f86178df453d5d494027fecb752dcb661",
+  "generated_at": "2026-10-09T17:28:28.344Z",
+  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
+  "source_file_count": 1582,
+  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1512,6 +1512,22 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/DescendantScopedProofTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_four_arm_scope_is_registered_without_legacy_inheritance_authority",
+        "test_source_or_parameter_drift_cannot_keep_the_original_scope_valid",
+        "test_any_observed_arm_blocks_retrospective_registration",
+        "test_parameter_ablations_cannot_hide_a_different_runtime_program",
+        "test_paper_2026_interval_and_missing_original_revision_are_refused",
+        "test_original_run_identities_and_interval_maturity_precede_diagnostic_settlement",
+        "test_original_four_products_measure_bundle_without_granting_inheritance_credit",
+        "originalProducts",
+        "fixture"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/DispatchMtfPlaybookPriorTest.php",
       "tests": [
         "test_command_queues_one_confirmation_first_job_on_the_frontier_lane",
@@ -2759,6 +2775,19 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/OriginalValidationReadinessTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_actual_four_stream_files_do_not_turn_an_absent_exposure_ledger_into_unused_authority",
+        "test_caller_inventory_flags_and_hashes_never_replace_a_canonical_original_owner",
+        "test_changed_context_bytes_and_paper_warmup_are_refused_before_any_unused_claim",
+        "test_unclosed_context_at_the_end_and_unverified_auxiliary_streams_stay_blocked",
+        "test_future_drafts_and_configured_hashes_without_original_bytes_are_not_data_readiness",
+        "inputs"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/P0EvidenceControlsTest.php",
       "tests": [
         "test_full_dataset_export_has_exact_row_count_and_sha256_manifest",
@@ -3271,7 +3300,11 @@
         "test_invalid_calendar_date_and_implicit_timezone_are_not_accepted_as_utc_candidates",
         "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap",
         "test_six_future_months_are_explicit_drafts_not_available_or_authorized_data",
-        "test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes"
+        "test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes",
+        "test_context_candle_exposure_cannot_hide_behind_nonoverlapping_m5_dates",
+        "test_original_payload_context_and_inline_warmup_are_exclusion_references",
+        "test_related_market_requires_its_own_identity_and_missing_auxiliary_dates_do_not_prove_unused",
+        "test_hash_only_mtf_stream_is_unassessable_and_cannot_be_reported_as_unused"
       ]
     },
     {
@@ -3387,6 +3420,32 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ScopedResearchCertificateTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_draft_is_sealed_but_cannot_grant_any_authority",
+        "test_exact_registration_is_idempotent_after_validation_starts",
+        "test_component_and_selector_are_distinct_sealed_questions",
+        "test_design_cannot_be_replaced_after_preregistration",
+        "test_source_outcomes_and_status_do_not_change_immutable_question_identity",
+        "test_changed_original_model_parameters_invalidate_inspection_and_assessment",
+        "test_public_assessment_is_append_only_diagnostic_even_with_caller_success_flags",
+        "test_model_update_and_direct_database_relabel_cannot_rewrite_a_certificate",
+        "test_retrospective_and_paper_year_designs_are_refused",
+        "test_observed_source_needs_explicit_hypothesis_role_and_never_prospective_scope",
+        "test_arbitrary_model_cannot_become_an_original_scope_owner",
+        "test_caller_design_cannot_preregister_an_asserted_confirmed_scope",
+        "test_council_scope_seals_its_actual_manifest_programs_and_original_plan",
+        "test_original_four_stream_binding_is_immutable_and_remains_inventory_blocked",
+        "test_first_actual_binding_cannot_follow_validation_outcomes",
+        "test_hypothesis_certificate_cannot_bind_new_validation_data",
+        "test_future_hash_and_caller_complete_flags_cannot_bind_unavailable_bytes",
+        "syntheticInputs",
+        "question"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
       "tests": [
         "test_batch_screen_observation_preserves_original_council_definition_and_remaining_runtime_guards",
@@ -3425,6 +3484,18 @@
         "test_parent_compatibility_rejects_a_foreign_strategy_family",
         "test_group_champion_does_not_cross_a_council_role_boundary",
         "test_genome_crossover_rejects_a_foreign_role_inside_the_same_family"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SeparatedCausalProofTest.php",
+      "tests": [
+        "test_same_beneficial_blind_trait_does_not_erase_component_contrast",
+        "test_component_diagnostic_still_requires_exact_control_and_no_regression",
+        "test_prospective_scope_never_borrows_legacy_confirmed_flag_or_credit",
+        "test_draft_observations_do_not_consume_a_future_original_assessment",
+        "question",
+        "outcome",
+        "design"
       ]
     },
     {
@@ -4422,6 +4493,18 @@
         "test_it_rejects_cross_axis_values_instead_of_registering_them_as_sessions",
         "test_detailed_session_coordinates_participate_in_exact_identity",
         "test_candle_timestamp_is_automatically_resolved_into_detailed_session_coordinates"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/DescendantScopedProofServiceTest.php",
+      "tests": [
+        "test_matched_four_arm_vectors_derive_disjoint_exact_t_and_u",
+        "test_ablated_sibling_cannot_retain_the_trait_or_change_another_parameter",
+        "test_missing_parameter_is_not_a_sealed_old_value",
+        "test_bundle_improvement_does_not_credit_a_redundant_trait",
+        "test_supported_individual_ablations_remain_arithmetic_without_authority",
+        "test_missing_nonfinite_or_renamed_arm_has_no_effect_result",
+        "arms"
       ]
     },
     {

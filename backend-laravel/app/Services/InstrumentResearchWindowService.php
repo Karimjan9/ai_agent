@@ -340,6 +340,92 @@ class InstrumentResearchWindowService
             'independent_evidence' => false, 'promotion_evidence' => false];
     }
 
+    /**
+     * Prospective certificate precondition, separate from legacy window seals.
+     * Actual inputs can be verified today; neither server configuration nor an
+     * absent use row proves the complete original training/selection inventory.
+     * Existing native original runs supply exclusions, never completeness.
+     */
+    public function originalValidationReadiness(array $window, array $manifest, array $originalExposure): array
+    {
+        $missing = ['ORIGINAL_TRAINING_AND_SELECTION_EXPOSURE_INVENTORY_NOT_ATTESTED'];
+        $inputProof = null; $inputComplete = false; $exposures = []; $overlap = false;
+        try {
+            $inputProof = $this->verifySealedReplayWindow($window, $manifest);
+            $inputComplete = true;
+            if (array_diff(array_keys((array) ($manifest['streams'] ?? [])), ['M5', 'H4', 'H1', 'M15']) !== []) {
+                $missing[] = 'ORIGINAL_VALIDATION_AUXILIARY_EXPOSURE_UNVERIFIED';
+                $inputComplete = false;
+            }
+            $until = CarbonImmutable::parse($window['end_exclusive'])->utc();
+            foreach ($inputProof['files'] as $stream => $file) {
+                $seconds = app(SpecialistCouncilContractService::class)->timeframeSeconds($stream);
+                $closed = CarbonImmutable::parse($file['last_candle_at'])->addSeconds($seconds);
+                if ($closed->greaterThan($until) || $closed->greaterThan(now()->utc())) {
+                    $missing[] = 'ORIGINAL_VALIDATION_CLOSED_CONTEXT_OR_WARMUP_OUTSIDE_WINDOW';
+                    $inputComplete = false;
+                }
+            }
+        } catch (\Throwable $error) {
+            $missing[] = $this->provenanceReason($error, 'ORIGINAL_VALIDATION_INPUT_PROOF_UNAVAILABLE');
+        }
+        // A copied audit, caller completeness boolean or self-computed hash is
+        // not a canonical ingress. This optional list is inspected only through
+        // the existing immutable native producer and its original artifact owner.
+        if ($originalExposure !== []) {
+            $runIds = $originalExposure['run_ids'] ?? null;
+            $versionId = $originalExposure['version_id'] ?? null;
+            if (($originalExposure['owner'] ?? null) !== SpecialistCouncilLifecycleService::class
+                || ! is_int($versionId) || $versionId <= 0 || ! is_array($runIds) || ! array_is_list($runIds)
+                || $runIds === [] || count($runIds) > 64 || count(array_unique($runIds, SORT_REGULAR)) !== count($runIds)
+                || count(array_filter($runIds, static fn ($id): bool => is_int($id) && $id > 0)) !== count($runIds)) {
+                $missing[] = 'ORIGINAL_EXPOSURE_CANONICAL_OWNER_REFERENCES_REQUIRED';
+            } else {
+                try {
+                    $version = \App\Models\SpecialistCouncilVersion::findOrFail($versionId);
+                    $from = CarbonImmutable::parse((string) ($window['start_inclusive'] ?? ''))->utc();
+                    $until = CarbonImmutable::parse((string) ($window['end_exclusive'] ?? ''))->utc();
+                    sort($runIds, SORT_NUMERIC);
+                    foreach ($runIds as $runId) {
+                        $run = \App\Models\LabEvaluationRun::findOrFail($runId);
+                        $original = app(SpecialistCouncilLifecycleService::class)->originalNativePanelOutcome($version, $run);
+                        $inventory = $original['physical_intervals'];
+                        foreach ($inventory['intervals'] as $interval) {
+                            if (strtoupper((string) $interval['symbol']) === 'XAUUSD'
+                                && CarbonImmutable::parse($interval['start_inclusive'])->lessThan($until)
+                                && CarbonImmutable::parse($interval['end_exclusive'])->greaterThan($from)) $overlap = true;
+                        }
+                        $exposures[] = ['run_id' => $runId, 'version_id' => $versionId,
+                            'original_exposure' => $inventory, 'original_receipt_bytes_revalidated' => true,
+                            'complete_training_selection_inventory' => false];
+                    }
+                } catch (\Throwable $error) {
+                    $missing[] = $this->provenanceReason($error, 'ORIGINAL_EXPOSURE_OWNER_PROOF_UNAVAILABLE');
+                }
+            }
+        }
+        if ($overlap) $missing[] = 'CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE';
+        $identity = ['protocol' => 'original_authorized_validation_readiness_v1',
+            'window_key' => $window['window_key'] ?? null, 'dataset_hash' => $window['dataset_sha256'] ?? null,
+            'actual_input_proof' => $inputProof, 'complete_input_proof' => $inputComplete,
+            'original_native_exposure_references' => $exposures,
+            'candidate_physical_time_overlap' => $overlap,
+            'original_training_selection_inventory_attested' => false,
+            'absence_of_recorded_use_proves_unused' => false, 'candidate_unused_demonstrated' => false,
+            'unresolved_provenance' => array_values(array_unique($missing)),
+            'status' => 'BLOCKED_DEPENDENCY', 'ready' => false,
+            'reason_code' => $overlap ? 'CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE' : $missing[0],
+            'paper_2026_research_eligible' => false, 'independent_evidence' => false,
+            'promotion_evidence' => false, 'server_authorization_created' => false, 'data_writes' => false];
+        return [...$identity, 'readiness_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($identity)];
+    }
+
+    private function provenanceReason(\Throwable $error, string $fallback): string
+    {
+        return preg_match('/^[A-Z0-9_]+(?::[A-Za-z0-9_.:-]+)?$/D', $error->getMessage())
+            ? $error->getMessage() : $fallback;
+    }
+
     private function transportPath(string $path): string
     {
         if (str_contains(str_replace('\\', '/', $path), '/../') || ! str_ends_with(strtolower($path), '.csv')) {

@@ -230,4 +230,79 @@ class ResearchWindowProvenanceAuditTest extends TestCase
         $this->assertSame('PROSPECTIVE_REGISTRATION_DEADLINE_PASSED', $schedule['reason_code']);
         $this->assertFalse($schedule['executable']);
     }
+
+    public function test_context_candle_exposure_cannot_hide_behind_nonoverlapping_m5_dates(): void
+    {
+        $this->runReceipt(['mtf_bundle_manifest' => ['streams' => [
+            'M5' => ['first_candle_at' => '2025-01-01T00:00:00Z', 'last_candle_at' => '2025-01-02T00:00:00Z',
+                'sha256' => str_repeat('a', 64)],
+            'H4' => ['first_candle_at' => '2010-01-01T00:00:00Z', 'last_candle_at' => '2010-01-01T00:00:00Z',
+                'sha256' => str_repeat('b', 64)],
+        ]]]);
+        $audit = app(ResearchWindowProvenanceAuditService::class)->audit('2010-01-01T03:45:00Z', '2010-01-01T04:00:00Z');
+
+        $context = collect($audit['research_input_reference_ranges'])->firstWhere('stream', 'H4');
+        $this->assertFalse($audit['research_request_reference_ranges'][0]['candidate_physical_time_overlap']);
+        $this->assertSame('2010-01-01T04:00:00+00:00', $context['referenced_end_exclusive']);
+        $this->assertTrue($context['candidate_physical_time_overlap']);
+        $this->assertSame('CANDIDATE_INTERSECTS_RESEARCH_REFERENCED_EVENTS', $audit['reason_code']);
+        $this->assertFalse($context['original_receipt_bytes_revalidated']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+    }
+
+    public function test_original_payload_context_and_inline_warmup_are_exclusion_references(): void
+    {
+        $run = $this->runReceipt(['first_candle_at' => '2025-01-01T00:00:00Z', 'last_candle_at' => '2025-01-02T00:00:00Z']);
+        $meta = $run->request_meta;
+        $meta['payload'] += ['timeframe' => 'M5', 'mtf_snapshot_manifest' => ['streams' => ['H1' => [
+            'first_candle_at' => '2010-01-01T00:00:00Z', 'last_candle_at' => '2010-01-01T01:00:00Z',
+            'sha256' => str_repeat('c', 64)]]],
+            'regime_candles' => ['row_count' => 2, 'sha256' => str_repeat('d', 64),
+                'first_row' => ['time' => '2009-12-31T23:00:00Z'], 'last_row' => ['time' => '2010-01-01T00:00:00Z']]];
+        $run->update(['request_meta' => $meta]);
+        $audit = app(ResearchWindowProvenanceAuditService::class)->audit('2010-01-01T00:00:00Z', '2010-01-01T00:30:00Z');
+
+        foreach (['H1', 'INLINE_REGIME_H1'] as $stream) {
+            $range = collect($audit['research_input_reference_ranges'])->firstWhere('stream', $stream);
+            $this->assertTrue($range['candidate_physical_time_overlap']);
+            $this->assertTrue($range['whole_source_including_warmup_referenced']);
+            $this->assertFalse($range['holding_exposure_attested']);
+        }
+        $this->assertContains('ORIGINAL_WARMUP_AND_HOLDING_EXPOSURE_NOT_ATTESTED', $audit['unresolved_provenance']);
+        $this->assertContains('ORIGINAL_MTF_CONTEXT_EXPOSURE_INVENTORY_NOT_ATTESTED', $audit['unresolved_provenance']);
+        $this->assertArrayNotHasKey('first_row', $audit['research_input_reference_ranges'][0]);
+    }
+
+    public function test_related_market_requires_its_own_identity_and_missing_auxiliary_dates_do_not_prove_unused(): void
+    {
+        $run = $this->runReceipt(['mtf_bundle_manifest' => ['streams' => [
+            'M5' => ['first_candle_at' => '2025-01-01T00:00:00Z', 'last_candle_at' => '2025-01-02T00:00:00Z', 'sha256' => str_repeat('a', 64)],
+            'RELATED_M15' => ['symbol' => 'EURUSD', 'first_candle_at' => '2010-01-01T00:00:00Z',
+                'last_candle_at' => '2010-01-01T01:00:00Z', 'sha256' => str_repeat('b', 64)],
+        ]]]);
+        $meta = $run->request_meta; $meta['payload']['foundation_dataset_path'] = 'unverified-foundation.csv';
+        $run->update(['request_meta' => $meta]);
+        $audit = app(ResearchWindowProvenanceAuditService::class)->audit('2010-01-01T00:00:00Z', '2010-01-01T00:15:00Z');
+
+        $related = collect($audit['research_input_reference_ranges'])->firstWhere('stream', 'RELATED_M15');
+        $this->assertSame('EURUSD', $related['source_symbol']);
+        $this->assertFalse($related['candidate_physical_time_overlap']);
+        $this->assertContains('RESEARCH_INPUT_REFERENCE_CHRONOLOGY_OR_IDENTITY_INCOMPLETE', $audit['unresolved_provenance']);
+        $this->assertContains('RESEARCH_INPUT_REFERENCE_SCOPE_UNASSESSABLE', $audit['unresolved_provenance']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+    }
+
+    public function test_hash_only_mtf_stream_is_unassessable_and_cannot_be_reported_as_unused(): void
+    {
+        $this->runReceipt(['mtf_bundle_manifest' => ['streams' => [
+            'M5' => ['first_candle_at' => '2025-01-01T00:00:00Z', 'last_candle_at' => '2025-01-02T00:00:00Z', 'sha256' => str_repeat('a', 64)],
+            'H4' => ['sha256' => str_repeat('b', 64)],
+        ]]]);
+        $audit = app(ResearchWindowProvenanceAuditService::class)->audit('2010-01-01T00:00:00Z', '2010-01-02T00:00:00Z');
+        $this->assertContains('RESEARCH_INPUT_REFERENCE_CHRONOLOGY_OR_IDENTITY_INCOMPLETE', $audit['unresolved_provenance']);
+        $this->assertContains('RESEARCH_INPUT_REFERENCE_SCOPE_UNASSESSABLE', $audit['unresolved_provenance']);
+        $this->assertSame('BLOCKED_DEPENDENCY', $audit['dependency_status']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+        $this->assertSame([], $audit['candidate_unused_windows']);
+    }
 }

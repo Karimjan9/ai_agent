@@ -27,6 +27,16 @@ class CausalSkillCreditBridgeService
         }
 
         $experiment = $experiment->fresh();
+        // A new scope cannot borrow a legacy confirmed label, even after its
+        // source/seal drifts. Hypothesis-only records never change old authority.
+        if ($experiment && Schema::hasTable('scoped_research_certificates')
+            && \App\Models\ScopedResearchCertificate::query()
+                ->where('source_type', AgentLearningCausalExperiment::class)->where('source_id', $experiment->id)
+                ->where('record_type', 'preregistration')->get()->contains(
+                    fn ($row): bool => data_get($row->payload, 'design.source_hypothesis_only') !== true,
+                )) {
+            return $this->withheld('SCOPED_ORIGINAL_CERTIFICATE_REQUIRED_NOT_LEGACY_CREDIT');
+        }
         if (data_get($experiment?->evidence, 'experiment_kind') === ProspectiveRepairExperimentService::KIND) {
             return $this->withheld('SCREENING_DISCOVERY_IS_NOT_INDEPENDENT_VALIDATION');
         }

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:58:07.670Z",
-  "source_digest": "1988c3677e985eb073edcae8d26ed66ccab8e5ecf4ba991afb04ffa15678f894",
-  "source_file_count": 1572,
-  "git_head": "0084ce9f86178df453d5d494027fecb752dcb661",
+  "generated_at": "2026-10-09T17:28:28.344Z",
+  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
+  "source_file_count": 1582,
+  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,6 +22,11 @@
         "research-paper-epoch"
       ],
       "paths": [
+        "backend-laravel/app/Models/ScopedResearchCertificate.php",
+        "backend-laravel/app/Models/DescendantValueTrial.php",
+        "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+        "backend-laravel/app/Services/DescendantScopedProofService.php",
+        "backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php",
         "backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php",
         "backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php",
         "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
@@ -143,6 +148,16 @@
         "ai-service-python/app/services/prospective_probe_window.py"
       ],
       "entry_points": [
+        "ScopedResearchCertificateService::register",
+        "ScopedResearchCertificateService::inspect",
+        "ScopedResearchCertificateService::bindOriginalData",
+        "ScopedResearchCertificateService::recordAssessment",
+        "CausalLearningConfirmationService::scopeMeasurements",
+        "CausalLearningConfirmationService::settleScopedProofs",
+        "InstrumentResearchWindowService::originalValidationReadiness",
+        "DescendantScopedProofService::preregister",
+        "DescendantScopedProofService::inspect",
+        "DescendantScopedProofService::settle",
         "LearningKernelService::settleOutcome",
         "SpecialistCouncilResearchFeedbackService::registerFollowupProof",
         "SpecialistCouncilResearchFeedbackService::inspectFollowupReadiness",
@@ -190,6 +205,8 @@
         "trading:reconcile-instrument-pairs"
       ],
       "data_tables": [
+        "scoped_research_certificates",
+        "descendant_value_trials",
         "research_instrument_abstractions",
         "research_behavior_archive",
         "edge_academy_passports",
@@ -210,6 +227,10 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Component, selector, council and inheritance are separately sealed diagnostic questions, not mutually substitutable authority. A stored assessment, verified input bytes or future reservation never proves untouched validation (ADR-036).",
+        "A prospective scoped experiment cannot borrow the coupled legacy confirmed/credit path, even after source drift. Legacy experiments and hypothesis-only references retain their original protocol.",
+        "Descendant diagnostics require four exact P/PT/PTU/PU models, immutable original source revision and actual original products; bundle improvement is not individual trait or inheritance authority.",
+        "All referenced MTF, warmup, related, foundation and inline exposure remains in the unused-data audit; absent logs cannot attest a complete training/selection inventory.",
         "Explicit unused-draft mixed-price discovery preserves twenty original model/episode and ten pair identities but settles them only in its own neutral namespace. Genuine technical originals and unexecuted exact-control dependents are not measured zero effects; no ordinary mutation advice, pair effect, credit or economic handoff is emitted (ADR-035).",
         "Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).",
         "Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).",
@@ -256,6 +277,11 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ScopedResearchCertificateTest.php",
+        "backend-laravel/tests/Feature/SeparatedCausalProofTest.php",
+        "backend-laravel/tests/Feature/OriginalValidationReadinessTest.php",
+        "backend-laravel/tests/Feature/DescendantScopedProofTest.php",
+        "backend-laravel/tests/Unit/DescendantScopedProofServiceTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php",
         "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php",
@@ -318,7 +344,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 116,
+      "source_file_count": 121,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {

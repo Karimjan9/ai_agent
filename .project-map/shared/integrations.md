@@ -1,5 +1,15 @@
 # Integrations and runtime boundaries
 
+Scoped research questions use an append-only PHP registry and original named
+source snapshots; public assessment payloads have diagnostic scope only.
+Original data bindings reopen the existing server-authorized four-stream
+registry and preserve their exact file hashes and closed UTC bounds. This
+verifies bytes, not an exhaustive training/selection exposure inventory.
+The causal owner retains original request/model/run/data/execution bindings
+before closing a scoped diagnostic. Descendant observations reopen original
+immutable four-arm artifacts. No new Python evaluator, scheduler, dispatch,
+2026 research access or scientific-credit issuer is introduced (ADR-036).
+
 New native standalone transport is an original server-owned panel unit, not a
 plain SOLO upgraded by a caller flag. Its signed
 `native_standalone_source_transport_v1` scope requires current work/fence/plan,

@@ -1,5 +1,13 @@
 # Causal-learning history
 
+## 2026-10-09 - Separately scoped prospective proof preparation
+
+Append-only component/selector/council/inheritance questions, actual data-binding
+diagnostics and exact descendant four-arm observations separate measured effects
+from untouched-data authority. Existing legacy credit behavior is retained.
+Independent issuance, native descendant dispatch and market proof remain open.
+See ADR-036; code delivery status is not inferred from this map entry.
+
 ## 2026-10-08 - Bounded archive consumption and native finite search
 
 Original behavior entries can influence sealed research priorities through a

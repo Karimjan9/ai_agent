@@ -1,5 +1,34 @@
 # Causal learning states
 
+## Separately scoped prospective questions (ADR-036)
+
+`preregistered_diagnostic -> data_bound_diagnostic -> assessed_diagnostic`
+uses append-only separately signed registration, original-data binding and
+assessment records. Component, selector, council and inheritance have different
+named sources and cannot borrow each other's proof. A valid question seal does
+not mean executable or confirmed authority. Post-paper UTC bounds, exact current
+model/programme identities and prospective registration remain required.
+
+The existing causal owner separately measures guided/control and blind/control
+component contrasts. Equal useful guided/blind results do not erase either
+component contrast; one question still cannot certify selector superiority.
+Future questions without actual original data/products keep their final
+assessment open. Scope drift or a forged legacy confirmed flag cannot fall
+through to legacy credits. Unscoped v2 and explicit hypothesis-only references
+keep their previous rules; historical outcomes are never upgraded.
+
+The original-input diagnostic reopens all four closed streams and distinguishes
+byte completeness from complete original training/selection/warmup/context
+inventory. No complete inventory producer is supplied by this change: readiness
+remains `BLOCKED_DEPENDENCY`, even for valid bytes and server window labels.
+
+Descendant `scoped_preregistered -> scoped_diagnostic` validates exact
+P/P+T/P+T+U/P+U vectors, source cartridge revision and original immutable runs.
+It derives conditional trait and interaction effects rather than caller
+success flags. These states are excluded from old `settled` authority counts.
+The native four-arm dispatcher and independent certificate issuer remain
+separate undelivered boundaries, not implicit permissions.
+
 Finite program search follows `explicit typed task + verified original library
 -> prospective equal-cap seal -> two original native search products ->
 finite_search_diagnostic_measured`. Incomplete, familiar, tampered or drifted

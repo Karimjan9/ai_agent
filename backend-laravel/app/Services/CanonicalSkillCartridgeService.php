@@ -899,6 +899,22 @@ class CanonicalSkillCartridgeService
         ];
     }
 
+    /** Separate prospective four-arm scope; legacy transplant/Foundry contracts stay intact. */
+    public function preregisterDescendantProof(LabSkillZooEntry $cartridge, array $models, array $scope): array
+    {
+        return app(DescendantScopedProofService::class)->preregister($cartridge, $models, $scope);
+    }
+
+    public function inspectDescendantProof(int $trialId, int $certificateId): array
+    {
+        return app(DescendantScopedProofService::class)->inspect($trialId, $certificateId);
+    }
+
+    public function settleDescendantProof(int $trialId, int $certificateId, array $originalRunIds): array
+    {
+        return app(DescendantScopedProofService::class)->settle($trialId, $certificateId, $originalRunIds);
+    }
+
     /** @return array<string,mixed> */
     private function proposal(LabSkillZooEntry $entry): array
     {

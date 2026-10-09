@@ -10,6 +10,11 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/app/Models/ScopedResearchCertificate.php
+  - backend-laravel/app/Models/DescendantValueTrial.php
+  - backend-laravel/app/Services/ScopedResearchCertificateService.php
+  - backend-laravel/app/Services/DescendantScopedProofService.php
+  - backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php
   - backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php
   - backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
@@ -130,6 +135,16 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - ScopedResearchCertificateService::register
+  - ScopedResearchCertificateService::inspect
+  - ScopedResearchCertificateService::bindOriginalData
+  - ScopedResearchCertificateService::recordAssessment
+  - CausalLearningConfirmationService::scopeMeasurements
+  - CausalLearningConfirmationService::settleScopedProofs
+  - InstrumentResearchWindowService::originalValidationReadiness
+  - DescendantScopedProofService::preregister
+  - DescendantScopedProofService::inspect
+  - DescendantScopedProofService::settle
   - LearningKernelService::settleOutcome
   - SpecialistCouncilResearchFeedbackService::registerFollowupProof
   - SpecialistCouncilResearchFeedbackService::inspectFollowupReadiness
@@ -176,6 +191,8 @@ entry_points:
   - trading:causal-golden-worlds
   - trading:reconcile-instrument-pairs
 data_tables:
+  - scoped_research_certificates
+  - descendant_value_trials
   - research_instrument_abstractions
   - research_behavior_archive
   - edge_academy_passports
@@ -194,6 +211,10 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - Component, selector, council and inheritance are separately sealed diagnostic questions, not mutually substitutable authority. A stored assessment, verified input bytes or future reservation never proves untouched validation (ADR-036).
+  - A prospective scoped experiment cannot borrow the coupled legacy confirmed/credit path, even after source drift. Legacy experiments and hypothesis-only references retain their original protocol.
+  - Descendant diagnostics require four exact P/PT/PTU/PU models, immutable original source revision and actual original products; bundle improvement is not individual trait or inheritance authority.
+  - All referenced MTF, warmup, related, foundation and inline exposure remains in the unused-data audit; absent logs cannot attest a complete training/selection inventory.
   - Explicit unused-draft mixed-price discovery preserves twenty original model/episode and ten pair identities but settles them only in its own neutral namespace. Genuine technical originals and unexecuted exact-control dependents are not measured zero effects; no ordinary mutation advice, pair effect, credit or economic handoff is emitted (ADR-035).
   - Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).
   - Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).
@@ -245,6 +266,11 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ScopedResearchCertificateTest.php
+  - backend-laravel/tests/Feature/SeparatedCausalProofTest.php
+  - backend-laravel/tests/Feature/OriginalValidationReadinessTest.php
+  - backend-laravel/tests/Feature/DescendantScopedProofTest.php
+  - backend-laravel/tests/Unit/DescendantScopedProofServiceTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilExecutedClockTest.php
   - backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilExecutorDiagnosticsTest.php

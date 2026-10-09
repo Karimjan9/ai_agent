@@ -268,6 +268,23 @@ settlement needs an explicit scientific classification and a next action.
 
 ## Modules involved
 
+### Separately scoped prospective proof preparation
+
+Named original source -> separate component/selector/council/inheritance
+question seal -> original four-stream data binding -> original producer
+diagnostic -> independently verified authority boundary (not delivered by the
+diagnostic registry). Original input completeness is not original unused-data
+provenance. The audit includes MTF/context/warmup/related/foundation/inline
+references; unknown complete exposure inventory stays blocked.
+
+The existing confirmation owner recomputes component/control contrasts without
+requiring guided superiority over blind. Selector superiority still needs its
+own preregistered multi-question equal-budget panel. The legacy coupled credit
+path remains unchanged and cannot be borrowed by a new scoped question.
+Descendant diagnostics bind P/PT/PTU/PU original vectors/products and distinguish
+retained trait evidence from interaction-only bundle observations. No new
+scheduler, dispatch, Mentor, Parent, paper or credit authority follows.
+
 `causal-learning` → `laboratory` → `laravel-python-contract` →
 `confirmation-entry` → `paper-execution`
 

@@ -18,6 +18,147 @@ class CausalLearningConfirmationService
 {
     public const EVIDENCE_PROTOCOL = 'target_aligned_causal_confirmation_v2';
 
+    public const SCOPED_PROTOCOL = 'separated_causal_proof_observations_v1';
+
+    private function hasDeclaredProspectiveScope(AgentLearningCausalExperiment $experiment): bool
+    {
+        if (! Schema::hasTable('scoped_research_certificates')) return false;
+        return \App\Models\ScopedResearchCertificate::query()
+            ->where('source_type', AgentLearningCausalExperiment::class)->where('source_id', $experiment->id)
+            ->where('record_type', 'preregistration')->get()->contains(
+                fn ($row): bool => data_get($row->payload, 'design.source_hypothesis_only') !== true,
+            );
+    }
+
+    /**
+     * A measured component contrast is not a selector, council or descendant
+     * certificate. Read persisted owner outcomes, never caller verdict flags.
+     * This diagnostic deliberately does not change the legacy v2 authority.
+     */
+    public function scopeMeasurements(AgentLearningCausalExperiment $experiment): array
+    {
+        $experiment = $experiment->fresh();
+        $outcomes = (array) data_get($experiment?->evidence, 'outcomes', []);
+        $control = (array) ($outcomes['frozen_control'] ?? []);
+        $required = max(3, (int) config('services.learning_lane.independent_confirmations_required', 3));
+        $components = [];
+        foreach ([$this->guidedRole($experiment), 'blinded'] as $role) {
+            $candidate = (array) ($outcomes[$role] ?? []);
+            $windows = $this->compareWindows($candidate, $control, $required);
+            $target = $this->compareTargetMeasurements($candidate, $control);
+            $pair = LabLearningLanePair::query()->find((int) ($candidate['pair_id'] ?? 0));
+            $intent = AgentLearningMutationIntent::query()
+                ->where('lab_agent_id', (int) ($candidate['agent_id'] ?? 0))->first();
+            $expectedAgent = $role === 'blinded' ? $experiment->blinded_agent_id : $experiment->guided_agent_id;
+            $identity = $pair && $pair->isVerifiedControlPair()
+                && (int) $pair->candidate_agent_id === (int) $expectedAgent
+                && (int) ($candidate['agent_id'] ?? 0) === (int) $expectedAgent
+                && (int) $pair->control_agent_id === (int) $experiment->control_agent_id
+                && (int) ($control['agent_id'] ?? 0) === (int) $experiment->control_agent_id
+                && (string) $pair->target === (string) $experiment->target
+                && $intent && filled($intent->selected_gene)
+                && ($role === 'blinded' || (string) $intent->selected_gene === (string) $experiment->gene_key);
+            $safe = $this->nonTargetSafe($pair);
+            $components[$role] = [
+                'candidate_agent_id' => (int) $expectedAgent,
+                'gene_key' => $intent?->selected_gene,
+                'pair_id' => $pair?->id,
+                'pair_identity_verified' => (bool) $identity,
+                'non_target_safe' => $safe,
+                'window_effect' => $windows,
+                'target_effect' => $target,
+                'measured_component_passed' => $identity && $safe
+                    && ($windows['passed'] ?? false) && ($target['passed'] ?? false),
+                'selector_superiority_required' => false,
+                'original_run_ids' => [$candidate['evidence_run_id'] ?? null, $control['evidence_run_id'] ?? null],
+                'independent_certificate_granted' => false,
+            ];
+        }
+        $guided = (array) ($outcomes[$this->guidedRole($experiment)] ?? []);
+        $blind = (array) ($outcomes['blinded'] ?? []);
+        return [
+            'protocol' => self::SCOPED_PROTOCOL,
+            'experiment_id' => (int) $experiment->id,
+            'components' => $components,
+            'selector' => [
+                'observed_window_effect' => $this->compareWindows($guided, $blind, $required),
+                'observed_target_effect' => $this->compareTargetMeasurements($guided, $blind),
+                'status' => 'requires_preregistered_equal_budget_multi_question_panel',
+                'single_question_is_selector_certificate' => false,
+                'independent_certificate_granted' => false,
+            ],
+            'council' => ['status' => 'requires_original_equal_account_solo_panel'],
+            'inheritance' => ['status' => 'requires_original_four_arm_descendant_ablation'],
+            'proof_depth' => 'persisted_owner_observation_not_untouched_validation',
+            'promotion_evidence' => false,
+            'paper_or_live_authority' => false,
+        ];
+    }
+
+    /** New prospective scopes never fall through to the coupled legacy bridge. */
+    public function settleScopedProofs(AgentLearningCausalExperiment $experiment): array
+    {
+        $registry = app(ScopedResearchCertificateService::class);
+        $registrations = $registry->sourceRegistrations($experiment);
+        $measurements = $this->scopeMeasurements($experiment);
+        $receipts = [];
+        foreach ($registrations as $registration) {
+            // A draft without original data is still open. Do not consume its
+            // one immutable assessment using reused discovery observations.
+            if (data_get($registration, 'data_binding.valid') !== true
+                || ! $this->originalScopedOutcomesMatch($experiment, $registration)) {
+                $receipts[] = $registration;
+                continue;
+            }
+            $receipts[] = $registry->recordAssessment((int) $registration['certificate_id'], [
+                'producer' => self::class,
+                'measurement' => $measurements,
+                'original_validation_readiness' => $registration['original_readiness'],
+            ]);
+        }
+        return [
+            'protocol' => self::SCOPED_PROTOCOL,
+            'status' => 'scoped_observation_requires_original_validation',
+            'confirmed' => false,
+            'measurements' => $measurements,
+            'certificates' => $receipts,
+            'legacy_credit_authority' => false,
+            'reason_code' => $registrations === [] ? 'ORIGINAL_SCOPED_PREREGISTRATION_INVALID_OR_MISSING'
+                : 'ORIGINAL_UNUSED_VALIDATION_PROVENANCE_REQUIRED',
+            'promotion_evidence' => false,
+        ];
+    }
+
+    /** Do not close a future question with old or unbound outcome projections. */
+    private function originalScopedOutcomesMatch(AgentLearningCausalExperiment $experiment, array $registration): bool
+    {
+        $binding = \App\Models\ScopedResearchCertificate::find((int) data_get($registration, 'data_binding.record_id'));
+        if (! $binding || ! $binding->recorded_at) return false;
+        $immutable = app(LabImmutableEvidenceService::class);
+        $epochs = app(ResearchPaperEpochContractService::class);
+        foreach ([$this->guidedRole($experiment) => $experiment->guided_agent_id,
+            'blinded' => $experiment->blinded_agent_id, 'frozen_control' => $experiment->control_agent_id] as $role => $agentId) {
+            $key = data_get($experiment->evidence, 'outcomes.'.$role.'.evidence_run_id');
+            $run = is_string($key) ? LabEvaluationRun::where('run_id', $key)->first() : null;
+            if (! $run || $run->status !== 'completed' || $run->phase !== 'full_validation'
+                || (int) $run->lab_agent_id !== (int) $agentId
+                || (int) $run->lab_generation_id !== (int) $experiment->lab_generation_id
+                || ! $run->started_at || ! $run->started_at->greaterThan($binding->recorded_at)
+                || $run->data_hash !== data_get($registration, 'data_binding.window.dataset_sha256')
+                || $run->code_hash !== data_get($registration, 'design.evaluator_hash')) return false;
+            try {
+                if (($immutable->learningEligibility($run)['complete'] ?? false) !== true
+                    || $immutable->verifiedModelRuntimeIdentity($run) === null) return false;
+                $request = $immutable->latestArtifactPayload($run, 'evaluation_request');
+                $execution = data_get($request, 'execution_contract.execution_hash', data_get($request, 'execution_hash'));
+                if ($execution !== data_get($registration, 'design.execution_hash')
+                    || $epochs->parameterHash((array) data_get($request, 'mtf_snapshot_manifest'))
+                        !== data_get($registration, 'data_binding.manifest_hash')) return false;
+            } catch (\Throwable) { return false; }
+        }
+        return true;
+    }
+
     /** @return array<string, mixed> */
     public function recordEvaluationOutcome(
         LabAgent $agent,
@@ -292,6 +433,10 @@ class CausalLearningConfirmationService
         // Confirmation is monotonic. A duplicate queue callback may replay
         // an already persisted outcome, but it can never reopen or downgrade
         // a confirmed causal skill.
+        if ((string) $experiment->status === 'confirmed' && $this->hasDeclaredProspectiveScope($experiment)) {
+            return ['status' => 'blocked_dependency', 'confirmed' => false,
+                'reason_code' => 'SCOPED_PROOF_CANNOT_BORROW_LEGACY_CONFIRMATION', 'promotion_evidence' => false];
+        }
         if ((string) $experiment->status === 'confirmed') {
             $credit = app(CausalSkillCreditBridgeService::class)->settle($experiment);
             $guided = (array) data_get($experiment->evidence, 'outcomes.'.$this->guidedRole($experiment), []);
@@ -365,6 +510,9 @@ class CausalLearningConfirmationService
                 'experiment_id' => (int) $experiment->id,
                 'promotion_evidence' => false,
             ];
+        }
+        if ($this->hasDeclaredProspectiveScope($experiment)) {
+            return $this->settleScopedProofs($experiment);
         }
         $required = max(3, (int) config('services.learning_lane.independent_confirmations_required', 3));
         $positiveRequired = 2;
