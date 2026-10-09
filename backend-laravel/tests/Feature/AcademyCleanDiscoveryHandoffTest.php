@@ -214,6 +214,58 @@ class AcademyCleanDiscoveryHandoffTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    /** Pure production selector only: no dataset loading, feature work or replay. */
+    private function originalRequestReplayBudget(string $serializedRequest): array
+    {
+        $script = <<<'PY'
+import hashlib, json, sys
+from app.schemas import SimpleBacktestRequest
+from app.main import _bounded_replay_seconds
+raw = sys.stdin.buffer.read()
+p = SimpleBacktestRequest(**json.loads(raw))
+probe = (p.policy_context or {}).get('prospective_probe_window', {})
+print(json.dumps({'protocol':'original_request_replay_budget_selector_v1',
+    'request_sha256':hashlib.sha256(raw).hexdigest(), 'operation':'run_all',
+    'selector_seconds':_bounded_replay_seconds(p, 'run_all'),
+    'evaluation_mode':p.evaluation_mode, 'strategy_count':len(p.strategies),
+    'probe_protocol':probe.get('protocol'), 'probe_evaluator':probe.get('evaluator_version'),
+    'evaluated_rows':probe.get('evaluated_rows'), 'replay_executed':False}, sort_keys=True))
+PY;
+        $process = new Process(['python', '-B', '-c', $script], dirname(base_path()).'/ai-service-python');
+        $process->setInput($serializedRequest); $process->setTimeout(30);
+        $process->mustRun();
+        $budget = json_decode(trim($process->getOutput()), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('original_request_replay_budget_selector_v1', $budget['protocol']);
+        $this->assertSame(hash('sha256', $serializedRequest), $budget['request_sha256']);
+        $this->assertSame('run_all', $budget['operation']);
+        $this->assertFalse($budget['replay_executed']);
+        $this->assertIsInt($budget['selector_seconds']);
+        $this->assertGreaterThanOrEqual(30, $budget['selector_seconds']);
+        $this->assertLessThanOrEqual(1680, $budget['selector_seconds']);
+        $transport = (new \ReflectionMethod(LabAgentEvaluationService::class, 'screenTransportTimeout'))
+            ->invoke(app(LabAgentEvaluationService::class), false, true);
+        $this->assertSame(1800, $transport);
+        $this->assertLessThan($transport, $budget['selector_seconds']);
+        return $budget;
+    }
+
+    public function test_fifteen_thousand_software_fixture_budget_uses_same_serialized_request_pure_production_selector(): void
+    {
+        $request = ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'strategy' => 'ema_rsi_v1',
+            'strategies' => [['strategy' => 'ema_rsi_v1', 'base_strategy' => 'ema_rsi_v1', 'version' => 'budget-fixture', 'parameters' => (object) []]],
+            'evaluation_mode' => 'incremental', 'policy_context' => ['prospective_probe_window' => [
+                'protocol' => ProspectiveRepairProbeWindowService::PROTOCOL, 'evaluator_version' => ProspectiveRepairProbeWindowService::EVALUATOR,
+                'evaluated_rows' => 15000, 'warmup_rows' => 512]]];
+        $wire = json_encode($request, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $budget = $this->originalRequestReplayBudget($wire);
+        $this->assertSame(15000, $budget['evaluated_rows']);
+        $this->assertSame('incremental', $budget['evaluation_mode']);
+        $this->assertSame(1, $budget['strategy_count']);
+        $this->assertSame(ProspectiveRepairProbeWindowService::PROTOCOL, $budget['probe_protocol']);
+        $this->assertSame(ProspectiveRepairProbeWindowService::EVALUATOR, $budget['probe_evaluator']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+    }
+
     public function test_native_clean_bundle_enters_canonical_dispatch_and_real_python_exact_probe_without_full_readiness(): void
     {
         Queue::fake();
@@ -246,19 +298,34 @@ class AcademyCleanDiscoveryHandoffTest extends TestCase
         $this->assertNull($request['dataset_tail_rows']);
         $this->assertSame([], data_get($request, 'policy_context.historical_stratified_windows'));
         $this->assertSame(15000, data_get($request, 'policy_context.prospective_probe_window.evaluated_rows'));
+        // Select using the exact original bytes that the real process receives.
+        // Never duplicate the Python formula or change a production cap.
+        $serializedRequest = json_encode($request, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $budget = $this->originalRequestReplayBudget($serializedRequest);
+        $proofDirectory = dirname(base_path()).'/.runtime/academy-clean-discovery-timeout-20261009/'.$budget['request_sha256'];
+        File::ensureDirectoryExists($proofDirectory);
+        $this->assertFileDoesNotExist($proofDirectory.'/request.json');
+        $this->assertFileDoesNotExist($proofDirectory.'/terminal.json');
+        File::put($proofDirectory.'/request.json', $serializedRequest);
+        File::put($proofDirectory.'/selector.json', json_encode($budget, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         $script = <<<'PY'
-import json, sys, time
+import hashlib, json, sys, time
 from unittest.mock import patch
 from app.schemas import SimpleBacktestRequest
-from app.main import _run_all_backtests_sync, _run_prepared_simple_backtest
+from app.main import _bounded_replay_seconds, _run_all_backtests_sync, _run_prepared_simple_backtest
 from app.services.backtester import _load_simple_candles
 from app.services.prospective_probe_window import select_probe_window
 started = time.perf_counter()
 def stage(message):
     sys.stderr.write(f'{time.perf_counter() - started:.3f}s {message}\n')
     sys.stderr.flush()
-r = json.load(sys.stdin)
+raw_request = sys.stdin.buffer.read()
+r = json.loads(raw_request)
 p = SimpleBacktestRequest(**r)
+request_sha256 = hashlib.sha256(raw_request).hexdigest()
+selector_seconds = _bounded_replay_seconds(p, 'run_all')
+stage('original_request_sha256:' + request_sha256)
+stage('real_production_selector_seconds:' + str(selector_seconds))
 loaded = _load_simple_candles(p)
 stage('real_dataset_loaded:' + str(len(loaded)))
 evaluated, receipt = select_probe_window(loaded, p.policy_context['prospective_probe_window'], p.replay_dataset_hash, p.execution_contract['execution_hash'])
@@ -276,17 +343,29 @@ def observed_checkpoint(key, stage, *args, **kwargs):
 with patch('app.main._load_immutable_replay_cache', return_value=None), patch('app.main._store_immutable_replay_cache'), patch('app.main._write_replay_checkpoint', side_effect=observed_checkpoint), patch('app.main._run_prepared_simple_backtest', side_effect=observed_real_backtest):
     result = _run_all_backtests_sync(p)
 actual = result['leaderboard'][0]['result']['prospective_probe_window_receipt']
-print(json.dumps({'loaded':len(loaded),'evaluated':len(evaluated),'executed_rows':executed_rows,'receipt':actual,'synthetic_fixture':True,'market_replay_proven':False}))
+print(json.dumps({'loaded':len(loaded),'evaluated':len(evaluated),'executed_rows':executed_rows,'receipt':actual,
+    'request_sha256':request_sha256,'selector_seconds':selector_seconds,'elapsed_seconds':time.perf_counter() - started,
+    'synthetic_fixture':True,'market_replay_proven':False}))
 PY;
         $process = new Process(['python', '-B', '-c', $script], dirname(base_path()).'/ai-service-python');
-        $process->setInput(json_encode($request, JSON_UNESCAPED_SLASHES)); $process->setTimeout(360);
+        $process->setInput($serializedRequest); $process->setTimeout($budget['selector_seconds']);
         try {
             $process->mustRun();
         } catch (\Symfony\Component\Process\Exception\ProcessTimedOutException $error) {
-            throw new \RuntimeException('Real clean-discovery probe timed out; original Python stage/stack diagnostics: '
+            File::put($proofDirectory.'/terminal.json', json_encode(['status' => 'timeout', 'original_selector' => $budget,
+                'synthetic_fixture' => true, 'market_replay_proven' => false], JSON_PRETTY_PRINT));
+            throw new \RuntimeException('Real clean-discovery probe timed out; original selector: '.json_encode($budget)
+                .'; original Python stage/stack diagnostics: '
                 .$process->getErrorOutput(), 0, $error);
+        } finally {
+            File::put($proofDirectory.'/stderr.txt', $process->getErrorOutput());
         }
         $actual = json_decode(trim($process->getOutput()), true, 512, JSON_THROW_ON_ERROR);
+        File::put($proofDirectory.'/terminal.json', json_encode(['status' => 'completed', 'original_selector' => $budget,
+            'actual' => $actual], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $this->assertSame($budget['request_sha256'], $actual['request_sha256']);
+        $this->assertSame($budget['selector_seconds'], $actual['selector_seconds']);
+        $this->assertLessThanOrEqual($budget['selector_seconds'], $actual['elapsed_seconds']);
         $this->assertSame(15512, $actual['loaded']); $this->assertSame(15000, $actual['evaluated']);
         $this->assertSame([2000, 15000], $actual['executed_rows']); // real opportunity and stateful survival owners
         $this->assertTrue(app(ProspectiveRepairProbeWindowService::class)->attests($request['policy_context']['prospective_probe_window'], $actual['receipt']));

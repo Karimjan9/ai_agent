@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:08:34.960Z",
-  "source_digest": "ba8be9493157a0bb5900229ba3859c810fe90d39daa3d5e11aca6545953a4215",
+  "generated_at": "2026-10-09T11:10:30.905Z",
+  "source_digest": "13eb3e9cf70a845a19b598b1dd6487783588d74b214f9dd95cd3d4a993535ffc",
   "source_file_count": 1572,
-  "git_head": "3da36954bef41cc3d4d1fa7ef72be095e8200393",
+  "git_head": "2a13c4b2f987b965bd4e4ed55a84dc64d52fd0b1",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -10114,6 +10114,8 @@
         "test_promising_academy_screen_is_terminal_discovery_not_full_replay_selection",
         "test_single_discovery_job_transport_and_mutex_cover_the_existing_bounded_python_deadline",
         "test_arbiter_clean_scope_readiness_serves_only_ready_academy_and_earned_continuation",
+        "originalRequestReplayBudget",
+        "test_fifteen_thousand_software_fixture_budget_uses_same_serialized_request_pure_production_selector",
         "test_native_clean_bundle_enters_canonical_dispatch_and_real_python_exact_probe_without_full_readiness"
       ]
     },
