@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Services\HiddenProcessRunnerService;
 use Composer\Autoload\ClassLoader;
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\TestCase;
 
@@ -97,6 +98,38 @@ class HiddenProcessRunnerTest extends TestCase
         $result = json_decode($parent['stdout'], true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertSame('False', trim($result['stdout']));
+    }
+
+    public function test_legitimate_exit_124_is_not_classified_as_a_timeout(): void
+    {
+        $result = app(HiddenProcessRunnerService::class)->runWithTimeoutException([
+            $this->python(), '-B', '-c',
+            'import sys; print("valid nonzero exit"); sys.stderr.write("Hidden process: timed out.\\n"); sys.exit(124)',
+        ], 5);
+
+        $this->assertSame(['exit_code', 'stdout', 'stderr'], array_keys($result));
+        $this->assertSame(124, $result['exit_code']);
+        $this->assertSame('valid nonzero exit', trim($result['stdout']));
+        $this->assertSame('Hidden process: timed out.', trim($result['stderr']));
+    }
+
+    public function test_windows_timeout_aware_entrypoint_preserves_symfony_timeout_type(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $this->markTestSkipped('Actual Windows broker timeout provenance.');
+        }
+        $started = hrtime(true);
+        try {
+            app(HiddenProcessRunnerService::class)->runWithTimeoutException([
+                $this->python(), '-B', '-c', 'import time; time.sleep(8)',
+            ], 1);
+            $this->fail('Timed-out probe did not throw.');
+        } catch (ProcessTimedOutException $exception) {
+            $this->assertTrue($exception->isGeneralTimeout());
+            $this->assertFalse($exception->isIdleTimeout());
+            $this->assertSame(1.0, $exception->getExceededTimeout());
+            $this->assertLessThan(3, (hrtime(true) - $started) / 1_000_000_000);
+        }
     }
 
     private function python(): string

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T07:36:44.704Z",
-  "source_digest": "c78fcce2e1410716a4b881cc31ed7c831ca56f87256b9e96dbc039e615573689",
-  "source_file_count": 1576,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generated_at": "2026-10-10T09:53:15.272Z",
+  "source_digest": "f7d0e6d81aaa80b9f65f161c0d355c063721a6de15d3b153eba3751310d9428a",
+  "source_file_count": 1577,
+  "git_head": "d7b7d1344d77a849106efd96b466f378b43f4c89",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -959,6 +959,8 @@
         "ai-service-python/app/services/research_release.py",
         "backend-laravel/app/Services/MarketHealthService.php",
         "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+        "backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php",
+        "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
         "backend-laravel/app/Console/Commands/RunResearchLoop.php",
         "backend-laravel/app/Services/AutonomousModeService.php",
         "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
@@ -972,6 +974,7 @@
         "backend-laravel/app/Services/HiddenProcessRunnerService.php",
         "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
         "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+        "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
         "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
         "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
         "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
@@ -1020,6 +1023,8 @@
         "system:runtime-monitor",
         "system:runtime-reload-preflight",
         "RuntimeReloadPreflightService::inspect",
+        "StaleAutonomousWorkRecoveryService::reconcile",
+        "HiddenProcessRunnerService::runWithTimeoutException",
         "LabLifecycleErrorLogger::record",
         "trading:run-research-loop",
         "ai:pause",
@@ -1063,6 +1068,9 @@
         "Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+        "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+        "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
         "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
         "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
         "backend-laravel/scripts/run-hidden-process.test.py",
@@ -1092,7 +1100,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 60,
+      "source_file_count": 63,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {

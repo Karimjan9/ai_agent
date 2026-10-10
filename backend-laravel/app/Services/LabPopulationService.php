@@ -26,7 +26,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 
 class LabPopulationService
 {
@@ -3260,12 +3259,12 @@ class LabPopulationService
             return is_dir('/proc/'.$pid) ? true : null;
         }
 
-        $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
-        $process->run();
-        if (! $process->isSuccessful()) {
+        $result = app(HiddenProcessRunnerService::class)->runWithTimeoutException(
+            ['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH'], 60);
+        if ($result['exit_code'] !== 0) {
             return null;
         }
-        foreach (preg_split('/\R/', $process->getOutput()) ?: [] as $line) {
+        foreach (preg_split('/\R/', $result['stdout']) ?: [] as $line) {
             if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
                 return true;
             }

@@ -47,6 +47,8 @@ class HiddenProcessBrokerTest(unittest.TestCase):
                        for value in ["0", "-1", "nan", "inf", "nope"]]
         invocations += [[], ["--timeout", "1"], ["--timeout", "1", "--"],
                         ["--timeout", "1", "--", ""],
+                        ["--timeout", "1", "--status-file", "", "--", "tool"],
+                        ["--timeout", "1", "--status-file", "bad\0path", "--", "tool"],
                         ["--unknown-private-option", "--timeout", "1", "--", "tool"]]
         for invocation in invocations:
             with self.subTest(invocation=invocation), \
@@ -126,6 +128,92 @@ class HiddenProcessBrokerTest(unittest.TestCase):
                 if child.poll() is None:
                     child.kill()
                     child.wait(timeout=5)
+
+    def test_status_distinguishes_real_exit_124_from_a_broker_timeout(self):
+        broker_executable = str(PYTHONW_PATH) if HAS_PYTHONW else sys.executable
+        output = b"child output\x00\r\n"
+        error = b"child stderr\x00\r\n"
+        code = ("import sys, time; "
+                "sys.stdout.buffer.write(b'child output\\x00\\r\\n'); sys.stdout.flush(); "
+                "sys.stderr.buffer.write(b'child stderr\\x00\\r\\n'); sys.stderr.flush(); ")
+        for timed_out in [False, True]:
+            with self.subTest(timed_out=timed_out), \
+                    tempfile.TemporaryDirectory(prefix="hidden-process-status-test-") as directory, \
+                    tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                status_path = pathlib.Path(directory) / "status.json"
+                status_path.touch()
+                result = subprocess.run(
+                    [broker_executable, "-B", str(MODULE_PATH), "--status-file", str(status_path),
+                     "--timeout", "0.4" if timed_out else "5", "--", sys.executable, "-c",
+                     code + ("time.sleep(30)" if timed_out else "raise SystemExit(124)")],
+                    shell=False, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                stdout.seek(0)
+                stderr.seek(0)
+                self.assertEqual(result.returncode, 124)
+                self.assertEqual(json.loads(status_path.read_text(encoding="ascii")),
+                                 {"timed_out": timed_out})
+                diagnostic = ("Hidden process: timed out." + os.linesep).encode("ascii")
+                captured_output = stdout.read()
+                captured_error = stderr.read()
+                if timed_out:
+                    # The deadline can expire before the child reaches either
+                    # write. Timeout provenance must not depend on startup speed.
+                    self.assertIn(captured_output, [b"", output])
+                    self.assertTrue(captured_error.endswith(diagnostic))
+                    self.assertIn(captured_error[:-len(diagnostic)], [b"", error])
+                else:
+                    self.assertEqual(captured_output, output)
+                    self.assertEqual(captured_error, error)
+                self.assertEqual(list(pathlib.Path(directory).iterdir()), [status_path])
+
+    def test_launch_failure_records_false_without_exposing_the_error(self):
+        with tempfile.TemporaryDirectory(prefix="hidden-process-status-test-") as directory, \
+                mock.patch.object(BROKER.subprocess, "run", side_effect=OSError("private command")), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            status_path = pathlib.Path(directory) / "status.json"
+            status_path.touch()
+            self.assertEqual(BROKER.main([
+                "--timeout", "1", "--status-file", str(status_path), "--", "tool",
+            ]), 1)
+            self.assertEqual(json.loads(status_path.read_text(encoding="ascii")), {"timed_out": False})
+            self.assertEqual(stderr.getvalue(), "Hidden process: unable to start child.\n")
+
+    def test_status_publication_failure_keeps_child_output_and_reports_failure(self):
+        broker_executable = str(PYTHONW_PATH) if HAS_PYTHONW else sys.executable
+        with tempfile.TemporaryDirectory(prefix="hidden-process-status-test-") as directory, \
+                tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            result = subprocess.run(
+                [broker_executable, "-B", str(MODULE_PATH), "--status-file", directory,
+                 "--timeout", "5", "--", sys.executable, "-c",
+                 "import sys; sys.stdout.buffer.write(b'child output\\x00\\r\\n')"],
+                shell=False, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            stdout.seek(0)
+            stderr.seek(0)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(stdout.read(), b"child output\x00\r\n")
+            self.assertEqual(stderr.read(), ("Hidden process: unable to write status." + os.linesep).encode("ascii"))
+            self.assertEqual(list(pathlib.Path(directory).iterdir()), [])
+
+    def test_status_write_failure_leaves_the_unique_status_file_invalid(self):
+        with tempfile.TemporaryDirectory(prefix="hidden-process-status-test-") as directory, \
+                mock.patch.object(BROKER.subprocess, "run") as run, \
+                mock.patch.object(BROKER.json, "dump", side_effect=OSError("private status path")), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            run.return_value.returncode = 0
+            status_path = pathlib.Path(directory) / "status.json"
+            status_path.touch()
+            self.assertEqual(BROKER.main([
+                "--timeout", "1", "--status-file", str(status_path), "--", "tool",
+            ]), 1)
+            self.assertEqual(status_path.read_bytes(), b"")
+            self.assertEqual(stderr.getvalue(), "Hidden process: unable to write status.\n")
+            self.assertEqual(list(pathlib.Path(directory).iterdir()), [status_path])
 
     @unittest.skipUnless(HAS_PYTHONW, "Windows GUI Python is unavailable")
     def test_pythonw_errors_reach_the_inherited_stderr_file_handle(self):

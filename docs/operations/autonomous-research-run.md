@@ -8,12 +8,15 @@ processes, and the launcher is duplicate-safe. If PM2 already owns project
 workers, the fallback does not create a second queue consumer while PM2
 recycles a lane.
 
-On Windows, calendar audits and scheduler PID probes use a GUI Python broker
+On Windows, calendar audits and scheduler, constructor, lifecycle, mutex and
+explicit superseded-worker PID probes use a GUI Python broker
 that launches their original child commands with `CREATE_NO_WINDOW`. A local
 `pythonw.exe` is required. Output, exit codes, calendar proofs, PID guards and
 bounded timeouts remain authoritative. Deploy this runtime fix through the same
 STOP, terminal-generation and known-empty-queue checks described below, then
-verify actual worker boot sources before START.
+verify actual worker boot sources before START. PID output parsing and timeout
+propagation are unchanged; private broker status distinguishes actual timeouts
+from valid nonzero child exits.
 
 Use `php artisan ai:pause --json` for an intentional break. PAUSE is a graceful
 admission fence: it preserves the active generation and checkpoints and stops

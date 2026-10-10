@@ -121,11 +121,16 @@ PM2 topology and only fills missing Redis, AI, scheduler or queue ownership
 when PM2 does not own the project. A partially recycling PM2 topology remains
 PM2-owned so the fallback cannot create duplicate consumers; small hosts retain
 a single CPU-heavy screening lane.
-Read-only historical M5 calendar audits and the scheduler's stale-owner PID
-probe use `HiddenProcessRunnerService`. On Windows it directly starts the GUI
+Read-only historical M5 calendar audits and scheduler, constructor, lifecycle,
+mutex and explicit superseded-worker PID probes use `HiddenProcessRunnerService`.
+On Windows it directly starts the GUI
 Python broker, which launches the original internal argv with `CREATE_NO_WINDOW`
 and inherited file output. Calendar children retain their 120-second timeout;
-the PID child has a three-second bound and preserves live/dead/unknown results.
+the scheduler PID child retains three seconds, explicit watchdog absence five
+seconds, and constructor/lifecycle/mutex probes the original sixty seconds.
+Original output parsing, live/dead/unknown results and exception propagation
+remain unchanged. A private broker completion record distinguishes a timeout
+from a legitimate exit 124; timeout-aware probes retain Symfony's timeout class.
 A monotonic parent watchdog allows only two further seconds for broker startup
 and cleanup. Non-Windows retains Symfony execution for internal helpers and the
 existing native PID checks. Failed audits retain the existing readiness refusal.

@@ -23,6 +23,8 @@ paths:
   - ai-service-python/app/services/research_release.py
   - backend-laravel/app/Services/MarketHealthService.php
   - backend-laravel/app/Services/ResearchLoopArbiterService.php
+  - backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php
+  - backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php
   - backend-laravel/app/Console/Commands/RunResearchLoop.php
   - backend-laravel/app/Services/AutonomousModeService.php
   - backend-laravel/app/Services/LabLifecycleWatchdogService.php
@@ -36,6 +38,7 @@ paths:
   - backend-laravel/app/Services/HiddenProcessRunnerService.php
   - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
   - backend-laravel/tests/Feature/HiddenProcessRunnerTest.php
+  - backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php
   - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
   - backend-laravel/app/Services/TechnicalFailureClassifierService.php
   - backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php
@@ -83,6 +86,8 @@ entry_points:
   - system:runtime-monitor
   - system:runtime-reload-preflight
   - RuntimeReloadPreflightService::inspect
+  - StaleAutonomousWorkRecoveryService::reconcile
+  - HiddenProcessRunnerService::runWithTimeoutException
   - LabLifecycleErrorLogger::record
   - trading:run-research-loop
   - ai:pause
@@ -128,6 +133,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php
+  - backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php
+  - backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php
   - backend-laravel/tests/Feature/HiddenProcessRunnerTest.php
   - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
   - backend-laravel/scripts/run-hidden-process.test.py

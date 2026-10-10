@@ -43,6 +43,8 @@ class ResearchReleaseSealService
         'backend-laravel/scripts/audit-frozen-m5-gap-source.py',
         'backend-laravel/scripts/run-hidden-process.py', 'backend-laravel/scripts/run-hidden-process.test.py',
         'backend-laravel/tests/Feature/HiddenProcessRunnerTest.php',
+        'backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php',
+        'backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php',
         'backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php',
         'backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php',
         'backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php',

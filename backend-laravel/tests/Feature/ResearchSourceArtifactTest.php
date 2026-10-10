@@ -67,6 +67,8 @@ class ResearchSourceArtifactTest extends TestCase
             'backend-laravel/routes/console.php' => '<?php // scheduler source',
             'backend-laravel/scripts/run-ai-service.py' => '# actual runtime script',
             'backend-laravel/scripts/run-hidden-process.py' => '# actual hidden process broker',
+            'backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php' => '<?php // PID result matrix',
+            'backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php' => '<?php // stale owner regression',
             'backend-laravel/composer.json' => '{}', 'backend-laravel/composer.lock' => '{}',
             'backend-laravel/package-lock.json' => '{}', 'ai-service-python/requirements.txt' => 'pandas==2.2.3',
             'ai-service-python/app/main.py' => '# actual python source',
@@ -183,6 +185,10 @@ class ResearchSourceArtifactTest extends TestCase
         $this->assertArrayHasKey('backend-laravel/scripts/run-hidden-process.py', $first['manifest']['files']);
         $this->assertSame(hash('sha256', '# actual hidden process broker'),
             $first['manifest']['files']['backend-laravel/scripts/run-hidden-process.py']['sha256']);
+        $this->assertSame(hash('sha256', '<?php // PID result matrix'),
+            $first['manifest']['files']['backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php']['sha256']);
+        $this->assertSame(hash('sha256', '<?php // stale owner regression'),
+            $first['manifest']['files']['backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php']['sha256']);
         $this->assertArrayHasKey('ai-service-python/tests/test_research_release.py', $first['manifest']['files']);
     }
 

@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /**
  * Detects lifecycle/evidence failures without changing any promotion gate.
@@ -232,10 +231,10 @@ class LabLifecycleWatchdogService
         if ($pid <= 0 || $pid === getmypid()) return false;
         try {
             if (PHP_OS_FAMILY === 'Windows') {
-                $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
-                $process->setTimeout(5)->run();
-                return $process->isSuccessful() && trim($process->getOutput()) !== ''
-                    && preg_match('/"'.preg_quote((string) $pid, '/').'"/', $process->getOutput()) !== 1;
+                $result = app(HiddenProcessRunnerService::class)->run(
+                    ['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH'], 5);
+                return $result['exit_code'] === 0 && trim($result['stdout']) !== ''
+                    && preg_match('/"'.preg_quote((string) $pid, '/').'"/', $result['stdout']) !== 1;
             }
             if (function_exists('posix_kill') && function_exists('posix_get_last_error')) {
                 if (@posix_kill($pid, 0)) return false;

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T07:36:44.704Z",
-  "source_digest": "c78fcce2e1410716a4b881cc31ed7c831ca56f87256b9e96dbc039e615573689",
-  "source_file_count": 1576,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generated_at": "2026-10-10T09:53:15.272Z",
+  "source_digest": "f7d0e6d81aaa80b9f65f161c0d355c063721a6de15d3b153eba3751310d9428a",
+  "source_file_count": 1577,
+  "git_head": "d7b7d1344d77a849106efd96b466f378b43f4c89",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1906,6 +1906,8 @@
         "test_large_output_does_not_block_the_helper_on_windows_pipes",
         "test_windows_timeout_reaps_the_actual_child_and_remains_bounded",
         "test_windows_child_has_no_console_even_from_windowless_php_parent",
+        "test_legitimate_exit_124_is_not_classified_as_a_timeout",
+        "test_windows_timeout_aware_entrypoint_preserves_symfony_timeout_type",
         "python"
       ]
     },
@@ -4308,6 +4310,19 @@
         "test_single_agent_failed_callback_does_not_manufacture_an_attempt_and_original_failure_avoids_ordinary_fanout",
         "test_twenty_known_terminal_technical_and_pre_execution_dispositions_close_only_after_owned_queue_drain",
         "test_terminal_price_question_waits_on_fresh_native_dependency_without_replay_or_ordinary_recovery"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "tests": [
+        "test_windows_probe_output_matrix_preserves_each_existing_classification",
+        "test_timeout_and_start_exceptions_propagate_except_for_conservative_watchdog",
+        "test_invalid_pid_and_watchdog_current_pid_guards_do_not_launch_a_helper",
+        "test_actual_windows_tasklist_preserves_live_and_dead_process_results",
+        "probes",
+        "command",
+        "probe",
+        "requireWindows"
       ]
     },
     {

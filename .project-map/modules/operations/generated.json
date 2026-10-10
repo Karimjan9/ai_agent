@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T07:36:44.704Z",
-  "source_digest": "c78fcce2e1410716a4b881cc31ed7c831ca56f87256b9e96dbc039e615573689",
-  "source_file_count": 1576,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generated_at": "2026-10-10T09:53:15.272Z",
+  "source_digest": "f7d0e6d81aaa80b9f65f161c0d355c063721a6de15d3b153eba3751310d9428a",
+  "source_file_count": 1577,
+  "git_head": "d7b7d1344d77a849106efd96b466f378b43f4c89",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -23,6 +23,8 @@
     "ai-service-python/app/services/research_release.py",
     "backend-laravel/app/Services/MarketHealthService.php",
     "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+    "backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php",
+    "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
     "backend-laravel/app/Console/Commands/RunResearchLoop.php",
     "backend-laravel/app/Services/AutonomousModeService.php",
     "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
@@ -36,6 +38,7 @@
     "backend-laravel/app/Services/HiddenProcessRunnerService.php",
     "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
     "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+    "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
     "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
     "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
     "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
@@ -101,6 +104,7 @@
     "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
     "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
     "backend-laravel/app/Services/SettlementWatermarkService.php",
+    "backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php",
     "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
     "backend-laravel/config/cache.php",
     "backend-laravel/config/queue.php",
@@ -128,7 +132,9 @@
     "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
     "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
     "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+    "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
+    "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
     "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
     "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php",
     "scripts/restart_mt5.sh"
@@ -702,25 +708,37 @@
       "symbol": "HiddenProcessRunnerService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
-      "line": 10
+      "line": 11
     },
     {
       "symbol": "run",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
-      "line": 16
+      "line": 17
+    },
+    {
+      "symbol": "runWithTimeoutException",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 29
+    },
+    {
+      "symbol": "execute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 34
     },
     {
       "symbol": "mustRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
-      "line": 41
+      "line": 59
     },
     {
       "symbol": "runWindows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
-      "line": 61
+      "line": 79
     },
     {
       "symbol": "isLocal",
@@ -774,151 +792,151 @@
       "symbol": "supersededRunProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 139
+      "line": 138
     },
     {
       "symbol": "supersededRunOperationalBlock",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 218
+      "line": 217
     },
     {
       "symbol": "supersededWorkerIsAbsent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 230
+      "line": 229
     },
     {
       "symbol": "schemaPreflight",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 250
+      "line": 249
     },
     {
       "symbol": "watchOrphanedOpenRuns",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 293
+      "line": 292
     },
     {
       "symbol": "LabLifecycleWatchdogService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 32
+      "line": 31
     },
     {
       "symbol": "hasAnyLabJob",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 377
+      "line": 376
     },
     {
       "symbol": "replayLaneIsIdle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 389
+      "line": 388
     },
     {
       "symbol": "watchDraftDispatchStalls",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 409
+      "line": 408
     },
     {
       "symbol": "watchStaleTraining",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 427
+      "line": 426
     },
     {
       "symbol": "safeToRequeue",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 472
+      "line": 471
     },
     {
       "symbol": "hasQueuedFullJob",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 480
+      "line": 479
     },
     {
       "symbol": "watchFullValidationStalls",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 486
+      "line": 485
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 51
+      "line": 50
     },
     {
       "symbol": "safeToFinalizeStalledGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 543
+      "line": 542
     },
     {
       "symbol": "inspect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 56
+      "line": 55
     },
     {
       "symbol": "watchMissingForwardLedgers",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 570
+      "line": 569
     },
     {
       "symbol": "watchShadowConnection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 617
+      "line": 616
     },
     {
       "symbol": "auditModelVersionIds",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 655
+      "line": 654
     },
     {
       "symbol": "agentAuditSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 673
+      "line": 672
     },
     {
       "symbol": "watchPaperCapture",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 685
+      "line": 684
     },
     {
       "symbol": "watchElitePortfolioContracts",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 718
+      "line": 717
     },
     {
       "symbol": "watchPaperIntegrity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 797
+      "line": 796
     },
     {
       "symbol": "warn",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 808
+      "line": 807
     },
     {
       "symbol": "reconcileSupersededRuns",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
-      "line": 84
+      "line": 83
     },
     {
       "symbol": "latestCandle",
@@ -1170,7 +1188,7 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 128
+      "line": 130
     },
     {
       "symbol": "ResearchReleaseSealService",
@@ -1182,157 +1200,157 @@
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 200
+      "line": 202
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 290
+      "line": 292
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 320
+      "line": 322
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 332
+      "line": 334
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 348
+      "line": 350
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 363
+      "line": 365
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 365
+      "line": 367
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 378
+      "line": 380
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 386
+      "line": 388
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 397
+      "line": 399
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 415
+      "line": 417
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 425
+      "line": 427
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 446
+      "line": 448
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 460
+      "line": 462
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 480
+      "line": 482
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 492
+      "line": 494
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 503
+      "line": 505
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 510
+      "line": 512
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 532
+      "line": 534
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 538
+      "line": 540
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 555
+      "line": 557
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 592
+      "line": 594
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 622
+      "line": 624
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 630
+      "line": 632
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 652
+      "line": 654
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 661
+      "line": 663
     },
     {
       "symbol": "queueCheck",
@@ -1521,6 +1539,18 @@
       "line": 59
     },
     {
+      "symbol": "StaleAutonomousWorkRecoveryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php",
+      "line": 15
+    },
+    {
+      "symbol": "reconcile",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StaleAutonomousWorkRecoveryService.php",
+      "line": 20
+    },
+    {
       "symbol": "TechnicalFailureClassifierService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
@@ -1578,49 +1608,85 @@
       "symbol": "_InvocationParser",
       "kind": "python_class",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 10
+      "line": 12
     },
     {
       "symbol": "error",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 11
+      "line": 13
     },
     {
       "symbol": "_positive_timeout",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 16
+      "line": 18
+    },
+    {
+      "symbol": "_status_file",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 25
     },
     {
       "symbol": "_diagnostic",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 23
+      "line": 31
+    },
+    {
+      "symbol": "_finish",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 67
     },
     {
       "symbol": "main",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 59
+      "line": 96
     },
     {
       "symbol": "test_real_timeout_kills_and_reaps_the_direct_child",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 101
+      "line": 103
     },
     {
       "symbol": "track_child",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 105
+      "line": 107
+    },
+    {
+      "symbol": "test_status_distinguishes_real_exit_124_from_a_broker_timeout",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 132
+    },
+    {
+      "symbol": "test_launch_failure_records_false_without_exposing_the_error",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 172
+    },
+    {
+      "symbol": "test_status_publication_failure_keeps_child_output_and_reports_failure",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 184
+    },
+    {
+      "symbol": "test_status_write_failure_leaves_the_unique_status_file_invalid",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 203
     },
     {
       "symbol": "test_pythonw_errors_reach_the_inherited_stderr_file_handle",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 131
+      "line": 219
     },
     {
       "symbol": "HiddenProcessBrokerTest",
@@ -1650,13 +1716,13 @@
       "symbol": "test_launch_failures_and_timeouts_have_fixed_diagnostics",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 59
+      "line": 61
     },
     {
       "symbol": "test_real_child_preserves_argv_output_exit_cwd_and_environment",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 73
+      "line": 75
     },
     {
       "symbol": "approve",
@@ -1761,52 +1827,64 @@
       "line": 73
     },
     {
-      "symbol": "python",
+      "symbol": "test_legitimate_exit_124_is_not_classified_as_a_timeout",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 102
+      "line": 103
+    },
+    {
+      "symbol": "test_windows_timeout_aware_entrypoint_preserves_symfony_timeout_type",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 116
     },
     {
       "symbol": "HiddenProcessRunnerTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 11
+      "line": 12
+    },
+    {
+      "symbol": "python",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 135
     },
     {
       "symbol": "test_helper_preserves_argument_boundaries_output_and_exit_status",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 13
+      "line": 14
     },
     {
       "symbol": "test_successful_helper_json_is_returned_without_stderr_contamination",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 27
+      "line": 28
     },
     {
       "symbol": "test_failed_helper_is_refused_before_the_caller_can_decode_json",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 37
+      "line": 38
     },
     {
       "symbol": "test_large_output_does_not_block_the_helper_on_windows_pipes",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 46
+      "line": 47
     },
     {
       "symbol": "test_windows_timeout_reaps_the_actual_child_and_remains_bounded",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 57
+      "line": 58
     },
     {
       "symbol": "test_windows_child_has_no_console_even_from_windowless_php_parent",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
-      "line": 80
+      "line": 81
     },
     {
       "symbol": "poisonShapes",
@@ -2133,6 +2211,36 @@
       "line": 83
     },
     {
+      "symbol": "test_live_lifecycle_owner_is_never_preempted",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "line": 129
+    },
+    {
+      "symbol": "StaleAutonomousWorkRecoveryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "line": 16
+    },
+    {
+      "symbol": "test_dead_local_constructor_releases_fenced_leases_and_closes_orphaned_work",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "line": 20
+    },
+    {
+      "symbol": "test_live_constructor_owner_is_never_preempted",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "line": 76
+    },
+    {
+      "symbol": "test_legacy_ownerless_lifecycle_lock_uses_dead_constructor_receipt",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "line": 99
+    },
+    {
       "symbol": "registered",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
@@ -2323,6 +2431,60 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
       "line": 89
+    },
+    {
+      "symbol": "command",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 104
+    },
+    {
+      "symbol": "probe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 109
+    },
+    {
+      "symbol": "requireWindows",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 114
+    },
+    {
+      "symbol": "WindowsRecoveryPidProbeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 19
+    },
+    {
+      "symbol": "test_windows_probe_output_matrix_preserves_each_existing_classification",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 21
+    },
+    {
+      "symbol": "test_timeout_and_start_exceptions_propagate_except_for_conservative_watchdog",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 46
+    },
+    {
+      "symbol": "test_invalid_pid_and_watchdog_current_pid_guards_do_not_launch_a_helper",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 71
+    },
+    {
+      "symbol": "test_actual_windows_tasklist_preserves_live_and_dead_process_results",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 85
+    },
+    {
+      "symbol": "probes",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "line": 94
     },
     {
       "symbol": "test_terminal_close_exhausts_the_cycle_without_admitting_a_successor",
@@ -2682,6 +2844,8 @@
         "test_large_output_does_not_block_the_helper_on_windows_pipes",
         "test_windows_timeout_reaps_the_actual_child_and_remains_bounded",
         "test_windows_child_has_no_console_even_from_windowless_php_parent",
+        "test_legitimate_exit_124_is_not_classified_as_a_timeout",
+        "test_windows_timeout_aware_entrypoint_preserves_symfony_timeout_type",
         "python"
       ]
     },
@@ -2720,6 +2884,43 @@
         "test_constructor_builds_successor_with_zero_new_live_candles_and_no_live_feed",
         "test_missing_archive_remains_a_dependency_not_permission_to_use_live_data",
         "test_snapshot_rejects_hash_switch_and_2026_context_even_when_live_snapshot_is_paper_only"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ImmutableLabEvidenceTest.php",
+      "tests": [
+        "test_terminal_publication_clock_is_sampled_after_all_original_artifacts_are_durable",
+        "terminalPublicationStates",
+        "test_terminal_publication_artifact_failure_rolls_back_without_final_timestamp",
+        "timedPublicationFixture",
+        "__construct",
+        "recordArtifact",
+        "test_autonomy_audit_treats_scientific_rejection_as_a_clean_terminal_disposition",
+        "test_autonomy_audit_reports_a_technical_quarantine_as_terminal_but_not_technically_clean",
+        "test_uncertainty_abstain_is_a_local_wait_receipt_and_never_calls_replay",
+        "test_last_wait_guard_cannot_mask_a_terminal_technical_peer",
+        "test_autonomy_audit_rejects_generation_closed_before_learning_settlement",
+        "test_second_bounded_screen_failure_quarantines_only_the_current_agent_and_closes_generation",
+        "test_host_suspend_timeout_is_retryable_queue_telemetry_not_a_technical_verdict",
+        "test_batched_screening_detects_host_suspend_before_writing_technical_evidence",
+        "test_constitution_hash_survives_json_numeric_round_trip_and_separates_falsification",
+        "test_agent_creation_is_recorded_without_replacing_the_projection",
+        "test_repeated_gate_checks_create_revisions_while_projection_remains_one_row",
+        "test_handoff_retries_are_not_collapsed_in_the_evidence_plane",
+        "test_stable_waiting_handoff_poll_is_deduplicated_but_keeps_projection",
+        "test_selection_handoff_projection_refreshes_after_a_retry",
+        "test_evaluation_run_keeps_terminal_artifact_and_candle_trace",
+        "test_compact_projection_keeps_high_value_rows_and_rolls_up_wait_noise",
+        "test_projection_is_bounded_and_terminal_run_cannot_be_rewritten",
+        "test_terminal_replay_requires_dataset_hash_and_error_envelope_stays_ineligible",
+        "test_failed_screen_projection_with_incomplete_run_is_recovery_candidate",
+        "test_queue_inspector_respects_serialized_agent_id_boundary",
+        "test_full_admission_block_closes_the_middleware_run_as_skipped",
+        "test_full_replay_recovery_waits_for_laravel_post_processing_grace",
+        "test_stale_mutex_owner_is_requeued_even_when_a_recent_contender_is_reserved",
+        "test_mutation_credit_reconciliation_is_idempotent_and_requires_distinct_replay_runs",
+        "test_repeated_reconcile_generation_is_idempotent_and_requires_new_run",
+        "completeExactRun"
       ]
     },
     {
@@ -2919,6 +3120,15 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/StaleAutonomousWorkRecoveryTest.php",
+      "tests": [
+        "test_dead_local_constructor_releases_fenced_leases_and_closes_orphaned_work",
+        "test_live_constructor_owner_is_never_preempted",
+        "test_legacy_ownerless_lifecycle_lock_uses_dead_constructor_receipt",
+        "test_live_lifecycle_owner_is_never_preempted"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php",
       "tests": [
         "setUp",
@@ -2975,6 +3185,19 @@
         "test_single_agent_failed_callback_does_not_manufacture_an_attempt_and_original_failure_avoids_ordinary_fanout",
         "test_twenty_known_terminal_technical_and_pre_execution_dispositions_close_only_after_owned_queue_drain",
         "test_terminal_price_question_waits_on_fresh_native_dependency_without_replay_or_ordinary_recovery"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/WindowsRecoveryPidProbeTest.php",
+      "tests": [
+        "test_windows_probe_output_matrix_preserves_each_existing_classification",
+        "test_timeout_and_start_exceptions_propagate_except_for_conservative_watchdog",
+        "test_invalid_pid_and_watchdog_current_pid_guards_do_not_launch_a_helper",
+        "test_actual_windows_tasklist_preserves_live_and_dead_process_results",
+        "probes",
+        "command",
+        "probe",
+        "requireWindows"
       ]
     },
     {

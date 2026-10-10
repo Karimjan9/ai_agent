@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\LabEvaluationRun;
+use App\Services\HiddenProcessRunnerService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\LabLifecycleWatchdogService;
 use App\Services\LabQueueStateService;
@@ -12,7 +13,6 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /**
  * Removes only an orphaned evaluator overlap lock.
@@ -607,13 +607,12 @@ class RecoverLabReplayMutex extends Command
         }
 
         if (PHP_OS_FAMILY === 'Windows') {
-            // exec() invokes cmd.exe on Windows and briefly opens a console
-            // during the once-per-minute recovery task. Run tasklist directly.
-            $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
-            $process->run();
+            // Symfony also wraps array argv in cmd.exe; use the hidden broker.
+            $result = app(HiddenProcessRunnerService::class)->runWithTimeoutException(
+                ['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH'], 60);
 
-            return $process->isSuccessful()
-                && preg_match('/"'.preg_quote((string) $pid, '/').'"/', $process->getOutput()) === 1;
+            return $result['exit_code'] === 0
+                && preg_match('/"'.preg_quote((string) $pid, '/').'"/', $result['stdout']) === 1;
         }
 
         if (function_exists('posix_kill')) {
