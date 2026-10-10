@@ -18,6 +18,11 @@ class ScreeningLearningService
         $evidenceRunId = (string) data_get($result, 'evidence_run_id', '');
         $ledger = app(LabImmutableEvidenceService::class);
         $run = $ledger->findRun(is_string($evidenceRunId) ? $evidenceRunId : null);
+        if (app(LabHistoricalLearningService::class)->withholdsOrdinaryLearning($agent, $run)) {
+            // Reserved independent studies may publish audit observations, but
+            // never feed ordinary selection before their scoped owner settles.
+            return false;
+        }
         $evidence = $ledger->learningEligibility($run);
         if (! $evidence['complete'] || (int) $run?->lab_agent_id !== (int) $agent->id
             || (int) $run?->model_version_id !== (int) $model->id

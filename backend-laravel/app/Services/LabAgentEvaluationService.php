@@ -22,6 +22,13 @@ class LabAgentEvaluationService
 
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
+        $agent->loadMissing('generation');
+        if (data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
+            throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        if (app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($agent)) {
+            throw new RuntimeException('SCOPED_SELECTOR_ORIGINAL_EXECUTOR_REQUIRED');
+        }
         $agent->loadMissing('modelVersion', 'generation');
         if ($agent->modelVersion && app(NativeReachabilityDepthAuditService::class)->declares($agent->modelVersion)) {
             throw new RuntimeException('NATIVE_DEPTH_AUDIT_RESEARCH_ONLY_FULL_VALIDATION_FORBIDDEN');
@@ -779,6 +786,13 @@ class LabAgentEvaluationService
         if ($armIds->count() !== 3 || $arms->count() !== 3) {
             throw new RuntimeException('CAUSAL_FOLD_THREE_ARM_CONTRACT_INCOMPLETE');
         }
+        $prospective = app(ScopedSelectorPanelService::class)->prospectiveExecutionScope($experiment);
+        if (($prospective['status'] ?? null) !== 'not_declared') {
+            if (($prospective['status'] ?? null) !== 'prospective_original_scope_prepared') {
+                throw new RuntimeException($prospective['reason_code'] ?? 'SELECTOR_PANEL_ORIGINAL_SCOPE_NOT_READY');
+            }
+            return $this->scopedOriginalSelectorFoldEnvelope($experiment, $arms, $foldIndex, $prospective);
+        }
         $representative = $arms->first();
         $runtimeTimeframe = $this->replayTimeframe($representative);
         $mtfBundle = $this->replayMtfBundle($representative);
@@ -905,6 +919,114 @@ class LabAgentEvaluationService
         ];
     }
 
+    /** Actual future source compilation; no historical foundation/paper lookup or source-model mutation. */
+    private function scopedOriginalSelectorFoldEnvelope(AgentLearningCausalExperiment $experiment,
+        Collection $arms, int $foldIndex, array $scope): array
+    {
+        $manifest = $scope['manifest']; $datasetHash = $scope['window']['dataset_sha256'];
+        $caps = $scope['caps']; $foldCount = (int) $caps['fold_count'];
+        $semantics = $scope['member']['fold_semantics'];
+        if ($foldIndex < 1 || $foldIndex > $foldCount || ($manifest['protocol'] ?? null) !== MultiTimeframeSnapshotService::PROTOCOL) {
+            throw new RuntimeException('SELECTOR_PANEL_ORIGINAL_FUTURE_COMPILE_CONTRACT_INVALID');
+        }
+        $paths = [];
+        foreach (['M5', 'H4', 'H1', 'M15'] as $timeframe) {
+            $paths[$timeframe] = (string) data_get($manifest, 'streams.'.$timeframe.'.path', '');
+            if ($paths[$timeframe] === '') throw new RuntimeException('SELECTOR_PANEL_ACTUAL_AUTHORIZED_FOUR_STREAM_DATA_REQUIRED');
+        }
+        $bundle = ['entry_dataset_path' => $paths['M5'], 'context_dataset_paths' => $paths,
+            'bundle_hash' => $datasetHash, 'manifest' => $manifest, 'manifest_path' => ''];
+        $execution = app(ExecutionContractService::class)->for((string) $experiment->symbol, 'M5');
+        if (($execution['execution_hash'] ?? null) !== $scope['member']['execution_hash']) {
+            throw new RuntimeException('SELECTOR_PANEL_ORIGINAL_FUTURE_EXECUTION_DRIFT');
+        }
+        $fenceSeconds = (int) ($scope['exposure_policy']['holding_fence_seconds'] ?? 0);
+        if ($fenceSeconds < (int) $semantics['maximum_holding_bars'] * 300) {
+            throw new RuntimeException('SELECTOR_PANEL_PREREGISTERED_MATURITY_FENCE_TOO_SHORT');
+        }
+        $end = \Carbon\CarbonImmutable::parse($scope['window']['end_exclusive'])->utc();
+        $strategies = []; $contracts = []; $models = []; $pilot = null;
+        foreach ($arms as $arm) {
+            $original = $arm->modelVersion;
+            $sealedArm = collect($scope['member']['arms'])->firstWhere('agent_id', (int) $arm->id);
+            $compiled = app(CompositionAuthorityKernelService::class)->compileProspectiveRecipeForRequest($original, [
+                'dataset_hash' => $datasetHash, 'execution_hash' => $execution['execution_hash'], 'timeframe' => 'M5',
+                'mtf_manifest' => $manifest, 'expected_recipe_hash' => $sealedArm['prospective_recipe_hash'],
+            ]);
+            $transient = $compiled['model']; $metadata = (array) $transient->metadata;
+            $metadata['instrument_research_assignment'] = $this->instrumentResearch->bindScopedOriginalAssignment(
+                $original, $transient, $compiled['passport'], $compiled['recipe']);
+            $transient->metadata = $metadata;
+            $payload = $this->scopedOriginalMemberPayload($transient, 'M5', $bundle, $datasetHash, (string) $experiment->symbol);
+            if ((int) ($payload['lab_agent_id'] ?? 0) !== (int) $arm->id) {
+                throw new RuntimeException('SELECTOR_PANEL_ORIGINAL_NATIVE_ARM_IDENTITY_AMBIGUOUS');
+            }
+            $armPilot = (array) ($payload['mtf_pilot'] ?? []);
+            if ($pilot !== null && app(ResearchPaperEpochContractService::class)->parameterHash($armPilot)
+                !== app(ResearchPaperEpochContractService::class)->parameterHash($pilot)) {
+                throw new RuntimeException('SELECTOR_PANEL_ORIGINAL_SHARED_MTF_POLICY_REQUIRED');
+            }
+            $pilot = $armPilot;
+            $strategies[] = $payload; $models[] = $transient;
+            $receipt = (array) data_get($original->metadata, 'learning_receipt', []);
+            $role = (string) ($receipt['causal_influence'] ?? '');
+            $cohortRole = (string) data_get($original->metadata, 'causal_learning_cohort.role', '');
+            if (! in_array($role, ['memory_guided', 'hypothesis_guided', 'causal_repair_guided', 'blinded_counterfactual', 'frozen_control'], true)
+                || ! in_array($cohortRole, ['memory_guided', 'hypothesis_guided', 'repair_guided', 'blinded', 'frozen_control'], true)
+                || data_get($receipt, 'integrity.valid') !== true) throw new RuntimeException('CAUSAL_FOLD_ARM_RECEIPT_INVALID:'.$arm->id);
+            $contracts[(string) $arm->id] = [...$semantics, 'protocol' => 'bounded_cold_start_learning_confirmation_v1',
+                'execution_mode' => 'durable_single_fold_job', 'role' => $role, 'cohort_role' => $cohortRole,
+                'causal_intent_id' => $receipt['causal_intent_id'] ?? null, 'fold_count' => 1, 'fold_offset' => $foldIndex - 1,
+                'fold_universe_count' => $foldCount, 'max_rows_per_fold' => (int) $caps['max_rows_per_fold'],
+                'per_fold_budget_seconds' => (int) $caps['per_fold_seconds'],
+                'declared_time_stop_candles' => max(0, (int) data_get($original->parameters, 'time_stop_candles', 0)),
+                'execution_overlay' => 'unchanged_original_parameters_scoped_maturity_entry_fence', 'admitted' => true,
+                'blocker' => null, 'promotion_evidence' => false];
+        }
+        $generation = DB::transaction(function () use ($experiment, $manifest, $datasetHash, $paths) {
+            $generation = \App\Models\LabGeneration::whereKey($experiment->lab_generation_id)->lockForUpdate()->firstOrFail();
+            $context = (array) $generation->trigger_context;
+            if (data_get($context, 'research_release') !== null) {
+                if (data_get($context, 'mtf_bundle_hash') !== $datasetHash
+                    || data_get($context, 'mtf_bundle_manifest') !== $manifest) {
+                    throw new RuntimeException('SELECTOR_PANEL_ORIGINAL_HISTORICAL_RELEASE_REBIND_FORBIDDEN');
+                }
+            } else {
+                if (LabEvaluationRun::where('lab_generation_id', $generation->id)->exists()) {
+                    throw new RuntimeException('SELECTOR_PANEL_BINDING_MUST_PRECEDE_ANY_ORIGINAL_EXECUTION');
+                }
+                $context['mtf_bundle_hash'] = $datasetHash; $context['mtf_bundle_manifest'] = $manifest;
+                $context['canonical_dataset_snapshots']['price'] = ['path' => $paths['M5'],
+                    'sha256' => data_get($manifest, 'streams.M5.sha256'), 'manifest' => $manifest];
+                $generation->update(['trigger_context' => $context]);
+            }
+            return app(ResearchReleaseSealService::class)->seal($generation);
+        });
+        $experiment->setRelation('generation', $generation);
+        $request = ['symbol' => (string) $experiment->symbol, 'timeframe' => 'M5', 'strategy' => 'all',
+            'evaluation_mode' => 'full', 'strategies' => $strategies, 'initial_balance' => 10000, 'risk_per_trade' => 1,
+            'dataset_path' => $paths['M5'], 'replay_dataset_hash' => $datasetHash, 'mtf_dataset_paths' => $paths,
+            'related_mtf_dataset_paths' => (object) [], 'mtf_snapshot_manifest' => $manifest,
+            'volume_context' => $arms->contains(fn (LabAgent $arm): bool => $this->volumeEnabled($arm->modelVersion))
+                ? $this->volumeContextOrFail((string) $experiment->symbol, 'M5', $bundle) : $this->disabledVolumeContext(),
+            'execution' => $this->executionAssumptions((string) $experiment->symbol),
+            'execution_contract' => $execution, 'mtf_pilot' => $pilot ?? [], 'emit_decision_trace' => true,
+            'policy_context' => ['learning_confirmation_contracts' => $contracts,
+                'scoped_research_certificate' => ['protocol' => ScopedResearchCertificateService::AUTHORITY_POLICY,
+                    'purpose' => 'independent_scoped_selector_research', 'certificate_id' => $scope['certificate_id'],
+                    'selector_panel_key' => $scope['panel_key'], 'promotion_evidence' => false],
+                'scoped_position_maturity_fence' => ['protocol' => 'scoped_original_maturity_fence_v1',
+                    'entry_end_exclusive' => $end->subSeconds($fenceSeconds)->toIso8601String(),
+                    'end_exclusive' => $end->toIso8601String(), 'holding_fence_seconds' => $fenceSeconds],
+                'causal_fold_job' => ['protocol' => 'durable_causal_fold_job_v1', 'experiment_id' => (int) $experiment->id,
+                    'fold_index' => $foldIndex, 'fold_count' => $foldCount, 'all_three_arms_required' => true,
+                    'dataset_manifest' => $manifest, 'promotion_evidence' => false]]];
+        $request = $this->bindCouncilEvaluationRequests($request, $models);
+        $request = app(ResearchReleaseSealService::class)->bindGenerationRequest($generation, $request, $arms->pluck('id')->all());
+        return ['request' => $request, 'manifest' => $manifest, 'dataset_hash' => $datasetHash,
+            'execution_hash' => $execution['execution_hash'], 'fold_count' => $foldCount];
+    }
+
     /**
      * Project a Python-aggregated causal arm through the ordinary immutable
      * full-replay settlement boundary. No market data is replayed here.
@@ -1021,6 +1143,13 @@ class LabAgentEvaluationService
     /** Fast, pair-local filter. Promotion never happens from this result. */
     public function screen(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
+        $agent->loadMissing('generation');
+        if (data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
+            throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        if (app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($agent)) {
+            throw new RuntimeException('SCOPED_SELECTOR_ORIGINAL_EXECUTOR_REQUIRED');
+        }
         $agent->loadMissing('modelVersion', 'generation');
         app(UnusedDraftPriceDiscoveryPreparationService::class)->assertAttempt($agent, 'screening', $run);
         $run ??= $this->evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'direct_screen']);
@@ -1430,6 +1559,15 @@ class LabAgentEvaluationService
      */
     public function screenBatch(array $agentIds, string $symbol): void
     {
+        if (LabAgent::whereIn('id', $agentIds)->whereHas('generation', fn ($query) => $query
+            ->whereNotNull('trigger_context->scoped_descendant_execution'))->exists()) {
+            throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        foreach (LabAgent::whereIn('id', $agentIds)->get() as $agent) {
+            if (app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($agent)) {
+                throw new RuntimeException('SCOPED_SELECTOR_ORIGINAL_EXECUTOR_REQUIRED');
+            }
+        }
         $ids = array_values(array_unique(array_map('intval', $agentIds)));
         if ($ids === [] || count($ids) > 6) {
             throw new RuntimeException('Screening batch 1–6 agent oralig‘ida bo‘lishi kerak.');
@@ -2391,6 +2529,19 @@ class LabAgentEvaluationService
      *
      * @param  array<string,mixed>  $replaySnapshot
      */
+    /** Shared original-arm context from the same frozen server-owned replay manifest. */
+    public function scopedOriginalVolumeContext(array $models, string $symbol, array $bundle): array
+    {
+        if (! collect($models)->contains(fn ($model): bool => $this->volumeEnabled($model))) {
+            return $this->disabledVolumeContext();
+        }
+        try {
+            return $this->volumeContextOrFail($symbol, 'M5', $bundle);
+        } catch (RuntimeException $error) {
+            throw new RuntimeException('SCOPED_ORIGINAL_AUTHORIZED_VOLUME_PROVENANCE_REQUIRED', 0, $error);
+        }
+    }
+
     private function volumeContextOrFail(string $symbol, string $timeframe, array $replaySnapshot): array
     {
         $manifest = (array) ($replaySnapshot['manifest'] ?? []);
@@ -3100,6 +3251,22 @@ class LabAgentEvaluationService
      * model. Do not reconstruct composition or instrument policy in a second
      * compiler, and do not mutate a sealed source by generating assignments.
      */
+    /** New scoped wire codec only; source models and legacy payload shape stay unchanged. */
+    public function scopedOriginalMemberPayload(ModelVersion $model, string $runtimeTimeframe,
+        ?array $mtfBundle, string $replayDatasetHash, string $symbol = ''): array
+    {
+        $payload = $this->specialistCouncilMemberPayload($model, $runtimeTimeframe, $mtfBundle, $replayDatasetHash, $symbol);
+        foreach (['instrument_research_assignment', 'composition_runtime_contract', 'specialist_context_contract',
+            'research_release', 'specialist_council_contract', 'native_spread_context_study_contract',
+            'native_reachability_depth_audit_contract', 'native_standalone_qualification', 'mtf_pilot'] as $field) {
+            if (array_key_exists($field, $payload) && $payload[$field] === []) $payload[$field] = (object) [];
+            elseif (isset($payload[$field]) && is_array($payload[$field]) && array_is_list($payload[$field])) {
+                throw new RuntimeException('SCOPED_ORIGINAL_NATIVE_MAP_FIELD_INVALID');
+            }
+        }
+        return $payload;
+    }
+
     public function specialistCouncilMemberPayload(
         ModelVersion $model,
         string $runtimeTimeframe,

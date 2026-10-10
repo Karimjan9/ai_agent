@@ -1,14 +1,38 @@
 # Integrations and runtime boundaries
 
 Scoped research questions use an append-only PHP registry and original named
-source snapshots; public assessment payloads have diagnostic scope only.
-Original data bindings reopen the existing server-authorized four-stream
-registry and preserve their exact file hashes and closed UTC bounds. This
-verifies bytes, not an exhaustive training/selection exposure inventory.
-The causal owner retains original request/model/run/data/execution bindings
-before closing a scoped diagnostic. Descendant observations reopen original
-immutable four-arm artifacts. No new Python evaluator, scheduler, dispatch,
-2026 research access or scientific-credit issuer is introduced (ADR-036).
+source snapshots. Public assessment payloads and the legacy diagnostic protocol
+grant no authority. The explicit independent scoped policy additionally requires
+prospective original exposure capture, the complete preregistered physical window
+roster, original products and a named scope-specific issuer (ADR-036).
+
+`scoped_original_window_v1` authenticates the physical four-stream manifest,
+programme, account/cost/risk, MTF/volume inputs, fixed holding fence, selector caps
+and exact full-source policy. Python issues only a private nonserialized runtime
+witness after actual HMAC, loaded source and CSV checks. This supports closed MTF
+and real future quote checks without borrowing a council or historical calendar.
+Component/descendant arms run the whole source using the existing stateful
+executor; full selector work uses the existing durable-fold producer, with no
+time-stop gene clamp or substituted historical two-year holdout. Original slice
+fences are privately derived from consumed bytes. Computational partitions of one
+window are not separate independent windows. Actual open/censored/unknown position
+state survives aggregation and never becomes a fabricated mature outcome.
+
+Intrinsic composition recipes and original tool choices are frozen before future
+events; only derived dataset-bound passports/assignment hashes are compiled after
+original data exists. No model/certificate is rewritten after its seal. Ordinary
+evaluation and mutation-advice projections cannot consume reserved scoped purposes,
+including malformed or terminal declarations. Reference-only Q:H1 containers are
+inactive and do not replace the current ordinary twenty-seat generation.
+The scoped member adapter renders empty dictionary ports as JSON objects,
+without modifying persisted source fields or the legacy member payload. Native
+authoritative parameter defaults may canonicalize an exact signed declaration;
+an arbitrary gene, overridden original value or execution overlay remains drift.
+Native scoped outcomes also carry ledger-hash/count-bound exact context without
+inventing an instrument assignment. The native publisher locks and rechecks the
+work fence after HTTP; stale ownership retains original response evidence but
+cannot publish a completed economic run. Operator STOP alone does not invalidate
+current-lease raw facts or permit another HTTP job.
 
 New native standalone transport is an original server-owned panel unit, not a
 plain SOLO upgraded by a caller flag. Its signed
@@ -506,6 +530,30 @@ secondary archive/discrepancy evidence. Read
 `docs/project-memory/market-data-continuity.md` before changing that boundary.
 
 ## Queue and scheduler
+
+Separately scoped independent requests have a pre-delivery exposure capture
+at both `LabImmutableEvidenceService::attachRequest` and the durable causal fold
+owner. Reopening requests preserves empty dictionary/list and float wire types;
+fold audit verification reads the signed pre-delivery capture, not caller flags.
+Native two/four-arm research uses the canonical constructor and the
+existing `lab-full-validation` queue. Its scheduler delivery prepares/queues
+bounded work only; the per-arm job timeout encloses the actual typed Python
+producer budget and HTTP publication margin beneath the existing 4200-second
+full-worker ceiling (`backend-laravel/ecosystem.config.cjs`). A long work lease
+alone does not enlarge a scheduler subprocess timeout.
+
+The whole original request matrix is immutable before dispatch. Original
+products carry exact window/model/source/cost and clock/account identities;
+the versioned scope issuer reopens them and their exposure records. Native
+settlement locks the current work and commits issuer, credit and next-work
+atomically only with a current lease and running mode; completed raw originals
+remain intact if settlement is stopped or fenced out. The final mode gate uses
+the control owner's shared current read, not the transaction's old status snapshot.
+It creates no operator state or default permission. Scope
+markers are purpose fences, not caller authorization: audit projections are
+allowed, ordinary historical advice and screening memory are not. Future
+planned windows bind server-original bytes before outcomes, never by importing
+an observed old result. Existing research/paper and release boundaries remain.
 
 Academy execution uses two decisions from the existing arbiter: prepare one
 draft with a transactional `edge_academy_trials.outcome.canonical_admission`

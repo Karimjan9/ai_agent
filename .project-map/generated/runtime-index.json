@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T17:28:28.344Z",
-  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
-  "source_file_count": 1582,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-10T06:29:15.786Z",
+  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
+  "source_file_count": 1603,
+  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "configs": [
     {
@@ -469,6 +469,43 @@
           "line": 215
         }
       ]
+    },
+    {
+      "path": "backend-laravel/ecosystem.config.cjs",
+      "sections": [
+        {
+          "key": "lab-replay",
+          "line": 163
+        },
+        {
+          "key": "lab-screening-a",
+          "line": 164
+        },
+        {
+          "key": "lab-screening-b",
+          "line": 166
+        },
+        {
+          "key": "lab-learning",
+          "line": 168
+        },
+        {
+          "key": "market-maintenance",
+          "line": 171
+        },
+        {
+          "key": "scheduler-critical",
+          "line": 175
+        },
+        {
+          "key": "strategy-lab",
+          "line": 185
+        },
+        {
+          "key": "backtests",
+          "line": 186
+        }
+      ]
     }
   ],
   "scripts": [
@@ -578,5 +615,5 @@
       "path": "scripts/restart_mt5.sh"
     }
   ],
-  "scope": "Runtime file and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed."
+  "scope": "Runtime file, named PM2 worker and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed."
 }

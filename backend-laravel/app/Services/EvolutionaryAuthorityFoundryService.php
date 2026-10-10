@@ -9,6 +9,7 @@ use App\Models\LabGeneration;
 use App\Models\LabLearningLanePair;
 use App\Models\LabSkillZooEntry;
 use App\Models\ModelVersion;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -19,6 +20,10 @@ use Illuminate\Support\Facades\Schema;
  */
 class EvolutionaryAuthorityFoundryService
 {
+    public const SCOPED_QUESTION_REFERENCE_MODE = 'scoped_question_ref';
+
+    public const SCOPED_QUESTION_REFERENCE_NAMESPACE = 'Q:';
+
     public const PROTOCOL = 'evolutionary_authority_foundry_v1';
 
     public const INCUBATOR_ARMS = ['frozen_control', 'single_gene_child', 'memory_blinded_child', 'skill_ablation', 'weakest_gate_repair'];
@@ -36,6 +41,205 @@ class EvolutionaryAuthorityFoundryService
         private CanonicalSkillCartridgeService $cartridges,
         private ContextualCausalTraitCapsuleService $traitCapsules,
     ) {}
+
+    /** One prospective U hypothesis from the existing blinded mutation owner. */
+    public function proposeScopedDescendant(int $certificateId): array
+    {
+        $certificate = app(ScopedResearchCertificateService::class)->inspect($certificateId);
+        $proof = (array) data_get($certificate, 'original_authority.component', []);
+        if (($certificate['valid'] ?? false) !== true || ($proof['confirmed'] ?? false) !== true
+            || ($proof['authority_type'] ?? null) !== 'context_bound_research_component') {
+            return ['status' => 'blocked_dependency', 'reason_code' => 'ORIGINAL_SCOPED_COMPONENT_REQUIRED', 'promotion_evidence' => false];
+        }
+        $candidate = ModelVersion::find($proof['candidate_model_version_id'] ?? 0);
+        $control = ModelVersion::find($proof['control_model_version_id'] ?? 0);
+        $cartridge = LabSkillZooEntry::where('status', 'scoped_confirmed')->where('component_status', 'scoped_component_confirmed')
+            ->where('evidence->scoped_component_certificate_id', $certificateId)->first();
+        if (! $candidate || ! $control || ! $cartridge || (int) $cartridge->model_version_id !== (int) $candidate->id) {
+            return ['status' => 'blocked_dependency', 'reason_code' => 'ORIGINAL_SCOPED_COMPONENT_CARTRIDGE_REQUIRED', 'promotion_evidence' => false];
+        }
+        $revision = DB::table('skill_cartridge_revisions')->where('lab_skill_zoo_entry_id', $cartridge->id)
+            ->where('revision', $cartridge->revision)->first();
+        if (! $revision) return ['status' => 'blocked_dependency', 'reason_code' => 'ORIGINAL_SCOPED_COMPONENT_REVISION_REQUIRED', 'promotion_evidence' => false];
+        $schema = app(StrategyParameterSchemaService::class);
+        $base = (array) $candidate->parameters; $untreated = (array) $control->parameters;
+        $trait = (string) data_get($proof, 'trait_delta.gene');
+        $execution = app(ExecutionContractService::class)->for($cartridge->symbol, 'M5');
+        $protected = [$trait, ...array_keys($execution['parameters']), 'risk_per_trade_percent', 'max_risk_per_trade_percent',
+            'risk_per_trade', 'risk_percent', 'max_drawdown_percent', 'max_daily_loss_percent', 'max_open_positions',
+            'max_total_risk_percent', 'max_reserved_capital_percent', 'max_gross_exposure_percent'];
+        $allowed = array_values(array_diff(array_intersect(array_keys($base), array_keys($schema->schema($cartridge->strategy_family))), $protected));
+        $recipeOwner = app(CompositionAuthorityKernelService::class);
+        $sourceRecipe = $recipeOwner->prospectiveRecipeFromMetadata($candidate);
+        $allowed = array_values(array_filter($allowed,
+            fn (string $key): bool => $recipeOwner->prospectiveParameterInterventionAllowed($sourceRecipe, $key)));
+        $seed = 'scoped_descendant_single_proposal_v1|'.$certificateId.'|'.$certificate['design_hash'].'|'.$proof['context_hash'];
+        $source = \App\Models\AgentLearningCausalExperiment::find($certificate['source_id']);
+        $selection = app(CausalBlindedMutationSelectorService::class)->select($cartridge->strategy_family,
+            (string) ($source?->target ?? 'profit_factor'), $base, $seed, null, null, [], $allowed);
+        if (! $selection) return ['status' => 'blocked_dependency', 'reason_code' => 'SCOPED_DESCENDANT_LEGAL_OTHER_GENE_UNAVAILABLE', 'promotion_evidence' => false];
+        $vectors = ['P' => $untreated, 'P+T' => $base,
+            'P+T+U' => [...$base, $selection['gene'] => $selection['value']],
+            'P+U' => [...$untreated, $selection['gene'] => $selection['value']]];
+        foreach ($vectors as $parameters) {
+            try { $valid = $schema->validate($cartridge->strategy_family, $parameters); }
+            catch (\InvalidArgumentException) { return ['status' => 'blocked_dependency', 'reason_code' => 'SCOPED_DESCENDANT_LEGAL_VECTOR_REQUIRED', 'promotion_evidence' => false]; }
+            if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue($valid, $parameters)) {
+                return ['status' => 'blocked_dependency', 'reason_code' => 'SCOPED_DESCENDANT_VECTOR_RENORMALIZATION_REFUSED', 'promotion_evidence' => false];
+            }
+        }
+        $topology = app(DescendantScopedProofService::class)->topology($vectors, $trait);
+        if (($topology['status'] ?? null) !== 'topology_valid') return $topology;
+        $parentEnd = \Carbon\CarbonImmutable::parse($certificate['design']['validation_end'])->utc();
+        $holding = (int) data_get($certificate, 'design.exposure_policy.holding_fence_seconds', 0);
+        $earliest = $parentEnd->addSeconds($holding)->max(\Carbon\CarbonImmutable::now('UTC'));
+        $first = $earliest->startOfMonth()->addMonth();
+        $count = max(6, (int) config('services.learning_lane.causal_minimum_powered_windows', 6));
+        $periods = [];
+        for ($index = 0; $index < $count; $index++) $periods[] = [
+            'start_inclusive' => $first->addMonths($index)->toIso8601String(),
+            'end_exclusive' => $first->addMonths($index + 1)->toIso8601String()];
+        $proposal = ['protocol' => 'scoped_descendant_single_proposal_v1', 'status' => 'prospective_hypothesis_dependency',
+            'source_component_certificate_id' => $certificateId, 'source_design_hash' => $certificate['design_hash'],
+            'source_cartridge_id' => (int) $cartridge->id, 'source_cartridge_revision' => (int) $cartridge->revision,
+            'source_revision_payload_hash' => app(ResearchPaperEpochContractService::class)->parameterHash(json_decode($revision->payload, true)),
+            'source_model_ids' => ['P' => (int) $control->id, 'P+T' => (int) $candidate->id],
+            'context' => $proof['context'], 'context_hash' => $proof['context_hash'], 'selection_owner' => CausalBlindedMutationSelectorService::class,
+            'selection' => $selection, 'parameter_vectors' => $vectors, 'trait_delta' => $topology['trait_delta'], 'other_delta' => $topology['other_delta'],
+            'window_draft' => $periods, 'parent_validation_windows_reusable' => false,
+            'current_source_hash' => app(LabImmutableEvidenceService::class)->codeHash(), 'max_proposals' => 1,
+            'native_original_registration_required_before_first_event' => true, 'actual_data_available' => false,
+            'execution_authorized' => false, 'inheritance_credit' => false, 'promotion_evidence' => false];
+        return [...$proposal, 'proposal_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($proposal)];
+    }
+
+    public function scopedChildMetadata(ModelVersion $source, array $contract, ?array $parameters = null): array
+    {
+        $parameters ??= (array) $source->parameters;
+        foreach (['local_adapter_genome'] as $field) {
+            if (! empty(data_get($source->metadata, $field))) {
+                throw new \LogicException('SCOPED_ORIGINAL_PROSPECTIVE_RUNTIME_REBINDING_REQUIRED');
+            }
+        }
+        $metadata = $this->researchChildMetadata($source, 'scoped_descendant_candidate', [
+            ...$contract, 'genetic_parent_model_version_id' => null, 'research_only' => true,
+            'paper_or_live_authority' => false, 'parent_eligible' => false, 'promotion_evidence' => false]);
+        $schemas = app(StrategyParameterSchemaService::class);
+        $family = $schemas->family($source->strategy);
+        $canonical = $schemas->canonicalizeForIdentity($family, $parameters);
+        $encoded = json_encode($canonical, JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        $metadata['parameter_fingerprint'] = hash('sha256', $family.'|'.$encoded);
+        if (data_get($metadata, 'universal_genome.local_adapter') !== null) {
+            data_set($metadata, 'universal_genome.local_adapter.parameters_hash', hash('sha256', $encoded));
+        }
+        unset($metadata['prospective_scoped_composition_recipe'], $metadata['prospective_scoped_composition_recipe_hash'],
+            $metadata['control_pair_contract']);
+        $metadata['prospective_scoped_source_parameters'] = (array) $source->parameters;
+        $template = clone $source;
+        $template->metadata = $metadata;
+        $template->parameters = $parameters;
+        $template->version = $contract['new_version'] ?? $source->version;
+        $recipe = app(CompositionAuthorityKernelService::class)->prospectiveRecipeFromMetadata($template);
+        $metadata['prospective_scoped_composition_recipe'] = $recipe;
+        $metadata['prospective_scoped_composition_recipe_hash'] = app(ResearchPaperEpochContractService::class)->parameterHash($recipe);
+        return $metadata;
+    }
+
+    /** Fresh prospective question IDs; observed discovery stays a hypothesis source. */
+    public function preregisterScopedComponent(\App\Models\AgentLearningCausalExperiment $source, array $design): array
+    {
+        return DB::transaction(function () use ($source, $design): array {
+            $source = \App\Models\AgentLearningCausalExperiment::whereKey($source->id)->lockForUpdate()->firstOrFail();
+            $role = data_get($design, 'subject.candidate_role');
+            if (! in_array($role, ['guided', 'blinded'], true) || ! isset($design['native_execution'])
+                || CarbonImmutable::parse($design['validation_start'])->lte(now()->utc())) {
+                throw new \LogicException('SCOPED_COMPONENT_FRESH_PROSPECTIVE_QUESTION_REQUIRED');
+            }
+            $context = (string) ($design['context_hash'] ?? '');
+            $existing = \App\Models\AgentLearningCausalExperiment::where('evidence->scoped_component_origin->source_experiment_id', $source->id)
+                ->where('evidence->scoped_component_origin->candidate_role', $role)
+                ->where('evidence->scoped_component_origin->context_hash', $context)->first();
+            if ($existing) {
+                $record = \App\Models\ScopedResearchCertificate::where('source_type', $existing::class)
+                    ->where('source_id', $existing->id)->where('scope', 'component')->where('record_type', 'preregistration')->sole();
+                if (($record->payload['factory_input_hash'] ?? data_get($existing->evidence, 'scoped_component_origin.factory_input_hash'))
+                    !== app(ResearchPaperEpochContractService::class)->parameterHash($design)) {
+                    throw new \LogicException('SCOPED_COMPONENT_ORIGINAL_FACTORY_QUESTION_IMMUTABLE');
+                }
+                return ['status' => 'already_registered', 'source_experiment_id' => (int) $source->id,
+                    'fresh_experiment_id' => (int) $existing->id,
+                    'certificate' => app(ScopedResearchCertificateService::class)->inspect((int) $record->id), 'promotion_evidence' => false];
+            }
+            $agents = ['guided' => LabAgent::with('modelVersion', 'generation.laboratory')->findOrFail($source->guided_agent_id),
+                'blinded' => LabAgent::with('modelVersion')->findOrFail($source->blinded_agent_id),
+                'control' => LabAgent::with('modelVersion')->findOrFail($source->control_agent_id)];
+            if (! app(ExactCausalBaselineService::class)->matches($agents[$role], $agents['control'])
+                || ! $agents['guided']->generation?->laboratory) {
+                throw new \LogicException('SCOPED_COMPONENT_ORIGINAL_HYPOTHESIS_BASELINE_REQUIRED');
+            }
+            $lab = $agents['guided']->generation->laboratory;
+            \App\Models\AiLaboratory::whereKey($lab->id)->lockForUpdate()->firstOrFail();
+            // This is a frozen source-reference container, not an unleased
+            // runtime population. Keep ordinary H1 latest/max and active G263
+            // ownership untouched; agents/windows retain their real frames.
+            $namespace = self::SCOPED_QUESTION_REFERENCE_NAMESPACE.$source->timeframe;
+            if (strlen($namespace) > 16 || str_starts_with($source->timeframe, self::SCOPED_QUESTION_REFERENCE_NAMESPACE)) {
+                throw new \LogicException('SCOPED_COMPONENT_ACTUAL_MARKET_TIMEFRAME_REQUIRED');
+            }
+            $referenceLab = \App\Models\AiLaboratory::firstOrCreate(['symbol' => $source->symbol, 'timeframe' => $namespace], [
+                'name' => 'Scoped question source reference: '.$source->symbol.' '.$source->timeframe,
+                'strategy_families' => $lab->strategy_families, 'is_active' => false,
+                'lifecycle_mode' => self::SCOPED_QUESTION_REFERENCE_MODE]);
+            $referenceLab = \App\Models\AiLaboratory::whereKey($referenceLab->id)->lockForUpdate()->firstOrFail();
+            if ($referenceLab->is_active || $referenceLab->lifecycle_mode !== self::SCOPED_QUESTION_REFERENCE_MODE) {
+                throw new \LogicException('SCOPED_COMPONENT_NONRUNTIME_REFERENCE_NAMESPACE_REQUIRED');
+            }
+            $inputHash = app(ResearchPaperEpochContractService::class)->parameterHash($design);
+            $origin = ['protocol' => 'fresh_scoped_component_question_v1', 'source_experiment_id' => (int) $source->id,
+                'candidate_role' => $role, 'context_hash' => $context, 'factory_input_hash' => $inputHash,
+                'source_agent_ids' => array_map(fn ($agent): int => (int) $agent->id, $agents),
+                'source_model_ids' => array_map(fn ($agent): int => (int) $agent->model_version_id, $agents),
+                'source_hypothesis_only' => true, 'old_outcomes_upgraded' => false, 'promotion_evidence' => false];
+            $generation = LabGeneration::create(['ai_laboratory_id' => $referenceLab->id,
+                'generation' => ((int) $referenceLab->generations()->max('generation')) + 1,
+                'trigger_type' => 'scoped_component_question_registration', 'population_size' => 3,
+                'status' => 'research_question_registered', 'trigger_context' => [
+                    'scoped_descendant_execution' => ['protocol' => DescendantScopedExecutionService::PROTOCOL,
+                        'purpose' => 'prospective_scoped_component_question_source', 'projection_withheld' => true],
+                    'source_reference_container' => ['protocol' => 'scoped_question_source_reference_container_v1',
+                        'namespace' => $namespace, 'actual_laboratory_id' => (int) $lab->id,
+                        'actual_market_timeframe' => $source->timeframe, 'market_timeframe_namespace' => false,
+                        'runtime_population' => false],
+                    'scoped_component_origin' => $origin, 'research_only' => true, 'promotion_evidence' => false]]);
+            $freshAgents = [];
+            foreach ($agents as $arm => $agent) {
+                $model = $agent->modelVersion;
+                $metadata = $this->scopedChildMetadata($model, [...$origin, 'arm' => $arm,
+                    'new_version' => $model->version.'-scoped-q'.$generation->id]);
+                unset($metadata['control_pair_contract']); // Old IDs cannot own a new exact question.
+                $copy = ModelVersion::create(['name' => 'scoped component question '.$generation->id.' '.$arm,
+                    'strategy' => $model->strategy, 'version' => $model->version.'-scoped-q'.$generation->id,
+                    'status' => 'testing', 'parameters' => $model->parameters, 'metadata' => $metadata]);
+                $freshAgents[$arm] = LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $copy->id,
+                    'parent_a_model_version_id' => null, 'parent_b_model_version_id' => null,
+                    'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe, 'strategy_family' => $agent->strategy_family,
+                    'origin' => 'scoped_component_original_question', 'parameter_diff' => $agent->parameter_diff,
+                    'lifecycle_status' => 'scoped_registered']);
+            }
+            $fresh = \App\Models\AgentLearningCausalExperiment::create(['experiment_key' => 'fresh-scoped-component|'.$source->id.'|'.$role.'|'.$context,
+                'lab_generation_id' => $generation->id, 'symbol' => $source->symbol, 'timeframe' => $source->timeframe,
+                'strategy_family' => $source->strategy_family, 'target' => $source->target,
+                'gene_key' => array_key_first((array) $freshAgents[$role]->parameter_diff),
+                'status' => 'scoped_preregistered', 'guided_agent_id' => $freshAgents['guided']->id,
+                'blinded_agent_id' => $freshAgents['blinded']->id, 'control_agent_id' => $freshAgents['control']->id,
+                'evidence' => ['scoped_component_origin' => $origin]]);
+            $certificate = app(ScopedResearchCertificateService::class)->register('component', $fresh, $design);
+            if (($certificate['valid'] ?? false) !== true) throw new \LogicException('SCOPED_COMPONENT_FRESH_ORIGINAL_REGISTRATION_REFUSED');
+            return ['status' => 'scoped_preregistered', 'source_experiment_id' => (int) $source->id,
+                'fresh_experiment_id' => (int) $fresh->id, 'certificate' => $certificate,
+                'source_hypothesis_only' => true, 'old_outcomes_upgraded' => false, 'promotion_evidence' => false];
+        });
+    }
 
     /**
      * Materialize the clean five-arm cohort from a confirmed skill. The

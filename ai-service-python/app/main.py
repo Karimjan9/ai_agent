@@ -76,6 +76,8 @@ from app.services.research_release import (
     attest as attest_research_release, health_receipt as research_source_health,
     verify_research_transport,
 )
+from app.services.scoped_research_runtime import bind_scoped_research_runtime
+from app.services.scoped_original_replay import original_scoped_runtime_policy, run_scoped_original_full_window
 from app.services.authorized_council_arm import (
     original_arm_identity, result_scope_current, run_original_full_arm,
 )
@@ -311,7 +313,7 @@ def _assert_non_paper_source_pre_2026(
             "2026 faqat paper lane uchun."
         )
     if (timestamps >= legacy_end).any():
-        authorized = verify_research_transport(payload, _internal_api_token())
+        authorized = _verified_research_transport(payload)
         if authorized is None:
             raise ValueError("RESEARCH_TRANSPORT_AUTHENTICATION_REQUIRED; 2026 faqat paper lane uchun.")
         # A supplied DataFrame may not borrow a signed file's label. Check the
@@ -357,7 +359,11 @@ def _candidate_cache_payload(
     # This is a Laravel scheduling/runtime budget envelope, not a strategy
     # execution input. Cohort size changes during bounded recovery must not
     # invalidate an already completed candidate's deterministic replay cache.
-    if candidate_policy.get('specialist_council_authorized_arm') is None:
+    scoped = candidate_policy.get('scoped_research_certificate')
+    if (candidate_policy.get('specialist_council_authorized_arm') is None
+            and not (isinstance(scoped, dict) and scoped.get('purpose') in {
+                'independent_scoped_component_research', 'independent_scoped_descendant_research',
+                'independent_scoped_selector_research'})):
         candidate_policy.pop("full_replay_runtime_policy", None)
     return strategy_payload.model_copy(
         update={
@@ -405,7 +411,7 @@ def _candidate_cache_contract_is_current(
     result = cached_item.get("result")
     if not isinstance(result, dict):
         return False
-    transport = verify_research_transport(payload, _internal_api_token())
+    transport = _verified_research_transport(payload)
     # A candidate cache payload has collapsed strategies; the original batch
     # identity was verified before cache lookup. Scope still must be current.
     arm = (transport or {}).get('original_council_arm')
@@ -779,7 +785,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
     # candidate-cache return, not just after a cache miss loads source_df.
     _assert_clean_discovery_boundary(payload)
     _validate_native_diagnostics_before_cache(payload)
-    transport = verify_research_transport(payload, _internal_api_token())
+    transport = _verified_research_transport(payload)
     authorized_arm = original_arm_identity(payload, transport)
     if payload.specialist_council_contract and len(payload.strategies) > 1:
         raise ValueError("SPECIALIST_COUNCIL_BATCH_REQUIRES_PER_CANDIDATE_CONTRACTS")
@@ -1126,6 +1132,8 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 )
             if authorized_arm is not None:
                 analysis = run_original_full_arm(strategy_payload, source_df, authorized_arm, run_timed)
+            elif original_scoped_runtime_policy(strategy_payload) is not None:
+                analysis = run_scoped_original_full_window(strategy_payload, source_df, run_timed)
             elif strategy_payload.specialist_council_contract:
                 # Each candidate seals a complete council. Running the legacy
                 # candidate strategy independently would erase ownership and
@@ -1411,7 +1419,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                     "is_overfit": False,
                     "result": ablation_result,
                 }
-            elif payload.evaluation_mode == "replay":
+            elif payload.evaluation_mode == "replay" or _scoped_full_durable_confirmation(payload):
                 confirmation_contracts = (payload.policy_context or {}).get(
                     "learning_confirmation_contracts", {}
                 )
@@ -1537,7 +1545,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                                 "fold_universe_count",
                                 "AI_REPLAY_CAUSAL_FOLD_UNIVERSE",
                                 14 if is_edge_genesis else 9,
-                                2,
+                                1 if _scoped_full_durable_confirmation(payload) else 2,
                                 32,
                             ),
                             max_rows_per_fold=_bounded_contract_int(
@@ -1545,7 +1553,7 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                                 "max_rows_per_fold",
                                 "AI_REPLAY_CAUSAL_MAX_ROWS_PER_FOLD",
                                 4096,
-                                2048,
+                                512 if _scoped_full_durable_confirmation(payload) else 2048,
                                 8192,
                             ),
                             audit_trace_rows=_bounded_contract_int(
@@ -1882,10 +1890,63 @@ def _run_portfolio_backtest_sync(payload: SimpleBacktestRequest) -> dict[str, ob
         raise ValueError(str(exc)) from exc
 
 
+def _verified_research_transport(payload: SimpleBacktestRequest):
+    transport = verify_research_transport(payload, _internal_api_token())
+    bind_scoped_research_runtime(payload, transport)
+    return transport
+
+
+def _scoped_full_durable_confirmation(payload: SimpleBacktestRequest) -> bool:
+    """Only authenticated post-paper selector transport may use full+durable.
+
+    Full remains the server authorization mode. The original durable fold
+    producer/deadline is reused, not replaced with ordinary full evaluation.
+    A declared purpose without original transport cannot select this route.
+    """
+    if payload.evaluation_mode != "full":
+        return False
+    context = payload.policy_context or {}
+    declaration = context.get("scoped_research_certificate")
+    if not isinstance(declaration, dict) or declaration.get("purpose") != "independent_scoped_selector_research":
+        return False
+    if not _verified_research_transport(payload):
+        raise ValueError("SCOPED_SELECTOR_ORIGINAL_AUTHORIZED_TRANSPORT_REQUIRED")
+    contracts = context.get("learning_confirmation_contracts")
+    ids = [str(member.lab_agent_id) for member in payload.strategies]
+    if (not isinstance(contracts, dict) or len(ids) != 3 or len(set(ids)) != 3
+            or set(contracts) != set(ids)):
+        raise ValueError("SCOPED_SELECTOR_ORIGINAL_THREE_ARM_CONTRACT_REQUIRED")
+    shared = []
+    for contract in contracts.values():
+        if (not isinstance(contract, dict) or contract.get("protocol") != "bounded_cold_start_learning_confirmation_v1"
+                or contract.get("execution_mode") != "durable_single_fold_job"
+                or contract.get("fold_count") != 1 or contract.get("admitted") is not True
+                or contract.get("promotion_evidence") is not False
+                or type(contract.get("fold_offset")) is not int
+                or type(contract.get("fold_universe_count")) is not int
+                or not 1 <= contract["fold_universe_count"] <= 12
+                or not 0 <= contract["fold_offset"] < contract["fold_universe_count"]
+                or type(contract.get("maximum_holding_bars")) is not int
+                or not 1 <= contract["maximum_holding_bars"] <= 105120
+                or type(contract.get("per_fold_budget_seconds")) is not int
+                or not 1 <= contract["per_fold_budget_seconds"] <= 1680):
+            raise ValueError("SCOPED_SELECTOR_ORIGINAL_DURABLE_FOLD_CONTRACT_REQUIRED")
+        shared.append((contract["fold_offset"], contract["fold_universe_count"],
+                       contract.get("maximum_holding_bars"), contract.get("per_fold_budget_seconds")))
+    if len(set(shared)) != 1:
+        raise ValueError("SCOPED_SELECTOR_ORIGINAL_SHARED_FOLD_SCOPE_REQUIRED")
+    return True
+
+
 def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
     """Return a deadline that is shorter than the Laravel transport budget."""
+    declaration = (payload.policy_context or {}).get("scoped_research_certificate")
+    if isinstance(declaration, dict) and declaration.get("purpose") in {
+            "independent_scoped_component_research", "independent_scoped_descendant_research"}:
+        _verified_research_transport(payload)
+        return original_scoped_runtime_policy(payload)["maximum_runtime_seconds"]
     if (payload.policy_context or {}).get('specialist_council_authorized_arm') is not None:
-        signed = verify_research_transport(payload, _internal_api_token())
+        signed = _verified_research_transport(payload)
         original = original_arm_identity(payload, signed)
         # One actual arm, not a legacy multi-lane hour-long training replay.
         # Leave bounded publication/HTTP margin inside the original 600s cap.
@@ -1903,7 +1964,7 @@ def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> i
         "learning_confirmation_contracts", {}
     )
     causal_confirmation = (
-        payload.evaluation_mode == "replay"
+        (payload.evaluation_mode == "replay" or _scoped_full_durable_confirmation(payload))
         and isinstance(confirmation_contracts, dict)
         and any(
             isinstance(contract, dict)
@@ -2161,7 +2222,7 @@ def _run_bounded_replay(
     # child. A fresh child cannot attest stale imports in its parent process.
     attest_research_release(payload.research_release, dataset_hash=payload.replay_dataset_hash,
                             execution_hash=payload.execution_contract.get("execution_hash"))
-    transport = verify_research_transport(payload, _internal_api_token())
+    transport = _verified_research_transport(payload)
     authorized_arm = original_arm_identity(payload, transport)
 
     # The replay compiler is intentionally content addressed.  It is safe to

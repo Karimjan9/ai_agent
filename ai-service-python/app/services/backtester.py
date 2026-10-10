@@ -694,6 +694,11 @@ def _assert_closed_mtf_runtime(
         from app.services.historical_quotes import original_full_mtf_bundle_current
         if not original_full_mtf_bundle_current(source_frame, payload):
             raise ValueError('AUTONOMOUS_MTF_ORIGINAL_WINDOW_AUTHORIZATION_REQUIRED')
+    scoped_bundle = (payload.mtf_snapshot_manifest or {}).get('validation_bundle_protocol') == 'authorized_scoped_original_window_bundle_v1'
+    if scoped_bundle:
+        from app.services.scoped_research_runtime import scoped_research_runtime_current
+        if not scoped_research_runtime_current(payload, source_frame):
+            raise ValueError('AUTONOMOUS_MTF_SCOPED_WINDOW_AUTHORIZATION_REQUIRED')
     pilot = dict(payload.mtf_pilot or {})
     if not (
         bool(pilot.get("enabled", False))
@@ -717,6 +722,7 @@ def _assert_closed_mtf_runtime(
             "agent_owned_mtf_foundation_bundle_v1",
             "prospective_clean_discovery_bundle_v1",
             "authorized_original_council_window_bundle_v1",
+            "authorized_scoped_original_window_bundle_v1",
         }
         or len(bundle_hash) != 64
     ):
@@ -1363,6 +1369,7 @@ def _run_prepared_simple_backtest(
     fast_stateful: bool | None = None,
     original_full_arm: dict | None = None,
 ) -> SimpleBacktestResponse:
+    _scoped_maturity_entry_end(payload)
     if payload.specialist_council_contract:
         from app.services.specialist_council import run_specialist_council
         # The native account owns its member snapshots. A legacy router's
@@ -2969,6 +2976,10 @@ def _run_prepared_simple_backtest(
         / max(float(row_at(0)["close"]), 0.0000001)
     ) * 100
     statistical_evidence = _statistical_evidence(trades, wins, total_trades)
+    statistical_evidence["original_position_maturity"] = _original_position_maturity(trades, position)
+    if (payload.policy_context or {}).get("scoped_position_maturity_fence") is not None:
+        statistical_evidence["original_position_maturity"]["applied_entry_fence"] = dict(
+            payload.policy_context["scoped_position_maturity_fence"])
     statistical_evidence["edge_quality"] = (
         {"status": "deferred_screening_subreplay", "promotion_evidence": False}
         if lightweight
@@ -4444,6 +4455,26 @@ def _portfolio_evidence(
         "execution_contract": "member_specific_execution_v1",
         "rule": "Members are independently validated; portfolio replay only measures sealed routing interaction.",
     }
+
+
+def _original_position_maturity(trades: list[SimpleTrade], position: dict | None) -> dict[str, object]:
+    """Observe original state at EOF; do not force a close or drop open risk."""
+    censored = 0
+    unknown = 0
+    for trade in trades:
+        reason = str(getattr(trade, "exit_reason", "") or "").lower()
+        if any(marker in reason for marker in ("end_of_replay", "end_of_data", "forced_close", "forced_end", "censored", "unrealized")):
+            censored += 1
+        try:
+            entry = pd.Timestamp(trade.entry_time)
+            exit_at = pd.Timestamp(trade.exit_time)
+            if pd.isna(entry) or pd.isna(exit_at) or exit_at < entry:
+                unknown += 1
+        except (ValueError, TypeError, AttributeError):
+            unknown += 1
+    return {"protocol": "original_position_maturity_v1", "closed_trade_count": len(trades),
+            "open_position_count": int(position is not None), "censored_trade_count": censored,
+            "unknown_maturity_count": unknown, "forced_terminal_close_applied": False}
 
 
 def _statistical_evidence(
@@ -6438,6 +6469,35 @@ def _advance_trailing_stop(
         )
 
 
+def _scoped_maturity_entry_end(payload: SimpleBacktestRequest) -> pd.Timestamp | None:
+    context = payload.policy_context or {}
+    fence = context.get("scoped_position_maturity_fence")
+    if fence is None:
+        return None
+    declaration = context.get("scoped_research_certificate") or {}
+    if not isinstance(declaration, dict) or declaration.get("purpose") not in {
+        "independent_scoped_component_research", "independent_scoped_descendant_research",
+        "independent_scoped_selector_research",
+    }:
+        raise ValueError("SCOPED_MATURITY_FENCE_ORIGINAL_PURPOSE_REQUIRED")
+    if (not isinstance(fence, dict) or set(fence) != {"protocol", "entry_end_exclusive", "end_exclusive", "holding_fence_seconds"}
+            or fence.get("protocol") != "scoped_original_maturity_fence_v1"
+            or type(fence.get("holding_fence_seconds")) is not int
+            or not 0 <= fence["holding_fence_seconds"] <= 31536000
+            or not isinstance(fence.get("entry_end_exclusive"), str)
+            or not isinstance(fence.get("end_exclusive"), str)):
+        raise ValueError("SCOPED_MATURITY_FENCE_CONTRACT_INVALID")
+    try:
+        entry_end = pd.Timestamp(fence["entry_end_exclusive"])
+        end = pd.Timestamp(fence["end_exclusive"])
+        if (pd.isna(entry_end) or pd.isna(end) or entry_end.tzinfo is None or end.tzinfo is None
+                or (end - entry_end).total_seconds() != fence["holding_fence_seconds"]):
+            raise ValueError("SCOPED_MATURITY_FENCE_CONTRACT_INVALID")
+        return entry_end.tz_convert("UTC")
+    except (TypeError, OverflowError) as error:
+        raise ValueError("SCOPED_MATURITY_FENCE_CONTRACT_INVALID") from error
+
+
 def _entry_eligibility(
     row: pd.Series,
     payload: SimpleBacktestRequest,
@@ -6452,6 +6512,14 @@ def _entry_eligibility(
     transition_wait_active: bool = False,
     temporal_assessment: dict[str, object] | None = None,
 ) -> tuple[bool, str | None]:
+    scoped_entry_end = _scoped_maturity_entry_end(payload)
+    if scoped_entry_end is not None:
+        observed_at = pd.Timestamp(row["time"])
+        if pd.isna(observed_at):
+            raise ValueError("SCOPED_MATURITY_FENCE_DECISION_TIME_REQUIRED")
+        observed_at = observed_at.tz_localize("UTC") if observed_at.tzinfo is None else observed_at.tz_convert("UTC")
+        if observed_at >= scoped_entry_end:
+            return False, "scoped_validation_maturity_tail"
     if _is_volume_policy_veto(signal_row if signal_row is not None else row):
         return False, "volume_policy"
     execution = payload.execution

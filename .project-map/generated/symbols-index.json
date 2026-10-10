@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T17:28:28.344Z",
-  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
-  "source_file_count": 1582,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-10T06:29:15.786Z",
+  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
+  "source_file_count": 1603,
+  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -184,6 +184,18 @@
       "line": 372
     },
     {
+      "symbol": "_AuthenticatedResearchTransport",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/research_release.py",
+      "line": 29
+    },
+    {
+      "symbol": "_ScopedRuntimeWitness",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/scoped_research_runtime.py",
+      "line": 44
+    },
+    {
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
@@ -199,7 +211,7 @@
       "symbol": "WalkForwardService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 28
+      "line": 55
     },
     {
       "symbol": "ArmReplayResourcesTest",
@@ -302,6 +314,24 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_robustness_protocol.py",
       "line": 11
+    },
+    {
+      "symbol": "ScopedPositionMaturityTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_scoped_position_maturity.py",
+      "line": 10
+    },
+    {
+      "symbol": "AdmissionOnlyStop",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_scoped_research_runtime.py",
+      "line": 292
+    },
+    {
+      "symbol": "ScopedSelectorPartitionTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_scoped_selector_partition.py",
+      "line": 10
     },
     {
       "symbol": "ChosenNativeSoloContractTest",
@@ -1783,13 +1813,13 @@
       "symbol": "hash",
       "kind": "php_type",
       "path": "backend-laravel/app/Jobs/EvaluateLabAgentJob.php",
-      "line": 179
+      "line": 191
     },
     {
       "symbol": "EvaluateLabAgentJob",
       "kind": "php_type",
       "path": "backend-laravel/app/Jobs/EvaluateLabAgentJob.php",
-      "line": 37
+      "line": 39
     },
     {
       "symbol": "EvaluateLabScreeningBatchJob",
@@ -1802,6 +1832,12 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Jobs/EvaluateMtfPlaybookPriorJob.php",
       "line": 27
+    },
+    {
+      "symbol": "ExecuteScopedResearchArmJob",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+      "line": 14
     },
     {
       "symbol": "LabMutexEvidenceMiddleware",
@@ -3340,6 +3376,12 @@
       "line": 8
     },
     {
+      "symbol": "ResearchExposureCaptureRecord",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 9
+    },
+    {
       "symbol": "ResearchIdeaInboxEntry",
       "kind": "php_type",
       "path": "backend-laravel/app/Models/ResearchIdeaInboxEntry.php",
@@ -3832,6 +3874,12 @@
       "line": 20
     },
     {
+      "symbol": "has",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 26
+    },
+    {
       "symbol": "CapabilityCellOrchestrator",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CapabilityCellOrchestrator.php",
@@ -3895,7 +3943,7 @@
       "symbol": "CausalFoldExecutionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 16
+      "line": 18
     },
     {
       "symbol": "CausalFunnelAttributionService",
@@ -4039,7 +4087,7 @@
       "symbol": "CompositionAuthorityKernelService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 10
+      "line": 13
     },
     {
       "symbol": "CompositionLibrarySettlementService",
@@ -4234,16 +4282,22 @@
       "line": 20
     },
     {
-      "symbol": "owner",
+      "symbol": "DescendantScopedExecutionService",
       "kind": "php_type",
-      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 127
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 26
     },
     {
       "symbol": "DescendantScopedProofService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
       "line": 15
+    },
+    {
+      "symbol": "owner",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
+      "line": 173
     },
     {
       "symbol": "DescendantTraitCreditService",
@@ -4462,28 +4516,28 @@
       "line": 20
     },
     {
-      "symbol": "caused",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 197
-    },
-    {
       "symbol": "EvolutionaryAuthorityFoundryService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 20
+      "line": 21
+    },
+    {
+      "symbol": "caused",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 401
     },
     {
       "symbol": "removed",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 366
+      "line": 570
     },
     {
       "symbol": "ablation",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 367
+      "line": 571
     },
     {
       "symbol": "EvolutionaryAuthorityLadderService",
@@ -4933,7 +4987,7 @@
       "symbol": "LabImmutableEvidenceService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 33
+      "line": 36
     },
     {
       "symbol": "LabIncrementalEvaluationService",
@@ -4975,7 +5029,7 @@
       "symbol": "forward",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 4401
+      "line": 4499
     },
     {
       "symbol": "gene",
@@ -5758,6 +5812,12 @@
       "line": 14
     },
     {
+      "symbol": "ResearchWindowExposureInventoryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 20
+    },
+    {
       "symbol": "ResearchWindowProvenanceAuditService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php",
@@ -5812,10 +5872,28 @@
       "line": 11
     },
     {
+      "symbol": "ScopedDescendantCandidatePreparationService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+      "line": 15
+    },
+    {
+      "symbol": "ScopedResearchAuthorityService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 14
+    },
+    {
       "symbol": "ScopedResearchCertificateService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 24
+      "line": 25
+    },
+    {
+      "symbol": "ScopedSelectorPanelService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 16
     },
     {
       "symbol": "ScreeningLearningOutboxService",
@@ -5827,7 +5905,7 @@
       "symbol": "improves",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 118
+      "line": 123
     },
     {
       "symbol": "ScreeningLearningService",
@@ -7330,6 +7408,12 @@
       "line": 7
     },
     {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
+      "line": 7
+    },
+    {
       "symbol": "NativeBi5DecoderTest",
       "kind": "python_class",
       "path": "backend-laravel/scripts/decode-dukascopy-tick-hour.test.py",
@@ -7694,6 +7778,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/DependencyAwareEdgeGenesisFoundryTest.php",
       "line": 28
+    },
+    {
+      "symbol": "DescendantScopedExecutionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/DescendantScopedExecutionTest.php",
+      "line": 54
     },
     {
       "symbol": "DescendantScopedProofTest",
@@ -8269,7 +8359,7 @@
       "symbol": "NativeStudyHistoricalProjectionIsolationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
-      "line": 23
+      "line": 24
     },
     {
       "symbol": "NormalCausalResearchContractTest",
@@ -8518,6 +8608,12 @@
       "line": 52
     },
     {
+      "symbol": "ResearchWindowExposureInventoryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php",
+      "line": 33
+    },
+    {
       "symbol": "ResearchWindowProvenanceAuditTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
@@ -8566,10 +8662,28 @@
       "line": 15
     },
     {
+      "symbol": "ScopedOriginalSafetyTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ScopedOriginalSafetyTest.php",
+      "line": 11
+    },
+    {
+      "symbol": "ScopedResearchAuthorityTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php",
+      "line": 39
+    },
+    {
       "symbol": "ScopedResearchCertificateTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ScopedResearchCertificateTest.php",
       "line": 22
+    },
+    {
+      "symbol": "ScopedSelectorPanelTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ScopedSelectorPanelTest.php",
+      "line": 41
     },
     {
       "symbol": "ScreeningExecutionDefinitionTest",
@@ -9056,6 +9170,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Unit/ProcessOutcomeAuditServiceTest.php",
       "line": 10
+    },
+    {
+      "symbol": "ProspectiveCompositionRecipeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php",
+      "line": 13
     },
     {
       "symbol": "ResearchPlaybookConflictResolutionServiceTest",

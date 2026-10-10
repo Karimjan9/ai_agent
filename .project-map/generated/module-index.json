@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T17:28:28.344Z",
-  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
-  "source_file_count": 1582,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-10T06:29:15.786Z",
+  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
+  "source_file_count": 1603,
+  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -25,6 +25,15 @@
         "backend-laravel/app/Models/ScopedResearchCertificate.php",
         "backend-laravel/app/Models/DescendantValueTrial.php",
         "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+        "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+        "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+        "backend-laravel/tests/Fixtures/scoped_selector_python_admission.py",
+        "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+        "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+        "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+        "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+        "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+        "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
         "backend-laravel/app/Services/DescendantScopedProofService.php",
         "backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php",
         "backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php",
@@ -152,6 +161,34 @@
         "ScopedResearchCertificateService::inspect",
         "ScopedResearchCertificateService::bindOriginalData",
         "ScopedResearchCertificateService::recordAssessment",
+        "ScopedResearchCertificateService::normalizeProspectiveDesign",
+        "ScopedResearchCertificateService::verifiedRegistration",
+        "ScopedResearchCertificateService::issueIndependent",
+        "ScopedResearchCertificateService::independentWindowReadiness",
+        "ResearchWindowExposureInventoryService::registerCapture",
+        "ResearchWindowExposureInventoryService::captureAttachedRequest",
+        "ResearchWindowExposureInventoryService::recordCausalFoldRequest",
+        "ResearchWindowExposureInventoryService::assessForCertificate",
+        "ScopedResearchAuthorityService::verifyOriginalSafety",
+        "ScopedSelectorPanelService::preregister",
+        "ScopedSelectorPanelService::preregisterFuturePanel",
+        "ScopedSelectorPanelService::bindOriginalData",
+        "ScopedSelectorPanelService::executionReadiness",
+        "ScopedSelectorPanelService::reservesOrdinaryEvaluation",
+        "ScopedSelectorPanelService::inspectPanel",
+        "DescendantScopedExecutionService::execute",
+        "DescendantScopedExecutionService::executeQueuedArm",
+        "EvolutionaryAuthorityFoundryService::preregisterScopedComponent",
+        "EvolutionaryAuthorityFoundryService::proposeScopedDescendant",
+        "ScopedDescendantCandidatePreparationService::register",
+        "CausalSkillCreditBridgeService::settleScopedCertificate",
+        "CanonicalSkillCartridgeService::projectScopedComponent",
+        "CompositionAuthorityKernelService::prospectiveRecipeFromMetadata",
+        "CompositionAuthorityKernelService::prospectiveProgrammeHash",
+        "CompositionAuthorityKernelService::compileProspectiveRecipeForRequest",
+        "LabInstrumentResearchService::bindScopedOriginalAssignment",
+        "LabAgentEvaluationService::scopedOriginalMemberPayload",
+        "LabAgentEvaluationService::scopedOriginalSelectorFoldEnvelope",
         "CausalLearningConfirmationService::scopeMeasurements",
         "CausalLearningConfirmationService::settleScopedProofs",
         "InstrumentResearchWindowService::originalValidationReadiness",
@@ -206,6 +243,7 @@
       ],
       "data_tables": [
         "scoped_research_certificates",
+        "research_exposure_capture_records",
         "descendant_value_trials",
         "research_instrument_abstractions",
         "research_behavior_archive",
@@ -227,10 +265,14 @@
         "laravel-python-contract"
       ],
       "invariants": [
-        "Component, selector, council and inheritance are separately sealed diagnostic questions, not mutually substitutable authority. A stored assessment, verified input bytes or future reservation never proves untouched validation (ADR-036).",
+        "Component, selector, council and inheritance are separately sealed questions with a diagnostic-only default and a versioned named-original independent issuer. No stored assessment, verified bytes or future reservation alone proves untouched validation (ADR-036).",
         "A prospective scoped experiment cannot borrow the coupled legacy confirmed/credit path, even after source drift. Legacy experiments and hypothesis-only references retain their original protocol.",
         "Descendant diagnostics require four exact P/PT/PTU/PU models, immutable original source revision and actual original products; bundle improvement is not individual trait or inheritance authority.",
         "All referenced MTF, warmup, related, foundation and inline exposure remains in the unused-data audit; absent logs cannot attest a complete training/selection inventory.",
+        "New candidate-scoped exposure capture starts before the first validation event and before all model runs/folds; ingress covers original four-stream bytes, closed context, warmup and holding. Missing captured originals, source drift or preexisting partial history block scope authority, rather than being retroactively completed.",
+        "Scoped component and descendant native execution uses the existing conversion kernel, sole arbiter and long research queue. Every original window/arm request is frozen before any replay; a genuine leased job executes only one original arm and never imports old results or spends a new scientific attempt on a repeated delivery.",
+        "A confirmed component may receive one scoped credit and cartridge without proving selector superiority. The existing Foundry proposes one legal additional mutation and a fresh later-window descendant dependency; it cannot reuse the component validation events or grant global parent, paper or live authority.",
+        "Reserved independent study projections remain audit-only; generic screening memory and ordinary historical mutation advice exclude even malformed scope markers.",
         "Explicit unused-draft mixed-price discovery preserves twenty original model/episode and ten pair identities but settles them only in its own neutral namespace. Genuine technical originals and unexecuted exact-control dependents are not measured zero effects; no ordinary mutation advice, pair effect, credit or economic handoff is emitted (ADR-035).",
         "Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).",
         "Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).",
@@ -277,6 +319,13 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php",
+        "backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php",
+        "backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php",
+        "backend-laravel/tests/Feature/ScopedOriginalSafetyTest.php",
+        "backend-laravel/tests/Feature/ScopedSelectorPanelTest.php",
+        "backend-laravel/tests/Feature/DescendantScopedExecutionTest.php",
+        "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
         "backend-laravel/tests/Feature/ScopedResearchCertificateTest.php",
         "backend-laravel/tests/Feature/SeparatedCausalProofTest.php",
         "backend-laravel/tests/Feature/OriginalValidationReadinessTest.php",
@@ -344,7 +393,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 121,
+      "source_file_count": 130,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -696,6 +745,7 @@
         "attestation"
       ],
       "paths": [
+        "backend-laravel/ecosystem.config.cjs",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabImmutableEvidenceService.php",
         "backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php",
@@ -711,6 +761,8 @@
         "ai-service-python/app/routers",
         "ai-service-python/app/services/execution_contract.py",
         "ai-service-python/app/services/research_release.py",
+        "ai-service-python/app/services/scoped_research_runtime.py",
+        "ai-service-python/app/services/scoped_original_replay.py",
         "ai-service-python/app/services/market_sessions.py",
         "ai-service-python/app/services/composition_runtime.py",
         "ai-service-python/app/services/market_adaptive_replay.py",
@@ -758,6 +810,11 @@
         "FastAPI /health",
         "FastAPI /api/backtest/run",
         "run_original_full_arm",
+        "bind_scoped_research_runtime",
+        "scoped_research_runtime_current",
+        "derive_scoped_partition_payload",
+        "run_scoped_original_full_window",
+        "original_scoped_trade_context",
         "validate_composition_runtime_contract"
       ],
       "data_tables": [
@@ -766,6 +823,8 @@
       ],
       "dependencies": [],
       "invariants": [
+        "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Only an internal nonserialized witness permits the future closed-context and quote calendar route. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",
+        "Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.",
         "unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).",
         "Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.",
         "native_spread_context_study_v1 changes only the computed instrument spread context, never raw quotes, prices, execution fees or hard risk. Its in-loop receipt distinguishes shared eligible gate events, unreached gates and account-diverged coverage; complete immutable original arms must share physical clock/source/program/cost before research-only Entry/WAIT sensitivity can settle.",
@@ -802,6 +861,9 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_scoped_research_runtime.py",
+        "ai-service-python/tests/test_scoped_position_maturity.py",
+        "ai-service-python/tests/test_scoped_selector_partition.py",
         "ai-service-python/tests/test_instrument_research.py",
         "backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php",
         "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
@@ -846,7 +908,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 53,
+      "source_file_count": 56,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {
@@ -1074,6 +1136,7 @@
         "Strict verification decides health after remediation.",
         "An unchanged operational state hash cannot enqueue another arbiter child merely because the scheduler minute or the selected scheduler job's own queue residency changed.",
         "An operator PAUSE fences new research admission and queued scheduler children without cancelling the current generation; RESUME changes the durable control revision and reselects that same lineage.",
+        "New native scoped authority uses AutonomousModeService::enabledForCommit inside its work transaction. A shared current read of the existing normalized control event avoids a stale REPEATABLE READ snapshot and holds permission through commit; missing or malformed stored control fails closed. Ordinary enabled/status defaults and operator transitions are unchanged.",
         "An unchanged active-generation settlement may receive two spaced retries after a completed child, then persists safety_halt instead of spinning or remaining silently frozen.",
         "An active immutable evaluation run inside the bounded queue lease is progress in flight, not an unchanged settlement; a replay mutex release is not by itself queue retry-storm evidence.",
         "A disk source hash and worker PID alone are not loaded-code proof; prospective queue/API boot hashes and returned replay receipts attest the worker release, while the read-only audit separately verifies the Git artifact. Legacy evidence stays unsealed.",
@@ -1104,6 +1167,7 @@
         "backend-laravel/tests/Feature/MarketHealthEngineTest.php",
         "backend-laravel/tests/Feature/ResearchLoopArbiterTest.php",
         "backend-laravel/tests/Feature/AutonomousModeControlTest.php",
+        "backend-laravel/tests/Feature/DescendantScopedExecutionTest.php",
         "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php"
       ],
       "flows": [

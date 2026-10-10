@@ -17,17 +17,39 @@ assessment open. Scope drift or a forged legacy confirmed flag cannot fall
 through to legacy credits. Unscoped v2 and explicit hypothesis-only references
 keep their previous rules; historical outcomes are never upgraded.
 
-The original-input diagnostic reopens all four closed streams and distinguishes
-byte completeness from complete original training/selection/warmup/context
-inventory. No complete inventory producer is supplied by this change: readiness
-remains `BLOCKED_DEPENDENCY`, even for valid bytes and server window labels.
+The diagnostic input audit still does not infer a complete inventory from
+missing history. The new prospective capture owner starts before the first
+event and all original model runs/folds, then records actual request ingress
+through both immutable laboratory and durable fold owners. Reopened four-stream
+rows, warmup, closed context and holding prove only this frozen candidate scope.
+Preexisting partial history, missed ingress or changed source stays blocked.
 
 Descendant `scoped_preregistered -> scoped_diagnostic` validates exact
 P/P+T/P+T+U/P+U vectors, source cartridge revision and original immutable runs.
 It derives conditional trait and interaction effects rather than caller
 success flags. These states are excluded from old `settled` authority counts.
-The native four-arm dispatcher and independent certificate issuer remain
-separate undelivered boundaries, not implicit permissions.
+The separately declared independent policy can transition to
+`independently_confirmed_component/selector/council/inheritance` only through
+the named original issuer. Incomplete products retain an unconsumed assessment;
+complete unsafe, underpowered, null and negative observations close without
+authority. Caller success flags and the legacy v2 credit path are unavailable.
+
+Native work follows `blocked_dependency -> ready -> leased -> bounded preparation
+-> whole-matrix barrier -> one queued original arm -> checkpoint -> original
+comparison -> terminal`. Missing future data does not spend a scientific arm.
+Duplicate/stale queued deliveries cannot execute a second original. Technical
+outcomes remain immutable and are not combined across source versions.
+Final issuer/credit/next-work/terminal writes share one locked transaction.
+STOP or lease expiry before its final commit rolls them back without erasing
+previously completed original products or permitting another scientific replay.
+
+A positive component handoff writes one `causal_skill_credit` and one
+`scoped_confirmed` cartridge/revision. This is exact trait/context research
+guidance, not a global Parent or paper admission. Existing Foundry seals one
+controlled U proposal into a later unused-window dependency. Fresh P/PT/PTU/PU
+models and capture must precede the new events; the native four-arm owner then
+measures trait retention separately from interaction. Component windows cannot
+become descendant validation merely by acquiring new labels.
 
 Finite program search follows `explicit typed task + verified original library
 -> prospective equal-cap seal -> two original native search products ->

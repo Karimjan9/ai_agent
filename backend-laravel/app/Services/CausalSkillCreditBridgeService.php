@@ -19,6 +19,64 @@ class CausalSkillCreditBridgeService
 {
     public const PROTOCOL = 'confirmed_causal_skill_credit_bridge_v1';
 
+    public const SCOPED_PROTOCOL = 'scoped_original_credit_handoff_v1';
+
+    /** Separate proof scopes never imply selector, global Parent or paper credit. */
+    public function settleScopedCertificate(int $certificateId): array
+    {
+        if (! Schema::hasTable('lab_evolution_credit_events')) return $this->withheld('CREDIT_LEDGER_UNAVAILABLE');
+        $certificate = app(ScopedResearchCertificateService::class)->inspect($certificateId);
+        $scope = $certificate['scope'] ?? null;
+        $proof = (array) data_get($certificate, 'original_authority.'.$scope, []);
+        if (($certificate['valid'] ?? false) !== true || ($proof['confirmed'] ?? false) !== true
+            || ! in_array($scope, ['component', 'inheritance'], true)
+            || ($proof['authority_type'] ?? '') !== 'context_bound_research_'.$scope) {
+            return $this->withheld('ORIGINAL_SCOPE_CERTIFICATE_NOT_CONFIRMED');
+        }
+        $modelId = $scope === 'component' ? ($proof['candidate_model_version_id'] ?? 0) : ($proof['child_model_version_id'] ?? 0);
+        $agent = LabAgent::query()->with('modelVersion')->where('model_version_id', $modelId)->orderBy('id')->first();
+        if (! $agent || ! $agent->modelVersion) return $this->withheld('SCOPED_SOURCE_MODEL_OR_AGENT_MISSING');
+        $type = $scope === 'component' ? 'causal_skill_credit' : 'inheritance_credit';
+        return DB::transaction(function () use ($certificateId, $certificate, $scope, $proof, $agent, $type): array {
+            // Revalidate after locking the original immutable certificate owner.
+            \App\Models\ScopedResearchCertificate::query()->whereKey($certificateId)->lockForUpdate()->firstOrFail();
+            $current = app(ScopedResearchCertificateService::class)->inspect($certificateId);
+            if (data_get($current, 'original_authority.'.$scope.'.confirmed') !== true
+                || $current['source_hash'] !== $certificate['source_hash']) {
+                return $this->withheld('SCOPED_ORIGINAL_AUTHORITY_CHANGED_BEFORE_HANDOFF');
+            }
+            $fingerprint = hash('sha256', self::SCOPED_PROTOCOL.'|'.$type.'|'.$certificateId.'|'.$certificate['authority_record_id']);
+            $payload = ['protocol' => self::SCOPED_PROTOCOL, 'certificate_id' => $certificateId,
+                'authority_record_id' => $certificate['authority_record_id'], 'authority_scope' => $scope,
+                'design_hash' => $certificate['design_hash'], 'source_hash' => $certificate['source_hash'],
+                'trait_delta' => $proof['trait_delta'] ?? null, 'original_windows' => $proof['original_windows'] ?? [],
+                'selector_authority_granted' => false, 'global_parent_authority' => false,
+                'paper_or_live_authority' => false, 'promotion_evidence' => false];
+            $event = LabEvolutionCreditEvent::firstOrNew(['evidence_fingerprint' => $fingerprint]);
+            if (! $event->exists) {
+                $event->fill([
+                'lab_agent_id' => $agent->id, 'model_version_id' => $agent->model_version_id,
+                'parent_model_version_id' => null, 'symbol' => strtoupper($agent->symbol), 'timeframe' => strtoupper($agent->timeframe),
+                'strategy_family' => $agent->strategy_family, 'event_type' => $type,
+                'context_key' => $proof['context_hash'] ?? data_get($certificate, 'design.context_hash'),
+                'amount' => 1, 'status' => $scope === 'component' ? 'causal_skill_confirmed' : 'inheritance_retention_verified',
+                'recorded_at' => now()->utc(),
+                ]);
+                $event->setRawAttributes([...$event->getAttributes(), 'payload' => json_encode($payload,
+                    JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR)]);
+                $event->save();
+            } elseif (app(ResearchPaperEpochContractService::class)->parameterHash((array) $event->payload)
+                !== app(ResearchPaperEpochContractService::class)->parameterHash($payload)) {
+                throw new \LogicException('SCOPED_CREDIT_ORIGINAL_HANDOFF_IMMUTABLE');
+            }
+            $cartridge = $scope === 'component'
+                ? app(CanonicalSkillCartridgeService::class)->projectScopedComponent($certificateId, (int) $event->id) : null;
+            return ['protocol' => self::SCOPED_PROTOCOL, 'status' => 'credited', 'event_id' => (int) $event->id,
+                'newly_recorded' => $event->wasRecentlyCreated, 'scope' => $scope, 'cartridge' => $cartridge,
+                'paper_or_live_authority' => false, 'parent_eligible' => false, 'promotion_evidence' => false];
+        });
+    }
+
     /** @return array<string, mixed> */
     public function settle(AgentLearningCausalExperiment $experiment): array
     {

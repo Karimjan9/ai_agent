@@ -1,5 +1,16 @@
 # Causal-learning history
 
+## 2026-10-09 - Original scope issuer and canonical native follow-through
+
+Prospective candidate-scoped exposure is recorded by both original request
+owners. A separate issuer verifies complete physical windows and exact trait,
+context, maturity, risk and no-regression evidence. Component credit/cartridge
+is independent of selector superiority; native two/four-arm work is owned by
+the existing kernel, arbiter, constructor and full queue. Foundry proposes one
+controlled later-window descendant question. Historical flags remain diagnostic
+and study projections cannot influence ordinary selection. See ADR-036.
+This entry records architecture, not a production or market-success receipt.
+
 ## 2026-10-09 - Separately scoped prospective proof preparation
 
 Append-only component/selector/council/inheritance questions, actual data-binding

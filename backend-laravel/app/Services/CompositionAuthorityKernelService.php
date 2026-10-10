@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\ModelVersion;
+use Illuminate\Support\Arr;
+
 /**
  * The only compiler permitted to freeze a research composition. It produces
  * a deterministic passport before a replay/job is created; it is never a
@@ -10,6 +13,235 @@ namespace App\Services;
 class CompositionAuthorityKernelService
 {
     public const PROTOCOL = 'xauusd_composition_authority_kernel_v1';
+    public const PROSPECTIVE_RECIPE_PROTOCOL = 'prospective_composition_recipe_v1';
+    public const PROSPECTIVE_RECIPE_METADATA = 'prospective_scoped_composition_recipe';
+
+    /** Freeze executable semantics before the future dataset has an identity. */
+    public function prospectiveRecipeFromMetadata(ModelVersion $model): array
+    {
+        $metadata = (array) $model->metadata;
+        $intrinsic = (array) data_get(app(LabImmutableEvidenceService::class)->modelRuntimeBasis($model), 'components', []);
+        unset($intrinsic['composition_passport'], $intrinsic['composition_runtime_contract'],
+            $intrinsic['execution_contract'], $intrinsic['smart_composition_treatment'],
+            $intrinsic[self::PROSPECTIVE_RECIPE_METADATA], $intrinsic[self::PROSPECTIVE_RECIPE_METADATA.'_hash']);
+        $intrinsic += Arr::only($metadata, ['strategy_family', 'specialist_role', 'specialist_genetic_envelope',
+            'causal_learning_cohort', 'liquidity_atr_binding']);
+        $passport = (array) data_get($metadata, 'smart_composition.composition_passport', []);
+        if ($passport !== [] && (($passport['protocol'] ?? null) !== self::PROTOCOL || empty($passport['composition_id']))) {
+            throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_SOURCE_PASSPORT_INVALID');
+        }
+        $assignment = (array) ($metadata['instrument_research_assignment'] ?? []);
+        unset($assignment['assignment_hash'], $assignment['parameter_hash'], $assignment['lab_agent_id'],
+            $assignment['lab_generation_id'], $assignment['model_version_id'], $assignment['data_hash'],
+            $assignment['dataset_hash'], $assignment['execution_hash'], $assignment['mtf_bundle_hash'],
+            $assignment['mtf_manifest'], $assignment['window_composition_id']);
+        if (isset($assignment['source_components'])) unset($assignment['source_components']['composition_id']);
+        $recipe = $this->canonicalize([
+            'protocol' => self::PROSPECTIVE_RECIPE_PROTOCOL,
+            'strategy' => (string) $model->strategy, 'version' => (string) $model->version,
+            'parameters' => (array) $model->parameters,
+            'source_parameters' => (array) ($metadata['prospective_scoped_source_parameters']
+                ?? data_get($metadata, self::PROSPECTIVE_RECIPE_METADATA.'.source_parameters', $model->parameters ?? [])),
+            'intrinsic_metadata' => $intrinsic,
+            'source_passport_semantics' => $this->prospectivePassportSemantics($passport),
+            'program_tuple' => $passport === [] ? [] : Arr::only($passport, ['components', 'typed_program']),
+            'instrument_assignment_semantics' => $assignment,
+        ]);
+        $hash = app(ResearchPaperEpochContractService::class)->parameterHash($recipe);
+        if (array_key_exists(self::PROSPECTIVE_RECIPE_METADATA, $metadata)
+            && (! is_array($metadata[self::PROSPECTIVE_RECIPE_METADATA])
+                || app(ResearchPaperEpochContractService::class)->parameterHash($metadata[self::PROSPECTIVE_RECIPE_METADATA]) !== $hash
+                || (isset($metadata[self::PROSPECTIVE_RECIPE_METADATA.'_hash'])
+                    && $metadata[self::PROSPECTIVE_RECIPE_METADATA.'_hash'] !== $hash))) {
+            throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_SOURCE_SEMANTIC_DRIFT');
+        }
+        foreach (array_unique([...array_keys($recipe['parameters']), ...array_keys($recipe['source_parameters'])]) as $gene) {
+            if (! $this->prospectiveParameterInterventionAllowed($recipe, (string) $gene)
+                && app(ResearchPaperEpochContractService::class)->parameterHash(Arr::only($recipe['parameters'], [$gene]))
+                    !== app(ResearchPaperEpochContractService::class)->parameterHash(Arr::only($recipe['source_parameters'], [$gene]))) {
+                throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_INTERVENTION_OVERRIDDEN_BY_SOURCE_MANAGEMENT');
+            }
+        }
+
+        return $recipe;
+    }
+
+    /** The constructor can restrict its original legal mask before selecting a single intervention. */
+    public function prospectiveParameterInterventionAllowed(array $recipe, string $gene): bool
+    {
+        if (($recipe['program_tuple'] ?? []) === []) return true;
+        $adapter = (array) data_get($recipe, 'source_passport_semantics.management_contract.runtime_adapter', []);
+        if (($adapter['engine'] ?? null) === 'parameter_preserving_replay_v1') return true;
+        if (($adapter['engine'] ?? null) !== 'single_partial_runner_v1') return false;
+        $owned = ['partial_take_profit_fraction', 'trailing_atr_multiplier', 'time_stop_candles'];
+        if (($adapter['partial_target_r'] ?? null) !== null
+            && (float) data_get($recipe, 'source_parameters.atr_stop_multiplier', 0) > 0) $owned[] = 'partial_target_atr_multiplier';
+        if (($adapter['final_target_r'] ?? null) !== null) $owned[] = 'atr_target_multiplier';
+
+        return ! in_array($gene, $owned, true);
+    }
+
+    /** Programme parity permits declared parameter contrasts, never a different predicate, tool or risk policy. */
+    public function prospectiveProgrammeHash(ModelVersion $model): string
+    {
+        $programme = $this->prospectiveRecipeFromMetadata($model);
+        unset($programme['parameters'], $programme['source_parameters'], $programme['strategy'], $programme['version']);
+        $metadata = (array) $model->metadata;
+        $schemas = app(StrategyParameterSchemaService::class);
+        $programme['normalized_runtime'] = [
+            'base_strategy' => $schemas->runtimeBaseStrategy((string) $model->strategy, $metadata['base_strategy'] ?? null,
+                $metadata['strategy_family'] ?? data_get($programme, 'source_passport_semantics.strategy_contract.strategy_spec.family')),
+        ];
+        $programme['normalized_runtime']['family'] = $schemas->family($programme['normalized_runtime']['base_strategy']);
+        $bindings = ['experiment_key', 'experiment_id', 'role', 'source_lesson_id', 'source_pair_id',
+            'source_candidate_agent_id', 'source_control_agent_id', 'baseline_model_version_id',
+            'gene', 'value', 'baseline_old_value', 'selector_hash', 'selector_protocol', 'selector_policy'];
+        foreach ([
+            'source_passport_semantics.learning_experiment' => $bindings,
+            'intrinsic_metadata.causal_learning_cohort' => [...$bindings, 'experiment_kind'],
+            'intrinsic_metadata.causal_learning_cohort.blinded_selector' => ['gene', 'value', 'old_value', 'seed',
+                'selection_hash', 'parameter_hash', 'parent_parameter_hash', 'baseline_parameter_hash', 'candidate_parameter_hash'],
+            'intrinsic_metadata.causal_learning_cohort.memory_search_receipt' => ['receipt_hash', 'source_lesson_id',
+                'source_pair_id', 'source_agent_id', 'source_model_version_id', 'selected_gene', 'selected_value'],
+            'instrument_assignment_semantics' => ['changed_gene', 'sealed_treatment_gene', 'experiment_role', 'selection_mode'],
+            'instrument_assignment_semantics.decision_doctrine' => ['changed_gene', 'objective'],
+            'instrument_assignment_semantics.pair_reservation' => ['pair_id', 'reservation_id', 'reservation_key',
+                'reservation_hash', 'experiment_id', 'experiment_key', 'lab_generation_id', 'control_agent_id', 'candidate_agent_id',
+                'control_model_version_id', 'candidate_model_version_id', 'baseline_parameter_hash', 'control_parameter_hash',
+                'candidate_parameter_hash', 'dataset_hash', 'data_hash', 'execution_hash'],
+        ] as $path => $keys) {
+            $value = data_get($programme, $path);
+            if (is_array($value)) data_set($programme, $path, Arr::except($value, $keys));
+        }
+        // These source declarations may carry cost/security limits outside the passport.
+        $programme['external_execution_semantics'] = Arr::except((array) ($metadata['execution_contract'] ?? []),
+            ['execution_hash', 'data_hash', 'dataset_hash', 'replay_dataset_hash']);
+        $runtime = (array) ($metadata['composition_runtime_contract'] ?? []);
+        $runtime = Arr::except($runtime, ['contract_hash', 'composition_id']);
+        foreach ([
+            'runtime_bindings.risk' => ['value'],
+            'execution_authority.dataset' => ['replay_dataset_hash'],
+            'execution_authority.execution' => ['execution_hash'],
+            'execution_authority.instrument' => ['assignment_hash'],
+            'execution_authority.mtf' => ['bundle_hash', 'stream_hashes'],
+        ] as $path => $keys) {
+            $value = data_get($runtime, $path);
+            if (is_array($value)) data_set($runtime, $path, Arr::except($value, $keys));
+        }
+        $programme['external_runtime_semantics'] = $runtime;
+
+        return app(ResearchPaperEpochContractService::class)->parameterHash($programme);
+    }
+
+    /** Compile only a request clone; neither the source model nor its historical passport is persisted. */
+    public function compileProspectiveRecipeForRequest(ModelVersion $model, array $actualScope): array
+    {
+        $recipe = $this->prospectiveRecipeFromMetadata($model);
+        $recipeHash = app(ResearchPaperEpochContractService::class)->parameterHash($recipe);
+        if (! is_string($actualScope['expected_recipe_hash'] ?? null)
+            || ! hash_equals($recipeHash, $actualScope['expected_recipe_hash'])) {
+            throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_ORIGINAL_SEAL_REQUIRED');
+        }
+        $manifest = (array) ($actualScope['mtf_manifest'] ?? []);
+        if (($actualScope['timeframe'] ?? null) !== 'M5'
+            || ! is_string($actualScope['dataset_hash'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $actualScope['dataset_hash'])
+            || ! is_string($actualScope['execution_hash'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $actualScope['execution_hash'])
+            || ($manifest['protocol'] ?? null) !== MultiTimeframeSnapshotService::PROTOCOL
+            || ($manifest['bundle_hash'] ?? null) !== $actualScope['dataset_hash']
+            || ! collect(['M5', 'M15', 'H1', 'H4'])->every(fn (string $timeframe): bool =>
+                is_string(data_get($manifest, 'streams.'.$timeframe.'.sha256'))
+                && preg_match('/^[a-f0-9]{64}$/D', data_get($manifest, 'streams.'.$timeframe.'.sha256')) === 1)) {
+            throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_ACTUAL_MTF_IDENTITY_REQUIRED');
+        }
+        $metadata = (array) $model->metadata;
+        $source = (array) data_get($metadata, 'smart_composition.composition_passport', []);
+        $passport = [];
+        if ($source !== []) {
+            $components = (array) ($source['components'] ?? []);
+            $runtime = $this->strategies->runtime((string) ($components['strategy_id'] ?? ''));
+            $base = app(StrategyParameterSchemaService::class)->runtimeBaseStrategy((string) $model->strategy,
+                $metadata['base_strategy'] ?? null, (string) ($metadata['strategy_family'] ?? data_get($runtime, 'family')));
+            if (! is_array($runtime)
+                || $base !== $this->strategies->runtimeBaseStrategy((string) ($components['strategy_id'] ?? ''))
+                || (string) ($metadata['strategy_architecture'] ?? '') !== (string) ($runtime['architecture'] ?? '')
+                || (string) data_get($metadata, 'tactic_contract.architecture', '') !== (string) ($components['tactic_id'] ?? '')) {
+                throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_SOURCE_RUNTIME_MISMATCH');
+            }
+            $adapter = $this->management->runtimeAdapter((string) ($components['management_id'] ?? ''));
+            if (! is_array($adapter)) throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_MANAGEMENT_ADAPTER_REQUIRED');
+            $passport = $this->freeze($this->prospectivePassportProposal($source, $actualScope));
+            if (isset($source['learning_experiment'])) {
+                $experiment = (array) $source['learning_experiment'];
+                if (($experiment['role'] ?? null) === 'blinded') $experiment['blinded_selector'] = [
+                    'protocol' => $experiment['selector_protocol'] ?? null, 'gene' => $experiment['gene'] ?? null,
+                    'value' => $experiment['value'] ?? null, 'selection_hash' => $experiment['selector_hash'] ?? null];
+                $passport = $this->bindLearningExperiment($passport, $experiment);
+            }
+            if (array_key_exists('learning_receipt_ids', $source)) {
+                $passport = $this->bindLearningDirective($passport, (array) ($source['learning_directive'] ?? []));
+            }
+            if (app(ResearchPaperEpochContractService::class)->parameterHash($this->prospectivePassportSemantics($passport))
+                !== app(ResearchPaperEpochContractService::class)->parameterHash($recipe['source_passport_semantics'])) {
+                throw new \InvalidArgumentException('PROSPECTIVE_RECIPE_COMPILER_SEMANTIC_DRIFT');
+            }
+            $metadata['smart_composition']['composition_passport'] = $passport;
+        }
+        unset($metadata['instrument_research_assignment'], $metadata['instrument_assignment'],
+            $metadata['composition_runtime_contract'], $metadata['composition_passport'], $metadata['execution_contract']);
+        $metadata[self::PROSPECTIVE_RECIPE_METADATA] = $recipe;
+        $metadata[self::PROSPECTIVE_RECIPE_METADATA.'_hash'] = $recipeHash;
+        $transient = clone $model;
+        $transient->metadata = $metadata;
+
+        return ['status' => 'compiled_prospective_recipe', 'model' => $transient,
+            'recipe' => $recipe, 'recipe_hash' => $recipeHash, 'passport' => $passport];
+    }
+
+    private function prospectivePassportSemantics(array $passport): array
+    {
+        unset($passport['composition_id'], $passport['data_hash'], $passport['execution_hash']);
+        if (isset($passport['provenance'])) unset($passport['provenance']['data_hash'], $passport['provenance']['execution_hash']);
+
+        // A compiled 0.0 and its persisted JSON 0 are the same passport semantics.
+        return json_decode(json_encode($this->canonicalize($passport), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+            true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    /** Recover only inputs represented in the original compiler product; an unrecoverable product fails the comparison. */
+    private function prospectivePassportProposal(array $source, array $actualScope): array
+    {
+        $dataPlane = (array) data_get($source, 'temporal_policy.data_contract.data_plane', []);
+        $dataContract = [];
+        foreach (['m1_canonical', 'bid_ask_history', 'spread_history', 'slippage_model', 'latency_model',
+            'deterministic_aggregation', 'gap_audit', 'closed_at_available_at', 'backward_only_alignment'] as $key) {
+            $dataContract[$key] = ! in_array($key, (array) ($dataPlane['missing_requirements'] ?? []), true);
+        }
+        $dataContract['m5_canonical'] = (bool) ($dataPlane['m5_canonical'] ?? false);
+        $dataContract['provider'] = $dataPlane['base_provider'] ?? null;
+        $location = (array) ($source['location_thesis'] ?? []);
+        $volume = (array) ($source['volume_provenance'] ?? []);
+
+        return [
+            'symbol' => $source['symbol'] ?? $source['tradable_symbol'] ?? '',
+            ...Arr::only((array) ($source['components'] ?? []), ['strategy_id', 'tactic_id', 'risk_id', 'management_id']),
+            'data_hash' => $actualScope['dataset_hash'], 'execution_hash' => $actualScope['execution_hash'],
+            'data_contract' => $dataContract, 'market_state' => (array) ($source['market_state'] ?? []),
+            'prior_ids' => (array) data_get($source, 'prior_contract.prior_ids', []),
+            'horizon_mode' => $source['horizon_mode'] ?? 'day_structure',
+            'horizon_contract' => (array) ($source['horizon_contract'] ?? []),
+            'location_context' => [...$location, 'location_strength' => $location['strength'] ?? 0,
+                'location_available' => ($location['trigger_admissible'] ?? false) === true],
+            'volume_context' => [...$volume, 'volume_available' => ! ($volume['volume_unavailable'] ?? true)],
+            'risk_state' => data_get($source, 'risk_hysteresis.state', 'NORMAL'),
+            'invalidation_model' => $source['invalidation_model'] ?? 'structure_stop',
+            'target_model' => $source['target_model'] ?? 'H1_liquidity_target',
+            'session_news_context' => ['session_state' => $source['session_handoff_state'] ?? 'unclassified',
+                'news_state' => $source['news_state'] ?? 'normal'],
+            'confirmation_families' => (array) data_get($source, 'typed_program.compatibility_graph.independent_confirmation_families', []),
+            'learning_directive' => (array) ($source['learning_directive'] ?? []),
+            'setup_expires_at' => $source['setup_expires_at'] ?? null, 'trigger_expires_at' => $source['trigger_expires_at'] ?? null,
+        ];
+    }
 
     /**
      * Fresh confirmation research keeps the archived parameters exactly, but

@@ -1,17 +1,26 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T17:28:28.344Z",
-  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
-  "source_file_count": 1582,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-10T06:29:15.786Z",
+  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
+  "source_file_count": 1603,
+  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
     "backend-laravel/app/Models/ScopedResearchCertificate.php",
     "backend-laravel/app/Models/DescendantValueTrial.php",
     "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+    "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+    "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+    "backend-laravel/tests/Fixtures/scoped_selector_python_admission.py",
+    "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+    "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+    "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+    "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+    "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+    "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
     "backend-laravel/app/Services/DescendantScopedProofService.php",
     "backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php",
     "backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php",
@@ -146,12 +155,14 @@
     "backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php",
     "backend-laravel/app/Console/Commands/ReconcileInstrumentPairs.php",
     "backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php",
+    "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
     "backend-laravel/app/Jobs/ProcessLabScreeningLearningProjection.php",
     "backend-laravel/app/Jobs/RunCausalExperimentFoldJob.php",
     "backend-laravel/app/Models/CausalFoldReceipt.php",
     "backend-laravel/app/Models/DescendantValueTrial.php",
     "backend-laravel/app/Models/LabLearningLanePair.php",
     "backend-laravel/app/Models/ResearchExperimentReceipt.php",
+    "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
     "backend-laravel/app/Models/ScopedResearchCertificate.php",
     "backend-laravel/app/Services/AcademyExperimentContractCompilerService.php",
     "backend-laravel/app/Services/AcademyExperimentMaterializerService.php",
@@ -181,6 +192,7 @@
     "backend-laravel/app/Services/ContextualInstrumentBundleGraphService.php",
     "backend-laravel/app/Services/CooperativeExperimentSettlementService.php",
     "backend-laravel/app/Services/DependencyAwareEdgeGenesisFoundryService.php",
+    "backend-laravel/app/Services/DescendantScopedExecutionService.php",
     "backend-laravel/app/Services/DescendantScopedProofService.php",
     "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
     "backend-laravel/app/Services/FrozenControlScreeningAdmissionService.php",
@@ -212,8 +224,12 @@
     "backend-laravel/app/Services/ResearchIdeaInboxService.php",
     "backend-laravel/app/Services/ResearchKnowledgePortfolioService.php",
     "backend-laravel/app/Services/ResearchPaperEpochContractService.php",
+    "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
     "backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php",
+    "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+    "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
     "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+    "backend-laravel/app/Services/ScopedSelectorPanelService.php",
     "backend-laravel/app/Services/ScreeningLearningOutboxService.php",
     "backend-laravel/app/Services/ScreeningLearningService.php",
     "backend-laravel/app/Services/SettlementWatermarkService.php",
@@ -229,6 +245,7 @@
     "backend-laravel/database/migrations/2026_09_24_130000_expand_evolution_credit_status_for_compounding.php",
     "backend-laravel/database/migrations/2026_10_04_200000_create_research_abstraction_and_behavior_archives.php",
     "backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php",
+    "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
     "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
     "backend-laravel/tests/Feature/AcademyColdStartFairnessTest.php",
     "backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php",
@@ -253,6 +270,7 @@
     "backend-laravel/tests/Feature/TypedInstrumentResearchLearningTest.php",
     "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
     "backend-laravel/tests/Feature/XauusdEdgeFormationAcademyServiceTest.php",
+    "backend-laravel/tests/Fixtures/scoped_selector_python_admission.py",
     "backend-laravel/tests/Support/InstrumentValidationFixture.php",
     "backend-laravel/tests/Unit/AcademyExperimentContractCompilerServiceTest.php",
     "backend-laravel/tests/Unit/CausalStageMasteryDirectorServiceTest.php"
@@ -262,529 +280,541 @@
       "symbol": "_screen_replay_capacity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 103
+      "line": 105
     },
     {
       "symbol": "_replay_checkpoint_root",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 137
+      "line": 139
     },
     {
       "symbol": "_write_replay_checkpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 150
+      "line": 152
     },
     {
       "symbol": "run_portfolio_backtest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1823
+      "line": 1831
     },
     {
       "symbol": "_run_portfolio_backtest_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1839
+      "line": 1847
+    },
+    {
+      "symbol": "_verified_research_transport",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 1893
+    },
+    {
+      "symbol": "_scoped_full_durable_confirmation",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 1899
     },
     {
       "symbol": "_bounded_replay_seconds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1885
+      "line": 1941
     },
     {
       "symbol": "_bounded_env_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2054
-    },
-    {
-      "symbol": "_bounded_contract_int",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2062
-    },
-    {
-      "symbol": "_read_replay_capture",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2078
-    },
-    {
-      "symbol": "_terminate_replay_tree",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2092
+      "line": 2115
     },
     {
       "symbol": "_latest_replay_checkpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 210
+      "line": 212
+    },
+    {
+      "symbol": "_bounded_contract_int",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2123
+    },
+    {
+      "symbol": "_read_replay_capture",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2139
+    },
+    {
+      "symbol": "_terminate_replay_tree",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2153
     },
     {
       "symbol": "_run_bounded_replay",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2140
+      "line": 2201
     },
     {
       "symbol": "_utc_timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 232
-    },
-    {
-      "symbol": "_replay_cache_key",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2389
-    },
-    {
-      "symbol": "_runtime_dependency_manifest",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2413
+      "line": 234
     },
     {
       "symbol": "_load_foundation_candles",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 242
+      "line": 244
     },
     {
-      "symbol": "_dataset_dependency_manifest",
+      "symbol": "_replay_cache_key",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2460
+      "line": 2450
+    },
+    {
+      "symbol": "_runtime_dependency_manifest",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2474
     },
     {
       "symbol": "_assert_historical_evolution_screen_source",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 249
+      "line": 251
+    },
+    {
+      "symbol": "_dataset_dependency_manifest",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2521
     },
     {
       "symbol": "_replay_cache_path",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2530
+      "line": 2591
     },
     {
       "symbol": "_load_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2540
+      "line": 2601
     },
     {
       "symbol": "_store_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2563
+      "line": 2624
     },
     {
       "symbol": "_cleanup_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2590
+      "line": 2651
     },
     {
       "symbol": "_with_replay_compiler_metadata",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2636
+      "line": 2697
     },
     {
       "symbol": "_attach_behavioral_diversity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2661
+      "line": 2722
     },
     {
       "symbol": "_minhash_similarity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2766
-    },
-    {
-      "symbol": "_correlation",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2771
-    },
-    {
-      "symbol": "_prepare_paper_payload",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 2784
+      "line": 2827
     },
     {
       "symbol": "_assert_non_paper_source_pre_2026",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 281
+      "line": 283
+    },
+    {
+      "symbol": "_correlation",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2832
+    },
+    {
+      "symbol": "_prepare_paper_payload",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 2845
     },
     {
       "symbol": "_twin_inference_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2820
+      "line": 2881
     },
     {
       "symbol": "_council_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2863
+      "line": 2924
     },
     {
       "symbol": "paper_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2901
+      "line": 2962
     },
     {
       "symbol": "paper_twin_inference",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3168
+      "line": 3229
     },
     {
       "symbol": "_twin_lane_process_worker",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3211
+      "line": 3272
     },
     {
       "symbol": "_run_twin_lane_process",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3225
+      "line": 3286
     },
     {
       "symbol": "paper_twin_red_team",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3248
+      "line": 3309
     },
     {
       "symbol": "_candidate_cache_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 331
+      "line": 333
     },
     {
       "symbol": "paper_twin_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3316
+      "line": 3377
     },
     {
       "symbol": "paper_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3374
+      "line": 3435
     },
     {
       "symbol": "advance_paper_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3495
+      "line": 3556
     },
     {
       "symbol": "paper_accounting",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3568
+      "line": 3629
     },
     {
       "symbol": "_candidate_scoped_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 370
+      "line": 376
     },
     {
       "symbol": "_mtf_variant_payloads",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3707
+      "line": 3768
     },
     {
       "symbol": "variant_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3728
+      "line": 3789
     },
     {
       "symbol": "_mtf_signal_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3767
+      "line": 3828
     },
     {
       "symbol": "_mtf_snapshot_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3788
+      "line": 3849
     },
     {
       "symbol": "frame_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3795
+      "line": 3856
     },
     {
       "symbol": "_build_mtf_feature_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3821
+      "line": 3882
     },
     {
       "symbol": "_run_mtf_variants",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3834
+      "line": 3895
     },
     {
       "symbol": "_candidate_cache_contract_is_current",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 391
+      "line": 397
     },
     {
       "symbol": "_mtf_validation_lanes",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3951
+      "line": 4012
     },
     {
       "symbol": "_scaled_cost_execution",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3965
+      "line": 4026
     },
     {
       "symbol": "_exit_stress_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3991
+      "line": 4052
     },
     {
       "symbol": "_run_mtf_targeted_validation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4020
+      "line": 4081
     },
     {
       "symbol": "run_mtf_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4154
+      "line": 4215
     },
     {
       "symbol": "run_mtf_targeted_validation_endpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4239
+      "line": 4300
     },
     {
       "symbol": "run_mtf_hypothesis_batch",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4305
+      "line": 4366
     },
     {
       "symbol": "_mtf_lane_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4399
+      "line": 4460
     },
     {
       "symbol": "_run_single_mtf_lane",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4426
+      "line": 4487
     },
     {
       "symbol": "run_mtf_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4472
+      "line": 4533
     },
     {
       "symbol": "_coverage_permission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4636
+      "line": 4697
     },
     {
       "symbol": "_abstention_meta_decision",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4722
+      "line": 4783
     },
     {
       "symbol": "_regime_belief",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4915
+      "line": 4976
     },
     {
       "symbol": "_transition_mixture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4964
+      "line": 5025
     },
     {
       "symbol": "_typed_agent_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5003
+      "line": 5064
     },
     {
       "symbol": "_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5084
+      "line": 5145
     },
     {
       "symbol": "require_internal_token",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 511
+      "line": 517
     },
     {
       "symbol": "_strategy_contract_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5188
+      "line": 5249
     },
     {
       "symbol": "_paper_management_audit",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5206
+      "line": 5267
     },
     {
       "symbol": "_tactical_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5264
+      "line": 5325
     },
     {
       "symbol": "_entry_contract_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5306
+      "line": 5367
     },
     {
       "symbol": "boolean",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5316
+      "line": 5377
     },
     {
       "symbol": "number",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5320
+      "line": 5381
     },
     {
       "symbol": "timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5329
+      "line": 5390
     },
     {
       "symbol": "_internal_api_token",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 542
+      "line": 548
     },
     {
       "symbol": "health",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 555
+      "line": 561
     },
     {
       "symbol": "home",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 579
+      "line": 585
     },
     {
       "symbol": "strategies",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 587
+      "line": 593
     },
     {
       "symbol": "replay_status",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 595
+      "line": 601
     },
     {
       "symbol": "run_simple_backtest_api",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 616
+      "line": 622
     },
     {
       "symbol": "run_all_backtests",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 639
+      "line": 645
     },
     {
       "symbol": "aggregate_causal_folds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 658
+      "line": 664
     },
     {
       "symbol": "_screening_robustness_admission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 699
+      "line": 705
     },
     {
       "symbol": "_screening_insufficient_robustness_profile",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 732
+      "line": 738
     },
     {
       "symbol": "_validate_native_diagnostics_before_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 759
+      "line": 765
     },
     {
       "symbol": "_run_all_backtests_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 777
+      "line": 783
     },
     {
       "symbol": "add_timing",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 789
+      "line": 795
     },
     {
       "symbol": "run_timed",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 794
+      "line": 800
     },
     {
       "symbol": "shared_features",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 908
+      "line": 914
     },
     {
       "symbol": "build_composition_execution_receipt",
@@ -1021,136 +1051,148 @@
       "line": 73
     },
     {
-      "symbol": "count",
+      "symbol": "_causal_forward_folds",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1008
-    },
-    {
-      "symbol": "_aggregate_edge_context_enforcement",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1053
-    },
-    {
-      "symbol": "_parameter_activation_manifest",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1114
-    },
-    {
-      "symbol": "_forward_window_protocol",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1164
-    },
-    {
-      "symbol": "_row_rolling_windows",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 122
-    },
-    {
-      "symbol": "_purge_segments",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1226
-    },
-    {
-      "symbol": "_run_segment",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1246
-    },
-    {
-      "symbol": "_normalize",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1289
-    },
-    {
-      "symbol": "calculate_robustness_score",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1297
-    },
-    {
-      "symbol": "detect_overfit",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 1303
-    },
-    {
-      "symbol": "run",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 167
-    },
-    {
-      "symbol": "run_causal_confirmation",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 277
-    },
-    {
-      "symbol": "WalkForwardService",
-      "kind": "python_class",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 28
-    },
-    {
-      "symbol": "_causal_context_cache_key",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 38
-    },
-    {
-      "symbol": "split_dataset",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 62
-    },
-    {
-      "symbol": "_resource_totals",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 674
-    },
-    {
-      "symbol": "aggregate_causal_fold_items",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 688
-    },
-    {
-      "symbol": "fold_number",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 706
+      "line": 1007
     },
     {
       "symbol": "rolling_windows",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 75
-    },
-    {
-      "symbol": "_causal_forward_folds",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 920
+      "line": 102
     },
     {
       "symbol": "_causal_window_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 973
+      "line": 1062
     },
     {
       "symbol": "_aggregate_edge_observability",
       "kind": "python_function",
       "path": "ai-service-python/app/services/walk_forward.py",
-      "line": 992
+      "line": 1081
+    },
+    {
+      "symbol": "count",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1097
+    },
+    {
+      "symbol": "_aggregate_edge_context_enforcement",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1142
+    },
+    {
+      "symbol": "_parameter_activation_manifest",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1203
+    },
+    {
+      "symbol": "_forward_window_protocol",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1253
+    },
+    {
+      "symbol": "_purge_segments",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1315
+    },
+    {
+      "symbol": "_run_segment",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1335
+    },
+    {
+      "symbol": "_normalize",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1378
+    },
+    {
+      "symbol": "calculate_robustness_score",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1386
+    },
+    {
+      "symbol": "detect_overfit",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 1392
+    },
+    {
+      "symbol": "_row_rolling_windows",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 149
+    },
+    {
+      "symbol": "run",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 194
+    },
+    {
+      "symbol": "_scoped_forward_payload",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 28
+    },
+    {
+      "symbol": "run_causal_confirmation",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 304
+    },
+    {
+      "symbol": "_original_maturity_totals",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 36
+    },
+    {
+      "symbol": "WalkForwardService",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 55
+    },
+    {
+      "symbol": "_causal_context_cache_key",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 65
+    },
+    {
+      "symbol": "_resource_totals",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 741
+    },
+    {
+      "symbol": "aggregate_causal_fold_items",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 755
+    },
+    {
+      "symbol": "fold_number",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 773
+    },
+    {
+      "symbol": "split_dataset",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/walk_forward.py",
+      "line": 89
     },
     {
       "symbol": "produce",
@@ -1247,6 +1289,30 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RunCausalGoldenWorldAcceptance.php",
       "line": 8
+    },
+    {
+      "symbol": "ExecuteScopedResearchArmJob",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+      "line": 14
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+      "line": 28
+    },
+    {
+      "symbol": "uniqueId",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+      "line": 36
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php",
+      "line": 41
     },
     {
       "symbol": "ProcessLabScreeningLearningProjection",
@@ -1351,22 +1417,34 @@
       "line": 28
     },
     {
+      "symbol": "getRequestPayloadAttribute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/CausalFoldReceipt.php",
+      "line": 34
+    },
+    {
+      "symbol": "originalRequestJsonShape",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/CausalFoldReceipt.php",
+      "line": 43
+    },
+    {
       "symbol": "booted",
       "kind": "php_method",
       "path": "backend-laravel/app/Models/CausalFoldReceipt.php",
-      "line": 33
+      "line": 60
     },
     {
       "symbol": "experiment",
       "kind": "php_method",
       "path": "backend-laravel/app/Models/CausalFoldReceipt.php",
-      "line": 44
+      "line": 71
     },
     {
       "symbol": "generation",
       "kind": "php_method",
       "path": "backend-laravel/app/Models/CausalFoldReceipt.php",
-      "line": 49
+      "line": 76
     },
     {
       "symbol": "CausalFoldReceipt",
@@ -1451,6 +1529,36 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Models/ResearchExperimentReceipt.php",
       "line": 8
+    },
+    {
+      "symbol": "asJson",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 19
+    },
+    {
+      "symbol": "fromJson",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 25
+    },
+    {
+      "symbol": "originalJsonShape",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 35
+    },
+    {
+      "symbol": "booted",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 52
+    },
+    {
+      "symbol": "ResearchExposureCaptureRecord",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Models/ResearchExposureCaptureRecord.php",
+      "line": 9
     },
     {
       "symbol": "asJson",
@@ -2203,106 +2311,118 @@
       "line": 68
     },
     {
+      "symbol": "trialKey",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 1013
+    },
+    {
+      "symbol": "reconcileRepairableTechnicalPreflightCohort",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 1024
+    },
+    {
       "symbol": "canRetryRepairableTechnicalPreflightCohort",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1041
+      "line": 1097
     },
     {
       "symbol": "pendingRepairableRetryContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1084
+      "line": 1140
     },
     {
       "symbol": "interactionKey",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1114
+      "line": 1170
     },
     {
       "symbol": "transplantModes",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1120
+      "line": 1176
     },
     {
       "symbol": "confirmationContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1139
+      "line": 1195
     },
     {
       "symbol": "transplantParameters",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1153
+      "line": 1209
     },
     {
       "symbol": "alternativeCategoricalValue",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1194
+      "line": 1250
     },
     {
       "symbol": "parameterDiff",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1210
+      "line": 1266
     },
     {
       "symbol": "interactionParameters",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1222
+      "line": 1278
     },
     {
       "symbol": "context",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1237
+      "line": 1293
     },
     {
       "symbol": "niche",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1269
+      "line": 1325
     },
     {
       "symbol": "direction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1274
+      "line": 1330
     },
     {
       "symbol": "factorialInteraction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1280
+      "line": 1336
     },
     {
       "symbol": "range",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1291
+      "line": 1347
     },
     {
       "symbol": "viability",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1296
+      "line": 1352
     },
     {
       "symbol": "secondary",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1301
+      "line": 1357
     },
     {
       "symbol": "scopeMismatch",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 1306
+      "line": 1362
     },
     {
       "symbol": "CanonicalSkillCartridgeService",
@@ -2311,160 +2431,160 @@
       "line": 20
     },
     {
+      "symbol": "has",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 26
+    },
+    {
+      "symbol": "projectScopedComponent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 27
+    },
+    {
       "symbol": "retrieve",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 230
-    },
-    {
-      "symbol": "__construct",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 26
+      "line": 286
     },
     {
       "symbol": "retrieveForLesson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 261
+      "line": 317
     },
     {
       "symbol": "rankedForReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 305
+      "line": 361
     },
     {
       "symbol": "replayPriority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 338
+      "line": 394
     },
     {
       "symbol": "bindIntent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 353
+      "line": 409
     },
     {
       "symbol": "planTransplant",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 359
-    },
-    {
-      "symbol": "project",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 37
+      "line": 415
     },
     {
       "symbol": "materializeTransplant",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 381
+      "line": 437
     },
     {
       "symbol": "settleTransplantOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 528
+      "line": 584
     },
     {
       "symbol": "recordInteraction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 633
+      "line": 689
     },
     {
       "symbol": "materializeInteraction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 646
+      "line": 702
     },
     {
       "symbol": "settleInteractionOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 739
+      "line": 795
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 82
     },
     {
       "symbol": "reconcileLegacy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 792
+      "line": 848
     },
     {
       "symbol": "reconcileProvisionalConfirmationState",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 807
+      "line": 863
     },
     {
       "symbol": "backfillImmutableRevisions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 837
+      "line": 893
     },
     {
       "symbol": "available",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 856
+      "line": 912
     },
     {
       "symbol": "traitCapsuleForMentor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 868
+      "line": 924
+    },
+    {
+      "symbol": "project",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
+      "line": 93
     },
     {
       "symbol": "preregisterDescendantProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 903
+      "line": 959
     },
     {
       "symbol": "inspectDescendantProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 908
+      "line": 964
     },
     {
       "symbol": "settleDescendantProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 913
+      "line": 969
     },
     {
       "symbol": "proposal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 919
+      "line": 975
     },
     {
       "symbol": "same",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 932
+      "line": 988
     },
     {
       "symbol": "projectionResolvedForPair",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 943
-    },
-    {
-      "symbol": "trialKey",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 957
-    },
-    {
-      "symbol": "reconcileRepairableTechnicalPreflightCohort",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CanonicalSkillCartridgeService.php",
-      "line": 968
+      "line": 999
     },
     {
       "symbol": "compositionCore",
@@ -2536,73 +2656,85 @@
       "symbol": "CausalFoldExecutionService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 16
+      "line": 18
     },
     {
       "symbol": "settleIfComplete",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 178
+      "line": 204
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 20
+      "line": 22
     },
     {
       "symbol": "ensureReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 25
+      "line": 27
     },
     {
       "symbol": "terminalFailure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 301
+      "line": 331
     },
     {
       "symbol": "recordProgress",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 342
+      "line": 372
     },
     {
       "symbol": "assertFoldResponse",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 362
+      "line": 392
     },
     {
       "symbol": "foldCount",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 391
+      "line": 421
     },
     {
       "symbol": "reasonCode",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 396
+      "line": 426
+    },
+    {
+      "symbol": "isScopedSelectorWire",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
+      "line": 446
+    },
+    {
+      "symbol": "sendOriginalWire",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
+      "line": 452
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 412
+      "line": 462
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 417
+      "line": 467
     },
     {
       "symbol": "run",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalFoldExecutionService.php",
-      "line": 46
+      "line": 48
     },
     {
       "symbol": "persistenceProof",
@@ -2782,97 +2914,91 @@
       "symbol": "projectConfirmedGuidedMentor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1075
+      "line": 1086
+    },
+    {
+      "symbol": "settleScopedProofs",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+      "line": 110
     },
     {
       "symbol": "windows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1116
+      "line": 1127
     },
     {
       "symbol": "compareWindows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1177
+      "line": 1188
     },
     {
       "symbol": "targetMeasurement",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1252
-    },
-    {
-      "symbol": "originalScopedOutcomesMatch",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 133
+      "line": 1263
     },
     {
       "symbol": "compareTargetMeasurements",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1391
+      "line": 1402
+    },
+    {
+      "symbol": "originalScopedOutcomesMatch",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+      "line": 144
     },
     {
       "symbol": "invariantVector",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1482
+      "line": 1493
     },
     {
       "symbol": "compareNonTargetInvariants",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1519
+      "line": 1530
     },
     {
       "symbol": "firstNumber",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1601
+      "line": 1612
     },
     {
       "symbol": "metricMeasurement",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1614
-    },
-    {
-      "symbol": "recordEvaluationOutcome",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 163
+      "line": 1625
     },
     {
       "symbol": "singleTargetMeasurement",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1636
+      "line": 1647
     },
     {
       "symbol": "compositeTargetMeasurement",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1648
+      "line": 1659
     },
     {
       "symbol": "firstNumberWithPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1665
+      "line": 1676
     },
     {
       "symbol": "minimumGroupedNumber",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1677
-    },
-    {
-      "symbol": "windowScore",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1692
+      "line": 1688
     },
     {
       "symbol": "CausalLearningConfirmationService",
@@ -2881,70 +3007,82 @@
       "line": 17
     },
     {
+      "symbol": "windowScore",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+      "line": 1703
+    },
+    {
       "symbol": "nonTargetSafe",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1707
+      "line": 1718
     },
     {
       "symbol": "guidedRole",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1719
+      "line": 1730
+    },
+    {
+      "symbol": "recordEvaluationOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+      "line": 174
     },
     {
       "symbol": "confirmationProtocol",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1733
+      "line": 1744
     },
     {
       "symbol": "utility",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 1744
+      "line": 1755
     },
     {
-      "symbol": "hasDeclaredProspectiveScope",
+      "symbol": "compareOriginalComponent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 23
+      "line": 24
     },
     {
       "symbol": "reconcileCanonicalPairs",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 246
+      "line": 257
     },
     {
-      "symbol": "scopeMeasurements",
+      "symbol": "hasDeclaredProspectiveScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 38
+      "line": 34
     },
     {
       "symbol": "outcomeMetrics",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 381
+      "line": 392
     },
     {
       "symbol": "recordOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 400
+      "line": 411
+    },
+    {
+      "symbol": "scopeMeasurements",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
+      "line": 49
     },
     {
       "symbol": "researchRatchetDecision",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 985
-    },
-    {
-      "symbol": "settleScopedProofs",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalLearningConfirmationService.php",
-      "line": 99
+      "line": 996
     },
     {
       "symbol": "recordAblation",
@@ -3229,28 +3367,34 @@
       "line": 84
     },
     {
-      "symbol": "guidedRole",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
-      "line": 163
-    },
-    {
-      "symbol": "withheld",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
-      "line": 173
-    },
-    {
       "symbol": "CausalSkillCreditBridgeService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
       "line": 18
     },
     {
+      "symbol": "guidedRole",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
+      "line": 221
+    },
+    {
+      "symbol": "withheld",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
+      "line": 231
+    },
+    {
+      "symbol": "settleScopedCertificate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
+      "line": 25
+    },
+    {
       "symbol": "settle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CausalSkillCreditBridgeService.php",
-      "line": 23
+      "line": 81
     },
     {
       "symbol": "record",
@@ -3370,49 +3514,85 @@
       "symbol": "CompositionAuthorityKernelService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 10
+      "line": 13
     },
     {
-      "symbol": "freeze",
+      "symbol": "compileProspectiveRecipeForRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 101
+      "line": 137
     },
     {
-      "symbol": "confirmationReplayMetadata",
+      "symbol": "prospectiveRecipeFromMetadata",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
       "line": 20
     },
     {
-      "symbol": "bindLearningExperiment",
+      "symbol": "prospectivePassportSemantics",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 234
+      "line": 200
     },
     {
-      "symbol": "bindLearningDirective",
+      "symbol": "prospectivePassportProposal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 283
+      "line": 211
     },
     {
-      "symbol": "canonicalize",
+      "symbol": "confirmationReplayMetadata",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 309
+      "line": 252
     },
     {
       "symbol": "refreezeHistoricalHypothesis",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 61
+      "line": 293
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
-      "line": 82
+      "line": 314
+    },
+    {
+      "symbol": "freeze",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 333
+    },
+    {
+      "symbol": "bindLearningExperiment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 466
+    },
+    {
+      "symbol": "bindLearningDirective",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 515
+    },
+    {
+      "symbol": "canonicalize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 541
+    },
+    {
+      "symbol": "prospectiveParameterInterventionAllowed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 70
+    },
+    {
+      "symbol": "prospectiveProgrammeHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CompositionAuthorityKernelService.php",
+      "line": 85
     },
     {
       "symbol": "CompositionLibrarySettlementService",
@@ -4207,10 +4387,190 @@
       "line": 97
     },
     {
-      "symbol": "owner",
+      "symbol": "assertSourceComponent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 1087
+    },
+    {
+      "symbol": "closeTechnical",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 1103
+    },
+    {
+      "symbol": "defer",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 1114
+    },
+    {
+      "symbol": "prospectiveStatisticalGuard",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 112
+    },
+    {
+      "symbol": "reason",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 1122
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 1129
+    },
+    {
+      "symbol": "validateExecutionInput",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 128
+    },
+    {
+      "symbol": "registerWork",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 204
+    },
+    {
+      "symbol": "registerComponentWork",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 219
+    },
+    {
+      "symbol": "recordNativeWork",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 233
+    },
+    {
+      "symbol": "inspectWork",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 255
+    },
+    {
+      "symbol": "DescendantScopedExecutionService",
       "kind": "php_type",
-      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 127
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 26
+    },
+    {
+      "symbol": "assertLease",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 386
+    },
+    {
+      "symbol": "assertLeaseFence",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 396
+    },
+    {
+      "symbol": "compileRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 407
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 44
+    },
+    {
+      "symbol": "execute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 480
+    },
+    {
+      "symbol": "validateProspectiveExecution",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 54
+    },
+    {
+      "symbol": "prepareComponentExecution",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 60
+    },
+    {
+      "symbol": "settleOriginalMatrix",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 600
+    },
+    {
+      "symbol": "publishBarrier",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 655
+    },
+    {
+      "symbol": "checkpointPreparation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 672
+    },
+    {
+      "symbol": "assertPreparedCohort",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 689
+    },
+    {
+      "symbol": "nativeJobTimeout",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 708
+    },
+    {
+      "symbol": "queueOriginalArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 722
+    },
+    {
+      "symbol": "executeQueuedArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 762
+    },
+    {
+      "symbol": "executeOriginalArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 831
+    },
+    {
+      "symbol": "checkpointRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 923
+    },
+    {
+      "symbol": "assertOriginalClockParity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 945
+    },
+    {
+      "symbol": "armRoles",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 979
+    },
+    {
+      "symbol": "verifyOriginalExecutedClock",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedExecutionService.php",
+      "line": 995
     },
     {
       "symbol": "DescendantScopedProofService",
@@ -4219,16 +4579,10 @@
       "line": 15
     },
     {
-      "symbol": "inspect",
-      "kind": "php_method",
+      "symbol": "owner",
+      "kind": "php_type",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 166
-    },
-    {
-      "symbol": "settle",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 213
+      "line": 173
     },
     {
       "symbol": "preregister",
@@ -4237,214 +4591,250 @@
       "line": 22
     },
     {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
+      "line": 221
+    },
+    {
+      "symbol": "recordIndependentTerminal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
+      "line": 269
+    },
+    {
+      "symbol": "settle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
+      "line": 305
+    },
+    {
       "symbol": "originalArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 309
+      "line": 401
     },
     {
       "symbol": "contextSlice",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 319
+      "line": 411
     },
     {
       "symbol": "topology",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 342
+      "line": 439
     },
     {
       "symbol": "effects",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 383
+      "line": 480
     },
     {
       "symbol": "diff",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 435
+      "line": 532
     },
     {
       "symbol": "same",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 449
+      "line": 546
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 454
+      "line": 551
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/DescendantScopedProofService.php",
-      "line": 459
-    },
-    {
-      "symbol": "contractHashesMatch",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1001
-    },
-    {
-      "symbol": "capsuleExecutionMatches",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1013
-    },
-    {
-      "symbol": "contextualTargetComparison",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1076
-    },
-    {
-      "symbol": "matchingPoweredSlice",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1135
-    },
-    {
-      "symbol": "researchChildMetadata",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1152
-    },
-    {
-      "symbol": "descendantTrustContext",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1174
-    },
-    {
-      "symbol": "unavailable",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1190
-    },
-    {
-      "symbol": "parametersForArm",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1204
-    },
-    {
-      "symbol": "diff",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1226
-    },
-    {
-      "symbol": "targetImproved",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1238
-    },
-    {
-      "symbol": "nonTargetRegression",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 1249
-    },
-    {
-      "symbol": "hasVerifiedCausalBaseline",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 184
-    },
-    {
-      "symbol": "caused",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 197
-    },
-    {
-      "symbol": "EvolutionaryAuthorityFoundryService",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 20
-    },
-    {
-      "symbol": "materializeDescendantCohort",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 201
-    },
-    {
-      "symbol": "__construct",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 32
-    },
-    {
-      "symbol": "removed",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 366
-    },
-    {
-      "symbol": "ablation",
-      "kind": "php_type",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 367
-    },
-    {
-      "symbol": "recordIncubationArm",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 398
-    },
-    {
-      "symbol": "recordDescendantTrial",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 440
-    },
-    {
-      "symbol": "materializeIncubator",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 47
-    },
-    {
-      "symbol": "settleDescendantOutcome",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 497
-    },
-    {
-      "symbol": "settleIncubatorOutcome",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 680
-    },
-    {
-      "symbol": "refreshAuthority",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 754
+      "line": 556
     },
     {
       "symbol": "authorityFor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 911
+      "line": 1115
     },
     {
       "symbol": "resolveCausalBaseline",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 939
+      "line": 1143
+    },
+    {
+      "symbol": "scopedChildMetadata",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 116
     },
     {
       "symbol": "preservedPassport",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 978
+      "line": 1182
+    },
+    {
+      "symbol": "contractHashesMatch",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1205
+    },
+    {
+      "symbol": "capsuleExecutionMatches",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1217
+    },
+    {
+      "symbol": "contextualTargetComparison",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1280
+    },
+    {
+      "symbol": "matchingPoweredSlice",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1339
+    },
+    {
+      "symbol": "researchChildMetadata",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1356
+    },
+    {
+      "symbol": "descendantTrustContext",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1378
+    },
+    {
+      "symbol": "unavailable",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1394
+    },
+    {
+      "symbol": "parametersForArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1408
+    },
+    {
+      "symbol": "diff",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1430
+    },
+    {
+      "symbol": "targetImproved",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1442
+    },
+    {
+      "symbol": "nonTargetRegression",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 1453
+    },
+    {
+      "symbol": "preregisterScopedComponent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 149
+    },
+    {
+      "symbol": "EvolutionaryAuthorityFoundryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 21
+    },
+    {
+      "symbol": "materializeIncubator",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 251
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 37
+    },
+    {
+      "symbol": "hasVerifiedCausalBaseline",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 388
+    },
+    {
+      "symbol": "caused",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 401
+    },
+    {
+      "symbol": "materializeDescendantCohort",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 405
+    },
+    {
+      "symbol": "proposeScopedDescendant",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 46
+    },
+    {
+      "symbol": "removed",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 570
+    },
+    {
+      "symbol": "ablation",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 571
+    },
+    {
+      "symbol": "recordIncubationArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 602
+    },
+    {
+      "symbol": "recordDescendantTrial",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 644
+    },
+    {
+      "symbol": "settleDescendantOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 701
+    },
+    {
+      "symbol": "settleIncubatorOutcome",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 884
+    },
+    {
+      "symbol": "refreshAuthority",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
+      "line": 958
     },
     {
       "symbol": "declaredControlAgentId",
@@ -4711,100 +5101,118 @@
       "line": 10
     },
     {
-      "symbol": "originalCouncilArm",
+      "symbol": "canonicalScopedManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 110
+      "line": 120
+    },
+    {
+      "symbol": "physicalScopedManifest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
+      "line": 134
+    },
+    {
+      "symbol": "originalScopedWindow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
+      "line": 143
     },
     {
       "symbol": "bindReplayRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 21
+      "line": 22
+    },
+    {
+      "symbol": "originalCouncilArm",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
+      "line": 269
     },
     {
       "symbol": "transportFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 237
+      "line": 396
     },
     {
       "symbol": "verifySealedReplayWindow",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 315
+      "line": 474
     },
     {
       "symbol": "originalValidationReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 349
+      "line": 508
     },
     {
       "symbol": "provenanceReason",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 423
+      "line": 589
     },
     {
       "symbol": "transportPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 429
+      "line": 595
     },
     {
       "symbol": "transportJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 443
+      "line": 609
     },
     {
       "symbol": "readiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 454
+      "line": 620
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 472
+      "line": 638
     },
     {
       "symbol": "sealForDataset",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 491
+      "line": 657
     },
     {
       "symbol": "authorized",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 530
+      "line": 696
     },
     {
       "symbol": "analyze",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 543
+      "line": 709
     },
     {
       "symbol": "receipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 614
+      "line": 780
     },
     {
       "symbol": "validReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 650
+      "line": 816
     },
     {
       "symbol": "sameReceipt",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentResearchWindowService.php",
-      "line": 663
+      "line": 829
     },
     {
       "symbol": "InstrumentValidationEvidenceService",
@@ -4873,28 +5281,22 @@
       "line": 78
     },
     {
+      "symbol": "projectCausalFoldAggregate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 1039
+    },
+    {
       "symbol": "screen",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1022
+      "line": 1144
     },
     {
       "symbol": "screenBatch",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1431
-    },
-    {
-      "symbol": "batchInterruptedByHostSuspend",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1874
-    },
-    {
-      "symbol": "closedResearchCohort",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1898
+      "line": 1560
     },
     {
       "symbol": "LabAgentEvaluationService",
@@ -4903,34 +5305,34 @@
       "line": 19
     },
     {
+      "symbol": "batchInterruptedByHostSuspend",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2012
+    },
+    {
+      "symbol": "closedResearchCohort",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2036
+    },
+    {
       "symbol": "volumeEnabled",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1921
+      "line": 2059
     },
     {
       "symbol": "isUncertaintyAbstain",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1938
+      "line": 2076
     },
     {
       "symbol": "completeUncertaintyAbstain",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 1949
-    },
-    {
-      "symbol": "closeScreeningGenerationIfTerminal",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2052
-    },
-    {
-      "symbol": "persistScreenBatchItem",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2077
+      "line": 2087
     },
     {
       "symbol": "__construct",
@@ -4939,28 +5341,16 @@
       "line": 21
     },
     {
-      "symbol": "mergeRefreshedModelMetadata",
+      "symbol": "closeScreeningGenerationIfTerminal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2265
+      "line": 2190
     },
     {
-      "symbol": "fullReplayMaxCohortSize",
+      "symbol": "persistScreenBatchItem",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2278
-    },
-    {
-      "symbol": "isCausalLearningConfirmation",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2287
-    },
-    {
-      "symbol": "causalPerFoldBudgetSeconds",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2295
+      "line": 2215
     },
     {
       "symbol": "evaluate",
@@ -4969,202 +5359,244 @@
       "line": 23
     },
     {
+      "symbol": "mergeRefreshedModelMetadata",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2403
+    },
+    {
+      "symbol": "fullReplayMaxCohortSize",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2416
+    },
+    {
+      "symbol": "isCausalLearningConfirmation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2425
+    },
+    {
+      "symbol": "causalPerFoldBudgetSeconds",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2433
+    },
+    {
       "symbol": "skillCartridgeConfirmationContract",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2304
-    },
-    {
-      "symbol": "isEdgeGenesisReplay",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2330
-    },
-    {
-      "symbol": "mergeSealedCohortPeers",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2341
-    },
-    {
-      "symbol": "volumeContextOrFail",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2394
-    },
-    {
-      "symbol": "replayTimeframe",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
       "line": 2442
     },
     {
+      "symbol": "isEdgeGenesisReplay",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2468
+    },
+    {
+      "symbol": "mergeSealedCohortPeers",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2479
+    },
+    {
+      "symbol": "scopedOriginalVolumeContext",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2533
+    },
+    {
+      "symbol": "volumeContextOrFail",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2545
+    },
+    {
+      "symbol": "replayTimeframe",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 2593
+    },
+    {
       "symbol": "replayMtfBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2449
+      "line": 2600
     },
     {
       "symbol": "applyMtfReplayBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2486
+      "line": 2637
     },
     {
       "symbol": "sealCleanDiscoveryWindow",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2510
+      "line": 2661
     },
     {
       "symbol": "screenTransportTimeout",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2528
+      "line": 2679
     },
     {
       "symbol": "disabledVolumeContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2539
+      "line": 2690
     },
     {
       "symbol": "diagnosticReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2549
+      "line": 2700
     },
     {
       "symbol": "assertAiReplayHealthy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2564
+      "line": 2715
     },
     {
       "symbol": "executionAssumptions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2637
+      "line": 2788
     },
     {
       "symbol": "normalizeCouncilTarget",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2643
+      "line": 2794
     },
     {
       "symbol": "specialistContextContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2660
+      "line": 2811
     },
     {
       "symbol": "replaySpecialistContextContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2673
+      "line": 2824
     },
     {
       "symbol": "compositionRuntimeContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2708
+      "line": 2859
     },
     {
       "symbol": "numericCanonicalHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2923
+      "line": 3074
     },
     {
       "symbol": "numericCanonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2931
+      "line": 3082
     },
     {
       "symbol": "screeningStrategyPayload",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 2959
+      "line": 3110
     },
     {
       "symbol": "bindCouncilEvaluationRequests",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3017
+      "line": 3168
     },
     {
       "symbol": "finishNativeReachabilityDepthAudit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3046
+      "line": 3197
     },
     {
       "symbol": "finishUnusedPriceDiscovery",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3064
+      "line": 3215
     },
     {
       "symbol": "finishNativeSpreadContextStudy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3080
+      "line": 3231
+    },
+    {
+      "symbol": "scopedOriginalMemberPayload",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
+      "line": 3255
     },
     {
       "symbol": "specialistCouncilMemberPayload",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3103
+      "line": 3270
     },
     {
       "symbol": "attestSpecialistCouncilReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3162
+      "line": 3329
     },
     {
       "symbol": "appendDifferentialNoRegressionEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 3184
+      "line": 3351
     },
     {
       "symbol": "causalFoldEnvelope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 762
+      "line": 769
     },
     {
-      "symbol": "projectCausalFoldAggregate",
+      "symbol": "scopedOriginalSelectorFoldEnvelope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabAgentEvaluationService.php",
-      "line": 917
+      "line": 923
+    },
+    {
+      "symbol": "authorityCapsuleReservation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
+      "line": 1019
     },
     {
       "symbol": "researchBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 1014
+      "line": 1053
     },
     {
       "symbol": "unavailable",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 1042
+      "line": 1081
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 1054
+      "line": 1093
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 1059
+      "line": 1098
     },
     {
       "symbol": "LabInstrumentResearchService",
@@ -5176,7 +5608,7 @@
       "symbol": "mutationPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 298
+      "line": 337
     },
     {
       "symbol": "__construct",
@@ -5188,85 +5620,85 @@
       "symbol": "posteriorContext",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 391
+      "line": 430
     },
     {
-      "symbol": "familyPriorInbox",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 412
-    },
-    {
-      "symbol": "instrumentKeys",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 440
-    },
-    {
-      "symbol": "assignment",
+      "symbol": "bindScopedOriginalAssignment",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
       "line": 45
     },
     {
+      "symbol": "familyPriorInbox",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
+      "line": 451
+    },
+    {
+      "symbol": "instrumentKeys",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
+      "line": 479
+    },
+    {
       "symbol": "activationContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 465
+      "line": 504
     },
     {
       "symbol": "instrumentForGene",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 519
+      "line": 558
     },
     {
       "symbol": "baselineInstrument",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 559
+      "line": 598
     },
     {
       "symbol": "experimentRole",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 571
+      "line": 610
     },
     {
       "symbol": "pairReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 587
+      "line": 626
     },
     {
       "symbol": "academyPrimaryReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 698
+      "line": 737
+    },
+    {
+      "symbol": "assignment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
+      "line": 84
     },
     {
       "symbol": "academyCachedSurfaceMatches",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 844
+      "line": 883
     },
     {
       "symbol": "causalTripletReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 861
+      "line": 900
     },
     {
       "symbol": "inheritedCapsuleReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 933
-    },
-    {
-      "symbol": "authorityCapsuleReservation",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/LabInstrumentResearchService.php",
-      "line": 980
+      "line": 972
     },
     {
       "symbol": "lowerBound",
@@ -6406,7 +6838,7 @@
       "symbol": "reconcileOwnershipAndDependencies",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 186
+      "line": 187
     },
     {
       "symbol": "ResearchExperimentConversionKernelService",
@@ -6418,19 +6850,19 @@
       "symbol": "recoverExpiredLeases",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 258
+      "line": 271
     },
     {
       "symbol": "defer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 289
+      "line": 302
     },
     {
       "symbol": "claimMatching",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 299
+      "line": 312
     },
     {
       "symbol": "record",
@@ -6442,73 +6874,73 @@
       "symbol": "selectPreparedResearchPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 353
+      "line": 381
     },
     {
       "symbol": "verifiedNativePolicySelection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 425
+      "line": 453
     },
     {
       "symbol": "policySha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 468
+      "line": 496
     },
     {
       "symbol": "complete",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 474
+      "line": 502
     },
     {
       "symbol": "normalizeNextWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 484
+      "line": 512
     },
     {
       "symbol": "normalizePersistedWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 526
+      "line": 557
     },
     {
       "symbol": "dependencyReady",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 548
+      "line": 579
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 569
+      "line": 606
     },
     {
       "symbol": "available",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 582
+      "line": 619
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 583
+      "line": 620
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 584
+      "line": 621
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentConversionKernelService.php",
-      "line": 585
+      "line": 622
     },
     {
       "symbol": "ResearchExperimentWorkConsumerService",
@@ -6520,16 +6952,10 @@
       "symbol": "unsupported",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
-      "line": 121
+      "line": 127
     },
     {
       "symbol": "result",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
-      "line": 129
-    },
-    {
-      "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
       "line": 135
@@ -6541,6 +6967,12 @@
       "line": 14
     },
     {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
+      "line": 141
+    },
+    {
       "symbol": "execute",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
@@ -6550,7 +6982,7 @@
       "symbol": "confirmCartridge",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchExperimentWorkConsumerService.php",
-      "line": 77
+      "line": 83
     },
     {
       "symbol": "ResearchIdeaInboxService",
@@ -6883,6 +7315,138 @@
       "line": 86
     },
     {
+      "symbol": "verifiedOriginalFoldRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 108
+    },
+    {
+      "symbol": "captureCausalFoldRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 161
+    },
+    {
+      "symbol": "ResearchWindowExposureInventoryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 20
+    },
+    {
+      "symbol": "captureAttachedRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 245
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 26
+    },
+    {
+      "symbol": "registerCapture",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 29
+    },
+    {
+      "symbol": "assessForCertificate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 308
+    },
+    {
+      "symbol": "foldProof",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 473
+    },
+    {
+      "symbol": "modelExperiments",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 553
+    },
+    {
+      "symbol": "declaredScopes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 567
+    },
+    {
+      "symbol": "registration",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 582
+    },
+    {
+      "symbol": "policy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 593
+    },
+    {
+      "symbol": "assertRegistrationMatches",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 608
+    },
+    {
+      "symbol": "assertInventoryScope",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 617
+    },
+    {
+      "symbol": "assertInventoryInOriginalWindow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 628
+    },
+    {
+      "symbol": "assertRequestHolding",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 645
+    },
+    {
+      "symbol": "append",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 682
+    },
+    {
+      "symbol": "assertRecord",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 691
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 703
+    },
+    {
+      "symbol": "seal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 708
+    },
+    {
+      "symbol": "recordCausalFoldRequest",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 93
+    },
+    {
+      "symbol": "assertCausalFoldRequestCaptured",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
+      "line": 99
+    },
+    {
       "symbol": "ResearchWindowProvenanceAuditService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchWindowProvenanceAuditService.php",
@@ -6937,154 +7501,460 @@
       "line": 58
     },
     {
-      "symbol": "recordAssessment",
+      "symbol": "execute",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 112
+      "path": "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+      "line": 104
     },
     {
-      "symbol": "bindOriginalData",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 147
-    },
-    {
-      "symbol": "inspectDataBinding",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 191
-    },
-    {
-      "symbol": "verifyDataBinding",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 217
-    },
-    {
-      "symbol": "sourceRegistrations",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 239
-    },
-    {
-      "symbol": "ScopedResearchCertificateService",
+      "symbol": "ScopedDescendantCandidatePreparationService",
       "kind": "php_type",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 24
-    },
-    {
-      "symbol": "hasProspectiveScope",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 249
-    },
-    {
-      "symbol": "normalizeDesign",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 256
-    },
-    {
-      "symbol": "__construct",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 30
-    },
-    {
-      "symbol": "assertSourceScope",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 303
-    },
-    {
-      "symbol": "sourceSnapshot",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 317
+      "path": "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+      "line": 15
     },
     {
       "symbol": "register",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 33
+      "path": "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+      "line": 19
     },
     {
-      "symbol": "modelSnapshots",
+      "symbol": "inspectWork",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 354
+      "path": "backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php",
+      "line": 50
     },
     {
-      "symbol": "councilSnapshot",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 384
+      "symbol": "ScopedResearchAuthorityService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 14
     },
     {
-      "symbol": "alreadyObserved",
+      "symbol": "assess",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 410
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 18
     },
     {
-      "symbol": "verifiedSource",
+      "symbol": "subjects",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 421
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 180
     },
     {
-      "symbol": "append",
+      "symbol": "original",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 441
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 235
     },
     {
-      "symbol": "assertRecord",
+      "symbol": "verifyOriginalSafety",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 458
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 290
     },
     {
-      "symbol": "diagnostic",
+      "symbol": "slice",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 472
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 339
     },
     {
-      "symbol": "removeAuthorityFlags",
+      "symbol": "selector",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 485
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 387
     },
     {
-      "symbol": "blocked",
+      "symbol": "selectorWindowFromOriginalFolds",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 499
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 444
     },
     {
-      "symbol": "hash",
+      "symbol": "council",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 511
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 548
     },
     {
-      "symbol": "seal",
+      "symbol": "bootstrap",
       "kind": "php_method",
-      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 518
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 563
     },
     {
-      "symbol": "utc",
+      "symbol": "metric",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 585
+    },
+    {
+      "symbol": "number",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 596
+    },
+    {
+      "symbol": "terminal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchAuthorityService.php",
+      "line": 606
+    },
+    {
+      "symbol": "issueIndependent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 527
+      "line": 111
+    },
+    {
+      "symbol": "independentWindowReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 140
     },
     {
       "symbol": "inspect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
-      "line": 78
+      "line": 179
+    },
+    {
+      "symbol": "recordAssessment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 234
+    },
+    {
+      "symbol": "ScopedResearchCertificateService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 25
+    },
+    {
+      "symbol": "bindOriginalData",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 269
+    },
+    {
+      "symbol": "inspectDataBinding",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 313
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 33
+    },
+    {
+      "symbol": "verifyDataBinding",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 339
+    },
+    {
+      "symbol": "normalizeProspectiveDesign",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 36
+    },
+    {
+      "symbol": "sourceRegistrations",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 361
+    },
+    {
+      "symbol": "hasProspectiveScope",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 371
+    },
+    {
+      "symbol": "normalizeDesign",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 378
+    },
+    {
+      "symbol": "register",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 42
+    },
+    {
+      "symbol": "assertSourceScope",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 475
+    },
+    {
+      "symbol": "sourceSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 489
+    },
+    {
+      "symbol": "modelSnapshots",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 543
+    },
+    {
+      "symbol": "councilSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 573
+    },
+    {
+      "symbol": "alreadyObserved",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 599
+    },
+    {
+      "symbol": "verifiedSource",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 610
+    },
+    {
+      "symbol": "append",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 630
+    },
+    {
+      "symbol": "assertRecord",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 647
+    },
+    {
+      "symbol": "diagnostic",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 661
+    },
+    {
+      "symbol": "removeAuthorityFlags",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 674
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 688
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 700
+    },
+    {
+      "symbol": "seal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 707
+    },
+    {
+      "symbol": "utc",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 716
+    },
+    {
+      "symbol": "verifiedRegistration",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedResearchCertificateService.php",
+      "line": 96
+    },
+    {
+      "symbol": "foldClock",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1010
+    },
+    {
+      "symbol": "metricPath",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1051
+    },
+    {
+      "symbol": "purposeKey",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1059
+    },
+    {
+      "symbol": "finite",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1064
+    },
+    {
+      "symbol": "sha",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1069
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1074
+    },
+    {
+      "symbol": "seal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1079
+    },
+    {
+      "symbol": "encode",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1084
+    },
+    {
+      "symbol": "blocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 1089
+    },
+    {
+      "symbol": "ScopedSelectorPanelService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 16
+    },
+    {
+      "symbol": "preregisterFuturePanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 210
+    },
+    {
+      "symbol": "bindOriginalData",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 217
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 24
+    },
+    {
+      "symbol": "reservesOrdinaryEvaluation",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 28
+    },
+    {
+      "symbol": "executionReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 317
+    },
+    {
+      "symbol": "prospectiveExecutionScope",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 347
+    },
+    {
+      "symbol": "inspectPanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 443
+    },
+    {
+      "symbol": "assessOriginalPanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 531
+    },
+    {
+      "symbol": "settlePanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 566
+    },
+    {
+      "symbol": "reconcileForExperiment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 592
+    },
+    {
+      "symbol": "member",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 624
+    },
+    {
+      "symbol": "originalQuestion",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 711
+    },
+    {
+      "symbol": "preregister",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 72
+    },
+    {
+      "symbol": "originalRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 892
+    },
+    {
+      "symbol": "observed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 931
+    },
+    {
+      "symbol": "reservedExperiment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 939
+    },
+    {
+      "symbol": "registration",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 950
+    },
+    {
+      "symbol": "readContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 959
+    },
+    {
+      "symbol": "plannedWindow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 972
+    },
+    {
+      "symbol": "readBinding",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScopedSelectorPanelService.php",
+      "line": 996
     },
     {
       "symbol": "ScreeningLearningOutboxService",
@@ -7114,7 +7984,7 @@
       "symbol": "improves",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 118
+      "line": 123
     },
     {
       "symbol": "ScreeningLearningService",
@@ -7132,19 +8002,19 @@
       "symbol": "actions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 170
+      "line": 175
     },
     {
       "symbol": "cooldownRescueEffect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 190
+      "line": 195
     },
     {
       "symbol": "counterfactualEffect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScreeningLearningService.php",
-      "line": 248
+      "line": 253
     },
     {
       "symbol": "SettlementWatermarkService",
@@ -7867,124 +8737,130 @@
       "line": 100
     },
     {
+      "symbol": "mineAbstractions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 1008
+    },
+    {
       "symbol": "expand",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1030
+      "line": 1052
     },
     {
       "symbol": "substitute",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1062
+      "line": 1084
     },
     {
       "symbol": "parameterize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1073
+      "line": 1095
     },
     {
       "symbol": "rewrite",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1084
+      "line": 1106
     },
     {
       "symbol": "subtrees",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1096
+      "line": 1118
     },
     {
       "symbol": "callKeys",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1102
+      "line": 1124
     },
     {
       "symbol": "nodeCount",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1109
+      "line": 1131
     },
     {
       "symbol": "programScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1123
+      "line": 1145
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1125
+      "line": 1147
     },
     {
       "symbol": "withinSearchBudget",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1126
+      "line": 1148
     },
     {
       "symbol": "behaviorDescriptors",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1135
+      "line": 1157
     },
     {
       "symbol": "utcSeconds",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1169
+      "line": 1191
     },
     {
       "symbol": "median",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1174
+      "line": 1196
     },
     {
       "symbol": "behaviorBin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1175
+      "line": 1197
     },
     {
       "symbol": "encode",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1176
+      "line": 1198
     },
     {
       "symbol": "infer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1178
+      "line": 1200
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1201
+      "line": 1223
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1202
+      "line": 1224
     },
     {
       "symbol": "unavailable",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1203
+      "line": 1225
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 1204
+      "line": 1226
     },
     {
       "symbol": "recordEmitterOutcome",
@@ -8023,28 +8899,46 @@
       "line": 28
     },
     {
-      "symbol": "selectorObservationForExperiment",
+      "symbol": "registerSelectorPanel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
       "line": 307
     },
     {
+      "symbol": "settleSelectorPanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 312
+    },
+    {
+      "symbol": "registerFutureSelectorPanel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 317
+    },
+    {
+      "symbol": "bindSelectorPanelOriginalData",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 323
+    },
+    {
+      "symbol": "selectorObservationForExperiment",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 329
+    },
+    {
       "symbol": "verifiedSelectorObservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 313
+      "line": 335
     },
     {
       "symbol": "selectorSearchComparison",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 365
-    },
-    {
-      "symbol": "taskContract",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 412
+      "line": 387
     },
     {
       "symbol": "compileResearchCandidate",
@@ -8053,22 +8947,22 @@
       "line": 42
     },
     {
+      "symbol": "taskContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 434
+    },
+    {
       "symbol": "preregisterFiniteSearch",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 442
+      "line": 464
     },
     {
       "symbol": "finiteSearchTaskIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 526
-    },
-    {
-      "symbol": "settleFiniteSearch",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 546
+      "line": 548
     },
     {
       "symbol": "compileTypedProgram",
@@ -8077,76 +8971,76 @@
       "line": 56
     },
     {
+      "symbol": "settleFiniteSearch",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
+      "line": 568
+    },
+    {
       "symbol": "decisionOperatorContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 639
+      "line": 661
     },
     {
       "symbol": "recordProgramOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 692
+      "line": 714
     },
     {
       "symbol": "validateAbstraction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 715
+      "line": 737
     },
     {
       "symbol": "recordBehaviorOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 754
+      "line": 776
     },
     {
       "symbol": "behaviorObservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 776
+      "line": 798
     },
     {
       "symbol": "behaviorEntryMatches",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 809
+      "line": 831
     },
     {
       "symbol": "inspectBehaviorEntry",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 820
+      "line": 842
     },
     {
       "symbol": "behaviorAlternatives",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 836
+      "line": 858
     },
     {
       "symbol": "behaviorProposalEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 860
+      "line": 882
     },
     {
       "symbol": "verifiedOutcome",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 894
+      "line": 916
     },
     {
       "symbol": "solvedProgramProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 913
-    },
-    {
-      "symbol": "mineAbstractions",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/TypedInstrumentFoundryService.php",
-      "line": 986
+      "line": 935
     },
     {
       "symbol": "learningScope",
@@ -8530,6 +9424,24 @@
       "symbol": "up",
       "kind": "php_method",
       "path": "backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php",
+      "line": 9
+    },
+    {
+      "symbol": "down",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
+      "line": 26
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
+      "line": 7
+    },
+    {
+      "symbol": "up",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php",
       "line": 9
     },
     {
@@ -10189,6 +11101,12 @@
       "line": 89
     },
     {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "backend-laravel/tests/Fixtures/scoped_selector_python_admission.py",
+      "line": 17
+    },
+    {
       "symbol": "InstrumentValidationFixture",
       "kind": "php_type",
       "path": "backend-laravel/tests/Support/InstrumentValidationFixture.php",
@@ -10684,6 +11602,39 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/DescendantScopedExecutionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_native_prospective_work_requires_an_original_confirmed_component_certificate",
+        "test_fewer_than_six_windows_cannot_shrink_the_original_matrix",
+        "test_native_risk_metric_is_sealed_without_using_the_legacy_profit_only_gate",
+        "test_native_trial_cannot_be_marked_terminal_without_the_original_independent_owner_record",
+        "test_native_component_and_descendant_refuse_intrinsic_programme_changes_before_sealing",
+        "test_missing_actual_windows_keep_existing_arbiter_work_blocked_without_constructing_a_cohort",
+        "test_expired_work_fence_cannot_construct_or_transport_any_original_arm",
+        "test_typed_descendant_cohort_cannot_enter_generic_full_or_screening_projection",
+        "test_future_selector_reservation_blocks_ordinary_delivery_before_any_attempt_even_for_old_serialized_jobs",
+        "test_native_wire_freezes_the_whole_matrix_then_delivers_only_one_original_arm_per_fence",
+        "test_component_native_wire_uses_two_original_arms_and_no_placeholder_descendant",
+        "test_native_http_body_preserves_the_captured_float_and_empty_dictionary_hash",
+        "publicationInterruptions",
+        "test_original_publication_keeps_current_facts_but_quarantines_ownership_loss",
+        "settlementInterruptions",
+        "test_native_commit_permission_requires_an_existing_valid_running_normalized_control_and_never_mutates_it",
+        "test_native_commit_permission_compiles_a_mysql_current_locking_read_from_the_real_owner",
+        "test_new_settlement_writes_roll_back_on_stop_or_expiry_but_completed_original_facts_remain",
+        "test_component_question_reference_namespace_cannot_steal_an_active_twenty_seat_generation",
+        "test_real_compound_source_recipe_binds_original_two_and_four_arm_requests_without_model_mutation",
+        "test_missing_actual_volume_provenance_cannot_silently_disable_a_required_original_lane",
+        "test_existing_foundry_freezes_one_other_gene_hypothesis_then_waits_for_future_server_slots",
+        "test_registered_future_slots_create_pristine_four_arm_question_with_parent_guards_before_any_data",
+        "test_real_native_clock_is_rederived_from_original_bytes_and_a_resealed_wrong_schedule_is_refused",
+        "nativeWire",
+        "fixture"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/DescendantScopedProofTest.php",
       "tests": [
         "setUp",
@@ -10900,6 +11851,17 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+      "tests": [
+        "test_exact_two_study_projection_jobs_are_idempotent_audit_only_and_never_ordinary_advice",
+        "test_exact_or_malformed_reserved_study_declarations_cannot_mix_into_ordinary_history",
+        "studyDeclarations",
+        "assertAndExecuteOnlyProjectionJobs",
+        "assertZeroAuthority",
+        "projectionRun"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ObservedProbeColdConstructorTest.php",
       "tests": [
         "test_observed_completion_cold_build_and_checkpoint_copy_all_six_original_vectors",
@@ -11111,6 +12073,28 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_frozen_capture_can_verify_only_its_actual_candidate_scope",
+        "test_real_immutable_request_ingress_captures_every_stream_and_omitted_original_blocks",
+        "test_partial_or_directly_inserted_original_can_never_be_completed_by_absence",
+        "test_caller_run_list_cannot_relabel_screening_selection_as_original_validation",
+        "test_existing_partial_original_prevents_a_new_capture_start",
+        "test_unrecognized_auxiliary_ingress_is_refused_before_delivery_and_remains_incomplete",
+        "test_lost_declared_capture_start_cannot_silently_fall_back_to_legacy_ingress",
+        "test_actual_source_and_capture_seal_drift_block_readiness",
+        "test_context_holding_must_fit_the_registered_physical_window",
+        "test_caller_run_identity_and_duplicate_ingress_do_not_replace_original_receipts",
+        "test_direct_fold_http_has_a_real_original_capture_before_any_response",
+        "test_lost_pre_http_fold_capture_quarantines_actual_raw_response_without_late_attestation",
+        "foldTransport",
+        "question",
+        "inputs"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
       "tests": [
         "setUp",
@@ -11132,6 +12116,44 @@
         "test_original_payload_context_and_inline_warmup_are_exclusion_references",
         "test_related_market_requires_its_own_identity_and_missing_auxiliary_dates_do_not_prove_unused",
         "test_hash_only_mtf_stream_is_unassessable_and_cannot_be_reported_as_unused"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedOriginalSafetyTest.php",
+      "tests": [
+        "test_bare_original_outcome_context_does_not_require_or_invent_instrument_activation",
+        "test_prospective_recipe_is_identity_bearing_without_changing_legacy_absent_shape",
+        "window",
+        "original",
+        "test_external_ceiling_cannot_be_loosened_and_measured_breach_is_not_missing_data",
+        "test_missing_censor_label_is_not_an_implicit_maturity_flag_but_real_exit_ledger_is_accepted",
+        "test_count_label_cannot_replace_a_missing_original_ledger",
+        "test_closed_trade_ledger_cannot_hide_a_still_open_original_position",
+        "test_forced_terminal_close_and_outside_window_exit_are_not_mature_independent_evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_equal_useful_guided_and_blinded_vectors_can_confirm_component_without_selector_credit",
+        "test_blinded_role_has_its_own_positive_component_products",
+        "test_negative_and_null_original_effects_are_terminal_without_credit",
+        "test_missing_window_and_reused_window_labels_never_complete_a_sealed_roster",
+        "test_complete_original_products_with_zero_or_few_context_trades_close_underpowered_without_credit",
+        "test_risk_regression_is_measured_terminal_refusal_even_with_positive_utility",
+        "test_actual_reused_dataset_cannot_be_relabelled_as_a_second_month",
+        "test_caller_evidence_flags_without_original_products_cannot_issue_or_credit",
+        "inheritanceOutcomes",
+        "test_actual_native_component_request_signs_and_loads_one_whole_original_python_arm",
+        "test_original_four_arm_products_require_conditional_retention_before_inheritance_credit",
+        "fullParameterQuestion",
+        "fourArmQuestion",
+        "question",
+        "inputs",
+        "originalProducts",
+        "nativeFixtureResult"
       ]
     },
     {
@@ -11158,6 +12180,36 @@
         "test_future_hash_and_caller_complete_flags_cannot_bind_unavailable_bytes",
         "syntheticInputs",
         "question"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedSelectorPanelTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_single_question_unequal_cap_and_relabelled_physical_question_are_refused",
+        "test_membership_is_prospective_and_original_seal_cannot_be_rewritten",
+        "test_complete_original_folds_and_artifacts_measure_positive_panel_and_actual_effort",
+        "test_missing_actual_effort_and_tampered_original_fold_cannot_certify",
+        "test_complete_negative_and_equal_useful_components_close_as_valid_terminal_panels",
+        "test_cpu_primary_never_substitutes_wall_measurement",
+        "test_complete_unsafe_native_panel_is_terminal_negative_and_missing_safety_stays_blocked",
+        "test_native_scope_partial_clock_and_wrong_measured_segment_count_are_refused",
+        "test_sealed_selector_certificate_binds_panel_and_terminal_result_is_idempotent",
+        "originalIngressVariants",
+        "test_original_fold_ingress_round_trip_preserves_wire_maps_lists_floats_and_rejects_tamper",
+        "test_original_scoped_wire_preserves_json_hashes_in_both_http_hops_without_changing_legacy_codec",
+        "futureRuntimeVariants",
+        "test_future_physical_roster_binds_real_provider_bytes_before_native_fold_dispatch",
+        "assertPythonOriginalAdmission",
+        "pythonOriginalProof",
+        "publishActualOriginalFold",
+        "members",
+        "compoundModelMetadata",
+        "complete",
+        "clock",
+        "ids",
+        "benchmarkRow"
       ]
     },
     {
@@ -11494,6 +12546,25 @@
         "test_supported_individual_ablations_remain_arithmetic_without_authority",
         "test_missing_nonfinite_or_renamed_arm_has_no_effect_result",
         "arms"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php",
+      "tests": [
+        "test_future_request_recompiles_exact_program_without_updating_the_persisted_source",
+        "test_child_parameters_are_preserved_under_the_original_parameter_owned_manager",
+        "test_a_plain_native_strategy_keeps_its_primitive_recipe_and_never_gets_a_compound_passport",
+        "test_the_original_recipe_seal_is_required_and_parameter_drift_is_rejected",
+        "test_a_changed_stored_program_recipe_cannot_be_resealed_at_request_time",
+        "test_a_passport_the_existing_compiler_cannot_reproduce_is_rejected",
+        "test_original_management_cannot_silently_erase_a_new_parameter_intervention",
+        "test_the_original_legal_mask_can_exclude_manager_owned_genes_before_selection",
+        "test_missing_actual_stream_identity_cannot_create_a_future_request_passport",
+        "test_programme_parity_ignores_only_parameter_vectors_public_labels_and_old_experiment_bindings",
+        "test_a_source_programme_twist_or_cost_limit_change_cannot_share_parameter_only_parity",
+        "source",
+        "scope",
+        "hash"
       ]
     }
   ]

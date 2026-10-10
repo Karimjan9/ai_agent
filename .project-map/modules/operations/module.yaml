@@ -108,6 +108,7 @@ invariants:
   - Strict verification decides health after remediation.
   - An unchanged operational state hash cannot enqueue another arbiter child merely because the scheduler minute or the selected scheduler job's own queue residency changed.
   - An operator PAUSE fences new research admission and queued scheduler children without cancelling the current generation; RESUME changes the durable control revision and reselects that same lineage.
+  - New native scoped authority uses AutonomousModeService::enabledForCommit inside its work transaction. A shared current read of the existing normalized control event avoids a stale REPEATABLE READ snapshot and holds permission through commit; missing or malformed stored control fails closed. Ordinary enabled/status defaults and operator transitions are unchanged.
   - An unchanged active-generation settlement may receive two spaced retries after a completed child, then persists safety_halt instead of spinning or remaining silently frozen.
   - An active immutable evaluation run inside the bounded queue lease is progress in flight, not an unchanged settlement; a replay mutex release is not by itself queue retry-storm evidence.
   - A disk source hash and worker PID alone are not loaded-code proof; prospective queue/API boot hashes and returned replay receipts attest the worker release, while the read-only audit separately verifies the Git artifact. Legacy evidence stays unsealed.
@@ -143,4 +144,5 @@ tests:
   - backend-laravel/tests/Feature/MarketHealthEngineTest.php
   - backend-laravel/tests/Feature/ResearchLoopArbiterTest.php
   - backend-laravel/tests/Feature/AutonomousModeControlTest.php
+  - backend-laravel/tests/Feature/DescendantScopedExecutionTest.php
   - backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php

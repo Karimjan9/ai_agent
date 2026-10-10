@@ -689,6 +689,12 @@ class LabHistoricalLearningService
     }
 
     /** Study projections are audit observations, never ordinary failure advice. */
+    public function withholdsOrdinaryLearning(LabAgent $agent, ?LabEvaluationRun $run = null): bool
+    {
+        return $this->studyAgentIds()->whereKey($agent->id)->exists()
+            || ($run && $this->studyRunIds()->where('run_id', $run->run_id)->exists());
+    }
+
     private function ordinaryHistoryAgents(string $symbol, string $timeframe): Builder
     {
         return LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
@@ -707,6 +713,7 @@ class LabHistoricalLearningService
                 ->orWhereNotNull('metadata->native_spread_context_study_contract')
                 ->orWhereNotNull('metadata->native_reachability_depth_audit')
                 ->orWhereNotNull('metadata->native_reachability_depth_audit_contract')
+                ->orWhereNotNull('metadata->scoped_research_certificate')
                 ->orWhereNotNull('metadata->unused_draft_price_discovery_seal'))
             ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
                 ->whereIn('run_id', $this->studyRunIds())));
@@ -718,6 +725,7 @@ class LabHistoricalLearningService
             ->whereIn('trigger_context->native_specialist_council_intent->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
             ->orWhereNotNull('trigger_context->native_spread_context_study')
             ->orWhereNotNull('trigger_context->native_reachability_depth_audit')
+            ->orWhereNotNull('trigger_context->scoped_descendant_execution')
             ->orWhereNotNull('trigger_context->unused_draft_price_discovery_intent')
             ->orWhereNotNull('trigger_context->unused_draft_price_discovery'));
     }
@@ -737,6 +745,10 @@ class LabHistoricalLearningService
             ->orWhereNotNull('metrics->native_spread_context_study_receipt')
             ->orWhereNotNull('response_meta->native_spread_context_study_receipt')
             ->orWhereNotNull('response_meta->data_quality->native_spread_context_study_receipt')
+            ->orWhereNotNull('metadata->scoped_research')
+            ->orWhereNotNull('metadata->scoped_certificate_id')
+            ->orWhereNotNull('metadata->scoped_native_purpose')
+            ->orWhereNotNull('request_meta->payload->policy_context->scoped_research_certificate')
             ->orWhereNotNull('request_meta->payload->policy_context->unused_draft_price_discovery')
             ->orWhere('metadata->reason_code', UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY));
     }

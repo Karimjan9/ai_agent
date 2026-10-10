@@ -6,6 +6,8 @@ use App\Models\AgentLearningCausalExperiment;
 use App\Models\CausalFoldReceipt;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -46,6 +48,11 @@ class CausalFoldExecutionService
     public function run(int $experimentId, int $foldIndex): array
     {
         $experiment = AgentLearningCausalExperiment::query()->with('generation.agents.modelVersion')->findOrFail($experimentId);
+        $selectorReady = app(ScopedSelectorPanelService::class)->executionReadiness($experiment);
+        if (($selectorReady['ready'] ?? false) !== true) {
+            return ['status' => 'awaiting_original_selector_data',
+                'experiment_id' => $experimentId, 'reason_code' => $selectorReady['reason_code'], 'promotion_evidence' => false];
+        }
         if (in_array((string) $experiment->status, ['technical_quarantine', 'invalid_counterfactual_contract'], true)) {
             return [
                 'status' => 'terminal_without_replay',
@@ -87,10 +94,11 @@ class CausalFoldExecutionService
             return ['status' => 'already_completed', 'receipt_id' => $receipt->id, 'fold_index' => $foldIndex];
         }
 
+        $foldResponseObserved = false;
         try {
             $envelope = $this->evaluations->causalFoldEnvelope($experiment, $foldIndex);
             $request = (array) $envelope['request'];
-            $guided = \App\Models\LabAgent::with('generation')->findOrFail($experiment->guided_agent_id);
+            $guided = LabAgent::with('generation')->findOrFail($experiment->guided_agent_id);
             $request = app(ResearchReleaseSealService::class)->bindGenerationRequest($guided->generation,
                 $request, [$experiment->guided_agent_id, $experiment->blinded_agent_id, $experiment->control_agent_id]);
             $benchmark = app(TypedInstrumentFoundryService::class)->registerCausalBenchmark($experiment, $request);
@@ -105,9 +113,10 @@ class CausalFoldExecutionService
             if ($receipt->request_hash && ! hash_equals((string) $receipt->request_hash, $requestHash)) {
                 throw new RuntimeException('CAUSAL_FOLD_REQUEST_IDENTITY_CHANGED');
             }
+            $capturePrefix = app(ResearchWindowExposureInventoryService::class)->recordCausalFoldRequest($receipt, $request, $requestHash);
             $timeout = max(960, min(1200, (int) config('services.lab_selection.causal_fold_transport_timeout_seconds', 960)));
             $requestId = "causal-fold-{$experiment->id}-{$foldIndex}-{$lease}";
-            $response = Http::connectTimeout(15)->timeout($timeout)->withOptions([
+            $http = Http::connectTimeout(15)->timeout($timeout)->withOptions([
                 'connect_timeout' => 15,
                 'timeout' => $timeout,
                 'curl' => [
@@ -119,13 +128,18 @@ class CausalFoldExecutionService
             ])->acceptJson()->withHeaders([
                 'X-Internal-Token' => (string) config('services.internal_api.token'),
                 'X-Lab-Request-Id' => $requestId,
-            ])->post(rtrim((string) config('services.ai_service.url'), '/').'/api/backtest/run-all', $request);
+            ]);
+            $response = $this->sendOriginalWire($http,
+                rtrim((string) config('services.ai_service.url'), '/').'/api/backtest/run-all', $request,
+                $capturePrefix !== [] && $this->isScopedSelectorWire($request));
             if ($response->failed()) {
                 throw new RuntimeException('CAUSAL_FOLD_HTTP_'.$response->status().': '.$response->body());
             }
             $payload = (array) $response->json();
+            $foldResponseObserved = true;
             $this->assertFoldResponse($experiment, $payload, $foldIndex, (int) $envelope['fold_count']);
             $responseHash = $this->hash($payload);
+            app(ResearchWindowExposureInventoryService::class)->assertCausalFoldRequestCaptured($receipt, $request, $requestHash, $capturePrefix);
             DB::transaction(function () use ($receipt, $lease, $request, $requestHash, $payload, $responseHash, $envelope): void {
                 $locked = CausalFoldReceipt::query()->lockForUpdate()->findOrFail($receipt->id);
                 if ((string) $locked->status === 'completed') {
@@ -161,6 +175,18 @@ class CausalFoldExecutionService
                 'settlement' => $settlement,
             ];
         } catch (\Throwable $exception) {
+            if ($foldResponseObserved && str_starts_with($this->reasonCode($exception), 'EXPOSURE_')) {
+                // Preserve the actual observed raw product as technical evidence.
+                // A lost/changed pre-HTTP capture may not publish a completed scientific fold.
+                CausalFoldReceipt::query()->whereKey($receipt->id)->where('status', '!=', 'completed')->update([
+                    'request_hash' => $requestHash, 'request_payload' => $request,
+                    'response_hash' => $responseHash ?? $this->hash($payload), 'response_payload' => $payload,
+                    'dataset_hash' => (string) $envelope['dataset_hash'], 'execution_hash' => (string) $envelope['execution_hash'],
+                    'observed_at' => now(), 'updated_at' => now(),
+                ]);
+                $this->terminalFailure((int) $experiment->id, $foldIndex, $exception);
+                throw $exception;
+            }
             CausalFoldReceipt::query()->whereKey($receipt->id)->where('status', '!=', 'completed')->update([
                 'status' => 'retry_ready',
                 'error_code' => $this->reasonCode($exception),
@@ -209,10 +235,13 @@ class CausalFoldExecutionService
                 'expected_fold_count' => $foldCount,
                 'fold_receipts' => $foldPayloads,
             ];
-            $response = Http::connectTimeout(10)->timeout(60)->acceptJson()->withHeaders([
+            $http = Http::connectTimeout(10)->timeout(60)->acceptJson()->withHeaders([
                 'X-Internal-Token' => (string) config('services.internal_api.token'),
                 'X-Lab-Request-Id' => 'causal-fold-aggregate-'.$locked->id,
-            ])->post(rtrim((string) config('services.ai_service.url'), '/').'/api/backtest/aggregate-causal-folds', $aggregateRequest);
+            ]);
+            $response = $this->sendOriginalWire($http,
+                rtrim((string) config('services.ai_service.url'), '/').'/api/backtest/aggregate-causal-folds',
+                $aggregateRequest, $this->isScopedSelectorWire((array) $receipts->first()->request_payload));
             if ($response->failed()) {
                 throw new RuntimeException('CAUSAL_FOLD_AGGREGATION_FAILED: '.$response->body());
             }
@@ -280,6 +309,7 @@ class CausalFoldExecutionService
             ]);
             $fresh->update(['evidence' => $evidence]);
             app(ResearchKnowledgePortfolioService::class)->settleExperimentPrediction($fresh);
+            app(ScopedSelectorPanelService::class)->reconcileForExperiment($fresh);
             $generation = $fresh->generation()->with('agents.modelVersion')->first();
             if ($generation) {
                 $this->terminalBoundary->closeIfTerminal($generation);
@@ -396,6 +426,9 @@ class CausalFoldExecutionService
     private function reasonCode(\Throwable $exception): string
     {
         $message = strtoupper($exception->getMessage());
+        if (preg_match('/^(?:EXPOSURE_[A-Z0-9_]+|CANDIDATE_INTERSECTS_[A-Z0-9_]+)(?::[A-Za-z0-9_.:-]+)?$/D', $exception->getMessage())) {
+            return $exception->getMessage();
+        }
         if (str_contains($message, 'RESEARCH_RELEASE') || str_contains($message, 'RESEARCH_WORKER')) {
             return 'RESEARCH_RELEASE_PROVENANCE_INVALID';
         }
@@ -407,6 +440,23 @@ class CausalFoldExecutionService
         }
 
         return 'CAUSAL_FOLD_TECHNICAL_ERROR';
+    }
+
+    /** A wire codec choice is not authority; original scope admission precedes this call. */
+    private function isScopedSelectorWire(array $request): bool
+    {
+        return data_get($request, 'policy_context.scoped_research_certificate.protocol') === ScopedResearchCertificateService::AUTHORITY_POLICY
+            && data_get($request, 'policy_context.scoped_research_certificate.purpose') === 'independent_scoped_selector_research';
+    }
+
+    private function sendOriginalWire(PendingRequest $http, string $url, array $payload, bool $preserveOriginal): Response
+    {
+        if (! $preserveOriginal) {
+            return $http->post($url, $payload);
+        }
+
+        return $http->withBody(json_encode($payload,
+            JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR), 'application/json')->post($url);
     }
 
     private function hash(mixed $value): string

@@ -23,6 +23,62 @@ class CanonicalSkillCartridgeService
 
     public const PER_FOLD_BUDGET_SECONDS = 240;
 
+    /** A separately confirmed trait has a separate archive state and provenance. */
+    public function projectScopedComponent(int $certificateId, int $creditId): ?array
+    {
+        $certificate = app(ScopedResearchCertificateService::class)->inspect($certificateId);
+        $proof = (array) data_get($certificate, 'original_authority.component');
+        $credit = \App\Models\LabEvolutionCreditEvent::find($creditId);
+        if (($proof['confirmed'] ?? false) !== true || ! $credit
+            || $credit->event_type !== 'causal_skill_credit'
+            || data_get($credit->payload, 'certificate_id') !== $certificateId
+            || data_get($credit->payload, 'authority_scope') !== 'component') return null;
+        $agent = LabAgent::with('modelVersion')->find($proof['candidate_agent_id'] ?? 0);
+        $gene = data_get($proof, 'trait_delta.gene');
+        if (! $agent || ! is_string($gene) || ! $this->available()) return null;
+        $key = hash('sha256', 'scoped_component_cartridge_v1|'.$certificateId.'|'.$certificate['design_hash']);
+        $payload = ['protocol' => 'scoped_component_cartridge_v1',
+            'scoped_component_certificate_id' => $certificateId, 'credit_id' => $creditId,
+            'intervention' => ['old_value' => $proof['trait_delta']['old'], 'tested_value' => $proof['trait_delta']['new']],
+            'context' => $proof['context'], 'context_hash' => $proof['context_hash'],
+            'source_experiment_id' => $certificate['source_id'], 'original_windows' => $proof['original_windows'],
+            'confidence_kind' => 'observed_positive_window_fraction_not_probability_of_skill',
+            'research_mentor_scope' => 'exact_trait_and_context_only', 'promotion_evidence' => false,
+            'paper_or_live_authority' => false, 'parent_eligible' => false];
+        $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        $entry = LabSkillZooEntry::firstOrNew(['cartridge_key' => $key]);
+        if (! $entry->exists) {
+            $entry->fill([
+            'skill_key' => $key, 'revision' => 1, 'symbol' => $agent->symbol, 'timeframe' => $agent->timeframe,
+            'strategy_family' => $agent->strategy_family, 'module_key' => app(SkillZooService::class)->moduleFor($gene),
+            'niche_key' => $proof['context_hash'], 'gene_key' => $gene, 'lab_agent_id' => $agent->id,
+            'model_version_id' => $agent->model_version_id, 'causal_baseline_agent_id' => null,
+            'genetic_parent_model_version_id' => null, 'status' => 'scoped_confirmed',
+            'component_status' => 'scoped_component_confirmed', 'organism_viability' => 'not_claimed',
+            'quality_score' => $proof['statistics']['mean'],
+            'confidence' => $proof['positive_windows'] / max(1, count($proof['original_windows'])),
+            ]);
+            // Preserve exact scalar types only at this new scoped publication
+            // boundary; do not change legacy model JSON or the generic codec.
+            $entry->setRawAttributes([...$entry->getAttributes(), 'evidence' => $encoded]);
+            $entry->save();
+        } elseif (app(ResearchPaperEpochContractService::class)->parameterHash((array) $entry->evidence)
+            !== app(ResearchPaperEpochContractService::class)->parameterHash($payload)) {
+            throw new \LogicException('SCOPED_COMPONENT_CARTRIDGE_PUBLICATION_IMMUTABLE');
+        }
+        $revision = DB::table('skill_cartridge_revisions')->where('lab_skill_zoo_entry_id', $entry->id)->where('revision', 1)->first();
+        if ($revision && app(ResearchPaperEpochContractService::class)->parameterHash(json_decode($revision->payload, true))
+            !== app(ResearchPaperEpochContractService::class)->parameterHash($payload)) {
+            throw new \LogicException('SCOPED_COMPONENT_CARTRIDGE_REVISION_IMMUTABLE');
+        }
+        DB::table('skill_cartridge_revisions')->insertOrIgnore(['lab_skill_zoo_entry_id' => $entry->id,
+            'revision' => 1, 'revision_key' => $key.'|1', 'payload' => $encoded, 'sealed_at' => now(),
+            'created_at' => now(), 'updated_at' => now()]);
+        return ['cartridge_id' => (int) $entry->id, 'certificate_id' => $certificateId,
+            'status' => 'scoped_confirmed', 'research_mentor_scope' => $payload['research_mentor_scope'],
+            'parent_eligible' => false, 'promotion_evidence' => false];
+    }
+
     public function __construct(
         private CausalCompoundingKernelService $compoundingKernel,
     ) {}

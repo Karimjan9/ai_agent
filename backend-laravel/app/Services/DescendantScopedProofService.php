@@ -47,7 +47,26 @@ class DescendantScopedProofService
         $runtimePrograms = [];
         foreach ($models as $model) {
             $model = $model->fresh();
+            if (isset($scope['native_execution'])) {
+                try {
+                    $runtimePrograms[] = app(CompositionAuthorityKernelService::class)->prospectiveProgrammeHash($model);
+                } catch (\Throwable $error) {
+                    return $this->blocked(preg_match('/^[A-Z][A-Z0-9_]{0,159}$/D', $error->getMessage())
+                        ? $error->getMessage() : 'DESCENDANT_ORIGINAL_PROSPECTIVE_PROGRAMME_REQUIRED');
+                }
+                continue;
+            }
             $basis = app(LabImmutableEvidenceService::class)->modelRuntimeBasis($model);
+            if (isset($basis['components']['prospective_scoped_composition_recipe'])) {
+                $recipe = $basis['components']['prospective_scoped_composition_recipe'];
+                if (! is_array($recipe) || ! $this->same($recipe['parameters'] ?? null, (array) $model->parameters)) {
+                    return $this->blocked('DESCENDANT_ORIGINAL_PROSPECTIVE_RECIPE_PARAMETERS_REQUIRED');
+                }
+                // Parameters are the declared T/U interventions. Every other
+                // intrinsic programme field must remain physically identical.
+                $basis['components']['prospective_scoped_composition_recipe'] = array_diff_key($recipe,
+                    ['parameters' => true, 'source_parameters' => true, 'strategy' => true, 'version' => true]);
+            }
             $runtimePrograms[] = $this->hash([
                 'family' => app(StrategyParameterSchemaService::class)->runtimeBaseStrategy(
                     $model->strategy, data_get($model->metadata, 'base_strategy'), $cartridge?->strategy_family),
@@ -59,8 +78,13 @@ class DescendantScopedProofService
         }
         $topology = $this->topology($vectors, (string) $cartridge?->gene_key);
         $intervention = (array) data_get($cartridge?->evidence, 'intervention', []);
+        $scopedSource = $cartridge?->status === 'scoped_confirmed'
+            && $cartridge?->component_status === 'scoped_component_confirmed'
+            && (int) data_get($cartridge?->evidence, 'scoped_component_certificate_id') > 0
+            && (int) data_get($cartridge?->evidence, 'scoped_component_certificate_id')
+                === (int) data_get($scope, 'native_execution.source_component_certificate_id');
         if ($topology['status'] !== 'topology_valid') return $topology;
-        if (! $cartridge || $cartridge->status !== 'confirmed' || $cartridge->component_status !== 'component_confirmed'
+        if (! $cartridge || (! $scopedSource && ($cartridge->status !== 'confirmed' || $cartridge->component_status !== 'component_confirmed'))
             || ! array_key_exists('old_value', $intervention) || ! array_key_exists('tested_value', $intervention)
             || ! $this->same($topology['trait_delta']['old'], $intervention['old_value'] ?? null)
             || ! $this->same($topology['trait_delta']['new'], $intervention['tested_value'] ?? null)) {
@@ -76,7 +100,7 @@ class DescendantScopedProofService
             return $this->blocked('DESCENDANT_IMMUTABLE_SOURCE_REVISION_MISMATCH');
         }
         $context = app(ContextContractV2Service::class)->project((array) ($scope['context'] ?? []));
-        $capsule = app(ContextualCausalTraitCapsuleService::class)->assess(
+        $capsule = $scopedSource ? ['valid' => true] : app(ContextualCausalTraitCapsuleService::class)->assess(
             (array) data_get($cartridge->evidence, 'trait_capsule', []), $cartridge->gene_key, (array) ($scope['context'] ?? []),
         );
         if ($context['status'] !== 'valid' || ! ($capsule['valid'] ?? false)) {
@@ -100,9 +124,12 @@ class DescendantScopedProofService
             }
         }
         $rule = (array) ($scope['stopping_rule'] ?? []);
+        $metrics = ['profit_factor', 'net_profit', 'total_return_percent'];
+        if (isset($scope['native_execution']) && ($scope['authority_policy'] ?? ScopedResearchCertificateService::AUTHORITY_POLICY)
+            === ScopedResearchCertificateService::AUTHORITY_POLICY) $metrics = [...$metrics, 'drawdown', 'max_drawdown'];
         if (! is_int($rule['minimum_trades_per_arm'] ?? null) || $rule['minimum_trades_per_arm'] < 3
             || ! is_numeric($rule['minimum_effect'] ?? null) || ! is_finite((float) $rule['minimum_effect']) || $rule['minimum_effect'] < 0
-            || ! in_array($scope['metric'] ?? null, ['profit_factor', 'net_profit', 'total_return_percent'], true)) {
+            || ! in_array($scope['metric'] ?? null, $metrics, true)) {
             return $this->blocked('DESCENDANT_PREREGISTERED_METRIC_AND_POWER_REQUIRED');
         }
         $design = [
@@ -119,6 +146,25 @@ class DescendantScopedProofService
                 'context' => $context['extended_axes']],
             'research_only' => true, 'component_credit' => false, 'inheritance_credit' => false, 'promotion_evidence' => false,
         ];
+        // Native execution is a separately declared prospective purpose. A
+        // legacy cartridge's confirmed label does not supply this authority.
+        if (array_key_exists('native_execution', $scope)) {
+            try {
+                $design['validation_windows'] = (array) ($scope['validation_windows'] ?? []);
+                $design['exposure_policy'] = (array) ($scope['exposure_policy'] ?? []);
+                $design['native_execution'] = app(DescendantScopedExecutionService::class)->validateProspectiveExecution(
+                    (array) $scope['native_execution'], $design, $cartridge);
+                $design['source_component_certificate_id'] = $design['native_execution']['source_component_certificate_id'];
+                $design['subject']['source_component_certificate_id'] = $design['source_component_certificate_id'];
+                $design['authority_policy'] = 'independent_scoped_research_authority_v1';
+                $design['statistical_guard'] = app(DescendantScopedExecutionService::class)->prospectiveStatisticalGuard(
+                    (array) ($scope['statistical_guard'] ?? []), $this->hash([$subjects, $design['validation_windows'], $context['identity_hash']]));
+                if (isset($scope['risk_guard'])) $design['risk_guard'] = $scope['risk_guard'];
+                $design = app(ScopedResearchCertificateService::class)->normalizeProspectiveDesign('inheritance', $design);
+            } catch (\LogicException $error) {
+                return $this->blocked($error->getMessage());
+            }
+        }
         $designHash = $this->hash($design);
         $trialKey = $this->hash([self::PROTOCOL, $designHash]);
 
@@ -152,9 +198,18 @@ class DescendantScopedProofService
             if (($certificate['valid'] ?? false) !== true) {
                 throw new \LogicException('DESCENDANT_SCOPED_CERTIFICATE_REFUSED');
             }
+            $nativeWork = isset($design['native_execution'])
+                ? app(DescendantScopedExecutionService::class)->registerWork((int) $trial->id, (int) $certificate['certificate_id']) : null;
+            if ($nativeWork !== null && ($nativeWork['status'] ?? null) !== 'recorded') {
+                $reason = $nativeWork['reason_code'] ?? $nativeWork['reason'] ?? 'DESCENDANT_CANONICAL_NATIVE_WORK_REGISTRATION_REFUSED';
+                throw new \LogicException(preg_match('/^[A-Z][A-Z0-9_]{0,159}$/D', (string) $reason)
+                    ? $reason : 'DESCENDANT_CANONICAL_NATIVE_WORK_REGISTRATION_REFUSED');
+            }
 
             return ['protocol' => self::PROTOCOL, 'status' => 'scoped_preregistered', 'trial_id' => (int) $trial->id,
-                'certificate' => $certificate, 'executor_status' => 'requires_original_owner_bound_four_arm_products',
+                'certificate' => $certificate, 'executor_status' => $nativeWork === null
+                    ? 'requires_original_owner_bound_four_arm_products' : 'canonical_original_matrix_registered',
+                ...($nativeWork === null ? [] : ['native_work' => $nativeWork]),
                 'research_only' => true, 'inheritance_credit' => false, 'promotion_evidence' => false];
         });
         } catch (\LogicException $exception) {
@@ -188,7 +243,11 @@ class DescendantScopedProofService
         $revision = DB::table('skill_cartridge_revisions')->where('lab_skill_zoo_entry_id', $source['id'] ?? 0)
             ->where('revision', $source['revision'] ?? 0)->first();
         $payload = $revision ? json_decode($revision->payload, true) : null;
-        if (! $cartridge || $cartridge->status !== 'confirmed' || $cartridge->component_status !== 'component_confirmed'
+        $scopedSource = $cartridge?->status === 'scoped_confirmed' && $cartridge?->component_status === 'scoped_component_confirmed'
+            && (int) data_get($cartridge?->evidence, 'scoped_component_certificate_id')
+                === (int) ($design['source_component_certificate_id'] ?? 0)
+            && (int) ($design['source_component_certificate_id'] ?? 0) > 0;
+        if (! $cartridge || (! $scopedSource && ($cartridge->status !== 'confirmed' || $cartridge->component_status !== 'component_confirmed'))
             || $cartridge->cartridge_key !== ($source['key'] ?? null) || ! is_array($payload)
             || $this->hash($payload) !== ($source['revision_payload_hash'] ?? null)) {
             return $this->blocked('DESCENDANT_ORIGINAL_SOURCE_REVISION_DRIFT');
@@ -204,6 +263,39 @@ class DescendantScopedProofService
             'certificate' => $certificate,
             'executor_status' => 'requires_original_owner_bound_four_arm_products',
             'research_only' => true, 'inheritance_credit' => false, 'promotion_evidence' => false];
+    }
+
+    /** Project only the immutable independent owner's terminal record, not v1 settlement. */
+    public function recordIndependentTerminal(int $trialId, int $certificateId): array
+    {
+        return DB::transaction(function () use ($trialId, $certificateId): array {
+            $trial = DescendantValueTrial::whereKey($trialId)->lockForUpdate()->firstOrFail();
+            $inspection = $this->inspect($trialId, $certificateId);
+            if (($inspection['status'] ?? null) === 'blocked') return $inspection;
+            $certificate = $inspection['certificate'];
+            $original = (array) data_get($certificate, 'original_authority.inheritance', []);
+            if (! in_array($original['status'] ?? null, ['confirmed', 'negative_or_inconclusive'], true)
+                || ($original['authority_type'] ?? null) !== 'context_bound_research_inheritance'
+                || ($original['certificate_id'] ?? null) !== $certificateId
+                || ! is_int($certificate['authority_record_id'] ?? null)) {
+                return $this->blocked('DESCENDANT_INDEPENDENT_ORIGINAL_TERMINAL_REQUIRED');
+            }
+            $terminal = ['protocol' => ScopedResearchCertificateService::AUTHORITY_POLICY,
+                'certificate_id' => $certificateId, 'authority_record_id' => $certificate['authority_record_id'],
+                'design_hash' => $certificate['design_hash'], 'source_hash' => $certificate['source_hash'],
+                'original_status' => $original['status'], 'confirmed' => $original['confirmed'] === true,
+                'reason_code' => $original['reason_code'], 'paper_or_live_authority' => false,
+                'parent_eligible' => false, 'promotion_evidence' => false];
+            $existing = data_get($trial->evidence, 'original_terminal');
+            if ($existing !== null && ! $this->same($existing, $terminal)) {
+                return $this->blocked('DESCENDANT_INDEPENDENT_ORIGINAL_TERMINAL_IMMUTABLE');
+            }
+            $status = $original['confirmed'] === true ? 'scoped_original_confirmed' : 'scoped_original_negative_or_inconclusive';
+            $trial->update(['status' => $status, 'settled_at' => $trial->settled_at ?? now(),
+                'evidence' => [...(array) $trial->evidence, 'original_terminal' => $terminal]]);
+            return ['protocol' => self::PROTOCOL, 'status' => $status, 'trial_id' => $trialId,
+                'original_terminal' => $terminal, 'promotion_evidence' => false];
+        });
     }
 
     /**
@@ -326,6 +418,11 @@ class DescendantScopedProofService
             if (! is_array($slice)) continue;
             $context = app(ContextContractV2Service::class)->project((array) ($slice['context'] ?? []));
             $metrics = (array) ($slice['metrics'] ?? []);
+            // The original Python venue-phase producer calls this net_pf.
+            // No other missing measurement receives an inferred alias.
+            if (! array_key_exists('profit_factor', $metrics) && array_key_exists('net_pf', $metrics)) {
+                $metrics['profit_factor'] = $metrics['net_pf'];
+            }
             $value = $metrics[$design['metric']] ?? null;
             if ($context['identity_hash'] === $design['context_hash']
                 && is_int($metrics['trades'] ?? null) && $metrics['trades'] >= $design['stopping_rule']['minimum_trades_per_arm']

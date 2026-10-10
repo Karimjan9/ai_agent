@@ -20,6 +20,17 @@ class CausalLearningConfirmationService
 
     public const SCOPED_PROTOCOL = 'separated_causal_proof_observations_v1';
 
+    /** Reuses the legacy target/safety measurements, not its selector condition. */
+    public function compareOriginalComponent(string $target, array $candidate, array $control): array
+    {
+        $left = ['target_measurement' => $this->targetMeasurement($target, $candidate),
+            'invariant_vector' => $this->invariantVector($candidate)];
+        $right = ['target_measurement' => $this->targetMeasurement($target, $control),
+            'invariant_vector' => $this->invariantVector($control)];
+        return ['target_effect' => $this->compareTargetMeasurements($left, $right),
+            'non_target' => $this->compareNonTargetInvariants($left, $right, $target)];
+    }
+
     private function hasDeclaredProspectiveScope(AgentLearningCausalExperiment $experiment): bool
     {
         if (! Schema::hasTable('scoped_research_certificates')) return false;

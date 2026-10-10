@@ -13,6 +13,15 @@ paths:
   - backend-laravel/app/Models/ScopedResearchCertificate.php
   - backend-laravel/app/Models/DescendantValueTrial.php
   - backend-laravel/app/Services/ScopedResearchCertificateService.php
+  - backend-laravel/app/Services/ScopedResearchAuthorityService.php
+  - backend-laravel/app/Services/ScopedSelectorPanelService.php
+  - backend-laravel/tests/Fixtures/scoped_selector_python_admission.py
+  - backend-laravel/app/Services/ResearchWindowExposureInventoryService.php
+  - backend-laravel/app/Services/DescendantScopedExecutionService.php
+  - backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php
+  - backend-laravel/app/Models/ResearchExposureCaptureRecord.php
+  - backend-laravel/app/Jobs/ExecuteScopedResearchArmJob.php
+  - backend-laravel/database/migrations/2026_10_09_140000_create_research_exposure_capture_records.php
   - backend-laravel/app/Services/DescendantScopedProofService.php
   - backend-laravel/database/migrations/2026_10_09_120000_create_scoped_research_certificates.php
   - backend-laravel/app/Console/Commands/AuditResearchWindowProvenance.php
@@ -139,6 +148,34 @@ entry_points:
   - ScopedResearchCertificateService::inspect
   - ScopedResearchCertificateService::bindOriginalData
   - ScopedResearchCertificateService::recordAssessment
+  - ScopedResearchCertificateService::normalizeProspectiveDesign
+  - ScopedResearchCertificateService::verifiedRegistration
+  - ScopedResearchCertificateService::issueIndependent
+  - ScopedResearchCertificateService::independentWindowReadiness
+  - ResearchWindowExposureInventoryService::registerCapture
+  - ResearchWindowExposureInventoryService::captureAttachedRequest
+  - ResearchWindowExposureInventoryService::recordCausalFoldRequest
+  - ResearchWindowExposureInventoryService::assessForCertificate
+  - ScopedResearchAuthorityService::verifyOriginalSafety
+  - ScopedSelectorPanelService::preregister
+  - ScopedSelectorPanelService::preregisterFuturePanel
+  - ScopedSelectorPanelService::bindOriginalData
+  - ScopedSelectorPanelService::executionReadiness
+  - ScopedSelectorPanelService::reservesOrdinaryEvaluation
+  - ScopedSelectorPanelService::inspectPanel
+  - DescendantScopedExecutionService::execute
+  - DescendantScopedExecutionService::executeQueuedArm
+  - EvolutionaryAuthorityFoundryService::preregisterScopedComponent
+  - EvolutionaryAuthorityFoundryService::proposeScopedDescendant
+  - ScopedDescendantCandidatePreparationService::register
+  - CausalSkillCreditBridgeService::settleScopedCertificate
+  - CanonicalSkillCartridgeService::projectScopedComponent
+  - CompositionAuthorityKernelService::prospectiveRecipeFromMetadata
+  - CompositionAuthorityKernelService::prospectiveProgrammeHash
+  - CompositionAuthorityKernelService::compileProspectiveRecipeForRequest
+  - LabInstrumentResearchService::bindScopedOriginalAssignment
+  - LabAgentEvaluationService::scopedOriginalMemberPayload
+  - LabAgentEvaluationService::scopedOriginalSelectorFoldEnvelope
   - CausalLearningConfirmationService::scopeMeasurements
   - CausalLearningConfirmationService::settleScopedProofs
   - InstrumentResearchWindowService::originalValidationReadiness
@@ -192,6 +229,7 @@ entry_points:
   - trading:reconcile-instrument-pairs
 data_tables:
   - scoped_research_certificates
+  - research_exposure_capture_records
   - descendant_value_trials
   - research_instrument_abstractions
   - research_behavior_archive
@@ -211,10 +249,14 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
-  - Component, selector, council and inheritance are separately sealed diagnostic questions, not mutually substitutable authority. A stored assessment, verified input bytes or future reservation never proves untouched validation (ADR-036).
+  - Component, selector, council and inheritance are separately sealed questions with a diagnostic-only default and a versioned named-original independent issuer. No stored assessment, verified bytes or future reservation alone proves untouched validation (ADR-036).
   - A prospective scoped experiment cannot borrow the coupled legacy confirmed/credit path, even after source drift. Legacy experiments and hypothesis-only references retain their original protocol.
   - Descendant diagnostics require four exact P/PT/PTU/PU models, immutable original source revision and actual original products; bundle improvement is not individual trait or inheritance authority.
   - All referenced MTF, warmup, related, foundation and inline exposure remains in the unused-data audit; absent logs cannot attest a complete training/selection inventory.
+  - New candidate-scoped exposure capture starts before the first validation event and before all model runs/folds; ingress covers original four-stream bytes, closed context, warmup and holding. Missing captured originals, source drift or preexisting partial history block scope authority, rather than being retroactively completed.
+  - Scoped component and descendant native execution uses the existing conversion kernel, sole arbiter and long research queue. Every original window/arm request is frozen before any replay; a genuine leased job executes only one original arm and never imports old results or spends a new scientific attempt on a repeated delivery.
+  - A confirmed component may receive one scoped credit and cartridge without proving selector superiority. The existing Foundry proposes one legal additional mutation and a fresh later-window descendant dependency; it cannot reuse the component validation events or grant global parent, paper or live authority.
+  - Reserved independent study projections remain audit-only; generic screening memory and ordinary historical mutation advice exclude even malformed scope markers.
   - Explicit unused-draft mixed-price discovery preserves twenty original model/episode and ten pair identities but settles them only in its own neutral namespace. Genuine technical originals and unexecuted exact-control dependents are not measured zero effects; no ordinary mutation advice, pair effect, credit or economic handoff is emitted (ADR-035).
   - Finite DSL search seals a verified registered semantic pool, explicit typed as-of task, original macro sources, equal resource caps and blinded seed before execution. Two complete original native products measure only that finite task; changed labels/seeds cannot renew its physical question. No general synthesis, independent market or economic authority follows (ADR-032).
   - Pure behavior-archive consumption re-verifies original entries and screening projection policy before a bounded research-priority contribution. The selected block seals source entry/run/request/response references; withheld technical-completion runs cannot escape through an archive and consumption does not assert confirmed value or a qualified specialist (ADR-032).
@@ -266,6 +308,13 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php
+  - backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php
+  - backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php
+  - backend-laravel/tests/Feature/ScopedOriginalSafetyTest.php
+  - backend-laravel/tests/Feature/ScopedSelectorPanelTest.php
+  - backend-laravel/tests/Feature/DescendantScopedExecutionTest.php
+  - backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php
   - backend-laravel/tests/Feature/ScopedResearchCertificateTest.php
   - backend-laravel/tests/Feature/SeparatedCausalProofTest.php
   - backend-laravel/tests/Feature/OriginalValidationReadinessTest.php

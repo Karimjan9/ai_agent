@@ -22,6 +22,7 @@ use App\Services\LabImmutableEvidenceService;
 use App\Services\LabReplayRecoveryService;
 use App\Services\LearningLaneService;
 use App\Services\ResearchReleaseSealService;
+use App\Services\ScopedSelectorPanelService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -29,6 +30,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\SkipIfBatchCancelled;
+use Illuminate\Queue\Middleware\Skip;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Queue\SerializesModels;
@@ -36,6 +38,7 @@ use Throwable;
 
 class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
 {
+    public const FULL_JOB_TIMEOUT_SECONDS = 4200;
     use Batchable,Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
 
     // Queue admission is a durability window, not an evaluator runtime
@@ -104,6 +107,12 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     {
         $scope = LabAgent::query()->with('modelVersion', 'generation')->whereKey($labAgentId)
             ->first(['id', 'lab_generation_id', 'model_version_id', 'timeframe']);
+        if (data_get($scope?->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
+            throw new \LogicException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        if ($scope && app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($scope)) {
+            throw new \LogicException('SCOPED_SELECTOR_ORIGINAL_EXECUTOR_REQUIRED');
+        }
         $this->labGenerationId = $scope?->lab_generation_id;
         $this->timeframe = strtoupper((string) ($scope?->timeframe ?: $this->timeframe));
         $this->prospectiveProbe = $mode === 'screen'
@@ -144,7 +153,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
                 // a projection margin. A causal research job can therefore
                 // never occupy the worker for the legacy 70-minute budget.
                 ? max(900, min(1500, (int) config('services.lab_selection.causal_replay_timeout_seconds', 960) + 300))
-                : 4200);
+                : self::FULL_JOB_TIMEOUT_SECONDS);
         // Screening is serialized through one AI lane per process. A 20
         // minute deadline can starve the tail of a 20-agent generation while
         // the first candidates are being replayed, turning queue fairness
@@ -163,6 +172,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
     public function middleware(): array
     {
         return [
+            // Consume a stale ordinary delivery before immutable queue-attempt
+            // middleware can create an uncaptured selector/native source run.
+            Skip::when(fn (): bool => $this->scopedOriginalReserved(LabAgent::find($this->labAgentId))),
             // Cancellation must be evaluated before fairness/mutex
             // middleware can release the job. A late handle()-only check
             // lets a cancelled contender loop without ever reaching that
@@ -270,6 +282,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
             return;
         }
         $agent = LabAgent::findOrFail($this->labAgentId);
+        if ($this->scopedOriginalReserved($agent)) return;
         $learningLane = $this->mode === 'full' && app(LearningLaneService::class)->isLearningAgent($agent);
         // A worker restart or a Laravel batch callback can leave a duplicate
         // full job behind after the sealed replay has already resolved the
@@ -631,12 +644,21 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         }
     }
 
+    private function scopedOriginalReserved(?LabAgent $agent): bool
+    {
+        if (! $agent) return false;
+        $agent->loadMissing('generation');
+        return data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null
+            || app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($agent);
+    }
+
     public function failed(Throwable $e): void
     {
         $agent = LabAgent::find($this->labAgentId);
         if (! $agent) {
             return;
         }
+        if ($this->scopedOriginalReserved($agent)) return;
 
         $agent->loadMissing('generation', 'modelVersion');
         if (app(\App\Services\UnusedDraftPriceDiscoveryPreparationService::class)->declares($agent->generation)) {

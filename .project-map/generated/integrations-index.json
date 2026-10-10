@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T17:28:28.344Z",
-  "source_digest": "dc0a019eb0d323348bbad9ad5c1a7f055e29b1974b58d0e6985df74165ae59f7",
-  "source_file_count": 1582,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-10T06:29:15.786Z",
+  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
+  "source_file_count": 1603,
+  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "documented_contracts": [
     "docs/ai-service-contract.md",
@@ -17,56 +17,56 @@
       "method": "GET",
       "path": "/",
       "source": "ai-service-python/app/main.py",
-      "line": 578
+      "line": 584
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/aggregate-causal-folds",
       "source": "ai-service-python/app/main.py",
-      "line": 657
+      "line": 663
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/mtf-ablation",
       "source": "ai-service-python/app/main.py",
-      "line": 4153
+      "line": 4214
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/mtf-council",
       "source": "ai-service-python/app/main.py",
-      "line": 4471
+      "line": 4532
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/mtf-hypothesis-batch",
       "source": "ai-service-python/app/main.py",
-      "line": 4304
+      "line": 4365
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/mtf-targeted-validation",
       "source": "ai-service-python/app/main.py",
-      "line": 4238
+      "line": 4299
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/run-all",
       "source": "ai-service-python/app/main.py",
-      "line": 638
+      "line": 644
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/backtest/run",
       "source": "ai-service-python/app/main.py",
-      "line": 615
+      "line": 621
     },
     {
       "runtime": "fastapi",
@@ -80,70 +80,70 @@
       "method": "POST",
       "path": "/api/paper/advance-contract",
       "source": "ai-service-python/app/main.py",
-      "line": 3494
+      "line": 3555
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/paper/execution-contract",
       "source": "ai-service-python/app/main.py",
-      "line": 3373
+      "line": 3434
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/paper/signal",
       "source": "ai-service-python/app/main.py",
-      "line": 2900
+      "line": 2961
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/paper/twin/{lane}",
       "source": "ai-service-python/app/main.py",
-      "line": 3167
+      "line": 3228
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/paper/twin/ablation",
       "source": "ai-service-python/app/main.py",
-      "line": 3315
+      "line": 3376
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/paper/twin/red-team",
       "source": "ai-service-python/app/main.py",
-      "line": 3247
+      "line": 3308
     },
     {
       "runtime": "fastapi",
       "method": "POST",
       "path": "/api/portfolio/backtest",
       "source": "ai-service-python/app/main.py",
-      "line": 1822
+      "line": 1830
     },
     {
       "runtime": "fastapi",
       "method": "GET",
       "path": "/api/replay-status",
       "source": "ai-service-python/app/main.py",
-      "line": 594
+      "line": 600
     },
     {
       "runtime": "fastapi",
       "method": "GET",
       "path": "/api/strategies",
       "source": "ai-service-python/app/main.py",
-      "line": 586
+      "line": 592
     },
     {
       "runtime": "fastapi",
       "method": "GET",
       "path": "/health",
       "source": "ai-service-python/app/main.py",
-      "line": 554
+      "line": 560
     },
     {
       "runtime": "fastapi",

@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Jobs\ProjectLabCandleDecisionEvents;
 use App\Models\CandidateGateDecision;
+use App\Models\CausalFoldReceipt;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\LabEvidenceArtifact;
@@ -10,9 +12,10 @@ use App\Models\LabGateDecisionEvent;
 use App\Models\LabGeneration;
 use App\Models\LabLifecycleEvent;
 use App\Models\LabMutationCreditEvent;
+use App\Models\ModelVersion;
 use App\Models\MutationMemory;
-use App\Jobs\ProjectLabCandleDecisionEvents;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
@@ -68,18 +71,22 @@ class LabImmutableEvidenceService
         $owner->assertAttempt($agent, $phase);
         if ($owner->declares($agent->generation)) {
             return DB::transaction(function () use ($agent, $phase, $mode, $context, $owner): LabEvaluationRun {
-                \App\Models\LabGeneration::whereKey($agent->lab_generation_id)->lockForUpdate()->firstOrFail();
+                LabGeneration::whereKey($agent->lab_generation_id)->lockForUpdate()->firstOrFail();
                 $owner->assertAttempt($agent, $phase);
+
                 return $this->beginAdmittedRun($agent, $phase, $mode, $context);
             });
         }
+
         return $this->beginAdmittedRun($agent, $phase, $mode, $context);
     }
 
     private function beginAdmittedRun(LabAgent $agent, string $phase, string $mode, array $context = []): LabEvaluationRun
     {
         $agent->loadMissing('generation', 'modelVersion');
-        if ($agent->generation) app(ResearchReleaseSealService::class)->assertCurrent($agent->generation);
+        if ($agent->generation) {
+            app(ResearchReleaseSealService::class)->assertCurrent($agent->generation);
+        }
         $started = now();
         $run = LabEvaluationRun::create([
             'run_id' => (string) Str::uuid(),
@@ -207,53 +214,58 @@ class LabImmutableEvidenceService
     public function attachRequest(LabEvaluationRun $run, array $request, array $context = []): void
     {
         DB::transaction(function () use ($run, $request, $context): void {
-        $persisted = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
-        if (! $persisted || in_array($persisted->status, self::TERMINAL_RUN_STATUSES, true)) return;
-        $run->setRawAttributes($persisted->getAttributes(), true);
-        $requestHash = (string) ($context['request_hash'] ?? $this->hash($request));
-        $payloadHash = $this->hash($request);
-        $safeRequest = $this->requestManifest($request);
-        $resolvedDataHash = (string) ($context['data_hash'] ?? '');
-        if (! $this->isSha256($resolvedDataHash)) {
-            $resolvedDataHash = (string) ($run->data_hash ?: ($this->dataHashFromRequest($request) ?? ''));
-        }
-        $run->update([
-            'request_id' => $context['request_id'] ?? $run->request_id,
-            'request_hash' => $requestHash,
-            'data_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
-            'request_meta' => [
-                'payload_hash' => $payloadHash,
+            $persisted = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
+            if (! $persisted || in_array($persisted->status, self::TERMINAL_RUN_STATUSES, true)) {
+                return;
+            }
+            $run->setRawAttributes($persisted->getAttributes(), true);
+            $requestHash = (string) ($context['request_hash'] ?? $this->hash($request));
+            $payloadHash = $this->hash($request);
+            $safeRequest = $this->requestManifest($request);
+            $resolvedDataHash = (string) ($context['data_hash'] ?? '');
+            if (! $this->isSha256($resolvedDataHash)) {
+                $resolvedDataHash = (string) ($run->data_hash ?: ($this->dataHashFromRequest($request) ?? ''));
+            }
+            $run->update([
+                'request_id' => $context['request_id'] ?? $run->request_id,
                 'request_hash' => $requestHash,
-                'payload' => $safeRequest,
-                'candle_count' => $this->candleCount($request),
-                'dataset_manifest' => $context['dataset_manifest'] ?? null,
-                'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
-                'attached_at' => now()->toIso8601String(),
-            ],
-        ]);
-        $requestArtifact = $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
-            'raw_payload_hash' => $payloadHash,
-            'request_hash' => $requestHash,
-            'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
-            'dataset_hash_present' => $this->isSha256($resolvedDataHash),
-            'exact_candles_referenced_by_hash' => true,
-        ]);
-        // Separate original artifact preserves transport request/cache hashes.
-        // Its server-derived model seal is never accepted from request flags.
-        DB::transaction(function () use ($run, $requestHash, $payloadHash, $requestArtifact, $request): void {
-            $originalRun = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
-            if (! $originalRun || in_array($originalRun->status, self::TERMINAL_RUN_STATUSES, true)
-                || LabEvidenceArtifact::where('run_id', $originalRun->run_id)->where('artifact_type', 'model_runtime_identity')->exists()) return;
-            $this->recordArtifact($originalRun, 'model_runtime_identity', [...$this->modelRuntimeIdentity($originalRun),
-                'raw_request_hash' => $requestHash, 'raw_payload_hash' => $payloadHash, 'request_artifact_hash' => $requestArtifact->sha256,
-                'compiled_runtime_contract_hash' => app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))], [
-                'protocol' => 'original_model_runtime_identity_v1', 'promotion_evidence' => false,
+                'data_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
+                'request_meta' => [
+                    'payload_hash' => $payloadHash,
+                    'request_hash' => $requestHash,
+                    'payload' => $safeRequest,
+                    'candle_count' => $this->candleCount($request),
+                    'dataset_manifest' => $context['dataset_manifest'] ?? null,
+                    'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
+                    'attached_at' => now()->toIso8601String(),
+                ],
             ]);
-        });
-        $this->recordLifecycle($run->agent, 'evaluation_request_attached', [
-            'request_hash' => $requestHash, 'payload_hash' => $payloadHash,
-            'data_hash' => $run->data_hash,
-        ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService');
+            $requestArtifact = $this->recordArtifact($run, 'evaluation_request', $safeRequest, [
+                'raw_payload_hash' => $payloadHash,
+                'request_hash' => $requestHash,
+                'dataset_hash' => $resolvedDataHash !== '' ? $resolvedDataHash : null,
+                'dataset_hash_present' => $this->isSha256($resolvedDataHash),
+                'exact_candles_referenced_by_hash' => true,
+            ]);
+            // Separate original artifact preserves transport request/cache hashes.
+            // Its server-derived model seal is never accepted from request flags.
+            DB::transaction(function () use ($run, $requestHash, $payloadHash, $requestArtifact, $request): void {
+                $originalRun = LabEvaluationRun::whereKey($run->id)->lockForUpdate()->first();
+                if (! $originalRun || in_array($originalRun->status, self::TERMINAL_RUN_STATUSES, true)
+                    || LabEvidenceArtifact::where('run_id', $originalRun->run_id)->where('artifact_type', 'model_runtime_identity')->exists()) {
+                    return;
+                }
+                $this->recordArtifact($originalRun, 'model_runtime_identity', [...$this->modelRuntimeIdentity($originalRun),
+                    'raw_request_hash' => $requestHash, 'raw_payload_hash' => $payloadHash, 'request_artifact_hash' => $requestArtifact->sha256,
+                    'compiled_runtime_contract_hash' => app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))], [
+                        'protocol' => 'original_model_runtime_identity_v1', 'promotion_evidence' => false,
+                    ]);
+            });
+            $this->recordLifecycle($run->agent, 'evaluation_request_attached', [
+                'request_hash' => $requestHash, 'payload_hash' => $payloadHash,
+                'data_hash' => $run->data_hash,
+            ], $run->phase, $run->run_id, $run->attempt, 'LabImmutableEvidenceService');
+            app(ResearchWindowExposureInventoryService::class)->captureAttachedRequest($run, $request, $requestArtifact);
         });
     }
 
@@ -421,11 +433,21 @@ class LabImmutableEvidenceService
         $releaseComplete = app(ResearchReleaseSealService::class)->responseValid($seal,
             (array) data_get($response, 'data_quality.research_release_receipt', []));
         $reasons = [];
-        if (! $requestArtifact) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
-        if (! $datasetHash) $reasons[] = 'MISSING_DATASET_HASH';
-        if (! $traceComplete) $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
-        if (! $ledgerComplete) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
-        if (! $releaseComplete) $reasons[] = 'RESEARCH_WORKER_RELEASE_RECEIPT_INVALID';
+        if (! $requestArtifact) {
+            $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
+        }
+        if (! $datasetHash) {
+            $reasons[] = 'MISSING_DATASET_HASH';
+        }
+        if (! $traceComplete) {
+            $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
+        }
+        if (! $ledgerComplete) {
+            $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+        }
+        if (! $releaseComplete) {
+            $reasons[] = 'RESEARCH_WORKER_RELEASE_RECEIPT_INVALID';
+        }
 
         return [
             'complete' => $reasons === [],
@@ -448,6 +470,7 @@ class LabImmutableEvidenceService
         $identity = (array) ($native['decision_trace_identity'] ?? []);
         $hash = $producer['trace_hash'] ?? null;
         $contractHash = $native['contract_hash'] ?? null;
+
         return is_array($trace) && array_is_list($trace) && is_string($hash)
             && preg_match('/^[a-f0-9]{64}$/D', $hash) === 1
             && is_string($contractHash) && preg_match('/^[a-f0-9]{64}$/D', $contractHash) === 1
@@ -468,6 +491,63 @@ class LabImmutableEvidenceService
      */
     public function decisionTraceCompleteness(array $response, ?LabEvaluationRun $run = null): array
     {
+        return $this->decisionTraceCompletenessWithOriginalRequest($response, $run);
+    }
+
+    /** Raw scoped folds have an immutable ingress owner before aggregate runs exist. */
+    public function decisionTraceCompletenessForOriginalFold(CausalFoldReceipt $candidate, int $agentId): array
+    {
+        try {
+            $fold = CausalFoldReceipt::findOrFail($candidate->id);
+            $epochs = app(ResearchPaperEpochContractService::class);
+            if ($fold->status !== 'completed' || (int) $fold->attempt_count !== 1
+                || ! $fold->started_at || ! $fold->completed_at
+                || ! is_array($fold->request_payload) || ! is_array($fold->response_payload)
+                || $fold->request_hash !== $epochs->parameterHash($fold->request_payload)
+                || $fold->response_hash !== $epochs->parameterHash($fold->response_payload)) {
+                throw new RuntimeException('ORIGINAL_COMPLETED_FOLD_HASHES_REQUIRED');
+            }
+            $declaration = data_get($fold->request_payload, 'policy_context.scoped_research_certificate');
+            if (! is_array($declaration) || ($declaration['protocol'] ?? null) !== ScopedResearchCertificateService::AUTHORITY_POLICY
+                || ($declaration['purpose'] ?? null) !== 'independent_scoped_selector_research'
+                || ! is_int($declaration['certificate_id'] ?? null)
+                || ($fold->request_payload['evaluation_mode'] ?? null) !== 'full') {
+                throw new RuntimeException('ORIGINAL_SCOPED_SELECTOR_FOLD_REQUIRED');
+            }
+            $request = app(ResearchWindowExposureInventoryService::class)->verifiedOriginalFoldRequest($fold,
+                $declaration['certificate_id']);
+            if ($epochs->parameterHash($request) !== $fold->request_hash) {
+                throw new RuntimeException('ORIGINAL_CAPTURED_FOLD_REQUEST_DRIFT');
+            }
+            $experiment = $fold->experiment()->firstOrFail();
+            if (! in_array($agentId, [(int) $experiment->guided_agent_id, (int) $experiment->blinded_agent_id,
+                (int) $experiment->control_agent_id], true)) {
+                throw new RuntimeException('ORIGINAL_FOLD_AGENT_REQUIRED');
+            }
+            $agent = LabAgent::findOrFail($agentId);
+            $arms = array_values(array_filter((array) ($request['strategies'] ?? []),
+                fn ($arm): bool => is_array($arm) && ($arm['lab_agent_id'] ?? null) === $agentId));
+            $responses = array_values(array_filter((array) ($fold->response_payload['leaderboard'] ?? []),
+                fn ($arm): bool => is_array($arm) && ($arm['lab_agent_id'] ?? null) === $agentId));
+            if (count($arms) !== 1 || count($responses) !== 1 || ! is_array($responses[0]['result'] ?? null)) {
+                throw new RuntimeException('ORIGINAL_FOLD_SINGLE_ARM_IDENTITY_REQUIRED');
+            }
+            $response = $responses[0]['result'];
+            if (! app(ResearchReleaseSealService::class)->responseValid((array) ($request['research_release'] ?? []),
+                (array) data_get($response, 'data_quality.research_release_receipt', []))) {
+                throw new RuntimeException('ORIGINAL_FOLD_WORKER_RELEASE_REQUIRED');
+            }
+
+            return $this->decisionTraceCompletenessWithOriginalRequest($response, null, $request, $agent);
+        } catch (Throwable $error) {
+            return ['protocol' => 'decision_trace_producer_verified_v1', 'complete' => false,
+                'reason_codes' => ['DECISION_TRACE_ORIGINAL_FOLD_INVALID:'.$error->getMessage()], 'promotion_evidence' => false];
+        }
+    }
+
+    private function decisionTraceCompletenessWithOriginalRequest(array $response, ?LabEvaluationRun $run,
+        ?array $originalRequest = null, ?LabAgent $originalAgent = null): array
+    {
         $trace = data_get($response, 'decision_trace', data_get($response, 'candle_decision_trace', data_get($response, 'decision_events')));
         $producer = (array) data_get($response, 'data_quality.decision_trace', []);
         $events = is_array($trace) && array_is_list($trace) ? count($trace) : null;
@@ -478,12 +558,14 @@ class LabImmutableEvidenceService
         // input count and may not inherit the full economic dataset length.
         if (($producer['audit_slice'] ?? false) !== true && $run !== null) {
             $requestRows = data_get($run->request_meta, 'payload.candles.row_count');
-            if (is_int($requestRows)) $input = $requestRows;
+            if (is_int($requestRows)) {
+                $input = $requestRows;
+            }
         }
         $expected = is_int($input) && $input >= 0 ? max(0, $input - 200) : null;
         $reasons = [];
         $firstIndex = 200;
-        $scope = $this->ownedDecisionTraceScope($response, $run);
+        $scope = $this->ownedDecisionTraceScope($response, $run, $originalRequest, $originalAgent);
         if ($scope !== null) {
             $reasons = [...$reasons, ...$scope['reason_codes']];
             $firstIndex = $scope['first_index'];
@@ -505,25 +587,39 @@ class LabImmutableEvidenceService
                 $reasons[] = 'DECISION_TRACE_SCOPE_COPY_MISMATCH';
             }
         }
-        if ($events === null) $reasons[] = 'DECISION_TRACE_NOT_A_LIST';
-        if (($producer['protocol'] ?? null) !== 'candle_decision_trace_v1') $reasons[] = 'DECISION_TRACE_PROTOCOL_MISSING_OR_UNSUPPORTED';
-        if (($producer['requested'] ?? null) !== true || ($producer['complete'] ?? null) !== true) $reasons[] = 'DECISION_TRACE_PRODUCER_INCOMPLETE';
+        if ($events === null) {
+            $reasons[] = 'DECISION_TRACE_NOT_A_LIST';
+        }
+        if (($producer['protocol'] ?? null) !== 'candle_decision_trace_v1') {
+            $reasons[] = 'DECISION_TRACE_PROTOCOL_MISSING_OR_UNSUPPORTED';
+        }
+        if (($producer['requested'] ?? null) !== true || ($producer['complete'] ?? null) !== true) {
+            $reasons[] = 'DECISION_TRACE_PRODUCER_INCOMPLETE';
+        }
         if (! is_int($producer['event_count'] ?? null) || $producer['event_count'] < 0 || $producer['event_count'] !== $events) {
             $reasons[] = 'DECISION_TRACE_EVENT_COUNT_MISMATCH';
         }
-        if (! is_int($evaluated) || $evaluated < 0) $reasons[] = 'DECISION_TRACE_EVALUATED_COUNT_MISSING';
-        if ($expected !== null && $evaluated !== $expected) $reasons[] = 'DECISION_TRACE_EXPECTED_CANDLE_COUNT_MISMATCH';
+        if (! is_int($evaluated) || $evaluated < 0) {
+            $reasons[] = 'DECISION_TRACE_EVALUATED_COUNT_MISSING';
+        }
+        if ($expected !== null && $evaluated !== $expected) {
+            $reasons[] = 'DECISION_TRACE_EXPECTED_CANDLE_COUNT_MISMATCH';
+        }
         $covered = [];
         if ($events !== null) {
             foreach ($trace as $event) {
                 if (! is_array($event)) {
                     $reasons[] = 'DECISION_TRACE_EVENT_INVALID';
+
                     continue;
                 }
-                if (! in_array($event['event_type'] ?? null, ['signal_evaluation', 'position_management'], true)) continue;
+                if (! in_array($event['event_type'] ?? null, ['signal_evaluation', 'position_management'], true)) {
+                    continue;
+                }
                 if (! is_int($event['candle_index'] ?? null) || $event['candle_index'] < $firstIndex
                     || ! is_string($event['candle_time'] ?? null) || $event['candle_time'] === '') {
                     $reasons[] = 'DECISION_TRACE_CANDLE_IDENTITY_MISSING';
+
                     continue;
                 }
                 if ($scope !== null && ! $this->ownedTraceEventCurrent($event, $scope)) {
@@ -538,7 +634,9 @@ class LabImmutableEvidenceService
                 || max(array_keys($covered)) !== $firstIndex - 1 + $evaluated))) {
                 $reasons[] = 'DECISION_TRACE_CANDLE_COVERAGE_MISMATCH';
             }
-            if ($evaluated === 0 && $events !== 0) $reasons[] = 'DECISION_TRACE_ZERO_COVERAGE_HAS_EVENTS';
+            if ($evaluated === 0 && $events !== 0) {
+                $reasons[] = 'DECISION_TRACE_ZERO_COVERAGE_HAS_EVENTS';
+            }
         }
         $reasons = array_values(array_unique($reasons));
 
@@ -552,37 +650,63 @@ class LabImmutableEvidenceService
     }
 
     /** Scope comes from the original immutable request and native receipt. */
-    private function ownedDecisionTraceScope(array $response, ?LabEvaluationRun $run): ?array
+    private function ownedDecisionTraceScope(array $response, ?LabEvaluationRun $run,
+        ?array $originalRequest = null, ?LabAgent $originalAgent = null): ?array
     {
         $producer = (array) data_get($response, 'data_quality.decision_trace', []);
         $native = data_get($response, 'specialist_council_receipt');
         $qualityNative = data_get($response, 'data_quality.specialist_council_receipt');
-        $marker = data_get($run?->request_meta, 'payload.policy_context.specialist_council_authorized_arm');
+        $marker = $originalRequest === null
+            ? data_get($run?->request_meta, 'payload.policy_context.specialist_council_authorized_arm')
+            : data_get($originalRequest, 'policy_context.specialist_council_authorized_arm');
         // Standalone ordinary diagnostics keep the legacy clock. A persisted
         // run must inspect its one immutable request before selecting legacy;
         // removing response hints or mutable projections cannot erase an
         // original native/armed declaration or an unavailable modern owner.
-        if ($run === null && $native === null && $qualityNative === null && $marker === null
-            && ! isset($producer['scope_owner'])) return null;
+        if ($run === null && $originalRequest === null && $native === null && $qualityNative === null && $marker === null
+            && ! isset($producer['scope_owner'])) {
+            return null;
+        }
         $result = ['reason_codes' => [], 'owner' => is_array($native) ? 'native_specialist_council_v1' : 'authorized_original_council_arm_v1',
             'first_index' => 1, 'decision_rows' => null, 'source_rows' => null, 'warmup_rows' => null,
             'scope' => [], 'native' => null, 'timeframe' => ''];
         try {
-            if ($run === null) throw new RuntimeException('ORIGINAL_REQUEST_REQUIRED');
-            $artifacts = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->limit(2)->get();
-            if ($artifacts->count() !== 1 || data_get($artifacts[0]->metadata, 'request_hash') !== $run->request_hash) {
-                throw new RuntimeException('ORIGINAL_REQUEST_ARTIFACT_REQUIRED');
+            if ($originalRequest === null) {
+                if ($run === null) {
+                    throw new RuntimeException('ORIGINAL_REQUEST_REQUIRED');
+                }
+                $artifacts = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->limit(2)->get();
+                if ($artifacts->count() !== 1 || data_get($artifacts[0]->metadata, 'request_hash') !== $run->request_hash) {
+                    throw new RuntimeException('ORIGINAL_REQUEST_ARTIFACT_REQUIRED');
+                }
+                $request = $this->readArtifactPayload($artifacts[0]);
+            } else {
+                if ($originalAgent === null) {
+                    throw new RuntimeException('ORIGINAL_FOLD_AGENT_REQUIRED');
+                }
+                $request = $originalRequest;
             }
-            $request = $this->readArtifactPayload($artifacts[0]);
-            if (! is_array($request)) throw new RuntimeException('ORIGINAL_REQUEST_BYTES_REQUIRED');
+            if (! is_array($request)) {
+                throw new RuntimeException('ORIGINAL_REQUEST_BYTES_REQUIRED');
+            }
+            $agentId = $run?->lab_agent_id ?? $originalAgent?->id;
+            $modelId = $run?->model_version_id ?? $originalAgent?->model_version_id;
             $contracts = [];
             $nativeRequested = array_key_exists('specialist_council_contract', $request);
-            if (is_array($request['specialist_council_contract'] ?? null)) $contracts[] = $request['specialist_council_contract'];
+            if (is_array($request['specialist_council_contract'] ?? null)) {
+                $contracts[] = $request['specialist_council_contract'];
+            }
             foreach ((array) ($request['strategies'] ?? []) as $candidate) {
                 if (! is_array($candidate)
-                    || (isset($candidate['lab_agent_id']) && (int) $candidate['lab_agent_id'] !== (int) $run->lab_agent_id)) continue;
-                if (array_key_exists('specialist_council_contract', $candidate)) $nativeRequested = true;
-                if (is_array($candidate['specialist_council_contract'] ?? null)) $contracts[] = $candidate['specialist_council_contract'];
+                    || (isset($candidate['lab_agent_id']) && (int) $candidate['lab_agent_id'] !== (int) $agentId)) {
+                    continue;
+                }
+                if (array_key_exists('specialist_council_contract', $candidate)) {
+                    $nativeRequested = true;
+                }
+                if (is_array($candidate['specialist_council_contract'] ?? null)) {
+                    $contracts[] = $candidate['specialist_council_contract'];
+                }
             }
             // Optional response dictionaries serialize as {} and decode as [].
             // Only the original request can establish that this is an absent
@@ -598,7 +722,9 @@ class LabImmutableEvidenceService
             $epochs = app(ResearchPaperEpochContractService::class);
             $declared = data_get($request, 'policy_context.specialist_council_authorized_arm');
             $signed = data_get($request, 'policy_context.authorized_research_transport.original_council_arm');
-            if ($native === null && $declared === null && $signed === null && ! isset($producer['scope_owner'])) return null;
+            if ($native === null && $declared === null && $signed === null && ! isset($producer['scope_owner'])) {
+                return null;
+            }
             $expectedScope = null;
             $sourceRows = null;
             $executionInputRows = null;
@@ -611,17 +737,20 @@ class LabImmutableEvidenceService
                 $expectedScope = json_decode($signed['evaluation_scope_json'] ?? '', true, flags: JSON_THROW_ON_ERROR);
                 $policy = (array) data_get($request, 'policy_context.full_replay_runtime_policy', []);
                 foreach (['plan_hash', 'arm_key', 'window_key', 'model_hash'] as $key) {
-                    if (($declared[$key] ?? null) !== ($signed[$key] ?? null)) throw new RuntimeException('ORIGINAL_ARM_IDENTITY_DRIFT');
+                    if (($declared[$key] ?? null) !== ($signed[$key] ?? null)) {
+                        throw new RuntimeException('ORIGINAL_ARM_IDENTITY_DRIFT');
+                    }
                 }
                 if (! is_array($expectedScope) || ! $this->decisionTraceScopesAgree((array) ($declared['evaluation_scope'] ?? []), $expectedScope)
                     || ($expectedScope['policy_hash'] ?? null) !== $epochs->parameterHash($policy)
-                    || ($expectedScope['warmup_rows'] ?? null) !== 0) throw new RuntimeException('ORIGINAL_ARM_SCOPE_DRIFT');
+                    || ($expectedScope['warmup_rows'] ?? null) !== 0) {
+                    throw new RuntimeException('ORIGINAL_ARM_SCOPE_DRIFT');
+                }
                 $sourceRows = data_get($request, 'policy_context.authorized_research_transport.files.'.($request['timeframe'] ?? '').'.rows');
             }
             if (is_array($native)) {
                 app(SpecialistCouncilLifecycleService::class)->assertReceiptSeal($native);
-                $owned = array_filter($contracts, fn (array $contract): bool =>
-                    ($contract['protocol'] ?? null) === 'specialist_council_runtime_v1'
+                $owned = array_filter($contracts, fn (array $contract): bool => ($contract['protocol'] ?? null) === 'specialist_council_runtime_v1'
                     && ($contract['contract_hash'] ?? null) === ($native['contract_hash'] ?? null));
                 if (count($owned) !== 1 || ($native['protocol'] ?? null) !== 'specialist_council_receipt_v1'
                     || ($native['dataset_hash'] ?? null) !== ($request['replay_dataset_hash'] ?? null)) {
@@ -633,23 +762,32 @@ class LabImmutableEvidenceService
                 }
                 $expectedScope ??= $nativeScope;
                 $sourceRows ??= $native['source_rows'] ?? null;
-                if ($sourceRows !== ($native['source_rows'] ?? null)) throw new RuntimeException('NATIVE_SOURCE_ROW_DRIFT');
+                if ($sourceRows !== ($native['source_rows'] ?? null)) {
+                    throw new RuntimeException('NATIVE_SOURCE_ROW_DRIFT');
+                }
                 $probe = data_get($request, 'policy_context.prospective_probe_window');
                 $policy = is_array($probe) ? $probe : data_get($request, 'policy_context.full_replay_runtime_policy');
                 $depthReceipt = null;
                 $depthRequested = array_key_exists(NativeReachabilityDepthAuditService::FIELD, $request);
                 foreach ((array) ($request['strategies'] ?? []) as $candidate) {
-                    if (is_array($candidate) && (int) ($candidate['lab_agent_id'] ?? 0) === (int) $run->lab_agent_id
-                        && array_key_exists(NativeReachabilityDepthAuditService::FIELD, $candidate)) $depthRequested = true;
+                    if (is_array($candidate) && (int) ($candidate['lab_agent_id'] ?? 0) === (int) $agentId
+                        && array_key_exists(NativeReachabilityDepthAuditService::FIELD, $candidate)) {
+                        $depthRequested = true;
+                    }
                 }
                 if ($depthRequested) {
                     // Only the original six-slot diagnostic registry can own
                     // an explicit view. A copied response flag cannot shorten
                     // ordinary/full native evidence or its physical exposure.
-                    $model = \App\Models\ModelVersion::findOrFail($run->model_version_id);
+                    if ($run === null) {
+                        throw new RuntimeException('NATIVE_DEPTH_ORIGINAL_RUN_REQUIRED');
+                    }
+                    $model = ModelVersion::findOrFail($modelId);
                     $depthReceipt = app(NativeReachabilityDepthAuditService::class)->attestResult($model, $run, $response);
                     if (! is_array($depthReceipt) || ($request['evaluation_mode'] ?? null) !== 'incremental'
-                        || ($depthReceipt['physical_source_rows'] ?? null) !== $sourceRows) throw new RuntimeException('NATIVE_DEPTH_ORIGINAL_VIEW_REQUIRED');
+                        || ($depthReceipt['physical_source_rows'] ?? null) !== $sourceRows) {
+                        throw new RuntimeException('NATIVE_DEPTH_ORIGINAL_VIEW_REQUIRED');
+                    }
                     $executionInputRows = $depthReceipt['execution_input_rows'];
                     $policy = $depthReceipt['execution_view'];
                 }
@@ -710,18 +848,23 @@ class LabImmutableEvidenceService
         } catch (Throwable $error) {
             $result['reason_codes'][] = 'DECISION_TRACE_OWNED_SCOPE_INVALID:'.$error->getMessage();
         }
+
         return $result;
     }
 
     private function decisionTraceScopesAgree(array $left, array $right): bool
     {
         foreach (['rows', 'decision_rows', 'warmup_rows', 'policy_hash'] as $key) {
-            if (! array_key_exists($key, $left) || ! array_key_exists($key, $right) || $left[$key] !== $right[$key]) return false;
+            if (! array_key_exists($key, $left) || ! array_key_exists($key, $right) || $left[$key] !== $right[$key]) {
+                return false;
+            }
         }
         try {
             return CarbonImmutable::parse($left['start_inclusive'])->equalTo(CarbonImmutable::parse($right['start_inclusive']))
                 && CarbonImmutable::parse($left['end_exclusive'])->equalTo(CarbonImmutable::parse($right['end_exclusive']));
-        } catch (Throwable) { return false; }
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function ownedTraceEventCurrent(array $event, array $owned): bool
@@ -732,11 +875,18 @@ class LabImmutableEvidenceService
             $seconds = ['M1' => 60, 'M5' => 300, 'M15' => 900, 'M30' => 1800,
                 'H1' => 3600, 'H4' => 14400, 'D1' => 86400][$owned['timeframe']] ?? null;
             if ($seconds === null || $time->lessThanOrEqualTo(CarbonImmutable::parse($scope['start_inclusive']))
-                || ! $time->lessThan(CarbonImmutable::parse($scope['end_exclusive']))) return false;
+                || ! $time->lessThan(CarbonImmutable::parse($scope['end_exclusive']))) {
+                return false;
+            }
             if ($event['candle_index'] === $owned['first_index'] + $owned['decision_rows'] - 1
-                && ! $time->equalTo(CarbonImmutable::parse($scope['end_exclusive'])->subSeconds($seconds))) return false;
-            if ($owned['native'] === null) return true;
-            $native = $owned['native']; $clock = (array) ($event['source_clock'] ?? []);
+                && ! $time->equalTo(CarbonImmutable::parse($scope['end_exclusive'])->subSeconds($seconds))) {
+                return false;
+            }
+            if ($owned['native'] === null) {
+                return true;
+            }
+            $native = $owned['native'];
+            $clock = (array) ($event['source_clock'] ?? []);
             $epochs = app(ResearchPaperEpochContractService::class);
             if (! $this->isSha256((string) ($event['closed_source_inputs_hash'] ?? ''))
                 || ! is_int($event['closed_source_input_columns'] ?? null)
@@ -749,14 +899,23 @@ class LabImmutableEvidenceService
                 || ($clock['execution_time'] ?? null) !== $event['candle_time']
                 || ($event['execution_time'] ?? null) !== $event['candle_time']
                 || ($clock['signal_time'] ?? null) !== ($event['signal_time'] ?? null)
-                || ($clock['decision_at'] ?? null) !== ($event['decision_at'] ?? null)) return false;
-            $signal = CarbonImmutable::parse($event['signal_time']); $decision = CarbonImmutable::parse($event['decision_at']);
-            if (! $signal->addSeconds($seconds)->equalTo($decision) || $decision->greaterThan($time)) return false;
+                || ($clock['decision_at'] ?? null) !== ($event['decision_at'] ?? null)) {
+                return false;
+            }
+            $signal = CarbonImmutable::parse($event['signal_time']);
+            $decision = CarbonImmutable::parse($event['decision_at']);
+            if (! $signal->addSeconds($seconds)->equalTo($decision) || $decision->greaterThan($time)) {
+                return false;
+            }
             if ($event['candle_index'] === $owned['first_index']
-                && ! $signal->equalTo(CarbonImmutable::parse($scope['start_inclusive']))) return false;
+                && ! $signal->equalTo(CarbonImmutable::parse($scope['start_inclusive']))) {
+                return false;
+            }
             $members = array_column((array) ($native['members'] ?? []), 'specialist_id', 'member_version_hash');
             $observed = $event['member_decisions'] ?? null;
-            if (! is_array($observed) || ! array_is_list($observed) || $observed === []) return false;
+            if (! is_array($observed) || ! array_is_list($observed) || $observed === []) {
+                return false;
+            }
             foreach ($observed as $member) {
                 $hash = $member['member_version_hash'] ?? '';
                 if (! $this->isSha256((string) ($member['closed_inputs_hash'] ?? ''))
@@ -765,10 +924,15 @@ class LabImmutableEvidenceService
                     || ($members[$hash] ?? null) !== ($member['specialist_id'] ?? null)
                     || ($member['decision_id'] ?? null) !== $epochs->parameterHash([
                         'account_decision_id' => $event['decision_id'], 'member_version_hash' => $hash])
-                    || data_get($member, 'closed_inputs.time') !== $event['signal_time']) return false;
+                    || data_get($member, 'closed_inputs.time') !== $event['signal_time']) {
+                    return false;
+                }
             }
+
             return true;
-        } catch (Throwable) { return false; }
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -780,7 +944,9 @@ class LabImmutableEvidenceService
      */
     public function learningEligibility(LabEvaluationRun|string|null $run): array
     {
-        if (is_string($run)) $run = $this->findRun($run);
+        if (is_string($run)) {
+            $run = $this->findRun($run);
+        }
         if ($run && (data_get($run->request_meta, 'payload.policy_context.'.UnusedDraftPriceDiscoveryPreparationService::OWNER) !== null
             || data_get($run->metadata, 'reason_code') === UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY
             || data_get($run->modelVersion?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null
@@ -805,10 +971,18 @@ class LabImmutableEvidenceService
         $ledgerArtifact = $artifacts->first(fn (LabEvidenceArtifact $artifact): bool => in_array($artifact->artifact_type, ['trade_ledger', 'trade_ledger_manifest'], true));
         $responseMeta = (array) $run->response_meta;
         $reasons = [];
-        if ($run->status !== 'completed') $reasons[] = 'EVIDENCE_RUN_NOT_COMPLETED';
-        if (! $hasArtifact('evaluation_request') || ! filled($run->request_hash)) $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
-        if (! $this->isSha256((string) $run->data_hash) || ! $this->requestHasDatasetHash($run)) $reasons[] = 'MISSING_DATASET_HASH';
-        if (! $hasArtifact('evaluation_response') || ! filled($run->response_hash)) $reasons[] = 'MISSING_EVALUATION_RESPONSE_ARTIFACT';
+        if ($run->status !== 'completed') {
+            $reasons[] = 'EVIDENCE_RUN_NOT_COMPLETED';
+        }
+        if (! $hasArtifact('evaluation_request') || ! filled($run->request_hash)) {
+            $reasons[] = 'MISSING_EVALUATION_REQUEST_ARTIFACT';
+        }
+        if (! $this->isSha256((string) $run->data_hash) || ! $this->requestHasDatasetHash($run)) {
+            $reasons[] = 'MISSING_DATASET_HASH';
+        }
+        if (! $hasArtifact('evaluation_response') || ! filled($run->response_hash)) {
+            $reasons[] = 'MISSING_EVALUATION_RESPONSE_ARTIFACT';
+        }
         $traceComplete = $traceArtifact
             && data_get($traceArtifact->metadata, 'complete') === true
             && data_get($traceManifest?->metadata, 'complete') === true;
@@ -844,7 +1018,9 @@ class LabImmutableEvidenceService
         if (! $traceComplete) {
             $reasons[] = 'MISSING_COMPLETE_DECISION_TRACE';
         }
-        if (! $ledgerArtifact || data_get($ledgerArtifact->metadata, 'complete') !== true) $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+        if (! $ledgerArtifact || data_get($ledgerArtifact->metadata, 'complete') !== true) {
+            $reasons[] = 'MISSING_COMPLETE_TRADE_LEDGER';
+        }
         if (data_get($responseMeta, 'decision_trace_present') !== true || data_get($responseMeta, 'trade_ledger_complete') !== true) {
             $reasons[] = 'RESPONSE_MANIFEST_INCOMPLETE';
         }
@@ -1100,13 +1276,19 @@ class LabImmutableEvidenceService
 
     private function stableEvidenceValue(mixed $value): mixed
     {
-        if (! is_array($value)) return $value;
+        if (! is_array($value)) {
+            return $value;
+        }
         $stable = [];
         foreach ($value as $key => $item) {
-            if (in_array((string) $key, ['reconciled_at', 'recorded_at', 'updated_at'], true)) continue;
+            if (in_array((string) $key, ['reconciled_at', 'recorded_at', 'updated_at'], true)) {
+                continue;
+            }
             $stable[$key] = $this->stableEvidenceValue($item);
         }
-        if (! array_is_list($stable)) ksort($stable);
+        if (! array_is_list($stable)) {
+            ksort($stable);
+        }
 
         return $stable;
     }
@@ -1122,8 +1304,12 @@ class LabImmutableEvidenceService
             ...((array) data_get($payload, 'behavioral_effect.causal_credit.temporal_window_ids', [])),
         ])->filter(fn ($id): bool => filled($id))->map(fn ($id): string => (string) $id)->unique()->sort()->values()->all();
         $explicit = data_get($payload, 'temporal_window_key');
-        if (is_string($explicit) && trim($explicit) !== '') return trim($explicit);
-        if ($ids !== []) return $this->hash(['protocol' => 'temporal_window_set_v1', 'window_ids' => $ids]);
+        if (is_string($explicit) && trim($explicit) !== '') {
+            return trim($explicit);
+        }
+        if ($ids !== []) {
+            return $this->hash(['protocol' => 'temporal_window_set_v1', 'window_ids' => $ids]);
+        }
 
         $bounds = [
             'start' => data_get($payload, 'temporal_window.start', data_get($payload, 'window_start')),
@@ -1438,7 +1624,9 @@ class LabImmutableEvidenceService
         $compactProjection = (bool) config('services.lab_evidence.compact_decision_projection', true)
             && Schema::hasTable('lab_candle_decision_rollups');
         foreach ($trace as $index => $item) {
-            if (! is_array($item)) continue;
+            if (! is_array($item)) {
+                continue;
+            }
             $eventType = (string) ($item['event_type'] ?? 'signal_evaluation');
             $candleIndex = isset($item['candle_index']) ? (int) $item['candle_index'] : (isset($item['index']) ? (int) $item['index'] : $index);
             $decisionId = $this->deterministicDecisionId($run->run_id, $candleIndex, $eventType, $index);
@@ -1492,16 +1680,23 @@ class LabImmutableEvidenceService
                     ];
                 }
                 $rollups[$rollupKey]['event_count']++;
-                if ($accepted === true) $rollups[$rollupKey]['accepted_count']++;
+                if ($accepted === true) {
+                    $rollups[$rollupKey]['accepted_count']++;
+                }
                 if ($candleTime !== '') {
                     $first = $rollups[$rollupKey]['first_candle_time'];
                     $last = $rollups[$rollupKey]['last_candle_time'];
-                    if ($first === null || $candleTime < $first) $rollups[$rollupKey]['first_candle_time'] = $candleTime;
-                    if ($last === null || $candleTime > $last) $rollups[$rollupKey]['last_candle_time'] = $candleTime;
+                    if ($first === null || $candleTime < $first) {
+                        $rollups[$rollupKey]['first_candle_time'] = $candleTime;
+                    }
+                    if ($last === null || $candleTime > $last) {
+                        $rollups[$rollupKey]['last_candle_time'] = $candleTime;
+                    }
                 }
             }
             if (! $keepRow) {
                 $recordable++;
+
                 continue;
             }
             $rows[] = [
@@ -1530,7 +1725,9 @@ class LabImmutableEvidenceService
                 $rows = [];
             }
         }
-        if ($rows !== []) DB::table('lab_candle_decision_events')->insertOrIgnore($rows);
+        if ($rows !== []) {
+            DB::table('lab_candle_decision_events')->insertOrIgnore($rows);
+        }
         if ($compactProjection && $rollups !== []) {
             foreach (array_chunk(array_values($rollups), $batchSize) as $rollupBatch) {
                 DB::table('lab_candle_decision_rollups')->insertOrIgnore($rollupBatch);
@@ -1558,12 +1755,18 @@ class LabImmutableEvidenceService
         ?bool $accepted,
         mixed $rejectionCode,
     ): bool {
-        if ($accepted === true) return true;
+        if ($accepted === true) {
+            return true;
+        }
         if (in_array(strtolower($eventType), [
             'trade_entry', 'trade_exit', 'execution', 'technical_failure',
             'veto', 'regime_transition', 'volume_transition',
-        ], true)) return true;
-        if ($rejectionCode === null || $rejectionCode === '') return true;
+        ], true)) {
+            return true;
+        }
+        if ($rejectionCode === null || $rejectionCode === '') {
+            return true;
+        }
 
         return ! in_array(strtolower((string) $rejectionCode), ['no_signal', 'position_open'], true)
             || strtoupper($action) !== 'WAIT';
@@ -1571,7 +1774,9 @@ class LabImmutableEvidenceService
 
     private function decisionBucketDate(string $candleTime): ?string
     {
-        if ($candleTime === '') return null;
+        if ($candleTime === '') {
+            return null;
+        }
         try {
             return CarbonImmutable::parse($candleTime, 'UTC')->toDateString();
         } catch (Throwable) {
@@ -1605,7 +1810,9 @@ class LabImmutableEvidenceService
 
     public function modelRuntimeIdentity(LabEvaluationRun $run): array
     {
-        $model = $run->modelVersion()->first(); $agent = $run->agent()->first();
+        $model = $run->modelVersion()->first();
+        $agent = $run->agent()->first();
+
         return ['protocol' => 'original_model_runtime_identity_v1', 'run_id' => $run->run_id,
             'model_version_id' => $model?->id, 'lab_agent_id' => $agent?->id,
             'parameter_hash' => app(ResearchPaperEpochContractService::class)->parameterHash((array) $model?->parameters),
@@ -1615,7 +1822,7 @@ class LabImmutableEvidenceService
     }
 
     /** Treatment identity; dataset/assignment-specific passport hashes belong to the original request plane. */
-    public function modelRuntimeBasis(\App\Models\ModelVersion $model): array
+    public function modelRuntimeBasis(ModelVersion $model): array
     {
         $components = collect(['architecture', 'strategy_architecture', 'base_strategy', 'tactic', 'tactic_contract',
             'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'risk_governor',
@@ -1623,7 +1830,13 @@ class LabImmutableEvidenceService
             'specialist_context_contract', 'contextual_specialist_cell', 'contextual_specialist_contract',
             'session_specialist_contract', 'regime_specialist_contract', 'specialist_council'])
             ->mapWithKeys(fn (string $key): array => [$key => data_get($model?->metadata, $key)])->all();
-        $components['smart_composition_treatment'] = \Illuminate\Support\Arr::only(
+        $metadata = (array) $model->metadata;
+        if (array_key_exists('prospective_scoped_composition_recipe', $metadata)) {
+            // Sparse extension: absent new purpose leaves every legacy model
+            // identity byte-for-byte unchanged, including its existing nulls.
+            $components['prospective_scoped_composition_recipe'] = $metadata['prospective_scoped_composition_recipe'];
+        }
+        $components['smart_composition_treatment'] = Arr::only(
             (array) data_get($model->metadata, 'smart_composition.composition_passport', []),
             ['protocol', 'symbol', 'laboratory_storage_timeframe', 'execution_timeframe',
                 'temporal_sensor_scope', 'decision_tools', 'market_state', 'components',
@@ -1633,6 +1846,7 @@ class LabImmutableEvidenceService
                 'trigger_expires_at', 'invalidation_model', 'target_model', 'invalidation_target_contract',
                 'management_state_machine', 'session_handoff_state', 'news_state', 'session_news_contract',
                 'typed_program', 'filter_funnel_version', 'volume_provenance', 'risk_hysteresis', 'validation']);
+
         return ['strategy' => $model->strategy, 'components' => $components];
     }
 
@@ -1641,19 +1855,28 @@ class LabImmutableEvidenceService
     {
         $artifact = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'model_runtime_identity')->oldest('id')->first();
         if (! $artifact || data_get($artifact->metadata, 'storage_protocol') !== 'compressed_artifact_v2' || ! $artifact->storage_path
-            || ($run->finished_at !== null && ($artifact->created_at === null || $artifact->created_at->greaterThan($run->finished_at)))) return null;
+            || ($run->finished_at !== null && ($artifact->created_at === null || $artifact->created_at->greaterThan($run->finished_at)))) {
+            return null;
+        }
         $payload = $this->readArtifactPayload($artifact);
         if (! is_array($payload) || ($payload['protocol'] ?? null) !== 'original_model_runtime_identity_v1'
             || ($payload['raw_request_hash'] ?? null) !== $run->request_hash
-            || $this->hash(array_diff_key($payload, array_flip(['raw_request_hash', 'raw_payload_hash', 'request_artifact_hash', 'compiled_runtime_contract_hash']))) !== $this->hash($this->modelRuntimeIdentity($run))) return null;
+            || $this->hash(array_diff_key($payload, array_flip(['raw_request_hash', 'raw_payload_hash', 'request_artifact_hash', 'compiled_runtime_contract_hash']))) !== $this->hash($this->modelRuntimeIdentity($run))) {
+            return null;
+        }
         $requestArtifact = LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')
             ->where('sha256', $payload['request_artifact_hash'] ?? '')->oldest('id')->first();
         if (! $requestArtifact || data_get($requestArtifact->metadata, 'storage_protocol') !== 'compressed_artifact_v2'
             || data_get($requestArtifact->metadata, 'request_hash') !== $run->request_hash
-            || data_get($requestArtifact->metadata, 'raw_payload_hash') !== ($payload['raw_payload_hash'] ?? null)) return null;
+            || data_get($requestArtifact->metadata, 'raw_payload_hash') !== ($payload['raw_payload_hash'] ?? null)) {
+            return null;
+        }
         $request = $this->readArtifactPayload($requestArtifact);
         if (! is_array($request) || ($payload['compiled_runtime_contract_hash'] ?? null)
-            !== app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))) return null;
+            !== app(ResearchPaperEpochContractService::class)->parameterHash((array) ($request['composition_runtime_contract'] ?? []))) {
+            return null;
+        }
+
         return [...$payload, 'artifact_hash' => $artifact->sha256];
     }
 
@@ -1790,8 +2013,12 @@ class LabImmutableEvidenceService
             ]);
         }
 
-        if (data_get($manifest, 'sha256')) return (string) data_get($manifest, 'sha256');
-        if ($path && is_file($path)) return (string) hash_file('sha256', $path);
+        if (data_get($manifest, 'sha256')) {
+            return (string) data_get($manifest, 'sha256');
+        }
+        if ($path && is_file($path)) {
+            return (string) hash_file('sha256', $path);
+        }
         $candles = $request['candles'] ?? null;
 
         return is_array($candles) && $candles !== [] ? $this->hash($candles) : null;

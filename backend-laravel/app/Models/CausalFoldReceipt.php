@@ -30,6 +30,33 @@ class CausalFoldReceipt extends Model
         return parent::asJson($value, $flags | JSON_PRESERVE_ZERO_FRACTION);
     }
 
+    /** Reopen the original request without turning its empty map ports into lists. */
+    public function getRequestPayloadAttribute($value): mixed
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return $this->originalRequestJsonShape(json_decode($value, false, 512, JSON_THROW_ON_ERROR));
+    }
+
+    private function originalRequestJsonShape(mixed $value): mixed
+    {
+        if ($value instanceof \stdClass) {
+            $properties = get_object_vars($value);
+            if ($properties === []) {
+                return $value;
+            }
+
+            return array_map(fn (mixed $item): mixed => $this->originalRequestJsonShape($item), $properties);
+        }
+        if (is_array($value)) {
+            return array_map(fn (mixed $item): mixed => $this->originalRequestJsonShape($item), $value);
+        }
+
+        return $value;
+    }
+
     protected static function booted(): void
     {
         static::updating(function (CausalFoldReceipt $receipt): void {

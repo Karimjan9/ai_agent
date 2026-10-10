@@ -34,6 +34,12 @@ class ResearchExperimentWorkConsumerService
 
             return $this->blocked('RESEARCH_LOOP_OWNER_MISMATCH');
         }
+        if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
+            return app(ScopedDescendantCandidatePreparationService::class)->execute($item);
+        }
+        if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
+            return app(DescendantScopedExecutionService::class)->execute($item);
+        }
         if (in_array((string) $item->work_type, SpecialistCouncilFollowupExecutionService::DISCOVERY_TYPES, true)) {
             if (! $this->autonomy->enabled((string) $item->symbol, (string) $item->timeframe)) {
                 $this->conversion->defer($item, 'AUTONOMOUS_MODE_STOPPED', true);

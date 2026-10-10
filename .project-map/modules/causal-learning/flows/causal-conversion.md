@@ -1,5 +1,45 @@
 # Causal conversion loop
 
+## Separately scoped original confirmation
+
+Existing Foundry copies a source recipe as a fresh prospective question, not
+as independent evidence. Scoped registration freezes exact models, context,
+external risk, statistics and future physical UTC windows. The original
+exposure owner seals a capture boundary and records both laboratory requests
+and durable-fold ingress before evaluator delivery.
+
+Future selector panels preregister unknown-byte physical window slots and an
+intrinsic programme, not invented CSV hashes. Later immutable original data
+binding precedes all fold attempts. Deterministic signed agent-purpose keys
+prevent ordinary jobs from spending an attempt on reserved panel arms. Component
+question references use an inactive Q:H1 namespace rather than ordinary latest-
+generation population ownership.
+
+The existing kernel/arbiter leases typed component or descendant work.
+Canonical construction compiles every original arm/window request before a
+whole-matrix dispatch barrier. `ExecuteScopedResearchArmJob` uses the existing
+full-research queue and original bounded producer budget; the scheduler does
+not synchronously run a long replay. Lease/token/fence, source, actual data,
+clock/account and immutable checkpoints are verified on every delivery.
+
+Complete original products -> exact context and no-regression comparison ->
+scope-specific independent certificate -> idempotent component credit/cartridge
+or explicit negative/null/underpowered closure. Independent selector panels
+measure distinct questions with the same legal space and resource caps; a
+component contrast is not selector proof. Audit projections remain excluded
+from ordinary mutation advice.
+Final native settlement is atomic under the current work lock and fresh
+lease/mode checks; stopped or expired settlement retains the original products
+without partially publishing authority, credit or successor work.
+
+Confirmed component -> existing Foundry's one legal U proposal -> durable
+fresh-later-window dependency -> prospective four-model/capture registration ->
+P/PT/PTU/PU execution -> conditional trait/interaction comparison -> separately
+scoped inheritance credit if retained. No active release hot-fix, old-window
+renewal, fabricated data or automatic Economic Parent/paper authority follows.
+
+## Existing ordinary and council conversion
+
 Original council conversion can preregister a bounded discovery follow-up
 through its existing feedback owner. Server proof, original receipt/plan/source
 and legal parameter delta are verified before the conversion kernel exposes

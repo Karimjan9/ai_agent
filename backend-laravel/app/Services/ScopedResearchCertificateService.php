@@ -18,16 +18,25 @@ use Throwable;
 
 /**
  * Storage boundary for exact research questions. Original producers own their
- * designs and observations. A stored caller assessment is diagnostic only;
- * this registry cannot promote models or mint scientific/selector/parent credit.
+ * designs and observations. Caller assessments are diagnostic only. The
+ * separately versioned original issuer grants exact research scope, never
+ * model promotion, global parent, paper or live permission.
  */
 class ScopedResearchCertificateService
 {
     public const PROTOCOL = 'scoped_research_certificate_v1';
 
+    public const AUTHORITY_POLICY = 'independent_scoped_research_authority_v1';
+
     public const SCOPES = ['component', 'selector', 'council', 'inheritance'];
 
     public function __construct(private ResearchPaperEpochContractService $epochs) {}
+
+    /** Shared pre-seal normalization for original producers; grants no authority. */
+    public function normalizeProspectiveDesign(string $scope, array $design): array
+    {
+        return $this->normalizeDesign($scope, $design);
+    }
 
     /** The supplied design is sealed as a question, not accepted as proof. */
     public function register(string $scope, Model $source, array $design): array
@@ -37,6 +46,9 @@ class ScopedResearchCertificateService
             return $this->blocked('SCOPED_CERTIFICATE_MIGRATION_REQUIRED');
         }
         $design = $this->normalizeDesign($scope, $design);
+        if ($scope === 'component' && array_key_exists('native_execution', $design)) {
+            $design = app(DescendantScopedExecutionService::class)->prepareComponentExecution($design, $source);
+        }
         $key = $this->hash([self::PROTOCOL, 'preregistration', $scope, $source::class, (int) $source->getKey()]);
 
         return DB::transaction(function () use ($key, $scope, $source, $design): array {
@@ -69,9 +81,98 @@ class ScopedResearchCertificateService
                 'preregistered_at' => $clock->toIso8601String(),
                 'authority' => false, 'promotion_evidence' => false,
             ], $clock);
+            if (($design['authority_policy'] ?? null) === self::AUTHORITY_POLICY) {
+                app(ResearchWindowExposureInventoryService::class)->registerCapture((int) $row->id);
+                if ($scope === 'component' && isset($design['native_execution'])) {
+                    app(DescendantScopedExecutionService::class)->registerComponentWork((int) $row->id);
+                }
+            }
 
             return $this->inspect((int) $row->id);
         });
+    }
+
+    /** Original question proof without data/authority recursion (capture ingress). */
+    public function verifiedRegistration(int $id): array
+    {
+        $row = ScopedResearchCertificate::find($id);
+        if (! $row || $row->record_type !== 'preregistration') {
+            throw new LogicException('SCOPED_CERTIFICATE_PREREGISTRATION_REQUIRED');
+        }
+        $source = $this->verifiedSource($row);
+        return ['certificate_id' => (int) $row->id, 'scope' => $row->scope,
+            'source_type' => $source::class, 'source_id' => (int) $source->getKey(),
+            'design' => $row->payload['design'], 'source_snapshot' => $row->payload['source_snapshot'],
+            'source_hash' => $row->source_hash, 'design_hash' => $row->design_hash,
+            'preregistered_at' => $row->preregistered_at->toIso8601String()];
+    }
+
+    /** Only named original producer verification, never a caller assessment. */
+    public function issueIndependent(int $id, array $originalProducts): array
+    {
+        return DB::transaction(function () use ($id, $originalProducts): array {
+            $row = ScopedResearchCertificate::whereKey($id)->lockForUpdate()->firstOrFail();
+            $registration = $this->verifiedRegistration($id);
+            $assessment = app(ScopedResearchAuthorityService::class)->assess($registration, $originalProducts);
+            if (($assessment['status'] ?? null) === 'blocked_dependency') {
+                return [...$this->inspect($id), 'issuance' => $assessment];
+            }
+            $key = $this->hash([self::AUTHORITY_POLICY, 'independent_assessment', $id]);
+            $existing = ScopedResearchCertificate::where('certificate_key', $key)->first();
+            if ($existing) {
+                $this->assertRecord($existing);
+                if ($this->hash($existing->payload['original_assessment']) !== $this->hash($assessment)) {
+                    throw new LogicException('SCOPED_CERTIFICATE_INDEPENDENT_ASSESSMENT_IMMUTABLE');
+                }
+            } else {
+                $source = $this->verifiedSource($row);
+                $this->append($key, $row->scope, 'independent_assessment', $source, $row->source_hash,
+                    $row->design_hash, ['protocol' => self::AUTHORITY_POLICY, 'certificate_id' => $id,
+                        'original_products' => $originalProducts, 'original_assessment' => $assessment,
+                        'paper_or_live_authority' => false, 'promotion_evidence' => false],
+                    $row->preregistered_at, $id);
+            }
+            return $this->inspect($id);
+        });
+    }
+
+    /** Whole prospective window roster, derived from original server registries. */
+    public function independentWindowReadiness(int $id): array
+    {
+        $registration = $this->verifiedRegistration($id);
+        $design = $registration['design'];
+        $expected = (array) ($design['validation_windows'] ?? []);
+        $windows = []; $reasons = [];
+        if (($design['authority_policy'] ?? null) !== self::AUTHORITY_POLICY
+            || count($expected) < max(3, (int) config('services.learning_lane.causal_minimum_powered_windows', 6))
+            || count($expected) > 12) {
+            return ['ready' => false, 'status' => 'blocked_dependency', 'windows' => [],
+                'reason_codes' => ['SCOPED_ORIGINAL_WINDOW_ROSTER_REQUIRED']];
+        }
+        foreach ($expected as $period) {
+            $matches = array_values(array_filter((array) config('services.instrument_policy.authorized_research_windows', []),
+                fn ($record): bool => is_array($record)
+                    && $this->utc($record['start_inclusive'] ?? null)?->toIso8601String()
+                        === $this->utc($period['start_inclusive'] ?? null)?->toIso8601String()
+                    && $this->utc($record['end_exclusive'] ?? null)?->toIso8601String()
+                        === $this->utc($period['end_exclusive'] ?? null)?->toIso8601String()));
+            if (count($matches) !== 1) { $reasons[] = 'SCOPED_ORIGINAL_WINDOW_NOT_AUTHORIZED'; continue; }
+            $record = $matches[0];
+            $window = app(InstrumentResearchWindowService::class)->seal(
+                (string) ($record['authorization_id'] ?? ''), (string) ($record['dataset_sha256'] ?? ''));
+            if (! $window) { $reasons[] = 'SCOPED_ORIGINAL_WINDOW_NOT_MATURE'; continue; }
+            $models = array_keys((array) $registration['source_snapshot']['models']);
+            $runs = LabEvaluationRun::whereIn('model_version_id', $models)
+                ->where('data_hash', $window['dataset_sha256'])->orderBy('id')->limit(201)->pluck('id')->map('intval')->all();
+            if (count($runs) > 200) { $reasons[] = 'SCOPED_ORIGINAL_PRODUCT_BOUND_EXCEEDED'; continue; }
+            $manifest = (array) ($record['mtf_bundle_manifest'] ?? []);
+            $proof = app(ResearchWindowExposureInventoryService::class)->assessForCertificate($id, $window, $manifest, $runs);
+            $windows[] = ['window' => $window, 'manifest' => $manifest, 'original_readiness' => $proof];
+            if (($proof['ready'] ?? false) !== true) $reasons[] = $proof['reason_code'] ?? 'SCOPED_ORIGINAL_EXPOSURE_INCOMPLETE';
+        }
+        return ['ready' => $reasons === [] && count($windows) === count($expected),
+            'status' => $reasons === [] ? 'ready' : 'blocked_dependency', 'windows' => $windows,
+            'reason_codes' => array_values(array_unique($reasons))];
     }
 
     /** Re-derive integrity against persisted originals; a valid draft is still blocked. */
@@ -88,6 +189,18 @@ class ScopedResearchCertificateService
             if ($assessment) $this->assertRecord($assessment);
             $binding = $this->inspectDataBinding($row);
 
+            $originalAuthority = null;
+            $authorityRow = ScopedResearchCertificate::where('parent_certificate_id', $id)
+                ->where('record_type', 'independent_assessment')->first();
+            if ($authorityRow) {
+                $this->assertRecord($authorityRow);
+                $rederived = app(ScopedResearchAuthorityService::class)->assess(
+                    $this->verifiedRegistration($id), (array) $authorityRow->payload['original_products']);
+                if ($this->hash($rederived) === $this->hash($authorityRow->payload['original_assessment'])) {
+                    $originalAuthority = $rederived;
+                }
+            }
+
             return [
                 ...$this->blocked('NAMED_ORIGINAL_PRODUCER_AND_INDEPENDENT_PROVENANCE_REQUIRED'),
                 'certificate_id' => (int) $row->id, 'scope' => $row->scope,
@@ -95,12 +208,21 @@ class ScopedResearchCertificateService
                 'source_hash' => $row->source_hash, 'design_hash' => $row->design_hash,
                 'design' => $row->payload['design'],
                 'preregistered_at' => $row->payload['preregistered_at'],
-                'status' => $assessment ? 'assessed_diagnostic'
-                    : (($binding['valid'] ?? false) ? 'data_bound_diagnostic' : 'preregistered_diagnostic'),
+                'status' => ($originalAuthority['confirmed'] ?? false) ? 'independently_confirmed_'.$row->scope
+                    : ($authorityRow ? 'independent_negative_or_inconclusive' : ($assessment ? 'assessed_diagnostic'
+                    : (($binding['valid'] ?? false) ? 'data_bound_diagnostic' : 'preregistered_diagnostic'))),
                 'valid' => true, 'diagnostic_assessment' => $assessment?->payload['assessment'],
                 'assessment_record_id' => $assessment ? (int) $assessment->id : null,
                 'data_binding' => $binding,
                 'original_readiness' => $binding['original_readiness'] ?? null,
+                'original_authority' => $originalAuthority === null ? [] : [$row->scope => $originalAuthority],
+                'scope_authority_confirmed' => ($originalAuthority['confirmed'] ?? false) === true,
+                'confirmed_component' => $row->scope === 'component' && ($originalAuthority['confirmed'] ?? false) === true,
+                'confirmed_selector' => $row->scope === 'selector' && ($originalAuthority['confirmed'] ?? false) === true,
+                'confirmed_council' => $row->scope === 'council' && ($originalAuthority['confirmed'] ?? false) === true,
+                'confirmed_inheritance' => $row->scope === 'inheritance' && ($originalAuthority['confirmed'] ?? false) === true,
+                'authority_record_id' => $authorityRow?->id,
+                'authority' => ($originalAuthority['confirmed'] ?? false) === true,
             ];
         } catch (Throwable $error) {
             return [...$this->blocked($error instanceof LogicException ? $error->getMessage()
@@ -295,6 +417,56 @@ class ScopedResearchCertificateService
             || $start->lessThan(CarbonImmutable::parse('2027-01-01T00:00:00Z'))) {
             throw new LogicException('SCOPED_CERTIFICATE_POST_PAPER_FUTURE_INTERVAL_REQUIRED');
         }
+        if (isset($design['authority_policy'])) {
+            if ($design['authority_policy'] !== self::AUTHORITY_POLICY || ($design['source_hypothesis_only'] ?? false) === true) {
+                throw new LogicException('SCOPED_CERTIFICATE_ORIGINAL_AUTHORITY_POLICY_REQUIRED');
+            }
+            if (in_array($scope, ['component', 'inheritance'], true)
+                && (! is_string($design['metric']) || ! in_array($design['metric'],
+                    ['profit_factor', 'architecture', 'net_profit', 'total_return_percent', 'drawdown', 'max_drawdown'], true))) {
+                throw new LogicException('SCOPED_CERTIFICATE_EXPLICIT_SUPPORTED_CONTEXT_UTILITY_REQUIRED');
+            }
+            // External account limits are not evolution knobs. Seal the
+            // applicable ceiling before the first event; callers can narrow it.
+            $external = ['max_drawdown_percent' => min(15.0, (float) config('services.dual_track.max_drawdown_percent', 15)),
+                'max_risk_of_ruin_percent' => min(10.0, (float) config('services.dual_track.max_risk_of_ruin_percent', 10))];
+            $risk = $design['risk_guard'] ?? $external;
+            if (! is_array($risk) || array_diff(array_keys($risk), array_keys($external)) !== []) {
+                throw new LogicException('SCOPED_CERTIFICATE_EXTERNAL_RISK_GUARD_REQUIRED');
+            }
+            foreach ($external as $metric => $ceiling) {
+                if (! is_numeric($risk[$metric] ?? null) || ! is_finite((float) $risk[$metric])
+                    || $risk[$metric] <= 0 || $risk[$metric] > $ceiling) {
+                    throw new LogicException('SCOPED_CERTIFICATE_EXTERNAL_RISK_LIMIT_MAY_NOT_BE_LOOSENED');
+                }
+            }
+            $design['risk_guard'] = $risk;
+            $policy = (array) ($design['exposure_policy'] ?? []);
+            if (($policy['protocol'] ?? null) !== 'prospective_scoped_exposure_policy_v1'
+                || ! is_int($policy['holding_fence_seconds'] ?? null)
+                || $policy['holding_fence_seconds'] < 0 || $policy['holding_fence_seconds'] > 31536000
+                || ($policy['execution_timeframe'] ?? null) !== 'M5'
+                || ($policy['context_timeframes'] ?? null) !== ['H4', 'H1', 'M15']
+                || ($policy['warmup_policy'] ?? null) !== 'all_original_closed_source_rows_inside_registered_window'
+                || ($policy['selection_policy'] ?? null) !== 'frozen_before_first_event') {
+                throw new LogicException('SCOPED_CERTIFICATE_COMPLETE_EXPOSURE_POLICY_REQUIRED');
+            }
+            $roster = $design['validation_windows'] ?? null;
+            if (! is_array($roster) || ! array_is_list($roster) || count($roster) < 1 || count($roster) > 12) {
+                throw new LogicException('SCOPED_CERTIFICATE_PROSPECTIVE_WINDOW_ROSTER_REQUIRED');
+            }
+            $previousEnd = null;
+            foreach ($roster as $period) {
+                $from = $this->utc($period['start_inclusive'] ?? null);
+                $until = $this->utc($period['end_exclusive'] ?? null);
+                if (! $from || ! $until || ! $until->greaterThan($from) || $from->lessThan($start)
+                    || $until->greaterThan($end) || ($previousEnd && $from->lessThan($previousEnd))
+                    || ! $this->epochs->researchIntervalDisjointFromPaper($from->toIso8601String(), $until->toIso8601String())) {
+                    throw new LogicException('SCOPED_CERTIFICATE_WINDOW_ROSTER_OVERLAP_OR_SCOPE_INVALID');
+                }
+                $previousEnd = $until;
+            }
+        }
 
         return [...$design, 'validation_start' => $start->toIso8601String(),
             'validation_end' => $end->toIso8601String(), 'data_manifest_hash' => $design['data_manifest_hash'] ?? null];
@@ -348,7 +520,24 @@ class ScopedResearchCertificateService
             ])->all();
             $ids = $agents->pluck('model_version_id')->all();
         }
-        return [...$snapshot, 'models' => $this->modelSnapshots($ids, $design)];
+        $questions = [];
+        foreach ((array) data_get($design, 'subject.experiment_ids', []) as $questionId) {
+            if (! is_int($questionId) || $questionId <= 0 || isset($questions[$questionId])) {
+                throw new LogicException('SCOPED_SELECTOR_ORIGINAL_QUESTION_ROSTER_REQUIRED');
+            }
+            $question = AgentLearningCausalExperiment::findOrFail($questionId);
+            if ((int) $question->id === (int) $source->id) {
+                $questions[$questionId] = $snapshot;
+            } else {
+                $questions[$questionId] = $this->sourceSnapshot($question, array_diff_key($design, ['subject' => true]));
+            }
+            $ids = [...$ids, ...array_keys((array) ($questions[$questionId]['models'] ?? []))];
+            foreach (['guided_agent_id', 'blinded_agent_id', 'control_agent_id'] as $roleField) {
+                $modelId = LabAgent::find($question->{$roleField})?->model_version_id;
+                if ($modelId) $ids[] = (int) $modelId;
+            }
+        }
+        return [...$snapshot, 'questions' => $questions, 'models' => $this->modelSnapshots($ids, $design)];
     }
 
     private function modelSnapshots(array $ids, array $design): array
