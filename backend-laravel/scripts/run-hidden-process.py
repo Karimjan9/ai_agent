@@ -9,6 +9,86 @@ import sys
 import tempfile
 
 
+# A successful self-assignment owns this handle until process teardown. Closing
+# it in main/finally would also terminate the broker before its exit/status can
+# be published. The handle is non-inheritable, so abrupt broker termination
+# closes the last owner and terminates its complete helper process tree.
+_windows_job_handle = None
+
+
+def _ensure_windows_kill_on_close_job():
+    global _windows_job_handle
+    if _windows_job_handle is not None:
+        return
+
+    import ctypes
+    from ctypes import wintypes
+
+    class _BasicLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+        )]
+
+    class _ExtendedLimitInformation(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _BasicLimitInformation),
+            ("IoInfo", _IoCounters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_job = kernel32.CreateJobObjectW
+    create_job.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    create_job.restype = wintypes.HANDLE
+    set_information = kernel32.SetInformationJobObject
+    set_information.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID,
+                               wintypes.DWORD]
+    set_information.restype = wintypes.BOOL
+    assign_process = kernel32.AssignProcessToJobObject
+    assign_process.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    assign_process.restype = wintypes.BOOL
+    get_current_process = kernel32.GetCurrentProcess
+    get_current_process.argtypes = []
+    get_current_process.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    # NULL security attributes create a non-inheritable unnamed job handle.
+    handle = create_job(None, None)
+    if not handle:
+        raise OSError("job ownership unavailable")
+    information = _ExtendedLimitInformation()
+    information.BasicLimitInformation.LimitFlags = 0x00002000  # KILL_ON_JOB_CLOSE
+    if not set_information(handle, 9, ctypes.byref(information),
+                           ctypes.sizeof(information)):
+        close_handle(handle)
+        raise OSError("job ownership unavailable")
+    # Assignment must succeed before any helper is spawned. An unsupported
+    # containing/nested job is a refusal, never an unowned fallback launch.
+    if not assign_process(handle, get_current_process()):
+        close_handle(handle)
+        raise OSError("job ownership unavailable")
+    _windows_job_handle = handle
+
+
 class _InvocationParser(argparse.ArgumentParser):
     def error(self, message):
         # argparse errors can contain supplied arguments; keep diagnostics fixed.
@@ -111,6 +191,8 @@ def main(argv=None):
         return 2
 
     try:
+        if os.name == "nt":
+            _ensure_windows_kill_on_close_job()
         # Inherit native stdout/stderr handles directly, including under
         # pythonw; no pipes or output copying can delay the child's writes.
         result = subprocess.run(

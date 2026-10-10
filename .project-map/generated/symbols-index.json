@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T12:54:30.004Z",
-  "source_digest": "5342e95b8ad30176435980a210528f19b600a5c61810bed80b92ff370ceeaf03",
+  "generated_at": "2026-10-10T13:07:08.270Z",
+  "source_digest": "d2f103ba59f30f2692593987f4eb2f440879338d0f1b8dc2305ab571a6c63fc9",
   "source_file_count": 1577,
-  "git_head": "45439b418c91d199ba4831b67faab1c11c57d31a",
+  "git_head": "400f32d5dd5e5c213329d56ad5d7ea6aa1b1e947",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -7312,10 +7312,28 @@
       "line": 4
     },
     {
+      "symbol": "_BasicLimitInformation",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 27
+    },
+    {
+      "symbol": "_IoCounters",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 40
+    },
+    {
+      "symbol": "_ExtendedLimitInformation",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 46
+    },
+    {
       "symbol": "_InvocationParser",
       "kind": "python_class",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 12
+      "line": 92
     },
     {
       "symbol": "HiddenProcessBrokerTest",

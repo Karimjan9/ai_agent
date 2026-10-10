@@ -26,14 +26,35 @@ class HiddenProcessBrokerTest(unittest.TestCase):
         command = ["tool.exe", "--leading-option", "space here", 'quote"here',
                    "& | > $(literal)", "--", "last\\"]
         with mock.patch.object(BROKER.os, "name", "nt"), \
+                mock.patch.object(BROKER, "_ensure_windows_kill_on_close_job") as own_job, \
                 mock.patch.object(BROKER.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
                 mock.patch.object(BROKER.subprocess, "run") as run:
             run.return_value.returncode = 23
+            run.side_effect = lambda *args, **kwargs: (
+                own_job.assert_called_once(), mock.Mock(returncode=23)
+            )[1]
             self.assertEqual(BROKER.main(["--timeout", "3.5", "--", *command]), 23)
         run.assert_called_once_with(
             command, shell=False, stdin=subprocess.DEVNULL, stdout=None, stderr=None,
             timeout=3.5, check=False, creationflags=0x08000000,
         )
+
+    def test_windows_job_refusal_never_launches_an_unowned_child(self):
+        with tempfile.TemporaryDirectory(prefix="hidden-process-job-test-") as directory, \
+                mock.patch.object(BROKER.os, "name", "nt"), \
+                mock.patch.object(BROKER, "_ensure_windows_kill_on_close_job",
+                                  side_effect=OSError("private job failure")), \
+                mock.patch.object(BROKER.subprocess, "run") as run, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            status_path = pathlib.Path(directory) / "status.json"
+            status_path.touch()
+            self.assertEqual(BROKER.main([
+                "--timeout", "1", "--status-file", str(status_path), "--", "private-command",
+            ]), 1)
+            run.assert_not_called()
+            self.assertEqual(stderr.getvalue(), "Hidden process: unable to start child.\n")
+            self.assertEqual(json.loads(status_path.read_text(encoding="ascii")),
+                             {"timed_out": False})
 
     def test_non_windows_uses_no_windows_creation_flags(self):
         with mock.patch.object(BROKER.os, "name", "posix"), \
@@ -237,6 +258,74 @@ class HiddenProcessBrokerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertEqual(stdout.read(), b"")
             self.assertEqual(stderr.read(), b"Hidden process: invalid arguments.\n")
+
+    @unittest.skipUnless(HAS_PYTHONW, "Windows GUI Python is unavailable")
+    def test_abrupt_broker_termination_kills_its_actual_child_and_descendant(self):
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        open_process.restype = wintypes.HANDLE
+        wait_for_process = kernel32.WaitForSingleObject
+        wait_for_process.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        wait_for_process.restype = wintypes.DWORD
+        terminate_process = kernel32.TerminateProcess
+        terminate_process.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        terminate_process.restype = wintypes.BOOL
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+        handles = []
+        broker = None
+        code = (
+            "import ctypes,json,os,subprocess,sys,time; "
+            "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],"
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,"
+            "creationflags=subprocess.CREATE_NO_WINDOW); "
+            "print(json.dumps({'pid':os.getpid(),'descendant_pid':child.pid,"
+            "'has_console':bool(ctypes.windll.kernel32.GetConsoleWindow())}),flush=True); "
+            "time.sleep(30)"
+        )
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            try:
+                broker = subprocess.Popen(
+                    [str(PYTHONW_PATH), "-B", str(MODULE_PATH), "--timeout", "20", "--",
+                     sys.executable, "-B", "-u", "-c", code],
+                    shell=False, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                deadline = time.monotonic() + 5
+                facts = None
+                while time.monotonic() < deadline and broker.poll() is None:
+                    stdout.seek(0)
+                    line = stdout.readline()
+                    if line.endswith(b"\n"):
+                        facts = json.loads(line)
+                        break
+                    time.sleep(0.02)
+                self.assertIsNotNone(facts, "Actual broker did not start its child.")
+                self.assertFalse(facts["has_console"])
+                for pid in (facts["pid"], facts["descendant_pid"]):
+                    handle = open_process(0x00100000 | 0x00001000 | 0x00000001, False, pid)
+                    self.assertTrue(handle, "Actual child was not live before broker termination.")
+                    handles.append(handle)
+                    self.assertEqual(wait_for_process(handle, 0), 258)
+                broker.terminate()
+                broker.wait(timeout=5)
+                for handle in handles:
+                    self.assertEqual(wait_for_process(handle, 5000), 0,
+                                     "A helper survived abrupt broker termination.")
+            finally:
+                if broker is not None and broker.poll() is None:
+                    broker.kill()
+                    broker.wait(timeout=5)
+                for handle in handles:
+                    if wait_for_process(handle, 0) == 258:
+                        terminate_process(handle, 1)
+                        wait_for_process(handle, 5000)
+                    close_handle(handle)
 
 
 if __name__ == "__main__":

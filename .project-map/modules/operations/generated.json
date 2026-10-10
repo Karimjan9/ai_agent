@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T12:54:30.004Z",
-  "source_digest": "5342e95b8ad30176435980a210528f19b600a5c61810bed80b92ff370ceeaf03",
+  "generated_at": "2026-10-10T13:07:08.270Z",
+  "source_digest": "d2f103ba59f30f2692593987f4eb2f440879338d0f1b8dc2305ab571a6c63fc9",
   "source_file_count": 1577,
-  "git_head": "45439b418c91d199ba4831b67faab1c11c57d31a",
+  "git_head": "400f32d5dd5e5c213329d56ad5d7ea6aa1b1e947",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -1605,88 +1605,106 @@
       "line": 59
     },
     {
-      "symbol": "_InvocationParser",
-      "kind": "python_class",
-      "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 12
-    },
-    {
-      "symbol": "error",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 13
-    },
-    {
-      "symbol": "_positive_timeout",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 18
-    },
-    {
       "symbol": "_status_file",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 25
+      "line": 105
     },
     {
       "symbol": "_diagnostic",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 31
+      "line": 111
     },
     {
       "symbol": "_finish",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 67
+      "line": 147
     },
     {
       "symbol": "main",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.py",
-      "line": 96
+      "line": 176
+    },
+    {
+      "symbol": "_ensure_windows_kill_on_close_job",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 19
+    },
+    {
+      "symbol": "_BasicLimitInformation",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 27
+    },
+    {
+      "symbol": "_IoCounters",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 40
+    },
+    {
+      "symbol": "_ExtendedLimitInformation",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 46
+    },
+    {
+      "symbol": "_InvocationParser",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 92
+    },
+    {
+      "symbol": "error",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 93
+    },
+    {
+      "symbol": "_positive_timeout",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 98
     },
     {
       "symbol": "test_real_timeout_kills_and_reaps_the_direct_child",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 103
+      "line": 124
     },
     {
       "symbol": "track_child",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 107
+      "line": 128
     },
     {
       "symbol": "test_status_distinguishes_real_exit_124_from_a_broker_timeout",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 132
+      "line": 153
     },
     {
       "symbol": "test_launch_failure_records_false_without_exposing_the_error",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 172
+      "line": 193
     },
     {
       "symbol": "test_status_publication_failure_keeps_child_output_and_reports_failure",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 184
+      "line": 205
     },
     {
       "symbol": "test_status_write_failure_leaves_the_unique_status_file_invalid",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 203
-    },
-    {
-      "symbol": "test_pythonw_errors_reach_the_inherited_stderr_file_handle",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 219
+      "line": 224
     },
     {
       "symbol": "HiddenProcessBrokerTest",
@@ -1695,34 +1713,52 @@
       "line": 24
     },
     {
+      "symbol": "test_pythonw_errors_reach_the_inherited_stderr_file_handle",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 240
+    },
+    {
       "symbol": "test_windows_uses_no_window_without_shell_or_output_pipes",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
       "line": 25
     },
     {
+      "symbol": "test_abrupt_broker_termination_kills_its_actual_child_and_descendant",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 263
+    },
+    {
+      "symbol": "test_windows_job_refusal_never_launches_an_unowned_child",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 42
+    },
+    {
       "symbol": "test_non_windows_uses_no_windows_creation_flags",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 38
+      "line": 59
     },
     {
       "symbol": "test_invalid_arguments_do_not_launch_or_echo_the_supplied_command",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 45
+      "line": 66
     },
     {
       "symbol": "test_launch_failures_and_timeouts_have_fixed_diagnostics",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 61
+      "line": 82
     },
     {
       "symbol": "test_real_child_preserves_argv_output_exit_cwd_and_environment",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-hidden-process.test.py",
-      "line": 75
+      "line": 96
     },
     {
       "symbol": "approve",
