@@ -625,6 +625,16 @@ lease. The generic 5k differential budget is unchanged. A timeout response
 never supplies a completed probe receipt or scientific verdict.
 # Prospective historical M5 recovery boundary
 
+Laravel's two offline calendar audits and the scheduler's stale-owner PID probe
+use `HiddenProcessRunnerService`. Windows native array `proc_open` starts
+`scripts/run-hidden-process.py` with `pythonw.exe`; the GUI broker executes the
+original internal argv with `subprocess.CREATE_NO_WINDOW`, inherited file-backed
+stdout/stderr and bounded kill-and-reap timeout. The parent uses a monotonic
+watchdog with a two-second startup/cleanup margin. Non-Windows retains native
+Symfony helper execution and its existing PID checks. Only exit-zero stdout
+reaches the existing JSON/calendar or PID checks; hiding processes changes no
+data proof, scientific budget, research/paper policy or original release seal.
+
 `prospective_clean_discovery_bundle_v1` is a separate research-only scope:
 exactly 15000 evaluated rows plus 512 warmup, four frozen streams and verified
 parent/fork/calendar/SQL hashes. Canonical Academy screening supplies the existing

@@ -66,6 +66,7 @@ class ResearchSourceArtifactTest extends TestCase
             'backend-laravel/config/example.php' => '<?php return ["safe" => true];',
             'backend-laravel/routes/console.php' => '<?php // scheduler source',
             'backend-laravel/scripts/run-ai-service.py' => '# actual runtime script',
+            'backend-laravel/scripts/run-hidden-process.py' => '# actual hidden process broker',
             'backend-laravel/composer.json' => '{}', 'backend-laravel/composer.lock' => '{}',
             'backend-laravel/package-lock.json' => '{}', 'ai-service-python/requirements.txt' => 'pandas==2.2.3',
             'ai-service-python/app/main.py' => '# actual python source',
@@ -179,6 +180,9 @@ class ResearchSourceArtifactTest extends TestCase
             $this->assertStringNotContainsString('datasets/', $path);
         }
         $this->assertArrayHasKey('backend-laravel/scripts/run-ai-service.py', $first['manifest']['files']);
+        $this->assertArrayHasKey('backend-laravel/scripts/run-hidden-process.py', $first['manifest']['files']);
+        $this->assertSame(hash('sha256', '# actual hidden process broker'),
+            $first['manifest']['files']['backend-laravel/scripts/run-hidden-process.py']['sha256']);
         $this->assertArrayHasKey('ai-service-python/tests/test_research_release.py', $first['manifest']['files']);
     }
 

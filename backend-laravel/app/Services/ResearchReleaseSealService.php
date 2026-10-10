@@ -41,6 +41,8 @@ class ResearchReleaseSealService
         'backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs',
         'backend-laravel/scripts/freeze-historical-tick-spread.cjs', 'backend-laravel/scripts/freeze-historical-tick-spread.test.cjs',
         'backend-laravel/scripts/audit-frozen-m5-gap-source.py',
+        'backend-laravel/scripts/run-hidden-process.py', 'backend-laravel/scripts/run-hidden-process.test.py',
+        'backend-laravel/tests/Feature/HiddenProcessRunnerTest.php',
         'backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php',
         'backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php',
         'backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php',

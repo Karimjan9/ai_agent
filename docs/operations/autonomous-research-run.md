@@ -8,6 +8,13 @@ processes, and the launcher is duplicate-safe. If PM2 already owns project
 workers, the fallback does not create a second queue consumer while PM2
 recycles a lane.
 
+On Windows, calendar audits and scheduler PID probes use a GUI Python broker
+that launches their original child commands with `CREATE_NO_WINDOW`. A local
+`pythonw.exe` is required. Output, exit codes, calendar proofs, PID guards and
+bounded timeouts remain authoritative. Deploy this runtime fix through the same
+STOP, terminal-generation and known-empty-queue checks described below, then
+verify actual worker boot sources before START.
+
 Use `php artisan ai:pause --json` for an intentional break. PAUSE is a graceful
 admission fence: it preserves the active generation and checkpoints and stops
 new arbiter/scheduler research actions. A child already executing can finish
@@ -62,7 +69,11 @@ later live drift lane is not compared against a historical row count.
 
 Only a valid, non-invalidated champion ends this archive-first root policy.
 This does not create a champion or relax E3 paper/E4 champion admission. The
-2026 snapshot remains paper-only; reused archive data is not new independent
+2026 snapshot remains paper-only. For this ordinary autonomous run, research
+uses pre-2026 data; 2026 and later observations remain in the paper lane under
+its existing gates. This Windows runtime fix authorizes no future or independent
+research window. Such research still requires explicit original data authorization
+and verified unused observations. Reused archive data is not new independent
 causal evidence. Scientific negative results continue bounded discovery,
 while real technical/safety failures still require their normal recovery or
 terminal disposition. Use PAUSE/STOP to end or suspend the autonomous search.

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\RunHeadlessScheduler;
+use App\Services\HiddenProcessRunnerService;
 use App\Services\RuntimeMonitoringService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -12,6 +13,31 @@ use Tests\TestCase;
 
 class RunHeadlessSchedulerTest extends TestCase
 {
+    public function test_hidden_windows_pid_probe_preserves_live_dead_and_unknown_states(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $this->markTestSkipped('Windows tasklist transport only.');
+        }
+        $method = new ReflectionMethod(RunHeadlessScheduler::class, 'localProcessIsRunning');
+        foreach ([
+            [['exit_code' => 0, 'stdout' => '"php.exe","23456","Console","1","100 K"', 'stderr' => ''], true],
+            [['exit_code' => 0, 'stdout' => 'INFO: No tasks are running which match the specified criteria.', 'stderr' => ''], false],
+            [['exit_code' => 124, 'stdout' => '', 'stderr' => ''], null],
+            [new \RuntimeException('Unavailable broker'), null],
+        ] as [$result, $expected]) {
+            $runner = \Mockery::mock(HiddenProcessRunnerService::class);
+            $expectation = $runner->shouldReceive('run')->once()->with(
+                ['tasklist', '/FI', 'PID eq 23456', '/FO', 'CSV', '/NH'], 3);
+            if ($result instanceof \Throwable) {
+                $expectation->andThrow($result);
+            } else {
+                $expectation->andReturn($result);
+            }
+            $this->app->instance(HiddenProcessRunnerService::class, $runner);
+            $this->assertSame($expected, $method->invoke(app(RunHeadlessScheduler::class), 23456));
+        }
+    }
+
     public function test_scheduler_claims_a_minute_once_across_a_process_restart(): void
     {
         $minute = '2099-01-02 03:04';

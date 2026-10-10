@@ -74,6 +74,10 @@ segment without strategy outcomes: 15000 evaluated plus 512 warmup M5 rows,
 closed H4/H1/M15, new hashes and reverified parent/SQL evidence. Missing quotes
 remain unavailable; old parent quotes cannot attest the slice. The stored
 `LAB_CLEAN_DISCOVERY_BUNDLE_HASH` admits bounded Academy screening only (ADR-024).
+The clean-discovery and secondary-parent calendar audits run through the shared
+hidden process runner. Windows uses a direct GUI Python broker and a no-console
+child; the same argv, 120-second child timeout, JSON/calendar checks and refusal
+guards remain authoritative.
 
 User-authorized secondary recovery creates a separate `mixed` archive through
 the strict recovery owner. Native parent proofs and rows remain unchanged;

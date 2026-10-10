@@ -4,12 +4,12 @@ namespace App\Services\MarketData;
 
 use App\Models\MarketTrainingArchive;
 use App\Services\ExecutionContractService;
+use App\Services\HiddenProcessRunnerService;
 use App\Services\MultiTimeframeSnapshotService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /** Explicit, attributed secondary research. It never repairs a native archive. */
 class SecondaryM5ResearchRecoveryService
@@ -29,10 +29,9 @@ class SecondaryM5ResearchRecoveryService
         $parent = $this->priceRows($native['prospective_m5_source_path'], $native['prospective_m5_source_sha256']);
         $targets = (array) data_get($native, 'calendar_scope.remaining_missing_utc', []);
         if ($targets === [] || count($targets) > 300) throw new RuntimeException('SECONDARY_PARENT_TARGET_SCOPE_INVALID');
-        $audit = new Process(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
-            $native['prospective_m5_source_path'], '--inventory', '--recovered='.implode(',', $targets)]);
-        $audit->setTimeout(120); $audit->mustRun();
-        $calendar = json_decode($audit->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+        $audit = app(HiddenProcessRunnerService::class)->mustRun(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
+            $native['prospective_m5_source_path'], '--inventory', '--recovered='.implode(',', $targets)], 120);
+        $calendar = json_decode($audit['stdout'], true, 512, JSON_THROW_ON_ERROR);
         if (($calendar['source_csv_sha256'] ?? null) !== $native['prospective_m5_source_sha256']
             || ($calendar['canonical_missing_utc'] ?? null) !== $targets
             || ($calendar['full_source_unexpected_after'] ?? null) !== 0) throw new RuntimeException('SECONDARY_PARENT_CALENDAR_UNVERIFIED');

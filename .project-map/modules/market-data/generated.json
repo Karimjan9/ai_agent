@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:58:07.670Z",
-  "source_digest": "1988c3677e985eb073edcae8d26ed66ccab8e5ecf4ba991afb04ffa15678f894",
-  "source_file_count": 1572,
-  "git_head": "0084ce9f86178df453d5d494027fecb752dcb661",
+  "generated_at": "2026-10-10T07:36:44.704Z",
+  "source_digest": "c78fcce2e1410716a4b881cc31ed7c831ca56f87256b9e96dbc039e615573689",
+  "source_file_count": 1576,
+  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [
@@ -1159,7 +1159,7 @@
       "symbol": "verify",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 134
+      "line": 133
     },
     {
       "symbol": "SecondaryM5ResearchRecoveryService",
@@ -1171,19 +1171,19 @@
       "symbol": "attributeRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 167
+      "line": 166
     },
     {
       "symbol": "budgetAnchor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 180
+      "line": 179
     },
     {
       "symbol": "observations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 199
+      "line": 198
     },
     {
       "symbol": "__construct",
@@ -1201,25 +1201,25 @@
       "symbol": "jsonEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 257
+      "line": 256
     },
     {
       "symbol": "evidencePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 266
+      "line": 265
     },
     {
       "symbol": "priceRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 274
+      "line": 273
     },
     {
       "symbol": "attributionCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 279
+      "line": 278
     },
     {
       "symbol": "fetchCandles",
@@ -1429,193 +1429,193 @@
       "symbol": "streamManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1007
+      "line": 1005
     },
     {
       "symbol": "rowContentHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1039
+      "line": 1037
     },
     {
       "symbol": "writeCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1072
+      "line": 1070
     },
     {
       "symbol": "csvColumns",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1097
+      "line": 1095
     },
     {
       "symbol": "csvValues",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1115
+      "line": 1113
     },
     {
       "symbol": "csvHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1125
+      "line": 1123
     },
     {
       "symbol": "attestHistoricalVolumeStreams",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1155
+      "line": 1153
     },
     {
       "symbol": "validBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1222
+      "line": 1220
     },
     {
       "symbol": "verifiedProspectiveM5Repair",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 141
+      "line": 140
     },
     {
       "symbol": "MultiTimeframeSnapshotService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 22
+      "line": 21
     },
     {
       "symbol": "verifiedNativeM5Repair",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 228
+      "line": 227
     },
     {
       "symbol": "prospectiveCleanDiscoveryReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 236
+      "line": 235
     },
     {
       "symbol": "forProspectiveCleanDiscovery",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 283
+      "line": 281
     },
     {
       "symbol": "discoveryBundleReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 334
+      "line": 332
     },
     {
       "symbol": "readDiscoveryStream",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 393
+      "line": 391
     },
     {
       "symbol": "discoveryRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 420
+      "line": 418
     },
     {
       "symbol": "forAgentOwnedConfirmationValidation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 433
+      "line": 431
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 45
+      "line": 44
     },
     {
       "symbol": "publishAgentOwnedBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 534
+      "line": 532
     },
     {
       "symbol": "forLiquidityTrapReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 569
+      "line": 567
     },
     {
       "symbol": "agentValidationReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 60
+      "line": 59
     },
     {
       "symbol": "forResearchPlaybookReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 654
+      "line": 652
     },
     {
       "symbol": "restoreResearchPlaybookBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 795
+      "line": 793
     },
     {
       "symbol": "restoreAgentOwnedConfirmationValidationBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 833
+      "line": 831
     },
     {
       "symbol": "inspectAndRestoreDiscoveryBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 879
+      "line": 877
     },
     {
       "symbol": "result",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 890
+      "line": 888
     },
     {
       "symbol": "researchResult",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 907
+      "line": 905
     },
     {
       "symbol": "commonClosedCutoff",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 930
+      "line": 928
     },
     {
       "symbol": "closedRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 946
+      "line": 944
     },
     {
       "symbol": "aggregateH4",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 960
+      "line": 958
     },
     {
       "symbol": "aggregateD1",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 966
+      "line": 964
     },
     {
       "symbol": "aggregateH1",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 972
+      "line": 970
     },
     {
       "symbol": "missing_times",

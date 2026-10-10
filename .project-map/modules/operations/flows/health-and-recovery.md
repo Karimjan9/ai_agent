@@ -121,6 +121,14 @@ PM2 topology and only fills missing Redis, AI, scheduler or queue ownership
 when PM2 does not own the project. A partially recycling PM2 topology remains
 PM2-owned so the fallback cannot create duplicate consumers; small hosts retain
 a single CPU-heavy screening lane.
+Read-only historical M5 calendar audits and the scheduler's stale-owner PID
+probe use `HiddenProcessRunnerService`. On Windows it directly starts the GUI
+Python broker, which launches the original internal argv with `CREATE_NO_WINDOW`
+and inherited file output. Calendar children retain their 120-second timeout;
+the PID child has a three-second bound and preserves live/dead/unknown results.
+A monotonic parent watchdog allows only two further seconds for broker startup
+and cleanup. Non-Windows retains Symfony execution for internal helpers and the
+existing native PID checks. Failed audits retain the existing readiness refusal.
 Before starting missing processes the fallback launcher reads the durable
 `ai:runtime-gate` from MySQL. `ai:pause` prevents a later logon/restart from
 starting research processes; already-running bounded children may finish, but

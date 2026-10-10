@@ -32,6 +32,10 @@ paths:
   - backend-laravel/app/Console/Commands/AutonomousRuntimeGate.php
   - backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php
   - backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php
+  - backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php
+  - backend-laravel/app/Services/HiddenProcessRunnerService.php
+  - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
+  - backend-laravel/tests/Feature/HiddenProcessRunnerTest.php
   - backend-laravel/app/Services/GenerationAutonomyReceiptService.php
   - backend-laravel/app/Services/TechnicalFailureClassifierService.php
   - backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php
@@ -59,6 +63,8 @@ paths:
   - backend-laravel/scripts/run-laravel-server.cmd
   - backend-laravel/scripts/run-ai-service.cmd
   - backend-laravel/scripts/run-ai-service.py
+  - backend-laravel/scripts/run-hidden-process.py
+  - backend-laravel/scripts/run-hidden-process.test.py
   - backend-laravel/config/queue.php
   - backend-laravel/config/cache.php
   - backend-laravel/config/redis-local.conf
@@ -122,6 +128,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/HiddenProcessRunnerTest.php
+  - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
+  - backend-laravel/scripts/run-hidden-process.test.py
   - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php

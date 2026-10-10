@@ -9,7 +9,6 @@ use App\Services\MarketData\MarketVolumeService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
-use Symfony\Component\Process\Process;
 
 /**
  * Freezes the complete H4/H1/M15/M5 research input as one immutable bundle.
@@ -247,10 +246,9 @@ class MultiTimeframeSnapshotService
             : $this->verifiedProspectiveM5Repair($archive);
         if ($repair === null) return $blocked('PROSPECTIVE_M5_REPAIR_PROVENANCE_INVALID');
         try {
-            $audit = new Process(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
-                $repair['prospective_m5_source_path'], '--inventory', '--clean-discovery='.$evaluationRows, '--warmup='.$warmupRows]);
-            $audit->setTimeout(120); $audit->mustRun();
-            $calendar = (array) data_get(json_decode($audit->getOutput(), true, 512, JSON_THROW_ON_ERROR), 'clean_discovery_scope', []);
+            $audit = app(HiddenProcessRunnerService::class)->mustRun(['python', '-B', base_path('scripts/audit-frozen-m5-gap-source.py'),
+                $repair['prospective_m5_source_path'], '--inventory', '--clean-discovery='.$evaluationRows, '--warmup='.$warmupRows], 120);
+            $calendar = (array) data_get(json_decode($audit['stdout'], true, 512, JSON_THROW_ON_ERROR), 'clean_discovery_scope', []);
             if (($calendar['protocol'] ?? null) !== 'prospective_clean_discovery_calendar_v1'
                 || ($calendar['source_csv_sha256'] ?? null) !== $repair['prospective_m5_source_sha256']
                 || ($calendar['source_rows'] ?? null) !== (int) $archive->row_count

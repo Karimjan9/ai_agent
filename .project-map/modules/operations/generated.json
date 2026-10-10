@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-09T11:58:07.670Z",
-  "source_digest": "1988c3677e985eb073edcae8d26ed66ccab8e5ecf4ba991afb04ffa15678f894",
-  "source_file_count": 1572,
-  "git_head": "0084ce9f86178df453d5d494027fecb752dcb661",
+  "generated_at": "2026-10-10T07:36:44.704Z",
+  "source_digest": "c78fcce2e1410716a4b881cc31ed7c831ca56f87256b9e96dbc039e615573689",
+  "source_file_count": 1576,
+  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -32,6 +32,10 @@
     "backend-laravel/app/Console/Commands/AutonomousRuntimeGate.php",
     "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
     "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
+    "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+    "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+    "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+    "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
     "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
     "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
     "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
@@ -59,6 +63,8 @@
     "backend-laravel/scripts/run-laravel-server.cmd",
     "backend-laravel/scripts/run-ai-service.cmd",
     "backend-laravel/scripts/run-ai-service.py",
+    "backend-laravel/scripts/run-hidden-process.py",
+    "backend-laravel/scripts/run-hidden-process.test.py",
     "backend-laravel/config/queue.php",
     "backend-laravel/config/cache.php",
     "backend-laravel/config/redis-local.conf",
@@ -84,6 +90,7 @@
     "backend-laravel/app/Providers/AppServiceProvider.php",
     "backend-laravel/app/Services/AutonomousModeService.php",
     "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
+    "backend-laravel/app/Services/HiddenProcessRunnerService.php",
     "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
     "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
     "backend-laravel/app/Services/MarketHealthService.php",
@@ -91,6 +98,7 @@
     "backend-laravel/app/Services/ResearchReleaseSealService.php",
     "backend-laravel/app/Services/RuntimeMonitoringService.php",
     "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
+    "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
     "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
     "backend-laravel/app/Services/SettlementWatermarkService.php",
     "backend-laravel/app/Services/TechnicalFailureClassifierService.php",
@@ -106,6 +114,8 @@
     "backend-laravel/scripts/pm2-sync-runtime.test.cjs",
     "backend-laravel/scripts/run-ai-service.cmd",
     "backend-laravel/scripts/run-ai-service.py",
+    "backend-laravel/scripts/run-hidden-process.py",
+    "backend-laravel/scripts/run-hidden-process.test.py",
     "backend-laravel/scripts/run-laravel-server.cmd",
     "backend-laravel/scripts/run-laravel-workers-hidden.ps1",
     "backend-laravel/scripts/run-laravel-workers-hidden.vbs",
@@ -114,8 +124,10 @@
     "backend-laravel/scripts/supervise-laravel-runtime.ps1",
     "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
     "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
+    "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
     "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
     "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+    "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
     "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php",
@@ -342,55 +354,55 @@
       "symbol": "RunHeadlessScheduler",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 13
+      "line": 14
     },
     {
       "symbol": "handle",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 19
+      "line": 20
     },
     {
       "symbol": "refreshLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 202
+      "line": 203
     },
     {
       "symbol": "scheduleProcess",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 243
+      "line": 244
     },
     {
       "symbol": "runScheduleTickInProcess",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 252
+      "line": 253
     },
     {
       "symbol": "recoverStaleLocalLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 261
+      "line": 262
     },
     {
       "symbol": "hostname",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 298
+      "line": 299
     },
     {
       "symbol": "localProcessIsRunning",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 306
+      "line": 307
     },
     {
       "symbol": "claimMinute",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 338
+      "line": 342
     },
     {
       "symbol": "handle",
@@ -685,6 +697,30 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
       "line": 30
+    },
+    {
+      "symbol": "HiddenProcessRunnerService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 10
+    },
+    {
+      "symbol": "run",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 16
+    },
+    {
+      "symbol": "mustRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 41
+    },
+    {
+      "symbol": "runWindows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/HiddenProcessRunnerService.php",
+      "line": 61
     },
     {
       "symbol": "isLocal",
@@ -1134,7 +1170,7 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 126
+      "line": 128
     },
     {
       "symbol": "ResearchReleaseSealService",
@@ -1146,157 +1182,157 @@
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 198
+      "line": 200
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 288
+      "line": 290
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 318
+      "line": 320
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 330
+      "line": 332
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 346
+      "line": 348
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 361
+      "line": 363
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 363
+      "line": 365
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 376
+      "line": 378
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 384
+      "line": 386
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 395
+      "line": 397
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 413
+      "line": 415
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 423
+      "line": 425
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 444
+      "line": 446
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 458
+      "line": 460
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 478
+      "line": 480
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 490
+      "line": 492
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 501
+      "line": 503
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 508
+      "line": 510
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 530
+      "line": 532
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 536
+      "line": 538
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 553
+      "line": 555
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 590
+      "line": 592
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 620
+      "line": 622
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 628
+      "line": 630
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 650
+      "line": 652
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 659
+      "line": 661
     },
     {
       "symbol": "queueCheck",
@@ -1393,6 +1429,48 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
       "line": 78
+    },
+    {
+      "symbol": "commandLine",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 113
+    },
+    {
+      "symbol": "artisanPhpBinary",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 143
+    },
+    {
+      "symbol": "run",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 15
+    },
+    {
+      "symbol": "processOptions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 161
+    },
+    {
+      "symbol": "windowsProcessOptions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 168
+    },
+    {
+      "symbol": "runWindows",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 48
+    },
+    {
+      "symbol": "ScheduledArtisanProcessRunnerService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ScheduledArtisanProcessRunnerService.php",
+      "line": 9
     },
     {
       "symbol": "ScheduledCommandOutcomeClassifierService",
@@ -1497,6 +1575,90 @@
       "line": 59
     },
     {
+      "symbol": "_InvocationParser",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 10
+    },
+    {
+      "symbol": "error",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 11
+    },
+    {
+      "symbol": "_positive_timeout",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 16
+    },
+    {
+      "symbol": "_diagnostic",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 23
+    },
+    {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.py",
+      "line": 59
+    },
+    {
+      "symbol": "test_real_timeout_kills_and_reaps_the_direct_child",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 101
+    },
+    {
+      "symbol": "track_child",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 105
+    },
+    {
+      "symbol": "test_pythonw_errors_reach_the_inherited_stderr_file_handle",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 131
+    },
+    {
+      "symbol": "HiddenProcessBrokerTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 24
+    },
+    {
+      "symbol": "test_windows_uses_no_window_without_shell_or_output_pipes",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 25
+    },
+    {
+      "symbol": "test_non_windows_uses_no_windows_creation_flags",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 38
+    },
+    {
+      "symbol": "test_invalid_arguments_do_not_launch_or_echo_the_supplied_command",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 45
+    },
+    {
+      "symbol": "test_launch_failures_and_timeouts_have_fixed_diagnostics",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 59
+    },
+    {
+      "symbol": "test_real_child_preserves_argv_output_exit_cwd_and_environment",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/run-hidden-process.test.py",
+      "line": 73
+    },
+    {
       "symbol": "approve",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
@@ -1597,6 +1759,54 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
       "line": 73
+    },
+    {
+      "symbol": "python",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 102
+    },
+    {
+      "symbol": "HiddenProcessRunnerTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 11
+    },
+    {
+      "symbol": "test_helper_preserves_argument_boundaries_output_and_exit_status",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 13
+    },
+    {
+      "symbol": "test_successful_helper_json_is_returned_without_stderr_contamination",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 27
+    },
+    {
+      "symbol": "test_failed_helper_is_refused_before_the_caller_can_decode_json",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 37
+    },
+    {
+      "symbol": "test_large_output_does_not_block_the_helper_on_windows_pipes",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 46
+    },
+    {
+      "symbol": "test_windows_timeout_reaps_the_actual_child_and_remains_bounded",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 57
+    },
+    {
+      "symbol": "test_windows_child_has_no_console_even_from_windowless_php_parent",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "line": 80
     },
     {
       "symbol": "poisonShapes",
@@ -1837,6 +2047,90 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "line": 93
+    },
+    {
+      "symbol": "test_expected_lifecycle_block_is_not_recorded_as_a_failed_job",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 110
+    },
+    {
+      "symbol": "test_proposal_only_rescue_deferral_is_not_a_failed_job",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 121
+    },
+    {
+      "symbol": "test_unknown_nonzero_exit_remains_a_technical_failure",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 132
+    },
+    {
+      "symbol": "test_transient_external_feed_outage_is_deferred_without_hiding_application_errors",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 142
+    },
+    {
+      "symbol": "ScheduledCommandIsolationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 15
+    },
+    {
+      "symbol": "test_cross_platform_runner_builds_a_shell_free_artisan_command_line",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 17
+    },
+    {
+      "symbol": "test_argument_order_does_not_change_the_overlap_identity",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 174
+    },
+    {
+      "symbol": "test_memory_heavy_research_has_a_separate_serial_lane",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 185
+    },
+    {
+      "symbol": "test_lifecycle_scheduler_job_has_a_full_population_constructor_budget",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 199
+    },
+    {
+      "symbol": "test_redis_uniqueness_outlives_visibility_timeout_and_allows_one_transport_retry",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 249
+    },
+    {
+      "symbol": "test_windows_console_process_group_is_not_created_by_php",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 47
+    },
+    {
+      "symbol": "test_scheduled_process_runner_executes_artisan_without_a_shell_contract",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 58
+    },
+    {
+      "symbol": "test_windows_native_runner_enforces_its_hard_timeout_without_blocking_on_output",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 66
+    },
+    {
+      "symbol": "test_learning_dispatch_uses_a_short_private_unique_worker_contract",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "line": 83
     },
     {
       "symbol": "registered",
@@ -2380,6 +2674,18 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/HiddenProcessRunnerTest.php",
+      "tests": [
+        "test_helper_preserves_argument_boundaries_output_and_exit_status",
+        "test_successful_helper_json_is_returned_without_stderr_contamination",
+        "test_failed_helper_is_refused_before_the_caller_can_decode_json",
+        "test_large_output_does_not_block_the_helper_on_windows_pipes",
+        "test_windows_timeout_reaps_the_actual_child_and_remains_bounded",
+        "test_windows_child_has_no_console_even_from_windowless_php_parent",
+        "python"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
       "tests": [
         "gapFixture",
@@ -2550,6 +2856,7 @@
     {
       "path": "backend-laravel/tests/Feature/RunHeadlessSchedulerTest.php",
       "tests": [
+        "test_hidden_windows_pid_probe_preserves_live_dead_and_unknown_states",
         "test_scheduler_claims_a_minute_once_across_a_process_restart",
         "test_runtime_monitor_reports_the_real_age_of_a_stale_scheduler_heartbeat",
         "test_scheduler_can_recover_a_stale_lease_from_a_dead_process_on_the_same_host",
@@ -2591,6 +2898,24 @@
         "unusedDraft",
         "emptyQueueService",
         "activeProjection"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "tests": [
+        "test_cross_platform_runner_builds_a_shell_free_artisan_command_line",
+        "test_windows_console_process_group_is_not_created_by_php",
+        "test_scheduled_process_runner_executes_artisan_without_a_shell_contract",
+        "test_windows_native_runner_enforces_its_hard_timeout_without_blocking_on_output",
+        "test_learning_dispatch_uses_a_short_private_unique_worker_contract",
+        "test_expected_lifecycle_block_is_not_recorded_as_a_failed_job",
+        "test_proposal_only_rescue_deferral_is_not_a_failed_job",
+        "test_unknown_nonzero_exit_remains_a_technical_failure",
+        "test_transient_external_feed_outage_is_deferred_without_hiding_application_errors",
+        "test_argument_order_does_not_change_the_overlap_identity",
+        "test_memory_heavy_research_has_a_separate_serial_lane",
+        "test_lifecycle_scheduler_job_has_a_full_population_constructor_budget",
+        "test_redis_uniqueness_outlives_visibility_timeout_and_allows_one_transport_retry"
       ]
     },
     {
