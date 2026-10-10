@@ -226,6 +226,11 @@ gone, it fences the orphan as failed with
 `RESEARCH_DECISION_UNIQUE_QUEUE_LOCK_MISSING`, then reselects from current
 evidence. Historical rows beyond the unique-lock lease are ignored; they cannot
 keep the research loop permanently in flight.
+For an identical decision key, check the live lock before returning duplicate
+suppression and fence an orphan as failed without publishing a child on that
+tick. A later settlement retry waits the existing five minutes and shares the
+original two-retry cap; the same scientific question is not republished.
+Separately bounded publication recovery retains its existing transport rules.
 When a zero-pass final report requests a data-edge audit and its technical
 completion/pipeline checks pass, the arbiter delegates to the lifecycle owner.
 The audit changes the generation gate watermark, allowing one successor

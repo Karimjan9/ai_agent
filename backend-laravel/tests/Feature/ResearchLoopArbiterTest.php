@@ -205,6 +205,82 @@ class ResearchLoopArbiterTest extends TestCase
         Queue::assertPushed(RunScheduledArtisanCommandJob::class, 3);
     }
 
+    public function test_same_state_orphaned_settlement_is_fenced_before_only_two_spaced_retries(): void
+    {
+        Queue::fake();
+        LabGeneration::create(['ai_laboratory_id' => $this->lab()->id, 'generation' => 1,
+            'trigger_type' => 'new_data', 'status' => 'screening', 'population_size' => 20,
+            'trigger_context' => [], 'started_at' => now()]);
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $original = null;
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $decision = $arbiter->tick();
+            $this->assertSame('dispatched', $decision['status']);
+            if ($original !== null) {
+                foreach (['state_hash', 'action', 'command', 'arguments', 'queue'] as $field) {
+                    $this->assertSame($original[$field], $decision[$field]);
+                }
+                $this->assertNotSame($original['decision_id'], $decision['decision_id']);
+            }
+            $original ??= $decision;
+            $row = ResearchLoopDecision::findOrFail($decision['decision_id']);
+            $liveDuplicate = $arbiter->tick();
+            $this->assertSame('duplicate_suppressed', $liveDuplicate['status']);
+            $this->assertSame($row->id, $liveDuplicate['decision_id']);
+            $this->assertSame('dispatched', $row->fresh()->status);
+
+            $job = new RunScheduledArtisanCommandJob($decision['command'], $decision['arguments'],
+                $decision['queue'], $decision['decision_id']);
+            (new UniqueLock(Cache::store()))->release($job);
+            $this->assertNull(Cache::get($job->statusCacheKey()));
+            $orphan = $arbiter->tick();
+            $this->assertSame('duplicate_suppressed', $orphan['status']);
+            $this->assertSame($row->id, $orphan['decision_id']);
+            $this->assertSame($decision['decision_key'], $orphan['decision_key']);
+            $this->assertSame($decision['state_hash'], $orphan['state_hash']);
+            $this->assertSame('failed', $row->fresh()->status);
+            $this->assertNotNull($row->fresh()->completed_at);
+            Queue::assertPushed(RunScheduledArtisanCommandJob::class, $attempt + 1);
+
+            $this->travel(4)->minutes();
+            $cooldown = $arbiter->tick();
+            $this->assertSame('duplicate_suppressed', $cooldown['status']);
+            $this->assertSame($row->id, $cooldown['decision_id']);
+            $this->travel(2)->minutes();
+        }
+
+        $blocked = $arbiter->tick();
+        $this->assertSame('safety_blocked', $blocked['status']);
+        $this->assertContains('UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES', $blocked['reason_codes']);
+        $this->assertSame('safety_halt', app(AutonomousModeService::class)->status()['state']);
+        $this->assertDatabaseCount('research_loop_decisions', 3);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 3);
+    }
+
+    public function test_same_state_orphaned_scientific_command_stays_deduplicated_without_another_trial(): void
+    {
+        Queue::fake();
+        $this->lab();
+        $arbiter = app(ResearchLoopArbiterService::class);
+        $choose = new \ReflectionMethod($arbiter, 'decide');
+        $args = ['XAUUSD', 'H1', 'EDGE_CONFIRMATION', 90, 'trading:consume-research-work',
+            ['--symbol' => 'XAUUSD'], 'scheduler-constructor', ['READY'], [], false];
+        $first = $choose->invokeArgs($arbiter, $args);
+        (new UniqueLock(Cache::store()))->release(new RunScheduledArtisanCommandJob(
+            $first['command'], $first['arguments'], $first['queue'], $first['decision_id'],
+        ));
+
+        $this->assertSame('duplicate_suppressed', $choose->invokeArgs($arbiter, $args)['status']);
+        $this->assertSame('failed', ResearchLoopDecision::findOrFail($first['decision_id'])->status);
+        $this->travel(6)->minutes();
+        $later = $choose->invokeArgs($arbiter, $args);
+        $this->assertSame('duplicate_suppressed', $later['status']);
+        $this->assertSame($first['decision_id'], $later['decision_id']);
+        $this->assertDatabaseCount('research_loop_decisions', 1);
+        Queue::assertPushed(RunScheduledArtisanCommandJob::class, 1);
+    }
+
     public function test_recent_immutable_replay_waits_without_spending_settlement_retries_then_stale_run_recovers(): void
     {
         Queue::fake();

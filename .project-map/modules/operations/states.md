@@ -150,6 +150,11 @@ decision is fenced as `failed` with `RESEARCH_DECISION_UNIQUE_QUEUE_LOCK_MISSING
 and the current arbiter snapshot may be selected again. A database status alone
 is not proof of live queue ownership; old rows outside the unique lease window
 cannot block successor selection.
+The same-state `duplicate_suppressed` path also fences a missing unique lock
+before returning. That tick publishes nothing; settlement may use only its
+existing five-minute cooldown and two retries for the unchanged state. Other
+scientific commands remain deduplicated for the same question, and separately
+bounded publication recovery keeps its original owner and transport limits.
 For a zero-pass final report that requests an audit, select the lifecycle owner
 only when the report is final, technical completion is 100%, and pipeline
 failures are zero. The report/audit disposition participates in the generation

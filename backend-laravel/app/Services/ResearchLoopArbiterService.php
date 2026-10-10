@@ -1097,6 +1097,22 @@ class ResearchLoopArbiterService
             }
         }
         if ($sameState) {
+            // The same state key must not hide an undelivered/dead command.
+            // Fence its missing lease before deduplication so settlement can
+            // use the existing spaced retry budget on a later tick. Bounded
+            // publication recovery above and scientific dedup remain intact.
+            if (! $boundedPublication && $command !== null && $queue !== null
+                && in_array($sameState->status, ['selected', 'dispatched', 'running'], true)
+                && ! $this->hasLiveScheduledCommandLock($sameState)) {
+                $sameState->update(['status' => 'failed', 'completed_at' => now()]);
+                Log::warning('Fenced an in-flight research decision without a live unique queue lock.', [
+                    'decision_id' => (int) $sameState->id,
+                    'command' => (string) $sameState->command,
+                    'queue' => (string) $sameState->queue,
+                    'reason_code' => 'RESEARCH_DECISION_UNIQUE_QUEUE_LOCK_MISSING',
+                    'promotion_evidence' => false,
+                ]);
+            }
             return [...$payload, 'status' => 'duplicate_suppressed', 'decision_id' => (int) $sameState->id];
         }
         if ($command !== null && $queue !== null) {

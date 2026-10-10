@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-10T09:53:15.272Z",
-  "source_digest": "f7d0e6d81aaa80b9f65f161c0d355c063721a6de15d3b153eba3751310d9428a",
+  "generated_at": "2026-10-10T12:54:30.004Z",
+  "source_digest": "5342e95b8ad30176435980a210528f19b600a5c61810bed80b92ff370ceeaf03",
   "source_file_count": 1577,
-  "git_head": "d7b7d1344d77a849106efd96b466f378b43f4c89",
+  "git_head": "45439b418c91d199ba4831b67faab1c11c57d31a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tables": [
     {
