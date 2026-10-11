@@ -110,7 +110,8 @@ class LabHistoricalLearningService
     {
         return LabLearningInsight::query()->where([
             'symbol' => strtoupper($symbol), 'timeframe' => strtoupper($timeframe), 'strategy_family' => $family,
-        ])->latest('generated_at')->cursor()->first(fn (LabLearningInsight $insight): bool => ! $this->hasStudySource($insight));
+        ])->where('metrics->research_data_cutoff', ResearchPaperEpochContractService::PAPER_ONLY_START)
+            ->latest('generated_at')->cursor()->first(fn (LabLearningInsight $insight): bool => ! $this->hasStudySource($insight));
     }
 
     /** Record exactly how a new generation consumed historical advice. */
@@ -418,6 +419,7 @@ class LabHistoricalLearningService
         $dominantCandle = $candleAggregates[0] ?? null;
         $scopeKey = data_get($dominantCandle, 'market_regime') ? 'market:'.data_get($dominantCandle, 'market_regime') : 'global';
         $metrics = [
+            'research_data_cutoff' => ResearchPaperEpochContractService::PAPER_ONLY_START,
             'agent_count' => count($agentIds),
             'latest_gate_count' => $latestGates->count(),
             'exact_run_count' => $exactRuns->count(),
@@ -634,6 +636,7 @@ class LabHistoricalLearningService
     private function currentInsights(string $symbol, string $timeframe): array
     {
         return LabLearningInsight::query()
+            ->where('metrics->research_data_cutoff', ResearchPaperEpochContractService::PAPER_ONLY_START)
             ->where('symbol', $symbol)
             ->where('timeframe', $timeframe)
             ->latest('generated_at')

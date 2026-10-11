@@ -5,6 +5,9 @@ ineligible for research learning. Historical mutation targets exclude paper
 admission gates, known paper runs and paper candle/rollup chronology; their
 derived cache uses a separate pre-2026 identity. Original receipts remain
 unchanged, and missing exposure history cannot establish independent authority.
+Previously compiled insights remain audit records. Current guidance and busy
+refresh fallback require the new fixed-cutoff marker; an old cache or insight
+is never silently upgraded into compliant selection advice.
 
 ## Original native depth and qualified SOLO
 

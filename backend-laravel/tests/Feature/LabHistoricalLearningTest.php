@@ -170,5 +170,15 @@ class LabHistoricalLearningTest extends TestCase
         $insight = $fresh->latestForFamily('XAUUSD', 'H1', $agent->strategy_family);
         $this->assertSame(4, data_get($insight?->metrics, 'candle_event_count'));
         $this->assertSame(4, data_get($insight?->failure_signature, 'dominant_rejections.0.occurrences'));
+
+        $metrics = $insight->metrics;
+        unset($metrics['research_data_cutoff']);
+        $insight->update(['metrics' => $metrics]);
+        $this->assertNull($fresh->latestForFamily('XAUUSD', 'H1', $agent->strategy_family));
+        $lock = \Illuminate\Support\Facades\Cache::lock('lab-history-refresh:XAUUSD:H1', 60);
+        $this->assertTrue($lock->get());
+        try {
+            $this->assertNotContains($insight->id, collect($fresh->refreshForLab('XAUUSD', 'H1'))->pluck('id')->all());
+        } finally { $lock->release(); }
     }
 }
