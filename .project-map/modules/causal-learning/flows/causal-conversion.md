@@ -112,11 +112,11 @@ all referenced candles were consumed. Missing training/selection/context
 history blocks an unused-window conclusion. `--proposal` wraps the existing
 future six-month reservation in a sealable, non-persisted draft; the caller must
 retain its immutable owner preregistration before validation outcomes. Existing
-paper disjointness, post-paper data and all independent evidence gates still own
+paper disjointness, untouched pre-2026 data and all independent evidence gates still own
 execution. No historical generic instrument route is created.
 
 `--future-schedule` adds six explicit monthly collection drafts under the
-existing post-paper policy. Every dataset/MTF hash and evaluated-row receipt
+existing untouched pre-2026 policy. Every dataset/MTF hash and evaluated-row receipt
 remains null; the draft grants neither preregistration nor authorization.
 Warmup must be inside its own reserved research window, never borrowed from
 2026 paper data. Holding/outcome maturity and actual powered windows still need
@@ -265,7 +265,7 @@ settlement needs an explicit scientific classification and a next action.
    requested context explicitly names the same venue phase; omitting the phase
    cannot turn local evidence into a session-wide preference.
    An instrument research window is admitted only when the replay manifest
-   explicitly declares a post-paper research-validation source, first/last
+   explicitly declares a untouched pre-2026 research-validation source, first/last
    candles inside its authorized UTC bounds, and a dataset hash equal to the
    server-owned window manifest and candidate's frozen replay seal. Ordinary
    pre-2026 foundation screening cannot borrow this authority. The receipt is
@@ -290,21 +290,21 @@ settlement needs an explicit scientific classification and a next action.
     C/A/B/AB identity. Fewer than the preregistered paired or signal
     opportunities means `underpowered_activation`, not a negative claim.
     A context unique to AB may yield only a behavioral activation hypothesis.
-    The future validation interval, six monthly windows, exact comparator and
-    power thresholds are preregistered with the discovery proposal and bound
-    into the four-arm manifest. The conversion kernel hashes that same plan
+    The exact comparator and power thresholds are bound to the discovery
+    proposal. The conversion kernel hashes that same plan
     into one idempotent semantic receipt and a blocked next-work item. The
-    reserved interval starts after the 2026 paper-only epoch; no replay or
-    credit is allowed until a separate research epoch and dataset are
-    authorized and sealed. Economic effect, component credit, Mentor and
+    older reservation is preserved as non-executable history. New v3 plans
+    contain no future research interval: every date from 2026 onward remains
+    paper-only, including 2027 and all later years. Untouched authorized
+    pre-2026 original evidence is still required. Economic effect, component credit, Mentor and
    promotion remain unearned.
     Before prospective construction, seal the intended confirmation route:
     historical causal research uses its existing frozen causal contract;
     Academy/activation/instrument independent authority requires original
     preregistered unused authorized-window provenance. Missing provenance is
     `BLOCKED_DEPENDENCY`, never a renamed discovery window or fake credit.
-    Activation reservations also reject overlap with any approved future paper
-    period; the 2026 paper-only cutoff never moves.
+    Every observation from the fixed 2026 boundary is paper-only, regardless
+    of separately configured paper periods.
 
 ## Modules involved
 
@@ -409,7 +409,7 @@ scheduler, dispatch, Mentor, Parent, paper or credit authority follows.
   the exact context; legacy lessons remain hypotheses, not gene-wide bans.
 - Readiness reports `awaiting_authorized_research_data` when no completed
   authorized independent window exists. Future dates are not available data;
-  2026 paper-only observations cannot be substituted.
+  Observations from 2026 and every later year are paper-only and cannot be substituted.
 - Control identity is frozen; a genetic parent is not a causal control by name alone.
 - Lesson, source pair, frozen control, baseline model and composition passport
   must describe the same executable family. Declared architecture and tactic
@@ -495,7 +495,7 @@ CPU remain separate; raw positive outcomes are not memory superiority.
 
 Progress separates technical completion, answer-producing comparisons and
 actual descendant/trait-ablation witnesses. Historical Academy/causal research
-is not the authorized post-paper instrument route. Missing independent data
+is not the authorized untouched pre-2026 instrument route. Missing independent data
 remains a dependency, not a provisional result silently promoted to authority.
 
 ## Research-question improvement

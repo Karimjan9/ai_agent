@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-10T06:29:15.786Z",
-  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
-  "source_file_count": 1603,
-  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
+  "generated_at": "2026-10-11T16:14:09.164Z",
+  "source_digest": "0aa65c3d21f655a9526512cffb58d1e2c75130cdff12c3ab301e21e0a77cf8fe",
+  "source_file_count": 1606,
+  "git_head": "9b5bf1de4971ed61a12cdf88cb17431b80d3361b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "paper-execution",
   "paths": [
@@ -234,55 +234,55 @@
       "symbol": "archivePaperProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 404
+      "line": 405
     },
     {
       "symbol": "traitRuntimeBasis",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 424
+      "line": 425
     },
     {
       "symbol": "originalResearchTransportMatches",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 430
+      "line": 431
     },
     {
       "symbol": "instrumentTreatment",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 448
+      "line": 449
     },
     {
       "symbol": "archiveBaselineSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 464
+      "line": 465
     },
     {
       "symbol": "immutableSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 478
+      "line": 481
     },
     {
       "symbol": "sourceFilesInside",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 530
+      "line": 533
     },
     {
       "symbol": "emptyOriginalInlinePlane",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 571
+      "line": 574
     },
     {
       "symbol": "strictTime",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/PaperAuthorityAdmissionService.php",
-      "line": 579
+      "line": 582
     },
     {
       "symbol": "PaperExecutionStateMachineService",
@@ -802,6 +802,15 @@
     }
   ],
   "tests": [
+    {
+      "path": "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
+      "tests": [
+        "test_every_year_from_2026_remains_paper_even_after_configuration_changes",
+        "test_future_research_authorization_cannot_override_the_continuous_boundary",
+        "test_no_future_research_calendar_is_invented_and_the_plan_is_bound",
+        "test_original_paper_inputs_cannot_be_reused_as_research_learning"
+      ]
+    },
     {
       "path": "backend-laravel/tests/Feature/ExecutionRiskSentinelServiceTest.php",
       "tests": [

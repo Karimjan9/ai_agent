@@ -25,7 +25,7 @@ class DescendantScopedProofTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        CarbonImmutable::setTestNow('2026-10-09T08:00:00Z');
+        CarbonImmutable::setTestNow('2011-10-09T08:00:00Z');
         $this->mock(ContextualCausalTraitCapsuleService::class, function (MockInterface $mock): void {
             $mock->shouldReceive('assess')->andReturn(['valid' => true]);
         });
@@ -93,7 +93,7 @@ class DescendantScopedProofTest extends TestCase
         [$cartridge, $models, $scope] = $this->fixture();
         $owner = app(CanonicalSkillCartridgeService::class);
         $paper = [...$scope, 'validation_start' => '2026-11-01T00:00:00Z', 'validation_end' => '2026-12-01T00:00:00Z'];
-        $this->assertSame('DESCENDANT_2027_PROSPECTIVE_PAPER_DISJOINT_INTERVAL_REQUIRED',
+        $this->assertSame('DESCENDANT_PRE_2026_PREREGISTERED_PAPER_DISJOINT_INTERVAL_REQUIRED',
             $owner->preregisterDescendantProof($cartridge, $models, $paper)['reason_code']);
         DB::table('skill_cartridge_revisions')->delete();
         $this->assertSame('DESCENDANT_IMMUTABLE_SOURCE_REVISION_REQUIRED',
@@ -138,7 +138,7 @@ class DescendantScopedProofTest extends TestCase
 
     private function originalProducts(array $models, array $scope, array $values): array
     {
-        CarbonImmutable::setTestNow('2027-03-01T00:00:00Z');
+        CarbonImmutable::setTestNow('2012-03-01T00:00:00Z');
         $dataset = hash('sha256', 'synthetic-scoped-authorized-dataset');
         config(['services.instrument_policy.authorized_research_windows' => [[
             'authorization_id' => 'synthetic-scoped-auth', 'research_epoch_id' => 'synthetic-scoped-epoch',
@@ -156,7 +156,7 @@ class DescendantScopedProofTest extends TestCase
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'hybrid',
                 'origin' => 'synthetic_test', 'lifecycle_status' => 'screened']);
             $run = $immutable->beginRun($agent, 'full_validation', 'synthetic_test', ['code_hash' => $scope['evaluator_hash']]);
-            $candles = array_map(fn (int $index): array => ['time' => CarbonImmutable::parse('2027-01-10T00:00:00Z')
+            $candles = array_map(fn (int $index): array => ['time' => CarbonImmutable::parse('2012-01-10T00:00:00Z')
                 ->addMinutes($index * 5)->toIso8601ZuluString(), 'close' => 2000], range(0, 202));
             $request = ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'candles' => $candles,
                 'strategies' => [['lab_agent_id' => $agent->id, 'strategy' => $model->strategy, 'parameters' => $model->parameters]],
@@ -202,7 +202,7 @@ class DescendantScopedProofTest extends TestCase
         DB::table('skill_cartridge_revisions')->insert(['lab_skill_zoo_entry_id' => $cartridge->id, 'revision' => 1,
             'revision_key' => hash('sha256', 'synthetic-scoped-revision'), 'payload' => json_encode($evidence),
             'sealed_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
-        $scope = ['validation_start' => '2027-01-01T00:00:00Z', 'validation_end' => '2027-02-01T00:00:00Z',
+        $scope = ['validation_start' => '2012-01-01T00:00:00Z', 'validation_end' => '2012-02-01T00:00:00Z',
             'context' => ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london', 'direction' => 'BUY'],
             'evaluator_hash' => hash('sha256', 'synthetic-evaluator'), 'execution_hash' => hash('sha256', 'synthetic-execution'),
             'metric' => 'profit_factor', 'stopping_rule' => ['minimum_trades_per_arm' => 3, 'minimum_effect' => 0.01]];

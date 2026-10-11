@@ -15,11 +15,29 @@ final class FrozenM5GapRecoveryOperation
     public const TARGET = '2025-12-17 23:00:00';
     public const EXPECTED_TICK_HOUR_SHA256 = 'ecccee8e84d4bcd2ebb56ff0cf3f4db5cd397bbe6dc41547bc91503b7cef327e';
 
+    /** Bounded process-local pure results. Physical inputs are rehashed before reuse. */
+    private static array $memo = [];
+
+    private static function memoKey(array $inputs): string
+    {
+        return hash('sha256', serialize($inputs));
+    }
+
+    private static function remember(string $operation, string $key, mixed $value): mixed
+    {
+        $limit = $operation === 'raw_tick' ? self::MAX_BATCH_TARGETS : 2;
+        if (count(self::$memo[$operation] ?? []) >= $limit) array_shift(self::$memo[$operation]);
+        self::$memo[$operation][$key] = $value;
+        return $value;
+    }
+
     /** All source price/volume strings survive unchanged. Extras remain separate quote evidence. */
     public static function source(string $path, string $expectedHash, bool $batch = false): array
     {
         if (! preg_match('/^[a-f0-9]{64}$/', $expectedHash) || ! is_file($path) || filesize($path) > 134217728
             || ! hash_equals($expectedHash, (string) hash_file('sha256', $path))) throw new RuntimeException('RECOVERY_FROZEN_SOURCE_SHA_MISMATCH');
+        $memoKey = self::memoKey([realpath($path), $expectedHash, $batch]);
+        if (isset(self::$memo['source'][$memoKey])) return self::$memo['source'][$memoKey];
         $handle = fopen($path, 'rb'); $rows = []; $prior = null;
         try {
             $headers = fgetcsv($handle, escape: '');
@@ -38,7 +56,7 @@ final class FrozenM5GapRecoveryOperation
         } finally { fclose($handle); }
         if (count($rows) < 2 || count($rows) > 350000 || (! $batch && ($rows[0]['time'] >= self::TARGET || $rows[array_key_last($rows)]['time'] <= self::TARGET))) throw new RuntimeException('RECOVERY_SOURCE_TARGET_NOT_BOUNDED');
         if (! hash_equals($expectedHash, (string) hash_file('sha256', $path))) throw new RuntimeException('RECOVERY_SOURCE_CHANGED_DURING_READ');
-        return $rows;
+        return self::remember('source', $memoKey, $rows);
     }
 
     /** This one known sparse reopen is not generalized into a relaxed minute-coverage policy. */
@@ -178,6 +196,9 @@ final class FrozenM5GapRecoveryOperation
         $bytes = file_get_contents($rawPath);
         if (! is_string($bytes) || ! hash_equals($rawHash, hash('sha256', $bytes))) throw new RuntimeException('RECOVERY_RAW_TICK_SOURCE_CHANGED');
         $decoderHash = null;
+        $memoKey = self::memoKey([$target, $m1, $m5, $evidence, $rawHash,
+            $bi5 ? hash_file('sha256', __DIR__.'/decode-dukascopy-tick-hour.py') : null]);
+        if (isset(self::$memo['raw_tick'][$memoKey])) return self::$memo['raw_tick'][$memoKey];
         if ($bi5) {
             $decoderPath = __DIR__.'/decode-dukascopy-tick-hour.py'; $decoderHash = hash_file('sha256',$decoderPath);
             try {
@@ -259,7 +280,7 @@ final class FrozenM5GapRecoveryOperation
         if (! $completeMinuteCoverage && $native===null) throw new RuntimeException('RECOVERY_RAW_PARTIAL_NATIVE_BUCKET_REQUIRED');
         if (! hash_equals($rawHash, (string) hash_file('sha256', $rawPath))) throw new RuntimeException('RECOVERY_RAW_TICK_SOURCE_CHANGED');
         $actual = array_intersect_key($bucket, array_flip(['open','high','low','close','volume'])); self::price($actual);
-        return ['protocol'=>self::RAW_TICK_PROTOCOL, 'recovered_row'=>['time'=>$target,...$actual],
+        return self::remember('raw_tick', $memoKey, ['protocol'=>self::RAW_TICK_PROTOCOL, 'recovered_row'=>['time'=>$target,...$actual],
             'recovery_price_basis'=>'native_synchronized_raw_bid_ticks', 'observed_m1_minutes'=>count($nativeRows), 'expected_clock_minutes'=>5,
             'complete_minute_coverage'=>$completeMinuteCoverage, 'native_candle_complete_minute_coverage'=>count($nativeRows)===5,
             'tick_observed_clock_minutes'=>count($minutes), 'complete_tick_history_proven'=>false, 'unobserved_minute_filled'=>false,
@@ -273,7 +294,7 @@ final class FrozenM5GapRecoveryOperation
             'native_m5_role'=>$completeMinuteCoverage?'observed_m1_subset_diagnostic_only':'observed_native_m1_sparse_aggregate_validated',
             ...(! $completeMinuteCoverage?['native_m5_origin'=>'local_aggregate_of_actual_native_m1_rows']:[]),
             'native_volume_comparison_protocol'=>$bi5?'training_decimal_6_volume_v1':'absolute_volume_tolerance_1e8_v1',
-            'tick_bucket'=>$bucket, 'tick_minutes'=>$minutes];
+            'tick_bucket'=>$bucket, 'tick_minutes'=>$minutes]);
     }
 
     private static function appendRawTick(?array $summary, float $bid, float $volume, string $at): array
@@ -329,16 +350,20 @@ final class FrozenM5GapRecoveryOperation
 
     public static function csvBytes(array $rows): string
     {
+        $memoKey = self::memoKey($rows);
+        if (isset(self::$memo['csv'][$memoKey])) return self::$memo['csv'][$memoKey];
         $handle = fopen('php://temp', 'w+b');
         try {
             fputcsv($handle, ['time', 'open', 'high', 'low', 'close', 'volume'], escape: '');
             foreach ($rows as $row) fputcsv($handle, array_map(fn ($key) => $row[$key], ['time', 'open', 'high', 'low', 'close', 'volume']), escape: '');
-            rewind($handle); return (string) stream_get_contents($handle);
+            rewind($handle); return self::remember('csv', $memoKey, (string) stream_get_contents($handle));
         } finally { fclose($handle); }
     }
 
     public static function economicRowsHash(iterable $rows): string
     {
+        $memoKey = is_array($rows) ? self::memoKey($rows) : null;
+        if ($memoKey !== null && isset(self::$memo['economic'][$memoKey])) return self::$memo['economic'][$memoKey];
         $digest = hash_init('sha256');
         foreach ($rows as $row) {
             // The existing training table owns six-decimal storage precision.
@@ -346,7 +371,8 @@ final class FrozenM5GapRecoveryOperation
                 number_format((float) $row['high'], 6, '.', ''), number_format((float) $row['low'], 6, '.', ''),
                 number_format((float) $row['close'], 6, '.', ''), number_format((float) $row['volume'], 6, '.', '')])."\n");
         }
-        return hash_final($digest);
+        $value = hash_final($digest);
+        return $memoKey === null ? $value : self::remember('economic', $memoKey, $value);
     }
 
     /** Reuse only original, fully revalidated successful proofs, never prior missing-data verdicts. */

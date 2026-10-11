@@ -53,7 +53,7 @@ class ScopedResearchAuthorityTest extends TestCase
         config()->set('services.learning_lane.causal_minimum_trades_per_window', 8);
         config()->set('services.learning_lane.causal_minimum_powered_windows', 6);
         config()->set('services.learning_lane.causal_minimum_positive_windows', 4);
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $this->fixtureRoot = sys_get_temp_dir().'/scoped-authority-software-'.bin2hex(random_bytes(8));
         $this->previousStorage = storage_path();
         app()->useStoragePath($this->fixtureRoot.'/storage');
@@ -137,7 +137,7 @@ class ScopedResearchAuthorityTest extends TestCase
     {
         foreach ([-.2, 0.0] as $index => $delta) {
             // Separate physical future years keep these two sealed scopes disjoint.
-            $fixture = $this->question('guided', 2027 + $index);
+            $fixture = $this->question('guided', 2012 + $index);
             $products = $this->originalProducts($fixture, $delta);
             $result = app(ScopedResearchCertificateService::class)->issueIndependent($fixture['certificate_id'], $products);
             $this->assertSame('independent_negative_or_inconclusive', $result['status'], json_encode($result));
@@ -169,7 +169,7 @@ class ScopedResearchAuthorityTest extends TestCase
     public function test_complete_original_products_with_zero_or_few_context_trades_close_underpowered_without_credit(): void
     {
         foreach ([0, 3] as $index => $contextTrades) {
-            $fixture = $this->question('guided', 2027 + $index);
+            $fixture = $this->question('guided', 2012 + $index);
             $products = $this->originalProducts($fixture, .3, contextTrades: $contextTrades);
             $this->assertCount(6, $products);
             $result = app(ScopedResearchCertificateService::class)->issueIndependent($fixture['certificate_id'], $products);
@@ -392,7 +392,7 @@ class ScopedResearchAuthorityTest extends TestCase
     /** Full exact source vectors keep P/PT definitions unchanged in the fresh four-arm question. */
     private function fullParameterQuestion(): array
     {
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->validate('hybrid', [...array_intersect_key($schema->defaults('hybrid'), $schema->schema('hybrid')),
             'minimum_confidence' => .55, 'time_stop_candles' => 1]);
@@ -423,7 +423,7 @@ class ScopedResearchAuthorityTest extends TestCase
         $context = ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london', 'venue_phase' => 'london_interfix', 'direction' => 'BUY'];
         $periods = [];
         foreach (range(1, 6) as $month) {
-            $from = CarbonImmutable::create(2027, $month, 1, 0, 0, 0, 'UTC');
+            $from = CarbonImmutable::create(2012, $month, 1, 0, 0, 0, 'UTC');
             $periods[] = ['start_inclusive' => $from->toIso8601String(), 'end_exclusive' => $from->addMonth()->toIso8601String()];
         }
         $hash = app(LabImmutableEvidenceService::class)->codeHash();
@@ -442,7 +442,7 @@ class ScopedResearchAuthorityTest extends TestCase
         $this->assertTrue($registered['valid'], json_encode($registered));
 
         return ['certificate_id' => $registered['certificate_id'], 'source' => $source, 'agents' => $agents, 'design' => $design,
-            'context' => $context, 'periods' => $periods, 'candidate_role' => 'guided', 'year' => 2027];
+            'context' => $context, 'periods' => $periods, 'candidate_role' => 'guided', 'year' => 2012];
     }
 
     /** The test registry ingress is prospective; it supplies no caller outcome/authority flags. */
@@ -481,7 +481,7 @@ class ScopedResearchAuthorityTest extends TestCase
         $this->assertSame($trait, $parameters['P+T']);
         $periods = [];
         foreach (range(1, 6) as $month) {
-            $from = CarbonImmutable::create(2029, $month, 1, 0, 0, 0, 'UTC');
+            $from = CarbonImmutable::create(2014, $month, 1, 0, 0, 0, 'UTC');
             $periods[] = ['start_inclusive' => $from->toIso8601String(), 'end_exclusive' => $from->addMonth()->toIso8601String()];
         }
         $revision = DB::table('skill_cartridge_revisions')->where('lab_skill_zoo_entry_id', $cartridge->id)->where('revision', $cartridge->revision)->sole();
@@ -507,12 +507,12 @@ class ScopedResearchAuthorityTest extends TestCase
 
         return ['certificate_id' => $registered['certificate_id'], 'trial_id' => (int) $trial->id,
             'source' => (object) ['id' => 'original-inheritance-'.$trial->id], 'agents' => $agents, 'design' => $design,
-            'context' => $parent['context'], 'periods' => $periods, 'year' => 2029];
+            'context' => $parent['context'], 'periods' => $periods, 'year' => 2014];
     }
 
-    private function question(string $candidateRole, int $year = 2027): array
+    private function question(string $candidateRole, int $year = 2012): array
     {
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $lab = AiLaboratory::firstOrCreate(['symbol' => 'XAUUSD', 'timeframe' => 'M5'],
             ['name' => 'Synthetic scoped issuer', 'strategy_families' => ['hybrid'], 'is_active' => false]);
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => LabGeneration::count() + 1,

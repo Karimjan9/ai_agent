@@ -5,13 +5,12 @@ namespace App\Services;
 use Carbon\CarbonImmutable;
 
 /**
- * Preregisters a future validation interval without treating paper candles or
- * an unobserved dataset as research evidence. The interval alone is not an
- * executable replay admission.
+ * Declares the missing untouched historical validation dependency. Paper data
+ * cannot become research evidence when a calendar year ends.
  */
 class ActivationValidationPlanService
 {
-    public const PROTOCOL = 'activation_future_research_window_v2';
+    public const PROTOCOL = 'activation_historical_validation_dependency_v3';
 
     public const LEGACY_PROTOCOL = 'activation_future_research_window_v1';
 
@@ -23,6 +22,32 @@ class ActivationValidationPlanService
 
     private function build(array $proposal, bool $modern): array
     {
+        if ($modern) {
+            $identity = ['protocol' => self::PROTOCOL,
+                'hypothesis_key' => (string) ($proposal['hypothesis_key'] ?? ''),
+                'source_data_hash' => (string) ($proposal['source_data_hash'] ?? ''),
+                'source_response_hash' => (string) ($proposal['source_response_hash'] ?? ''),
+                'source_execution_hash' => (string) ($proposal['source_execution_hash'] ?? ''),
+                'source_mtf_bundle_hash' => (string) ($proposal['source_mtf_bundle_hash'] ?? ''),
+                'paper_only_policy' => app(ResearchPaperEpochContractService::class)->paperOnlyPolicy(),
+                'validation_start_inclusive' => null, 'validation_end_exclusive' => null,
+                'window_count' => 0, 'paper_2026_eligible' => false, 'all_future_paper_eligible_for_research' => false,
+                'research_epoch_authorization_required' => true, 'same_evidence_replay_forbidden' => true,
+                'validation_period_disjoint_from_paper' => false,
+                'confirmation_route' => app(ResearchPaperEpochContractService::class)->confirmationRoute(
+                    'activation_independent_validation', [
+                        'hypothesis_key' => (string) ($proposal['hypothesis_key'] ?? ''),
+                        'source_data_hash' => (string) ($proposal['source_data_hash'] ?? ''),
+                        'source_response_hash' => (string) ($proposal['source_response_hash'] ?? ''),
+                        'source_execution_hash' => (string) ($proposal['source_execution_hash'] ?? ''),
+                        'source_mtf_bundle_hash' => (string) ($proposal['source_mtf_bundle_hash'] ?? ''),
+                    ]),
+                'required_data' => 'genuinely_unexposed_authorized_pre_2026_original_windows'];
+            return [...$identity, 'plan_hash' => $this->hash($identity),
+                'status' => 'blocked_by_continuous_paper_policy', 'executable' => false,
+                'dependency_status' => 'BLOCKED_DEPENDENCY',
+                'reason_code' => 'ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', 'promotion_evidence' => false];
+        }
         $paper = (array) data_get(app(ResearchPaperEpochContractService::class)->contract(), 'paper_epoch', []);
         $paperEnd = CarbonImmutable::parse((string) ($paper['end_exclusive'] ?? ''), 'UTC')->utc();
         $start = $paperEnd;
@@ -79,6 +104,7 @@ class ActivationValidationPlanService
 
     public function valid(array $plan, array $proposal): bool
     {
+        if (($plan['protocol'] ?? null) === self::PROTOCOL) return $plan === $this->build($proposal, true);
         if (! in_array((string) ($plan['protocol'] ?? ''), [self::PROTOCOL, self::LEGACY_PROTOCOL], true)
             || (string) ($plan['status'] ?? '') !== 'reserved_awaiting_authorized_research_epoch'
             || ($plan['executable'] ?? null) !== false

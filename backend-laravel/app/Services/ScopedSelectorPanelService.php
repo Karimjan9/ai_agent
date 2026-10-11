@@ -980,7 +980,9 @@ class ScopedSelectorPanelService
         try {
             $from = CarbonImmutable::parse($record['start_inclusive'])->utc();
             $until = CarbonImmutable::parse($record['end_exclusive'])->utc();
-            if (! $from->greaterThan(now()) || $from->lt('2027-01-01T00:00:00Z') || ! $until->greaterThan($from)
+            if (! $from->greaterThan(now()) || ! $until->greaterThan($from)
+                || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                    $from->toIso8601String(), $until->toIso8601String())
                 || ($record['purpose'] ?? null) !== 'instrument_independent_validation'
                 || ! is_string($record['research_epoch_id'] ?? null) || $record['research_epoch_id'] === '') {
                 throw new \LogicException;

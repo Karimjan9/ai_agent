@@ -1,5 +1,32 @@
 # Separately scoped original research proof — verified candidate
 
+## Current policy (2026-10-11)
+
+Every date from 2026-01-01 onward, including 2027 and all later years, is
+permanently paper-only. The older future-research drafts below are superseded
+by ADR-037; they cannot authorize research, warmup, selection or mutation.
+New activation plans report the actual missing untouched pre-2026 dependency
+without inventing future validation windows. Existing original seals are
+preserved. Passed software regressions do not establish independent market
+validation or descendant improvement.
+
+G263's canonical terminal boundary closed generation 357 as `screened` on
+2026-10-11, preserving all twenty original replay fact identities (digest
+`79ce57ab4ef1a5386f88bb7f28c38fb1979e9171bf7d910c23f20a4143086b0c`).
+Ten neutral pairs are original diagnostic closure, not independent authority.
+The historical engineering sections below do not assert deployment. Actual
+local rollout, worker boot and archive-search evidence is recorded separately
+in `.runtime/paper-boundary-delivery-20261011.md`.
+
+The local archive search found identical bytes in the two H1 files labeled
+`independent_duka` and `independent_foundation` (SHA256
+`e594d018028825f59d20f3374a68f7c2fb9479d83719c3bbea0281c5829c69bb`).
+The provenance audit through run 6432 includes 146 full-validation chronology
+gaps and 5,220 screening chronology/request gaps. File labels and ordinary
+holdout partitions cannot close that missing original training/selection
+exposure inventory. No untouched or descendant certificate is issued by this
+delivery.
+
 2026-10-09/10. The four original engineering owners are implemented and focused
 regressions verified on `scoped-proof-20261009`. This is
 not an independent market-success receipt or a production deployment.
@@ -165,8 +192,7 @@ the same twenty models and eleven completed runs; control is running. The host
 clock jumped approximately seven hours earlier during verification;
 no cause, process failure or market classification is inferred from that jump.
 
-2026 remains paper-only. Six 2027 monthly periods are drafts, not observed
-authorized data. No actual untouched window, independently confirmed market
+2026 remains paper-only. Six older 2027 research drafts are superseded and permanently non-executable. No actual untouched window, independently confirmed market
 trait, stronger child, Economic Parent or paper/live authority has been created.
 The delivered G263 mixed-price discovery is not native full validation. Its
 observations and the component's own validation windows cannot be reused as
@@ -209,8 +235,7 @@ They must not be described as merely waiting for data.
 
 No actual authorized untouched window, independently confirmed trait, Research
 Mentor, stronger child, Economic Parent or paper/live permission was created.
-2026 remains paper-only. The six future 2027 periods remain drafts, not observed
-data. The previously delivered G263 attributed mixed-price discovery is not
+2026 remains paper-only. The six older 2027 research periods are permanently non-executable. The previously delivered G263 attributed mixed-price discovery is not
 native full validation and cannot supply independent confirmation.
 
 ## Verification and release boundary

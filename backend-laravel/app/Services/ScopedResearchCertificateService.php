@@ -414,8 +414,8 @@ class ScopedResearchCertificateService
         $start = $this->utc($design['validation_start'] ?? null);
         $end = $this->utc($design['validation_end'] ?? null);
         if (! $start || ! $end || ! $end->greaterThan($start)
-            || $start->lessThan(CarbonImmutable::parse('2027-01-01T00:00:00Z'))) {
-            throw new LogicException('SCOPED_CERTIFICATE_POST_PAPER_FUTURE_INTERVAL_REQUIRED');
+            || ! $this->epochs->researchIntervalDisjointFromPaper($start->toIso8601String(), $end->toIso8601String())) {
+            throw new LogicException('SCOPED_CERTIFICATE_PAPER_DATA_FORBIDDEN');
         }
         if (isset($design['authority_policy'])) {
             if ($design['authority_policy'] !== self::AUTHORITY_POLICY || ($design['source_hypothesis_only'] ?? false) === true) {

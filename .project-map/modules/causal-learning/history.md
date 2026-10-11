@@ -1,5 +1,12 @@
 # Causal-learning history
 
+## 2026-10-11 - Continuous paper-only boundary
+
+All data from 2026-01-01 onward is permanently reserved for paper, including
+2027 and every later year. New research plans declare missing untouched
+pre-2026 evidence rather than reserving future paper data. Original seals and
+scientific evidence gates remain unchanged. See ADR-037.
+
 ## 2026-10-09 - Original scope issuer and canonical native follow-through
 
 Prospective candidate-scoped exposure is recorded by both original request

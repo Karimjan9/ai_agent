@@ -1,5 +1,11 @@
 # Laboratory lifecycle states
 
+Known paper input references (2026 onward) make immutable replay products
+ineligible for research learning. Historical mutation targets exclude paper
+admission gates, known paper runs and paper candle/rollup chronology; their
+derived cache uses a separate pre-2026 identity. Original receipts remain
+unchanged, and missing exposure history cannot establish independent authority.
+
 ## Original native depth and qualified SOLO
 
 Native depth follows `unused six-slot intent -> atomic original preparation ->

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-10T06:29:15.786Z",
-  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
-  "source_file_count": 1603,
-  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
+  "generated_at": "2026-10-11T16:14:09.164Z",
+  "source_digest": "0aa65c3d21f655a9526512cffb58d1e2c75130cdff12c3ab301e21e0a77cf8fe",
+  "source_file_count": 1606,
+  "git_head": "9b5bf1de4971ed61a12cdf88cb17431b80d3361b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -319,6 +319,7 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
         "backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php",
         "backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php",
         "backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php",
@@ -929,6 +930,7 @@
         "backend-laravel/app/Services/MarketData",
         "backend-laravel/app/Services/LabDatasetExportService.php",
         "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+        "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
         "backend-laravel/app/Services/MarketSessionCalendarService.php",
         "backend-laravel/app/Models/MarketTrainingArchive.php",
         "backend-laravel/app/Models/MarketTrainingCandle.php",
@@ -999,6 +1001,8 @@
         "Historical quote spread is a separate pre-2026 research sidecar; executable liquidity requires one synchronized BID/ASK tick strictly before M5 close, maximum age 60 seconds, matching frozen M5 BID, source hashes and availability. Independently closing Jetta BID/ASK bars are diagnostic only. Neither artifact backfills an existing generation or gains authority merely by existing."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php",
+        "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
         "backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php",
         "backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php",
         "backend-laravel/tests/Feature/MarketDataContinuityTest.php",
@@ -1017,7 +1021,7 @@
       "flows": [
         ".project-map/modules/market-data/flows/continuity-recovery.md"
       ],
-      "source_file_count": 38,
+      "source_file_count": 39,
       "map": ".project-map/modules/market-data/module.yaml"
     },
     {
@@ -1235,6 +1239,7 @@
         "Invalid process outcomes are quarantined from learning."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php",
         "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
         "backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php",

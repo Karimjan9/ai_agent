@@ -43,7 +43,7 @@ class ScopedOriginalSafetyTest extends TestCase
 
     private function window(): array
     {
-        return ['start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z'];
+        return ['start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-02-01T00:00:00Z'];
     }
 
     private function original(): array
@@ -53,7 +53,7 @@ class ScopedOriginalSafetyTest extends TestCase
             'statistical_evidence' => ['original_position_maturity' => ['protocol' => 'original_position_maturity_v1',
                 'closed_trade_count' => 1, 'open_position_count' => 0, 'censored_trade_count' => 0,
                 'unknown_maturity_count' => 0, 'forced_terminal_close_applied' => false]],
-            'trade_ledger' => [['entry_time' => '2027-01-10T12:00:00Z', 'exit_time' => '2027-01-10T13:00:00Z',
+            'trade_ledger' => [['entry_time' => '2012-01-10T12:00:00Z', 'exit_time' => '2012-01-10T13:00:00Z',
                 'exit_reason' => 'target']]];
     }
 
@@ -103,7 +103,7 @@ class ScopedOriginalSafetyTest extends TestCase
                 $this->assertSame('ORIGINAL_POSITION_OUTCOMES_NOT_MATURE', $error->getMessage());
             }
         }
-        $result = $this->original(); $result['trade_ledger'][0]['exit_time'] = '2027-02-01T00:00:00Z';
+        $result = $this->original(); $result['trade_ledger'][0]['exit_time'] = '2012-02-01T00:00:00Z';
         $this->expectExceptionMessage('ORIGINAL_POSITION_OUTCOMES_NOT_MATURE');
         app(ScopedResearchAuthorityService::class)->verifyOriginalSafety($result, ['design' => []], $this->window());
     }

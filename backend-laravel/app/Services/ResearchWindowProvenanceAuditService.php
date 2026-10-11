@@ -17,41 +17,15 @@ class ResearchWindowProvenanceAuditService
     /** Collection planning only; actual bytes, original design and authorization remain absent. */
     public function futureSchedule(): array
     {
-        $plan = app(ActivationValidationPlanService::class)->reserve([]);
-        $start = CarbonImmutable::parse($plan['validation_start_inclusive'])->utc();
-        $windows = [];
-        for ($index = 0; $index < 6; $index++) {
-            $from = $start->addMonths($index); $until = $start->addMonths($index + 1);
-            $windows[] = [
-                'ordinal' => $index + 1, 'start_inclusive' => $from->toIso8601String(),
-                'end_exclusive' => $until->toIso8601String(),
-                'disjoint_from_paper' => app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
-                    $from->toIso8601String(), $until->toIso8601String()),
-                'source_dataset_sha256' => null, 'mtf_bundle_hash' => null,
-                'evaluated_start_inclusive' => null, 'evaluated_rows' => null,
-                'warmup_policy' => 'actual_closed_rows_inside_this_reserved_window_only',
-                'holding_policy' => 'entry_cutoff_and_outcome_maturity_must_fit_the_declared_window',
-                'executable' => false,
-            ];
-        }
-        $before = $start->greaterThan(now()->utc());
-        $disjoint = ! in_array(false, array_column($windows, 'disjoint_from_paper'), true);
-        $identity = ['protocol' => 'future_research_collection_schedule_draft_v1',
-            'symbol' => 'XAUUSD', 'timezone' => 'UTC', 'windows' => $windows,
-            'execution_timeframe' => 'M5', 'context_timeframes' => ['H4', 'H1', 'M15'],
+        $identity = ['protocol' => 'continuous_paper_policy_no_future_research_v2',
+            'symbol' => 'XAUUSD', 'timezone' => 'UTC', 'windows' => [],
             'source_design_selected' => false, 'original_preregistration_persisted' => false,
-            'calendar_months_are_not_powered_windows' => true,
-            'required_before_first_outcome' => ['persisted_original_control_intervention_context_and_stopping_rule',
-                'prospective_server_data_use_policy_and_authorization', 'sealed_selection_and_validation_separation'],
-            'required_before_execution' => ['actual_provider_bytes_and_immutable_SHA256_for_all_streams',
-                'verified_training_selection_context_and_holding_exposure', 'actual_warmup_and_evaluated_row_receipts',
-                'completed_authorized_research_window_and_existing_cost_risk_power_gates'],
+            'paper_only_policy' => app(ResearchPaperEpochContractService::class)->paperOnlyPolicy(),
             'earlier_paper_warmup_eligible' => false, 'paper_2026_research_eligible' => false,
             'executable' => false, 'independent_evidence' => false, 'promotion_evidence' => false,
             'server_authorization_created' => false, 'data_writes' => false,
-            'status' => 'draft_collection_schedule_not_authorization',
-            'reason_code' => ! $before ? 'PROSPECTIVE_REGISTRATION_DEADLINE_PASSED'
-                : (! $disjoint ? 'RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH' : 'AWAITING_ORIGINAL_DESIGN_AND_ACTUAL_AUTHORIZED_DATA')];
+            'status' => 'blocked_by_continuous_paper_policy',
+            'reason_code' => 'ALL_DATA_FROM_2026_RESERVED_FOR_PAPER'];
         return [...$identity, 'schedule_hash' => $this->hash($identity), 'observed_at' => now()->utc()->toIso8601String()];
     }
 
@@ -280,31 +254,18 @@ class ResearchWindowProvenanceAuditService
             throw new InvalidArgumentException('PREREGISTRATION_HYPOTHESIS_MISSING');
         }
         $plan = app(ActivationValidationPlanService::class)->reserve($proposal);
-        $start = CarbonImmutable::parse($plan['validation_start_inclusive'])->utc();
-        if ($start->lessThan('2027-01-01T00:00:00Z') || ! $start->greaterThan(now())) {
-            throw new InvalidArgumentException('PREREGISTRATION_MUST_PRECEDE_FUTURE_RESEARCH_EVENTS');
-        }
-        $design = array_intersect_key($proposal, array_flip(['hypothesis_key', 'source_data_hash', 'source_response_hash',
-            'source_execution_hash', 'source_mtf_bundle_hash', 'frozen_control_parameter_hash', 'intervention_hash',
-            'context_hash', 'stopping_rule_hash']));
-        $identity = ['protocol' => self::RESERVATION_PROTOCOL, 'design' => $design,
-            'reservation_owner' => ActivationValidationPlanService::class, 'validation_plan' => $plan,
-            'physical_event_domain' => ['symbol' => 'XAUUSD', 'timezone' => 'UTC',
-                'start_inclusive' => $plan['validation_start_inclusive'], 'end_exclusive' => $plan['validation_end_exclusive']],
-            'exclusions' => ['all_events_before' => $start->toIso8601String(), 'all_previously_exposed_events' => true,
-                'paper_2026_all_uses' => true, 'provider_hash_or_timeframe_relabeling_changes_identity' => false],
-            'provenance_audit_hash' => $audit['audit_hash'],
-            'required_before_execution' => ['immutable_owner_preregistration_before_first_validation_outcome',
-                'completed_authorized_distinct_research_datasets_with_actual_SHA256_and_UTC_bounds',
-                'original_training_selection_and_context_exposure_proof', 'exact_control_intervention_context_and_stopping_rule_parity',
-                'existing_powered_window_and_cost_risk_gates'],
-            'validation_dataset_sha256' => null, 'executable' => false, 'independent_evidence' => false,
-            'paper_eligible' => false, 'promotion_evidence' => false, 'server_authorization_created' => false,
-            'status' => 'draft_preregistration_not_persisted', 'dependency_status' => 'BLOCKED_DEPENDENCY',
-            'reason_code' => $plan['reason_code'], 'data_writes' => false];
 
-        return [...$identity, 'reservation_hash' => $this->hash($identity),
-            'draft_created_at' => now()->utc()->toIso8601String()];
+        $identity = ['protocol' => self::RESERVATION_PROTOCOL, 'validation_plan' => $plan,
+            'provenance_audit_hash' => $audit['audit_hash'], 'physical_event_domain' => null,
+            'status' => 'blocked_by_continuous_paper_policy', 'dependency_status' => 'BLOCKED_DEPENDENCY',
+            'reason_code' => $plan['reason_code'], 'executable' => false,
+            'validation_dataset_sha256' => null, 'paper_eligible' => false,
+            'required_before_execution' => ['original_training_selection_and_context_exposure_proof',
+                'genuinely_unexposed_authorized_pre_2026_original_windows',
+                'immutable_owner_preregistration_before_first_validation_outcome'],
+            'independent_evidence' => false, 'server_authorization_created' => false,
+            'promotion_evidence' => false, 'data_writes' => false];
+        return [...$identity, 'reservation_hash' => $this->hash($identity), 'draft_created_at' => now()->utc()->toIso8601String()];
     }
 
     private function candidate(?string $start, ?string $end): ?array

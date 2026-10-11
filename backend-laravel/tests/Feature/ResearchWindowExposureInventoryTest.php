@@ -43,7 +43,7 @@ class ResearchWindowExposureInventoryTest extends TestCase
         config()->set('app.key', 'base64:'.base64_encode(str_repeat('k', 32)));
         config()->set('services.instrument_policy.authorized_research_windows', []);
         config()->set('services.research_paper_epochs.authorized_paper_epochs', []);
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $this->fixtureRoot = sys_get_temp_dir().'/research-exposure-synthetic-'.bin2hex(random_bytes(8));
         $this->previousStorage = storage_path();
         app()->useStoragePath($this->fixtureRoot.'/storage');
@@ -83,8 +83,8 @@ class ResearchWindowExposureInventoryTest extends TestCase
         $this->assertFalse($legacy['ready']);
         $event = DB::table('specialist_council_data_events')->insertGetId([
             'event_key' => hash('sha256', 'synthetic-shared-selection'), 'symbol' => 'XAUUSD', 'market' => 'spot',
-            'event_start' => '2027-01-01 00:00:00', 'event_end' => '2027-01-01 00:05:00',
-            'available_at' => '2027-01-01 00:05:00', 'matured_at' => '2027-01-01 00:05:00',
+            'event_start' => '2012-01-01 00:00:00', 'event_end' => '2012-01-01 00:05:00',
+            'available_at' => '2012-01-01 00:05:00', 'matured_at' => '2012-01-01 00:05:00',
             'provenance' => json_encode(['synthetic_guard_only' => true]), 'created_at' => now(), 'updated_at' => now()]);
         DB::table('specialist_council_data_uses')->insert([
             'usage_key' => hash('sha256', 'synthetic-other-label-use'), 'specialist_council_version_id' => 999,
@@ -316,9 +316,9 @@ class ResearchWindowExposureInventoryTest extends TestCase
             'control_agent_id' => $agents['control']->id, 'evidence' => ['experiment_kind' => 'memory_confirmation'],
         ]);
         $design = ['authority_policy' => ResearchWindowExposureInventoryService::AUTHORITY_POLICY,
-            'validation_start' => '2027-01-01T00:00:00+00:00', 'validation_end' => '2027-02-01T00:00:00+00:00',
-            'validation_windows' => [['start_inclusive' => '2027-01-01T00:00:00+00:00',
-                'end_exclusive' => '2027-02-01T00:00:00+00:00']],
+            'validation_start' => '2012-01-01T00:00:00+00:00', 'validation_end' => '2012-02-01T00:00:00+00:00',
+            'validation_windows' => [['start_inclusive' => '2012-01-01T00:00:00+00:00',
+                'end_exclusive' => '2012-02-01T00:00:00+00:00']],
             'evaluator_hash' => hash('sha256', 'synthetic-evaluator'), 'context_hash' => hash('sha256', 'synthetic-context'),
             'execution_hash' => hash('sha256', 'synthetic-execution'), 'owner_source_hash' => hash('sha256', 'synthetic-owner'),
             'data_manifest_hash' => null, 'metric' => 'profit_factor', 'stopping_rule' => 'complete_sealed_window',
@@ -333,10 +333,10 @@ class ResearchWindowExposureInventoryTest extends TestCase
 
     private function inputs(): array
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2013-01-01T00:00:00Z'));
         $streams = [];
         foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $stream => $seconds) {
-            $from = '2027-01-01T00:00:00Z';
+            $from = '2012-01-01T00:00:00Z';
             $last = CarbonImmutable::parse($from)->addSeconds($seconds)->format('Y-m-d\TH:i:s\Z');
             $path = storage_path('app/lab-datasets/'.$stream.'.csv');
             File::ensureDirectoryExists(dirname($path));
@@ -348,7 +348,7 @@ class ResearchWindowExposureInventoryTest extends TestCase
         config()->set('services.instrument_policy.authorized_research_windows', [[
             'authorization_id' => 'synthetic-exposure-input', 'research_epoch_id' => 'synthetic-only',
             'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $manifest['bundle_hash'],
-            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z',
+            'start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-02-01T00:00:00Z',
             'mtf_bundle_manifest' => $manifest]]);
         $window = app(InstrumentResearchWindowService::class)->seal('synthetic-exposure-input', $manifest['bundle_hash']);
         $request = ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'dataset_path' => $streams['M5']['path'],

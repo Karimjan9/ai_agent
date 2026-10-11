@@ -947,6 +947,13 @@ class LabImmutableEvidenceService
         if (is_string($run)) {
             $run = $this->findRun($run);
         }
+        $request = (array) data_get($run?->request_meta, 'payload', []);
+        if ($run && ($run->phase === 'paper' || ($request['evaluation_mode'] ?? null) === 'paper'
+            || app(ResearchPaperEpochContractService::class)->researchInputHasPaperData($request,
+                (array) data_get($run->request_meta, 'dataset_manifest', [])))) {
+            return ['complete' => false, 'reason_codes' => ['PAPER_ONLY_DATA_CANNOT_ENTER_RESEARCH_LEARNING'],
+                'run_id' => $run->run_id, 'promotion_evidence' => false];
+        }
         if ($run && (data_get($run->request_meta, 'payload.policy_context.'.UnusedDraftPriceDiscoveryPreparationService::OWNER) !== null
             || data_get($run->metadata, 'reason_code') === UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY
             || data_get($run->modelVersion?->metadata, UnusedDraftPriceDiscoveryPreparationService::MODEL_SEAL) !== null

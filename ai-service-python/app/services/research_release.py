@@ -150,7 +150,7 @@ def verify_research_transport(payload, internal_key: str) -> dict | None:
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("RESEARCH_TRANSPORT_WINDOW_UTC_REQUIRED")
     start = start.tz_convert("UTC"); end = end.tz_convert("UTC")
-    if start < pd.Timestamp("2027-01-01", tz="UTC") or end <= start or end > _research_transport_now():
+    if end > pd.Timestamp("2026-01-01", tz="UTC") or end <= start or end > _research_transport_now():
         raise ValueError("RESEARCH_TRANSPORT_PAPER_OR_FUTURE_WINDOW_FORBIDDEN")
     exclusions = identity.get("paper_exclusions")
     if not isinstance(exclusions, list) or not 1 <= len(exclusions) <= 64:

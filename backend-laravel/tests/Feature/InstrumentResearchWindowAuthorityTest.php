@@ -93,7 +93,7 @@ class InstrumentResearchWindowAuthorityTest extends TestCase
         $manifest = [
             'data_partition' => ['screening_source' => 'pre_2026_foundation_training'],
             'instrument_research_window' => ['authorization_id' => 'window-1',
-                'research_epoch_id' => 'test-post-paper-research'],
+                'research_epoch_id' => 'test-untouched-historical-research'],
             'first_candle_at' => '2005-01-01T00:00:00Z',
             'last_candle_at' => '2025-12-31T23:00:00Z',
         ];
@@ -195,15 +195,15 @@ class InstrumentResearchWindowAuthorityTest extends TestCase
         foreach ([1, 2, 3] as $month) {
             $manifests[] = [
                 'authorization_id' => 'window-'.$month,
-                'research_epoch_id' => 'test-post-paper-research',
-                'start_inclusive' => sprintf('2027-%02d-%02dT00:00:00Z', $month, $overlap && $month === 2 ? 15 : 1),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'research_epoch_id' => 'test-untouched-historical-research',
+                'start_inclusive' => sprintf('2025-%02d-%02dT00:00:00Z', $month, $overlap && $month === 2 ? 15 : 1),
+                'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
                 'dataset_sha256' => hash('sha256', 'dataset-'.$month),
                 'purpose' => 'instrument_independent_validation',
             ];
         }
         if ($overlap) {
-            $manifests[0]['end_exclusive'] = '2027-02-20T00:00:00Z';
+            $manifests[0]['end_exclusive'] = '2025-02-20T00:00:00Z';
         }
         config()->set('services.instrument_policy.authorized_research_windows', $manifests);
 

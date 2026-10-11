@@ -54,7 +54,7 @@ class ScopedSelectorPanelTest extends TestCase
         app()->useStoragePath($this->fixtureStorage);
         config()->set('filesystems.disks.local.root', $this->fixtureStorage.'/app');
         config()->set('services.learning_lane.causal_minimum_trades_per_window', 3);
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $this->partialMock(ResearchReleaseSealService::class, function (MockInterface $mock): void {
             $mock->shouldReceive('assertCurrent')->andReturn([]);
             $mock->shouldReceive('responseValid')->andReturnTrue();
@@ -213,7 +213,7 @@ class ScopedSelectorPanelTest extends TestCase
     {
         $members = $this->members(); $owner = app(ScopedSelectorPanelService::class);
         $panel = app(TypedInstrumentFoundryService::class)->registerSelectorPanel($members[0][0], $this->ids($members), 'fixed', ['minimum_trades' => 3]);
-        $design = ['validation_start' => '2027-01-01T00:00:00Z', 'validation_end' => '2027-02-01T00:00:00Z',
+        $design = ['validation_start' => '2012-01-01T00:00:00Z', 'validation_end' => '2012-02-01T00:00:00Z',
             'evaluator_hash' => hash('sha256', 'synthetic-source'), 'context_hash' => hash('sha256', 'synthetic-context'),
             'execution_hash' => hash('sha256', 'synthetic-execution'), 'owner_source_hash' => hash('sha256', 'synthetic-owner'),
             'data_manifest_hash' => null, 'metric' => $panel['metric'], 'stopping_rule' => $panel['stopping_rule'], 'subject' => $panel['subject']];
@@ -250,7 +250,7 @@ class ScopedSelectorPanelTest extends TestCase
         app()->forgetInstance(ResearchReleaseSealService::class);
         $experiment = $this->members('codec-ingress', $selectorWindow)[0][0];
         $epochs = app(ResearchPaperEpochContractService::class);
-        $period = ['start_inclusive' => '2027-01-01T00:00:00+00:00', 'end_exclusive' => '2027-02-01T00:00:00+00:00'];
+        $period = ['start_inclusive' => '2012-01-01T00:00:00+00:00', 'end_exclusive' => '2012-02-01T00:00:00+00:00'];
         $hash = app(LabImmutableEvidenceService::class)->codeHash();
         $registered = app(ScopedResearchCertificateService::class)->register($selectorWindow ? 'selector' : 'component', $experiment, [
             'authority_policy' => ScopedResearchCertificateService::AUTHORITY_POLICY,
@@ -268,8 +268,8 @@ class ScopedSelectorPanelTest extends TestCase
                 'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window', 'selection_policy' => 'frozen_before_first_event'],
         ]);
         $this->assertTrue($registered['valid'], json_encode($registered));
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
-        $streams = []; $start = CarbonImmutable::parse('2027-01-10T00:00:00Z');
+        $this->travelTo(CarbonImmutable::parse('2013-01-01T00:00:00Z'));
+        $streams = []; $start = CarbonImmutable::parse('2012-01-10T00:00:00Z');
         foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $frame => $seconds) {
             $path = storage_path('app/lab-datasets/codec-'.$frame.'.csv'); File::ensureDirectoryExists(dirname($path));
             $end = $start->addSeconds($seconds)->toIso8601ZuluString();
@@ -322,9 +322,9 @@ class ScopedSelectorPanelTest extends TestCase
         $response = $selectorWindow ? ['leaderboard' => array_map(fn ($id) => ['lab_agent_id' => (int) $id,
             'result' => ['data_quality' => ['replay_executed_clock' => ['protocol' => 'replay_executed_clock_v1',
                 'complete' => true, 'dataset_hash' => $manifest['bundle_hash'], 'execution_hash' => hash('sha256', 'codec-execution'),
-                'decision_rows' => 1, 'duration_seconds' => 300, 'signal_start' => '2027-01-10T00:00:00+00:00',
-                'signal_end' => '2027-01-10T00:00:00+00:00', 'execution_start' => '2027-01-10T00:05:00+00:00',
-                'execution_end' => '2027-01-10T00:05:00+00:00']]]], $ids)] : [];
+                'decision_rows' => 1, 'duration_seconds' => 300, 'signal_start' => '2012-01-10T00:00:00+00:00',
+                'signal_end' => '2012-01-10T00:00:00+00:00', 'execution_start' => '2012-01-10T00:05:00+00:00',
+                'execution_end' => '2012-01-10T00:05:00+00:00']]]], $ids)] : [];
         $fold->update(['status' => 'completed', 'completed_at' => now(), 'request_payload' => $request,
             'request_hash' => $requestHash, 'response_payload' => $response, 'response_hash' => $epochs->parameterHash($response),
             'dataset_hash' => $manifest['bundle_hash'], 'execution_hash' => hash('sha256', 'codec-execution')]);
@@ -355,7 +355,7 @@ class ScopedSelectorPanelTest extends TestCase
             try { $proof(); $this->fail('Different published original source was accepted.'); }
             catch (\LogicException $error) { $this->assertSame('ORIGINAL_SELECTOR_PUBLISHED_SOURCE_MISMATCH', $error->getMessage()); }
             LabEvaluationRun::findOrFail($runIds[1])->update(['data_hash' => $manifest['bundle_hash']]);
-            $outside = $response; $outside['leaderboard'][0]['result']['data_quality']['replay_executed_clock']['execution_end'] = '2027-02-01T00:00:00+00:00';
+            $outside = $response; $outside['leaderboard'][0]['result']['data_quality']['replay_executed_clock']['execution_end'] = '2012-02-01T00:00:00+00:00';
             // Deliberate database corruption bypasses the model's already enforced completed-receipt immutability.
             DB::table('causal_fold_receipts')->where('id', $fold->id)->update([
                 'response_payload' => json_encode($outside, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
@@ -439,8 +439,8 @@ class ScopedSelectorPanelTest extends TestCase
         config()->set('services.learning_lane.causal_per_fold_budget_seconds', 45);
         config()->set('services.learning_lane.causal_max_rows_per_fold', 512);
         config()->set('services.learning_lane.confirmation_maximum_holding_bars', $undersized ? 240 : 2);
-        $period = ['start_inclusive' => '2027-01-01T00:00:00+00:00', 'end_exclusive' => '2027-02-01T00:00:00+00:00'];
-        $record = ['authorization_id' => 'synthetic-future-selector', 'research_epoch_id' => 'synthetic-2027-selector',
+        $period = ['start_inclusive' => '2012-01-01T00:00:00+00:00', 'end_exclusive' => '2012-02-01T00:00:00+00:00'];
+        $record = ['authorization_id' => 'synthetic-future-selector', 'research_epoch_id' => 'synthetic-2012-selector',
             'purpose' => 'instrument_independent_validation', ...$period];
         config()->set('services.instrument_policy.authorized_research_windows', [$record]);
         $members = $this->members('future-provider', true, $compound); $owner = app(ScopedSelectorPanelService::class);
@@ -482,10 +482,10 @@ class ScopedSelectorPanelTest extends TestCase
         $wait = app(CausalFoldExecutionService::class)->run($members[0][0]->id, 1);
         $this->assertSame('awaiting_original_selector_data', $wait['status']);
         $this->assertDatabaseCount('causal_fold_receipts', 0);
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2013-01-01T00:00:00Z'));
         // Both real runtimes use the canonical project data-root guard. Only this unique CSV namespace is written there.
         app()->useStoragePath(base_path('storage'));
-        $streams = []; $start = CarbonImmutable::parse('2027-01-10T00:00:00Z');
+        $streams = []; $start = CarbonImmutable::parse('2012-01-10T00:00:00Z');
         $this->canonicalFixtureRoot = base_path('storage/app/lab-datasets/scoped-selector-software-'.bin2hex(random_bytes(6)));
         foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $timeframe => $seconds) {
             $count = $timeframe === 'M5' ? ($undersized ? 360 : 208) : 2; $rows = [];
@@ -591,7 +591,7 @@ class ScopedSelectorPanelTest extends TestCase
                 $registered['certificate_id'], ['selector_panel_key' => $panel['panel_key']])['authority_record_id']);
             $this->assertDatabaseCount('lab_evolution_credit_events', 0);
         }
-        $record['end_exclusive'] = '2027-03-01T00:00:00+00:00';
+        $record['end_exclusive'] = '2012-03-01T00:00:00+00:00';
         config()->set('services.instrument_policy.authorized_research_windows', [[...$record, 'dataset_sha256' => $manifest['bundle_hash'], 'mtf_bundle_manifest' => $manifest]]);
         $this->assertSame('SELECTOR_PANEL_PLANNED_AUTHORIZATION_CHANGED', $owner->prospectiveExecutionScope($members[0][0]->fresh())['reason_code']);
         $corrupted = json_decode($row->sealed_contract, true); $corrupted['seal'] = str_repeat('0', 64);
@@ -763,7 +763,7 @@ class ScopedSelectorPanelTest extends TestCase
 
     private function complete(AgentLearningCausalExperiment $experiment, array $request, float $delta, bool $missingEffort = false, float $candidateDrawdown = 5): void
     {
-        $start = CarbonImmutable::parse('2027-01-02T00:00:00Z');
+        $start = CarbonImmutable::parse('2012-01-02T00:00:00Z');
         $this->travelTo(CarbonImmutable::now()->greaterThanOrEqualTo($start) ? CarbonImmutable::now()->addSecond() : $start);
         $results = []; $items = [];
         foreach ([$experiment->guided_agent_id, $experiment->blinded_agent_id, $experiment->control_agent_id] as $index => $id) {

@@ -47,6 +47,7 @@ class SeparatedCausalProofTest extends TestCase
 
     public function test_prospective_scope_never_borrows_legacy_confirmed_flag_or_credit(): void
     {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2011-12-01T00:00:00Z'));
         [$experiment] = $this->question(false);
         $registry = app(ScopedResearchCertificateService::class);
         $certificate = $registry->register('component', $experiment, $this->design());
@@ -60,6 +61,7 @@ class SeparatedCausalProofTest extends TestCase
 
     public function test_draft_observations_do_not_consume_a_future_original_assessment(): void
     {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2011-12-01T00:00:00Z'));
         [$experiment] = $this->question(false);
         $registry = app(ScopedResearchCertificateService::class);
         $component = $registry->register('component', $experiment, $this->design());
@@ -143,7 +145,7 @@ class SeparatedCausalProofTest extends TestCase
 
     private function design(): array
     {
-        return ['validation_start' => '2027-01-01T00:00:00Z', 'validation_end' => '2027-07-01T00:00:00Z',
+        return ['validation_start' => '2012-01-01T00:00:00Z', 'validation_end' => '2012-07-01T00:00:00Z',
             'evaluator_hash' => str_repeat('a', 64), 'context_hash' => str_repeat('c', 64),
             'execution_hash' => str_repeat('e', 64), 'owner_source_hash' => str_repeat('b', 64),
             'metric' => 'profit_factor', 'stopping_rule' => ['windows' => 6],

@@ -58,7 +58,7 @@ class DescendantScopedExecutionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        CarbonImmutable::setTestNow('2026-10-09T08:00:00Z');
+        CarbonImmutable::setTestNow('2011-10-09T08:00:00Z');
         config(['services.internal_api.token' => str_repeat('scoped-native-test-', 3),
             'services.instrument_policy.authorized_research_windows' => []]);
         Http::preventStrayRequests();
@@ -579,7 +579,7 @@ class DescendantScopedExecutionTest extends TestCase
                     'native_execution' => ['purpose' => count($roles) === 4 ? DescendantScopedExecutionService::PURPOSE : DescendantScopedExecutionService::COMPONENT_PURPOSE,
                         'initial_capital' => 10000, 'risk_policy' => ['risk_per_trade_percent' => .5], 'full_replay_runtime_policy' => []]],
                 'window' => ['window_key' => 'synthetic-original-window', 'dataset_sha256' => str_repeat('b', 64),
-                    'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z'],
+                    'start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-02-01T00:00:00Z'],
                 'manifest' => ['protocol' => MultiTimeframeSnapshotService::PROTOCOL, 'bundle_hash' => str_repeat('b', 64),
                     'streams' => array_fill_keys(['M5', 'H4', 'H1', 'M15'], ['path' => 'synthetic-future.csv', 'sha256' => str_repeat('d', 64)])]];
             $fences = [];
@@ -915,7 +915,7 @@ PY;
             AiLaboratory::create(['name' => 'synthetic native matrix wire', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
                 'strategy_families' => ['ema_rsi'], 'is_active' => false]);
         }
-        CarbonImmutable::setTestNow('2027-08-01T00:00:00Z');
+        CarbonImmutable::setTestNow('2012-08-01T00:00:00Z');
         config(['queue.default' => 'database']);
         Bus::fake([ExecuteScopedResearchArmJob::class]);
         $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
@@ -1076,8 +1076,8 @@ PY;
         (function (MockInterface $mock) use ($confirmSource, $contextHash, $context, $execution, $models, $gene, $old, $new, $metric): void {
             $mock->shouldReceive('inspect')->with(999)->andReturn(['valid' => true, 'scope' => 'component',
                 'source_id' => 999, 'certificate_id' => 999, 'design_hash' => hash('sha256', 'synthetic source design'),
-                'design' => ['context_hash' => $contextHash, 'validation_start' => '2027-01-01T00:00:00Z',
-                    'validation_end' => '2027-07-01T00:00:00Z', 'execution_hash' => $execution['execution_hash'],
+                'design' => ['context_hash' => $contextHash, 'validation_start' => '2012-01-01T00:00:00Z',
+                    'validation_end' => '2012-07-01T00:00:00Z', 'execution_hash' => $execution['execution_hash'],
                     'evaluator_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
                     'metric' => $metric, 'stopping_rule' => ['minimum_trades_per_arm' => 8, 'minimum_effect' => .01],
                     'statistical_guard' => ['method' => 'paired_window_bootstrap_percentile', 'replicates' => 1000, 'seed' => 123, 'lower_quantile' => .05],
@@ -1098,10 +1098,10 @@ PY;
         $this->instance(ScopedResearchCertificateService::class, $registry);
         $windows = [];
         for ($month = 1; $month <= 6; $month++) {
-            $windows[] = ['start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1)];
+            $windows[] = ['start_inclusive' => sprintf('2012-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2012-%02d-01T00:00:00Z', $month + 1)];
         }
-        $scope = ['validation_start' => '2027-01-01T00:00:00Z', 'validation_end' => '2027-07-01T00:00:00Z',
+        $scope = ['validation_start' => '2012-01-01T00:00:00Z', 'validation_end' => '2012-07-01T00:00:00Z',
             'context' => $context, 'evaluator_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
             'execution_hash' => $execution['execution_hash'], 'metric' => $metric,
             'stopping_rule' => ['minimum_trades_per_arm' => 8, 'minimum_effect' => .01], 'validation_windows' => $windows,

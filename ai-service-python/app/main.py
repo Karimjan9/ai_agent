@@ -286,7 +286,7 @@ def _assert_non_paper_source_pre_2026(
 ) -> None:
     """Fail closed for every research/evolution data boundary.
 
-    The paper API is the only consumer allowed to receive 2026 candles. A
+    The paper API is the only consumer allowed to receive candles from 2026 onward. A
     caller cannot bypass this by omitting Laravel's policy metadata: research
     data itself is inspected before any strategy features are built.
     """
@@ -305,17 +305,16 @@ def _assert_non_paper_source_pre_2026(
         )
     )
     timestamps = pd.to_datetime(dataframe["time"], utc=True, errors="coerce")
-    legacy_start = pd.Timestamp("2026-01-01", tz="UTC")
-    legacy_end = pd.Timestamp("2027-01-01", tz="UTC")
-    if timestamps.isna().any() or ((timestamps >= legacy_start) & (timestamps < legacy_end)).any():
+    paper_start = pd.Timestamp("2026-01-01", tz="UTC")
+    if timestamps.isna().any() or (timestamps >= paper_start).any():
         raise ValueError(
             "Research/training/screening/replay dataset 2026-01-01 dan keyingi candle saqlamasligi kerak; "
-            "2026 faqat paper lane uchun."
+            "2026 va barcha keyingi yillar faqat paper lane uchun."
         )
-    if (timestamps >= legacy_end).any():
+    if "authorized_research_transport" in (payload.policy_context or {}):
         authorized = _verified_research_transport(payload)
         if authorized is None:
-            raise ValueError("RESEARCH_TRANSPORT_AUTHENTICATION_REQUIRED; 2026 faqat paper lane uchun.")
+            raise ValueError("RESEARCH_TRANSPORT_AUTHENTICATION_REQUIRED")
         # A supplied DataFrame may not borrow a signed file's label. Check the
         # loader-owned immutable index and actual consumed source rows too.
         from app.services.backtester import _consumed_dataset_attestation
@@ -325,9 +324,8 @@ def _assert_non_paper_source_pre_2026(
                 or (timestamps < pd.Timestamp(authorized["window"]["start_inclusive"])).any()
                 or (timestamps >= pd.Timestamp(authorized["window"]["end_exclusive"])).any()):
             raise ValueError("RESEARCH_TRANSPORT_CONSUMED_SOURCE_MISMATCH")
-        return
-    if (timestamps >= min(cutoff, legacy_start)).any():
-        raise ValueError("Research/training/screening/replay dataset cutoff buzildi; 2026 faqat paper lane uchun.")
+    if (timestamps >= min(cutoff, paper_start)).any():
+        raise ValueError("Research/training/screening/replay dataset cutoff buzildi; 2026 va keyingi yillar faqat paper lane uchun.")
 
 
 def _candidate_cache_payload(
@@ -1897,7 +1895,7 @@ def _verified_research_transport(payload: SimpleBacktestRequest):
 
 
 def _scoped_full_durable_confirmation(payload: SimpleBacktestRequest) -> bool:
-    """Only authenticated post-paper selector transport may use full+durable.
+    """Only authenticated pre-2026 selector transport may use full+durable.
 
     Full remains the server authorization mode. The original durable fold
     producer/deadline is reused, not replaced with ordinary full evaluation.

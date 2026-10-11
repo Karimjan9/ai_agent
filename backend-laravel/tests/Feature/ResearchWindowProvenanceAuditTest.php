@@ -97,10 +97,10 @@ class ResearchWindowProvenanceAuditTest extends TestCase
         $second = $service->preregistration($this->proposal(), $service->audit());
 
         $this->assertSame($first['reservation_hash'], $second['reservation_hash']);
-        $this->assertSame('2027-01-01T00:00:00+00:00', $first['physical_event_domain']['start_inclusive']);
-        $this->assertSame('2027-07-01T00:00:00+00:00', $first['physical_event_domain']['end_exclusive']);
-        $this->assertSame(6, $first['validation_plan']['window_count']);
-        $this->assertSame('draft_preregistration_not_persisted', $first['status']);
+        $this->assertNull($first['physical_event_domain']);
+        $this->assertNull($first['validation_plan']['validation_start_inclusive']);
+        $this->assertSame(0, $first['validation_plan']['window_count']);
+        $this->assertSame('blocked_by_continuous_paper_policy', $first['status']);
         $this->assertNull($first['validation_dataset_sha256']);
         foreach (['executable', 'independent_evidence', 'paper_eligible', 'promotion_evidence', 'server_authorization_created', 'data_writes'] as $key) {
             $this->assertFalse($first[$key]);
@@ -130,8 +130,8 @@ class ResearchWindowProvenanceAuditTest extends TestCase
             $this->assertSame('PROVENANCE_AUDIT_HASH_INVALID', $error->getMessage());
         }
         $this->travelTo(CarbonImmutable::parse('2027-01-01T00:00:00Z'));
-        $this->expectExceptionMessage('PREREGISTRATION_MUST_PRECEDE_FUTURE_RESEARCH_EVENTS');
-        $service->preregistration($this->proposal(), $service->audit());
+        $blocked = $service->preregistration($this->proposal(), $service->audit());
+        $this->assertSame('ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', $blocked['reason_code']);
     }
 
     public function test_future_paper_overlap_stays_an_explicit_blocked_reservation(): void
@@ -146,7 +146,7 @@ class ResearchWindowProvenanceAuditTest extends TestCase
 
         $draft = $service->preregistration($this->proposal(), $service->audit());
 
-        $this->assertSame('RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH', $draft['reason_code']);
+        $this->assertSame('ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', $draft['reason_code']);
         $this->assertFalse($draft['validation_plan']['validation_period_disjoint_from_paper']);
         $this->assertFalse($draft['executable']);
     }
@@ -192,9 +192,7 @@ class ResearchWindowProvenanceAuditTest extends TestCase
     {
         $service = app(ResearchWindowProvenanceAuditService::class);
         $schedule = $service->futureSchedule();
-        $this->assertCount(6, $schedule['windows']);
-        $this->assertSame('2027-01-01T00:00:00+00:00', $schedule['windows'][0]['start_inclusive']);
-        $this->assertSame('2027-07-01T00:00:00+00:00', $schedule['windows'][5]['end_exclusive']);
+        $this->assertCount(0, $schedule['windows']);
         foreach ($schedule['windows'] as $index => $window) {
             $this->assertNull($window['source_dataset_sha256']);
             $this->assertNull($window['evaluated_rows']);
@@ -207,7 +205,7 @@ class ResearchWindowProvenanceAuditTest extends TestCase
             'paper_2026_research_eligible', 'executable', 'independent_evidence', 'server_authorization_created', 'data_writes'] as $key) {
             $this->assertFalse($schedule[$key]);
         }
-        $this->assertSame('draft_collection_schedule_not_authorization', $schedule['status']);
+        $this->assertSame('blocked_by_continuous_paper_policy', $schedule['status']);
         $this->travelTo(now()->addMinute());
         $this->assertSame($schedule['schedule_hash'], $service->futureSchedule()['schedule_hash']);
         $this->assertSame(0, DB::table('research_experiment_work_items')->count());
@@ -224,10 +222,10 @@ class ResearchWindowProvenanceAuditTest extends TestCase
             'authorized_at' => '2026-10-01T00:00:00Z', 'approved' => true,
             'candidate_must_be_frozen_before_observation' => true, 'research_uses_forbidden' => true]]);
         $service = app(ResearchWindowProvenanceAuditService::class);
-        $this->assertSame('RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH', $service->futureSchedule()['reason_code']);
+        $this->assertSame('ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', $service->futureSchedule()['reason_code']);
         $this->travelTo(CarbonImmutable::parse('2027-01-01T00:00:00Z'));
         $schedule = $service->futureSchedule();
-        $this->assertSame('PROSPECTIVE_REGISTRATION_DEADLINE_PASSED', $schedule['reason_code']);
+        $this->assertSame('ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', $schedule['reason_code']);
         $this->assertFalse($schedule['executable']);
     }
 

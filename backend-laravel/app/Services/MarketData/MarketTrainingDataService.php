@@ -16,10 +16,11 @@ class MarketTrainingDataService
 
     public function trainingCutoff(): CarbonImmutable
     {
-        return CarbonImmutable::parse(
+        $configured = CarbonImmutable::parse(
             (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
             'UTC',
         )->utc();
+        return $configured->min(CarbonImmutable::parse(\App\Services\ResearchPaperEpochContractService::PAPER_ONLY_START));
     }
 
     /**

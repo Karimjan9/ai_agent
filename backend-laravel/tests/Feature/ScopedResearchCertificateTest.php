@@ -32,7 +32,7 @@ class ScopedResearchCertificateTest extends TestCase
         config()->set('app.key', 'base64:'.base64_encode(str_repeat('k', 32)));
         config()->set('services.instrument_policy.authorized_research_windows', []);
         config()->set('services.research_paper_epochs.authorized_paper_epochs', []);
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $this->fixtureRoot = sys_get_temp_dir().'/scoped-certificate-input-'.bin2hex(random_bytes(8));
         $this->previousStorage = storage_path();
         app()->useStoragePath($this->fixtureRoot.'/storage');
@@ -68,7 +68,7 @@ class ScopedResearchCertificateTest extends TestCase
         [$source, $design] = $this->question();
         $owner = app(ScopedResearchCertificateService::class);
         $first = $owner->register('component', $source, $design);
-        $this->travelTo(CarbonImmutable::parse('2027-02-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2012-02-01T00:00:00Z'));
         $repeat = $owner->register('component', $source, array_reverse($design, true));
 
         $this->assertTrue($repeat['valid']);
@@ -170,7 +170,7 @@ class ScopedResearchCertificateTest extends TestCase
     {
         [$source, $design] = $this->question();
         $owner = app(ScopedResearchCertificateService::class);
-        $this->travelTo(CarbonImmutable::parse('2027-02-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2012-02-01T00:00:00Z'));
         try {
             $owner->register('component', $source, $design);
             $this->fail('Past validation received a new preregistration.');
@@ -179,7 +179,7 @@ class ScopedResearchCertificateTest extends TestCase
         }
         $design['validation_start'] = '2026-11-01T00:00:00+00:00';
         $design['validation_end'] = '2026-12-01T00:00:00+00:00';
-        $this->expectExceptionMessage('SCOPED_CERTIFICATE_POST_PAPER_FUTURE_INTERVAL_REQUIRED');
+        $this->expectExceptionMessage('SCOPED_CERTIFICATE_PAPER_DATA_FORBIDDEN');
         $owner->register('component', $source, $design);
     }
 
@@ -319,10 +319,10 @@ class ScopedResearchCertificateTest extends TestCase
     /** Synthetic byte/clock fixtures test guards only; no real future market data exists here. */
     private function syntheticInputs(): array
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2013-01-01T00:00:00Z'));
         $streams = [];
         foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $stream => $seconds) {
-            $from = '2027-01-01T00:00:00Z';
+            $from = '2012-01-01T00:00:00Z';
             $until = CarbonImmutable::parse($from)->addSeconds($seconds)->format('Y-m-d\TH:i:s\Z');
             $path = storage_path('app/lab-datasets/'.$stream.'.csv');
             File::ensureDirectoryExists(dirname($path));
@@ -335,7 +335,7 @@ class ScopedResearchCertificateTest extends TestCase
         config()->set('services.instrument_policy.authorized_research_windows', [[
             'authorization_id' => 'scoped-synthetic-input', 'research_epoch_id' => 'synthetic-input-only',
             'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $manifest['bundle_hash'],
-            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z',
+            'start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-02-01T00:00:00Z',
             'mtf_bundle_manifest' => $manifest,
         ]]);
 
@@ -367,7 +367,7 @@ class ScopedResearchCertificateTest extends TestCase
         ]);
         $model = ModelVersion::findOrFail($agents['guided']->model_version_id);
         $design = [
-            'validation_start' => '2027-01-01T00:00:00+00:00', 'validation_end' => '2027-02-01T00:00:00+00:00',
+            'validation_start' => '2012-01-01T00:00:00+00:00', 'validation_end' => '2012-02-01T00:00:00+00:00',
             'evaluator_hash' => hash('sha256', 'evaluator'), 'context_hash' => hash('sha256', 'context'),
             'execution_hash' => hash('sha256', 'execution'), 'owner_source_hash' => hash('sha256', 'owner'),
             'data_manifest_hash' => null, 'metric' => 'profit_factor', 'stopping_rule' => 'complete_sealed_window',

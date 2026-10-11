@@ -6,7 +6,7 @@ use Carbon\CarbonImmutable;
 use App\Models\LabGeneration;
 use RuntimeException;
 
-/** Server-owned, post-paper research windows for instrument confirmation. */
+/** Server-owned untouched historical windows; every date from 2026 stays paper-only. */
 class InstrumentResearchWindowService
 {
     public const SCOPED_ORIGINAL_BUNDLE_PROTOCOL = 'authorized_scoped_original_window_bundle_v1';
@@ -40,7 +40,7 @@ class InstrumentResearchWindowService
         if (($request['evaluation_mode'] ?? null) !== 'full'
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $window['start_inclusive'], $window['end_exclusive'])
-            || CarbonImmutable::parse($window['start_inclusive'])->lessThan('2027-01-01T00:00:00Z')) {
+            || CarbonImmutable::parse($window['end_exclusive'])->greaterThan(app(ResearchPaperEpochContractService::class)->cutoff())) {
             throw new RuntimeException('RESEARCH_TRANSPORT_PURPOSE_OR_PAPER_BOUNDARY_INVALID');
         }
         $persisted = LabGeneration::query()->find($generation->getKey());
@@ -474,7 +474,8 @@ class InstrumentResearchWindowService
     public function verifySealedReplayWindow(array $window, array $manifest): array
     {
         if (! $this->authorized($window, (string) ($manifest['bundle_hash'] ?? ''))
-            || CarbonImmutable::parse((string) ($window['start_inclusive'] ?? ''))->lessThan('2027-01-01T00:00:00Z')) {
+            || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                (string) ($window['start_inclusive'] ?? ''), (string) ($window['end_exclusive'] ?? ''))) {
             throw new RuntimeException('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW');
         }
         $registries = array_values(array_filter((array) config('services.instrument_policy.authorized_research_windows', []),
@@ -656,8 +657,8 @@ class InstrumentResearchWindowService
     /** The replay manifest must attest the window's actual data chronology. */
     public function sealForDataset(string $dataHash, array $replayManifest): ?array
     {
-        if (data_get($replayManifest, 'data_partition.screening_source')
-                !== 'authorized_post_paper_research_validation'
+        if (! in_array(data_get($replayManifest, 'data_partition.screening_source'),
+                ['authorized_pre_2026_research_validation', 'authorized_post_paper_research_validation'], true)
             || ! filled(data_get($replayManifest, 'instrument_research_window.authorization_id'))
             || ! filled(data_get($replayManifest, 'instrument_research_window.research_epoch_id'))
             || ! filled(data_get($replayManifest, 'first_candle_at'))
@@ -792,10 +793,7 @@ class InstrumentResearchWindowService
         } catch (\Throwable) {
             return null;
         }
-        $paperEnd = CarbonImmutable::parse((string) data_get(
-            app(ResearchPaperEpochContractService::class)->contract(), 'paper_epoch.end_exclusive', ''
-        ), 'UTC')->utc();
-        if ($start->lessThan($paperEnd) || ! $end->greaterThan($start)
+        if (! $end->greaterThan($start)
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $start->toIso8601String(), $end->toIso8601String(),
             )) {

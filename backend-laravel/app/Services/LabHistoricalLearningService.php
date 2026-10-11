@@ -82,7 +82,7 @@ class LabHistoricalLearningService
         if ($families->isEmpty()) return [];
 
         $revision = $this->sourceRevision($symbol, $timeframe);
-        $revisionKey = 'lab-history:source-revision:v2:'.hash('sha256', $symbol.'|'.$timeframe);
+        $revisionKey = 'lab-history:source-revision:pre2026-v3:'.hash('sha256', $symbol.'|'.$timeframe);
         // A scheduler tick with no new immutable source evidence should not
         // hydrate hundreds of megabytes of historical replay metrics again.
         // This is only an execution watermark: canonical insight authority
@@ -318,9 +318,14 @@ class LabHistoricalLearningService
             'request_meta', 'response_meta', 'metadata', 'created_at', 'updated_at',
         ]);
         $legacyRunIds = $runs->where('status', 'legacy_snapshot')->pluck('run_id')->filter()->all();
+        $paperRunIds = $runs->filter(fn (LabEvaluationRun $run): bool => $run->phase === 'paper'
+            || data_get($run->request_meta, 'payload.evaluation_mode') === 'paper'
+            || app(ResearchPaperEpochContractService::class)->researchInputHasPaperData(
+                (array) data_get($run->request_meta, 'payload', []), (array) data_get($run->request_meta, 'dataset_manifest', [])))
+            ->pluck('run_id')->all();
         $gateEvents = LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)
             ->where(fn ($query) => $query->whereNull('run_id')->orWhereNotIn('run_id', $this->studyRunIds()))
-            ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate', 'paper_admission'])
+            ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate'])
             ->latest('recorded_at')->get([
                 'id', 'lab_generation_id', 'lab_agent_id', 'run_id', 'stage',
                 'decision', 'revision', 'reason_codes', 'metrics', 'payload', 'recorded_at',
@@ -328,7 +333,7 @@ class LabHistoricalLearningService
             // Backfilled snapshots are an audit bridge only. They may remain
             // visible in the evidence ledger, but they must not contribute a
             // learning target or mutation direction.
-            ->reject(fn (LabGateDecisionEvent $event): bool => in_array((string) $event->run_id, $legacyRunIds, true)
+            ->reject(fn (LabGateDecisionEvent $event): bool => in_array((string) $event->run_id, [...$legacyRunIds, ...$paperRunIds], true)
                 || data_get($event->payload, 'completeness') === 'snapshot_only'
                 || data_get($event->payload, 'source') === 'legacy_snapshot_backfill')
             ->values();
@@ -499,6 +504,7 @@ class LabHistoricalLearningService
             ->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
             ->where('a.symbol', strtoupper($symbol))
             ->where('a.timeframe', strtoupper($timeframe))
+            ->where('e.candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
             ->whereIn('e.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
             ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
         $legacyBase = $agents(DB::table('lab_candle_decision_events as e'))
@@ -507,7 +513,7 @@ class LabHistoricalLearningService
                 ->from('lab_candle_decision_rollups as r')
                 ->whereColumn('r.run_id', 'e.run_id'));
         $latestLegacyEventId = (int) ((clone $legacyBase)->max('e.id') ?? 0);
-        $legacyCacheKey = 'lab-history:ordinary-legacy-candle-evidence:v2:'.hash('sha256', $cacheKey);
+        $legacyCacheKey = 'lab-history:ordinary-legacy-candle-evidence:pre2026-v3:'.hash('sha256', $cacheKey);
         $cachedLegacy = Cache::get($legacyCacheKey);
         if (! is_array($cachedLegacy)
             || data_get($cachedLegacy, 'protocol') !== 'immutable_ordinary_candle_aggregate_v2'
@@ -525,6 +531,7 @@ class LabHistoricalLearningService
             ->join('lab_agents as a', 'a.id', '=', 'r.lab_agent_id')
             ->where('a.symbol', strtoupper($symbol))
             ->where('a.timeframe', strtoupper($timeframe))
+            ->where('r.last_candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
             ->whereIn('r.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
             ->where(fn ($query) => $query->whereNull('r.run_id')->orWhereNotIn('r.run_id', $this->studyRunIds()));
         $rollupSummary = (clone $rollupBase)
@@ -661,6 +668,7 @@ class LabHistoricalLearningService
     private function candleEvidenceForAgents(array $agentIds, string $family = '__fallback'): array
     {
         $base = DB::table('lab_candle_decision_events as e')
+            ->where('e.candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
             ->whereIn('e.lab_agent_id', LabAgent::query()->whereIn('id', $agentIds)
                 ->whereNotIn('id', $this->studyAgentIds())->select('id'))
             ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));

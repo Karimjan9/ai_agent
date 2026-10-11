@@ -402,7 +402,7 @@ neither state implies confirmed compounding or credit (ADR-017).
    control trade slice in the same exact phase and an activation receipt for
    that exact key. Session-only history cannot cross this posterior boundary.
    Even an exact paired slice remains provisional until every observation has
-   a server-authorized, immutable post-paper research-window receipt. Three
+   a server-authorized, immutable untouched pre-2026 research-window receipt. Three
    unique names without distinct non-overlapping datasets, or two positive
    observations confined to one window, cannot become confirmed authority.
 6. `confirmed_component` requires the observed replay context to match the
@@ -439,9 +439,10 @@ neither state implies confirmed compounding or credit (ADR-017).
     is not an executable data receipt or causal credit. It never reaches the
     credit bridge. Incomplete/mismatched arm evidence remains invalid and
    cannot be reinterpreted as a scientific no-effect result.
-    New activation plans also seal `sealed_confirmation_route_v1` and an
-    explicit `BLOCKED_DEPENDENCY` reason; a future paper-period overlap is a
-    separate data-policy blocker. Historical causal research is a distinct
+    New activation plans seal `sealed_confirmation_route_v2` and declare
+    missing untouched pre-2026 original evidence as `BLOCKED_DEPENDENCY`.
+    Their validation dates are null; 2026, 2027 and all later years remain
+    permanently paper-only. Historical causal research is a distinct
     existing frozen-contract route and does not wait for live 2026 candles.
     `activation_future_research_window_v2` adds that route. Historical v1
     plans are validated against their original non-executable reservation

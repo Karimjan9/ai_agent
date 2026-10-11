@@ -1,5 +1,11 @@
 # Operations states
 
+Cold rollout verification reads the existing PHP queue-worker boot binding
+from `runtime:research-worker-boot:<PID>` after restart. Each observation binds
+its actual live PID and boot source hash; it grants no scientific authority.
+Fresh process identity, matching current code/artifact bytes and Python's
+loaded-source health remain separate required observations.
+
 `deeper_ready -> RESUME_NATIVE_DEPTH_AUDIT -> exact_generation_dispatch_admitted`
 uses the original immutable sample/checkpoint watermark, not a minute clock.
 STOP, unavailable/pending queues or invalid original proof produces commandless

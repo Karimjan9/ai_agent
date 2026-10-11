@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-10T06:29:15.786Z",
-  "source_digest": "c7d745c828820ba1191296e0250e79d01301fab3a1139be8ec46423223a18359",
-  "source_file_count": 1603,
-  "git_head": "3114af77576b5ce847b6a141038c47a46aec859c",
+  "generated_at": "2026-10-11T16:14:09.164Z",
+  "source_digest": "0aa65c3d21f655a9526512cffb58d1e2c75130cdff12c3ab301e21e0a77cf8fe",
+  "source_file_count": 1606,
+  "git_head": "9b5bf1de4971ed61a12cdf88cb17431b80d3361b",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -60,6 +60,7 @@
         "test_valid_actual_csv_admits_only_execution_without_independence_and_signature_is_retry_stable",
         "test_invalid_transport_never_borrows_future_authorization",
         "test_immutable_2026_cannot_be_bypassed_by_cutoff_label_or_valid_future_signature",
+        "test_all_paper_years_refuse_even_a_server_signed_research_window",
         "test_same_future_timestamps_changed_actual_rows_refuse_signed_file_identity",
         "test_actual_primary_cannot_be_overwritten_by_duplicate_mtf_key",
         "test_all_real_mtf_and_related_streams_are_bound_and_paper_context_cannot_hide",
@@ -1448,6 +1449,15 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
+      "tests": [
+        "test_every_year_from_2026_remains_paper_even_after_configuration_changes",
+        "test_future_research_authorization_cannot_override_the_continuous_boundary",
+        "test_no_future_research_calendar_is_invented_and_the_plan_is_bound",
+        "test_original_paper_inputs_cannot_be_reused_as_research_learning"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ControlRootInheritanceTest.php",
       "tests": [
         "test_parentless_first_generation_is_explicitly_marked_without_a_parent",
@@ -1880,6 +1890,13 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php",
+      "tests": [
+        "test_repeated_exact_audit_is_reused_but_changed_bytes_or_scope_are_audited_again",
+        "test_a_mismatched_original_output_is_never_cached_as_verified"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php",
       "tests": [
         "setUp",
@@ -1891,6 +1908,7 @@
         "test_raw_tick_recovery_uses_omitted_actual_minutes_and_treats_sparse_native_m5_as_diagnostic",
         "test_raw_tick_recovery_refuses_native_volume_disagreement_and_missing_minute_attestation",
         "test_hash_bound_raw_tick_recovery_rejects_malformed_columns_crossed_quotes_and_source_drift",
+        "test_successful_pure_cache_cannot_hide_changed_source_bytes",
         "test_bi5_ticks_supply_all_actual_minutes_when_native_candle_endpoint_is_empty",
         "test_raw_supplement_manifest_requires_source_and_byte_hashes_and_bounded_unique_targets",
         "test_raw_decoder_failure_remains_a_typed_dependency_in_a_verifiable_partial_fork",

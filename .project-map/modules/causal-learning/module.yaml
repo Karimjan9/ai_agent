@@ -308,6 +308,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php
   - backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php
   - backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php
   - backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php

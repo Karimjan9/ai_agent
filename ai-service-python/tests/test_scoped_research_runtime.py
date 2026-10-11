@@ -32,7 +32,7 @@ def scoped(tmp_path, monkeypatch, request):
     records = {}; files = {}
     for timeframe, minutes, rows in [("M5", 5, 240), ("M15", 15, 80), ("H1", 60, 30), ("H4", 240, 10)]:
         path = tmp_path / (timeframe + ".csv")
-        times = pd.date_range("2027-02-01", periods=rows, freq=f"{minutes}min", tz="UTC")
+        times = pd.date_range("2025-02-01", periods=rows, freq=f"{minutes}min", tz="UTC")
         frame = pd.DataFrame({"time": times, "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10})
         if getattr(request, "param", False) and timeframe == "M5":
             frame["spread_available"] = 1
@@ -70,12 +70,12 @@ def scoped(tmp_path, monkeypatch, request):
     release["release_hash"] = hashlib.sha256(transport._release_json(release).encode()).hexdigest()
     payload.research_release = release
     window = {"protocol": "instrument_research_window_v1", "authorization_id": "test-owned-window",
-        "research_epoch_id": "test-owned-research-2027", "start_inclusive": "2027-02-01T00:00:00+00:00",
-        "end_exclusive": "2027-03-01T00:00:00+00:00", "dataset_sha256": dataset_hash}
+        "research_epoch_id": "test-owned-research-2025", "start_inclusive": "2025-02-01T00:00:00+00:00",
+        "end_exclusive": "2025-03-01T00:00:00+00:00", "dataset_sha256": dataset_hash}
     window["window_key"] = hashlib.sha256(json.dumps(window, separators=(",", ":")).encode()).hexdigest()
     declaration = {"protocol": "independent_original_scope_authority_v1", "purpose": "independent_scoped_selector_research",
         "certificate_id": 1, "design_hash": "a" * 64, "window_key": window["window_key"], "promotion_evidence": False}
-    fence = {"protocol": "scoped_original_maturity_fence_v1", "entry_end_exclusive": "2027-02-28T23:55:00+00:00",
+    fence = {"protocol": "scoped_original_maturity_fence_v1", "entry_end_exclusive": "2025-02-28T23:55:00+00:00",
         "end_exclusive": window["end_exclusive"], "holding_fence_seconds": 300}
     payload.policy_context = {"scoped_research_certificate": declaration, "scoped_position_maturity_fence": fence}
     shared = {"initial_balance": 10000, "risk_per_trade": 1,
@@ -147,7 +147,7 @@ def test_actual_source_change_after_authentication_is_refused(scoped):
     payload, _ = scoped
     transport.verify_research_transport(payload, KEY)
     with open(payload.mtf_dataset_paths["H4"], "a", encoding="utf-8") as handle:
-        handle.write("2027-02-03T00:00:00+00:00,100,101,99,100,10\n")
+        handle.write("2025-02-03T00:00:00+00:00,100,101,99,100,10\n")
     with pytest.raises(ValueError, match="SOURCE_HASH_DRIFT"):
         scoped_research_runtime_current(arm(payload))
 
@@ -163,7 +163,7 @@ def test_only_actual_sealed_slice_can_issue_narrower_partition_fence(scoped):
     fence = derived.policy_context["scoped_position_maturity_fence"]
     assert pd.Timestamp(fence["end_exclusive"]) == pd.Timestamp(frame.time.iloc[-1]) + pd.Timedelta(minutes=5)
     assert fence["holding_fence_seconds"] == 300
-    assert candidate.policy_context["scoped_position_maturity_fence"]["end_exclusive"] == "2027-03-01T00:00:00+00:00"
+    assert candidate.policy_context["scoped_position_maturity_fence"]["end_exclusive"] == "2025-03-01T00:00:00+00:00"
     repeated = transport.verify_research_transport(derived, KEY)
     assert transport.authenticated_research_transport_current(repeated)
     assert scoped_research_runtime_current(derived, frame)
@@ -276,7 +276,7 @@ def test_actual_main_admission_preserves_only_authenticated_selector_small_signe
         # A real pre-paper CSV exercises the ordinary replay branch and its
         # original minima; it carries no scoped declaration or private proof.
         legacy = pd.read_csv(payload.dataset_path)
-        legacy["time"] = pd.to_datetime(legacy["time"], utc=True) - pd.DateOffset(years=2)
+        legacy["time"] = pd.to_datetime(legacy["time"], utc=True)
         legacy_path = tmp_path / "legacy_pre_paper.csv"
         legacy.to_csv(legacy_path, index=False)
         payload = SimpleBacktestRequest(symbol="XAUUSD", timeframe="M5", strategy="all", evaluation_mode="replay",
@@ -312,6 +312,6 @@ def test_actual_main_admission_preserves_only_authenticated_selector_small_signe
     assert observed[0]["fold_universe_count"] == expected_universe
     assert observed[0]["max_rows_per_fold"] == expected_rows
     assert observed[0]["source_rows"] == 240
-    assert observed[0]["source_start"].year == (2027 if kind == "authenticated_selector" else 2025)
+    assert observed[0]["source_start"].year == (2025 if kind == "authenticated_selector" else 2025)
     assert all(contract == cap for contract in payload.policy_context["learning_confirmation_contracts"].values())
     assert not list((tmp_path / "admission_cache").glob("*.json.gz"))

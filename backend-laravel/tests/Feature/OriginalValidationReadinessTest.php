@@ -20,7 +20,7 @@ class OriginalValidationReadinessTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2013-01-01T00:00:00Z'));
         config()->set('services.instrument_policy.authorized_research_windows', []);
         config()->set('services.research_paper_epochs.authorized_paper_epochs', []);
         $this->fixtureRoot = sys_get_temp_dir().'/original-validation-input-'.bin2hex(random_bytes(8));
@@ -71,7 +71,7 @@ class OriginalValidationReadinessTest extends TestCase
         $readiness = app(InstrumentResearchWindowService::class)->originalValidationReadiness($window, $manifest, []);
         $this->assertContains('RESEARCH_TRANSPORT_SOURCE_HASH_MISMATCH:H4', $readiness['unresolved_provenance']);
         $this->assertFalse($readiness['complete_input_proof']);
-        [$window, $manifest] = $this->inputs(['H4' => ['2026-12-31T20:00:00Z', '2027-01-01T00:00:00Z']]);
+        [$window, $manifest] = $this->inputs(['H4' => ['2026-12-31T20:00:00Z', '2012-01-01T00:00:00Z']]);
         $readiness = app(InstrumentResearchWindowService::class)->originalValidationReadiness($window, $manifest, []);
         $this->assertContains('RESEARCH_TRANSPORT_TIME_SCOPE_INVALID:H4', $readiness['unresolved_provenance']);
         $this->assertFalse($readiness['ready']);
@@ -79,7 +79,7 @@ class OriginalValidationReadinessTest extends TestCase
 
     public function test_unclosed_context_at_the_end_and_unverified_auxiliary_streams_stay_blocked(): void
     {
-        [$window, $manifest] = $this->inputs(['H4' => ['2027-01-31T22:00:00Z', '2027-01-31T23:00:00Z']]);
+        [$window, $manifest] = $this->inputs(['H4' => ['2012-01-31T22:00:00Z', '2012-01-31T23:00:00Z']]);
         $readiness = app(InstrumentResearchWindowService::class)->originalValidationReadiness($window, $manifest, []);
         $this->assertContains('ORIGINAL_VALIDATION_CLOSED_CONTEXT_OR_WARMUP_OUTSIDE_WINDOW', $readiness['unresolved_provenance']);
         $this->assertFalse($readiness['complete_input_proof']);
@@ -97,7 +97,7 @@ class OriginalValidationReadinessTest extends TestCase
         $readiness = app(InstrumentResearchWindowService::class)->originalValidationReadiness($window, $manifest, []);
         $this->assertContains('RESEARCH_TRANSPORT_SOURCE_PATH_INVALID', $readiness['unresolved_provenance']);
         $this->assertFalse($readiness['complete_input_proof']);
-        $this->travelTo(CarbonImmutable::parse('2026-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
         $readiness = app(InstrumentResearchWindowService::class)->originalValidationReadiness($window, $manifest, []);
         $this->assertContains('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW', $readiness['unresolved_provenance']);
         $this->assertFalse($readiness['ready']);
@@ -107,7 +107,7 @@ class OriginalValidationReadinessTest extends TestCase
     {
         $records = [];
         foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $stream => $seconds) {
-            $times = $dates[$stream] ?? ['2027-01-01T00:00:00Z', CarbonImmutable::parse('2027-01-01T00:00:00Z')
+            $times = $dates[$stream] ?? ['2012-01-01T00:00:00Z', CarbonImmutable::parse('2012-01-01T00:00:00Z')
                 ->addSeconds($seconds)->format('Y-m-d\TH:i:s\Z')];
             $path = storage_path('app/lab-datasets/'.$stream.'.csv'); File::ensureDirectoryExists(dirname($path));
             File::put($path, "time,open,high,low,close,volume\n{$times[0]},100,101,99,100,10\n{$times[1]},100,102,99,101,11\n");
@@ -119,7 +119,7 @@ class OriginalValidationReadinessTest extends TestCase
         config()->set('services.instrument_policy.authorized_research_windows', [[
             'authorization_id' => 'actual-input-fixture', 'research_epoch_id' => 'input-only-fixture',
             'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $manifest['bundle_hash'],
-            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z',
+            'start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-02-01T00:00:00Z',
             'mtf_bundle_manifest' => $manifest,
         ]]);
         return [app(InstrumentResearchWindowService::class)->seal('actual-input-fixture', $manifest['bundle_hash']), $manifest];

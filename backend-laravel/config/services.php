@@ -821,7 +821,8 @@ return [
         'minimum_forbidden_net_utility' => min(-.00001, (float) env('INSTRUMENT_POLICY_MIN_FORBIDDEN_NET_UTILITY', -.001)),
         // No research interval is authorized by default. Each configured row
         // must seal authorization_id, research_epoch_id, UTC bounds, purpose
-        // and the exact replay dataset SHA-256; 2026 remains paper-only.
+        // and the exact replay dataset SHA-256. Every date from 2026-01-01,
+        // including 2027 and all later years, remains permanently paper-only.
         'authorized_research_windows' => json_decode((string) env('INSTRUMENT_RESEARCH_WINDOWS_JSON', '[]'), true) ?: [],
     ],
 

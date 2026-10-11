@@ -1,5 +1,10 @@
 # Integrations and runtime boundaries
 
+PHP queue workers publish their existing boot source binding to the configured
+cache under `runtime:research-worker-boot:<PID>`. Cold deployment checks join
+those observations to actual live PM2 worker PIDs and the current source hash;
+CLI disk inspection alone is not evidence about a loaded long-lived worker.
+
 Scoped research questions use an append-only PHP registry and original named
 source snapshots. Public assessment payloads and the legacy diagnostic protocol
 grant no authority. The explicit independent scoped policy additionally requires
@@ -206,7 +211,7 @@ claims the work. The work consumer delegates to canonical construction,
 preparation and dispatch; an exit-zero CLI without its durable batch witness
 does not complete the work. Original request/response and prior-credit records
 are never rewritten. The independent server reservation verifies original
-post-paper window registry seals, complete MTF source bytes and non-exposure.
+untouched pre-2026 window registry seals, complete MTF source bytes and non-exposure.
 Canonical reserved cohorts share one global plan and immutable request hashes.
 The initial global preparation is a separate bounded delivery: it seals every
 request and defers without Python HTTP. Only a fresh, current work lease may
@@ -240,7 +245,7 @@ separately validated observed HTF liquidity. Unbound strategy payloads omit both
 optional council objects; explicit null/list/scalar declarations stay invalid.
 Legacy reference-only input remains refused, and descendant transfer retains
 its original-parent/four-program proof requirements. A discovery snapshot or
-source relabel cannot become a post-paper full-window release.
+source relabel cannot become a untouched pre-2026 full-window release.
 
 Typed descendant reservations derive the unchanged PT control, its genuine P
 component removal, legal PTU intervention and target PU ablation server-side.
@@ -302,7 +307,7 @@ research conversion kernel. Receipt/knowledge closure distinguishes invalid
 technical evidence, missing producer data, insufficient matured power and
 local promising/negative/null comparison. Follow-ups carry explicit blocked,
 non-executable dependencies; they are not requests to an unknown new executor.
-The independent-validation dependency retains the post-paper authorized-data
+The independent-validation dependency retains the untouched pre-2026 authorized-data
 policy, and no planned window authorizes 2026 research or fabricated credit.
 Negative/null closes only the original scoped hypothesis, never a global ban.
 
@@ -466,10 +471,10 @@ liquidity-data gap, never substituted by the modeled execution-cost spread.
 The proof frontier can defer an activation mutation on that prerequisite.
 
 Historical discovery, mutation, screening, repair and causal confirmation end
-before `2026-01-01T00:00:00Z`. The frozen 2026 block is prospective paper-only:
+before `2026-01-01T00:00:00Z`. Every observation from that boundary onward, including 2027 and all later years, is permanently paper-only:
 it may support forward/performance authority but cannot update research
 selection, mutation or instrument posteriors.
-Instrument confirmation uses separately authorized post-paper research
+Instrument confirmation uses separately authorized untouched pre-2026 research
 datasets. Laravel matches their server-owned UTC interval and dataset SHA-256
 against an explicit research-validation replay manifest and the immutable
 candidate/control pair before writing a sealed window receipt;
@@ -482,14 +487,14 @@ uses the protected internal API key (never returned/logged), binding the
 persisted release and exact complete CSV inventory/chronology. Python verifies
 all actual files before cache reuse and validates consumed rows after loading.
 Copied labels, duplicate stream path hiding, inline data, widened cutoffs and
-literal 2026 remain rejected. No clock-dependent signature refresh alters the
+all observations from 2026 onward remain rejected. No clock-dependent signature refresh alters the
 experiment identity; only the HMAC is excluded from the scientific cache key
 so coordinated key rotation cannot manufacture another observation. Original
 window authorization/independence/credit guards remain separate (ADR-023).
 
-`sealed_confirmation_route_v1` is frozen before new causal/Academy model
+`sealed_confirmation_route_v2` is frozen before new causal/Academy model
 construction and in activation plans. It distinguishes historical causal
-research execution from the blocked post-paper independent-authority route;
+research execution from the blocked untouched pre-2026 independent-authority route;
 the route itself is not a dataset, proof or economic permission.
 `authorized_prospective_paper_epoch_v1` supports explicitly approved later
 paper periods through the existing E3/E4/order owners. The future registry is
@@ -504,7 +509,7 @@ is created by registering this contract (ADR-023).
 The future-paper consumer additionally derives
 `archive_baseline_confirmed_single_trait_paper_v1` from original server-owned
 models/runs/artifacts. It accepts an unchanged modern archive baseline or one
-canonical confirmed post-paper exact trait, never an unchecked training flag
+canonical confirmed untouched pre-2026 exact trait, never an unchecked training flag
 or arbitrary future-tuned vector. Original source requests use the real nested
 passport and PHP runtime-contract builder; the four-stream CSV inventory,
 warmup chronology, signed transport/window identity, and per-arm instrument

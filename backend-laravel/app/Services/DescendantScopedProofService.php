@@ -113,10 +113,10 @@ class DescendantScopedProofService
             return $this->blocked('DESCENDANT_PROSPECTIVE_VALIDATION_INTERVAL_REQUIRED');
         }
         if (empty($scope['validation_start']) || empty($scope['validation_end']) || ! $start->greaterThan(now())
-            || $start->lessThan('2027-01-01T00:00:00Z') || ! $end->greaterThan($start)
+            || ! $end->greaterThan($start)
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $start->toIso8601String(), $end->toIso8601String())) {
-            return $this->blocked('DESCENDANT_2027_PROSPECTIVE_PAPER_DISJOINT_INTERVAL_REQUIRED');
+            return $this->blocked('DESCENDANT_PRE_2026_PREREGISTERED_PAPER_DISJOINT_INTERVAL_REQUIRED');
         }
         foreach (['evaluator_hash', 'execution_hash'] as $field) {
             if (! preg_match('/^[a-f0-9]{64}$/', (string) ($scope[$field] ?? ''))) {

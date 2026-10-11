@@ -39,6 +39,11 @@ SOLO or newly labeled source establishes independence or paper authority.
 
 ## Invariants
 
+The research event domain ends exclusively at 2026-01-01 UTC. All later data
+remains paper-only forever. A future year cannot provide a research reservation
+or independent confirmation; missing original unused pre-2026 provenance is a
+blocked scientific dependency, not permission to cross that boundary.
+
 An explicitly approved unused G263 draft may take a separate research-only
 branch: `register attributed-price intent -> ordinary arbiter prepare ->
 canonical singleton dispatch -> original measured/technical/pre-execution
