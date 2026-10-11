@@ -1,4 +1,3 @@
-const php = process.env.PHP_BINARY || 'php';
 const python = process.env.PYTHON_BINARY || 'python';
 const fs = require('fs');
 const os = require('os');
@@ -11,7 +10,23 @@ const laravelRouter = path.join(__dirname, 'vendor', 'laravel', 'framework', 'sr
 if (!fs.existsSync(tokenFile)) {
   throw new Error(`Missing internal API token file: ${tokenFile}`);
 }
+const hiddenShellDirectory = path.resolve(__dirname, '..', '.runtime', 'headless-shell');
+const hiddenShell = path.join(hiddenShellDirectory, 'cmd.exe');
+const privatePhp = path.join(hiddenShellDirectory, 'php.exe');
+if (process.platform === 'win32' && (!fs.existsSync(hiddenShell) || !fs.existsSync(privatePhp))) {
+  throw new Error('Build the Windows shell with scripts/build-windows-hidden-shell.ps1 before starting the runtime.');
+}
+const privateRuntime = process.platform === 'win32'
+  ? JSON.parse(fs.readFileSync(path.join(hiddenShellDirectory, 'build.json'), 'utf8').replace(/^\uFEFF/, '')) : null;
+const php = process.platform === 'win32' ? privatePhp : (process.env.PHP_BINARY || 'php');
 const sharedEnv = {
+  // Detached Windows workers have no terminal to measure. Symfony otherwise
+  // spawns cmd.exe for stty/mode CON each time a worker starts or recycles.
+  ...(process.platform === 'win32' ? {
+    COLUMNS: '120', LINES: '30', COMSPEC: hiddenShell,
+    PHPRC: privateRuntime.original_ini,
+    PATH: `${hiddenShellDirectory};${process.env.PATH || ''}`,
+  } : {}),
   INTERNAL_API_TOKEN_FILE: tokenFile,
   // Python resolves `auto` from the available logical CPU count: small hosts
   // serialize CPU-heavy screening while larger hosts retain two slots. An

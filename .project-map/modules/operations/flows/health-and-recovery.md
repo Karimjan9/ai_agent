@@ -229,6 +229,40 @@ only dispatched technical recovery is deferred, not a completed successor.
 
 ## Rules
 
+Windows PM2 apps and the hidden fallback launcher supply `COLUMNS=120` and
+`LINES=30` to PHP and its scheduled children. This bypasses Symfony Console's
+vendor `Terminal::initDimensions` shell probes (`stty` / `mode CON`) during
+worker startup and recycling. `headless-terminal.test.cjs` checks the real
+vendor terminal with shell/process calls refused. Display environment delivery
+preserves the current research source fingerprint and original replay receipts;
+busy workers must finish before their environment is refreshed.
+
+The project-specific Windows shell is compiled as a GUI executable from
+`scripts/windows-hidden-shell.cs` into `.runtime/headless-shell/cmd.exe`.
+Only managed apps/fallback children prepend that directory to PATH and select
+it through COMSPEC. Byte-identical PHP/php-win binaries and their native DLLs
+live beside the proxy, with PHPRC selecting the unchanged original ini/absolute
+extension directory. This is required because PHP 8.2's implicit shell lookup
+searches the interpreter directory before PATH. Symfony's explicit cmd lookup
+and PHP's implicit shells reach the proxy; it forwards the original raw shell tail and native I/O to the
+absolute system cmd with CREATE_NO_WINDOW. A kill-on-close JobObject retains
+timeout/tree ownership; normal shell completion disarms it so intentionally
+detached background children can continue. Unrelated applications keep their
+own shell environment.
+Build with `scripts/build-windows-hidden-shell.ps1`; actual Windows regressions
+exercise the vendor Symfony process through a windowless PHP parent.
+
+`scripts/pm2-refresh-display-env.cjs` delivers only these launch environment
+values and the identical private interpreter under public PAUSE, with unchanged
+application source hash and checked native runtime file digests. Its read-only
+PHP probe counts complete Redis queue sizes, including reserved/delayed work;
+each consumer is refreshed only after all of its lanes are empty. Busy original
+children finish without interruption. An idle API requires two authenticated
+zero-count probes and no durable active replay; the scheduler is refreshed last.
+The bounded delivery operation refuses changed control/source, unknown ownership
+or missing readiness, saves actual PM2 topology and exits. It selects no research
+work and does not grant source deployment under an active generation.
+
 Native specialist evaluation deliveries persist after immutable producer
 publication. The same non-dry locked arbiter rechecks pending consumer work;
 operator PAUSE fences it and STOP can drain admitted deliveries. A retry acts

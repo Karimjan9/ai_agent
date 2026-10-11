@@ -625,6 +625,19 @@ lease. The generic 5k differential budget is unchanged. A timeout response
 never supplies a completed probe receipt or scientific verdict.
 # Prospective historical M5 recovery boundary
 
+Windows shell execution has a project-scoped GUI proxy at
+`.runtime/headless-shell/cmd.exe`, built from the operations-owned C# source.
+PM2/fallback PATH and COMSPEC plus byte-identical private PHP binaries next to
+the proxy route existing PHP/Symfony shell commands through it. PHPRC keeps the
+original ini/absolute extensions. The absolute native system shell receives the unchanged raw command tail,
+environment, working directory and inherited I/O with CREATE_NO_WINDOW and a
+kill-on-close helper-tree job, disarmed on normal shell completion to preserve
+intentional background launches. This is an OS launch boundary, preserving the
+Laravel/Python arguments, output, exit status, timeouts and application source
+fingerprint. Original seals are not rewritten. Worker environment delivery waits
+for empty consumer lanes under PAUSE; normal scientific source release guards
+remain separate and unchanged.
+
 `prospective_clean_discovery_bundle_v1` is a separate research-only scope:
 exactly 15000 evaluated rows plus 512 warmup, four frozen streams and verified
 parent/fork/calendar/SQL hashes. Canonical Academy screening supplies the existing

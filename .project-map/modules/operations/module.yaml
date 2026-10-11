@@ -54,6 +54,13 @@ paths:
   - backend-laravel/scripts/pm2-sync-runtime.test.cjs
   - backend-laravel/scripts/pm2-summary.cjs
   - backend-laravel/scripts/pm2-summary.test.cjs
+  - backend-laravel/scripts/headless-terminal.test.cjs
+  - backend-laravel/scripts/windows-hidden-shell.cs
+  - backend-laravel/scripts/build-windows-hidden-shell.ps1
+  - backend-laravel/scripts/windows-hidden-shell.test.cjs
+  - backend-laravel/scripts/inspect-display-env-readiness.php
+  - backend-laravel/scripts/pm2-refresh-display-env.cjs
+  - backend-laravel/scripts/pm2-refresh-display-env.test.cjs
   - backend-laravel/scripts/pm2-clean-env.mjs
   - backend-laravel/scripts/start-redis.ps1
   - backend-laravel/scripts/run-laravel-server.cmd
@@ -122,6 +129,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/scripts/pm2-refresh-display-env.test.cjs
+  - backend-laravel/scripts/windows-hidden-shell.test.cjs
+  - backend-laravel/scripts/headless-terminal.test.cjs
   - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/tests/Feature/SupersededLabRunReconciliationTest.php

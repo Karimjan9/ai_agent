@@ -1,5 +1,13 @@
 # Operations states
 
+Windows display maintenance uses public PAUSE to fence new scheduled research children
+while already-running originals finish. With unchanged application fingerprint
+and identical native PHP bytes, an empty known consumer lane may refresh only
+its interpreter location/display environment. Busy or unknown lanes wait within
+the bounded delivery deadline; changed control/source refuses delivery. The API
+requires two authenticated idle probes, and scheduler cadence is refreshed last.
+This grants no scientific source deployment, replay, receipt rewrite or START.
+
 `deeper_ready -> RESUME_NATIVE_DEPTH_AUDIT -> exact_generation_dispatch_admitted`
 uses the original immutable sample/checkpoint watermark, not a minute clock.
 STOP, unavailable/pending queues or invalid original proof produces commandless

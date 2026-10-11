@@ -1,8 +1,23 @@
 $ErrorActionPreference = 'Stop'
 
+# Prevent Symfony from opening cmd.exe to discover a nonexistent terminal.
+# The gate, workers and their scheduled Artisan children inherit these values.
+$env:COLUMNS = '120'
+$env:LINES = '30'
+
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendRoot = Split-Path -Parent $scriptDirectory
-$phpBinary = 'C:\x_programs\xamp\php\php.exe'
+$hiddenShellDirectory = Join-Path (Split-Path -Parent $backendRoot) '.runtime\headless-shell'
+$hiddenShell = Join-Path $hiddenShellDirectory 'cmd.exe'
+if (-not (Test-Path -LiteralPath $hiddenShell -PathType Leaf) -or
+    -not (Test-Path -LiteralPath (Join-Path $hiddenShellDirectory 'php.exe') -PathType Leaf)) {
+    & (Join-Path $scriptDirectory 'build-windows-hidden-shell.ps1') | Out-Null
+}
+$env:ComSpec = $hiddenShell
+$env:PATH = $hiddenShellDirectory + ';' + $env:PATH
+$privateRuntime = Get-Content -LiteralPath (Join-Path $hiddenShellDirectory 'build.json') -Raw | ConvertFrom-Json
+$env:PHPRC = $privateRuntime.original_ini
+$phpBinary = Join-Path $hiddenShellDirectory 'php.exe'
 $pythonBinary = (Get-Command python.exe -ErrorAction Stop).Source
 $artisanPath = Join-Path $backendRoot 'artisan'
 $controlResult = & $phpBinary $artisanPath ai:runtime-gate --json 2>$null
