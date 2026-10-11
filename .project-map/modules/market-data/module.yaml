@@ -14,6 +14,7 @@ paths:
   - backend-laravel/app/Services/MarketData
   - backend-laravel/app/Services/LabDatasetExportService.php
   - backend-laravel/app/Services/MultiTimeframeSnapshotService.php
+  - backend-laravel/app/Services/FrozenM5CalendarAuditService.php
   - backend-laravel/app/Services/MarketSessionCalendarService.php
   - backend-laravel/app/Models/MarketTrainingArchive.php
   - backend-laravel/app/Models/MarketTrainingCandle.php
@@ -86,6 +87,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php
+  - backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php
   - backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php
   - backend-laravel/tests/Feature/ProspectiveM5ContinuityHandoffTest.php
   - backend-laravel/tests/Feature/MarketDataContinuityTest.php

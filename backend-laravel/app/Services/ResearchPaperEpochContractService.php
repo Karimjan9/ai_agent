@@ -6,7 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-/** Canonical, fail-closed boundary between historical research and 2026 paper evidence. */
+/** Historical research ends permanently at the continuous paper-only boundary. */
 class ResearchPaperEpochContractService
 {
     public const PROTOCOL = 'research_paper_epoch_contract_v2';
@@ -15,7 +15,18 @@ class ResearchPaperEpochContractService
 
     public const FUTURE_PAPER_PROTOCOL = 'authorized_prospective_paper_epoch_v1';
 
-    public const CONFIRMATION_ROUTE_PROTOCOL = 'sealed_confirmation_route_v1';
+    public const CONFIRMATION_ROUTE_PROTOCOL = 'sealed_confirmation_route_v2';
+
+    public const PAPER_ONLY_START = '2026-01-01T00:00:00Z';
+
+    /** The finite paper_2026 window is a legacy observation window, not a research opening. */
+    public function paperOnlyPolicy(): array
+    {
+        return ['protocol' => 'continuous_paper_only_epoch_v1',
+            'start_inclusive' => self::PAPER_ONLY_START, 'end_exclusive' => null,
+            'all_future_data_paper_only' => true, 'research_uses_forbidden' => true,
+            'training_selection_warmup_and_context_included' => true];
+    }
 
     /** @return array<string,mixed> */
     public function contract(): array
@@ -24,6 +35,7 @@ class ResearchPaperEpochContractService
 
         return [
             'protocol' => self::PROTOCOL,
+            'paper_only_policy' => $this->paperOnlyPolicy(),
             'research_epoch' => [
                 'end_exclusive' => $cutoff->toIso8601String(),
                 'allowed_uses' => ['discovery', 'mutation', 'screening', 'repair', 'causal_confirmation'],
@@ -118,6 +130,15 @@ class ResearchPaperEpochContractService
     {
         $key = (string) data_get($contract, 'paper_epoch.window_key', '');
         $expected = $this->paperContractForCandidate($key, $frozenAt);
+        // Validate original finite seals without rewriting them. This does not
+        // relax the separate continuous research prohibition.
+        if ($expected !== null && ! array_key_exists('paper_only_policy', $contract)) {
+            unset($expected['paper_only_policy']);
+            if (isset($expected['epoch_contract_hash'])) {
+                unset($expected['epoch_contract_hash']);
+                $expected['epoch_contract_hash'] = $this->parameterHash($expected);
+            }
+        }
         return $expected !== null && hash_equals($this->parameterHash($expected), $this->parameterHash($contract));
     }
 
@@ -126,16 +147,8 @@ class ResearchPaperEpochContractService
     {
         $from = $this->utc($start); $until = $this->utc($end);
         if ($from === null || $until === null || ! $until->greaterThan($from)) return false;
-        $periods = [(array) data_get($this->contract(), 'paper_epoch')];
-        foreach ((array) config('services.research_paper_epochs.authorized_paper_epochs', []) as $manifest) {
-            $epoch = $this->futurePaperManifest($manifest);
-            if ($epoch !== null) $periods[] = $epoch;
-        }
-        foreach ($periods as $period) {
-            if ($from->lessThan($this->utc($period['end_exclusive']))
-                && $until->greaterThan($this->utc($period['start_inclusive']))) return false;
-        }
-        return true;
+        // Year labels and server authorizations cannot reopen any paper data.
+        return $until->lessThanOrEqualTo($this->cutoff());
     }
 
     /**
@@ -153,7 +166,8 @@ class ResearchPaperEpochContractService
             'protocol' => self::CONFIRMATION_ROUTE_PROTOCOL,
             'purpose' => $purpose,
             'source_identity_hash' => $this->parameterHash($sourceIdentity),
-            'authority_route' => $historical ? 'historical_causal_research' : 'authorized_post_paper_independent_validation',
+            'authority_route' => $historical ? 'historical_causal_research' : 'authorized_untouched_pre_2026_independent_validation',
+            'paper_only_policy' => $this->paperOnlyPolicy(),
             'research_end_exclusive' => $this->cutoff()->toIso8601String(),
             'paper_2026_research_eligible' => false,
             'historical_relabeling_independent_eligible' => false,
@@ -258,10 +272,34 @@ class ResearchPaperEpochContractService
 
     public function cutoff(): CarbonImmutable
     {
-        return CarbonImmutable::parse(
-            (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
-            'UTC',
-        )->utc();
+        return CarbonImmutable::parse(self::PAPER_ONLY_START, 'UTC')->utc();
+    }
+
+    /** Known paper references exclude research use; absence never proves untouched provenance. */
+    public function researchInputHasPaperData(array $request, array $datasetManifest = []): bool
+    {
+        $inputs = array_intersect_key($request, array_flip(['candles', 'regime_candles',
+            'mtf_snapshot_manifest', 'mtf_streams', 'related_mtf_streams', 'mtf_dataset_tail_rows',
+            'related_mtf_dataset_tail_rows', 'foundation_snapshot_manifest', 'foundation_dataset_snapshot']));
+        $inputs['dataset_manifest'] = $datasetManifest;
+        $clockKeys = ['time', 'date', 'datetime', 'candle_time', 'first_candle_at', 'last_candle_at',
+            'first_candle_time', 'last_candle_time', 'first_time', 'last_time', 'source_first_at',
+            'source_last_at', 'loaded_start', 'loaded_end', 'start_inclusive', 'end_exclusive'];
+        $visit = function (array $items) use (&$visit, $clockKeys): bool {
+            foreach ($items as $key => $value) {
+                if (in_array($key, ['paper_only_policy', 'paper_exclusions', 'epoch_contract',
+                    'research_release', 'paper_epoch', 'confirmation_route'], true)) continue;
+                if (is_array($value) && $visit($value)) return true;
+                if (! in_array($key, $clockKeys, true) || ! is_string($value)
+                    || ! preg_match('/^\d{4}-\d{2}-\d{2}(?:[ T].*)?$/D', $value)) continue;
+                try { $time = CarbonImmutable::parse($value, 'UTC')->utc(); }
+                catch (\Throwable) { continue; }
+                if ($key === 'end_exclusive' ? $time->greaterThan($this->cutoff())
+                    : ! $time->lessThan($this->cutoff())) return true;
+            }
+            return false;
+        };
+        return $visit($inputs);
     }
 
     private function canonicalize(mixed $value): mixed

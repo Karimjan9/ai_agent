@@ -1,5 +1,44 @@
 # Integrations and runtime boundaries
 
+PHP queue workers publish their existing boot source binding to the configured
+cache under `runtime:research-worker-boot:<PID>`. Cold deployment checks join
+those observations to actual live PM2 worker PIDs and the current source hash;
+CLI disk inspection alone is not evidence about a loaded long-lived worker.
+
+Scoped research questions use an append-only PHP registry and original named
+source snapshots. Public assessment payloads and the legacy diagnostic protocol
+grant no authority. The explicit independent scoped policy additionally requires
+prospective original exposure capture, the complete preregistered physical window
+roster, original products and a named scope-specific issuer (ADR-036).
+
+`scoped_original_window_v1` authenticates the physical four-stream manifest,
+programme, account/cost/risk, MTF/volume inputs, fixed holding fence, selector caps
+and exact full-source policy. Python issues only a private nonserialized runtime
+witness after actual HMAC, loaded source and CSV checks. This supports closed MTF
+and real future quote checks without borrowing a council or historical calendar.
+Component/descendant arms run the whole source using the existing stateful
+executor; full selector work uses the existing durable-fold producer, with no
+time-stop gene clamp or substituted historical two-year holdout. Original slice
+fences are privately derived from consumed bytes. Computational partitions of one
+window are not separate independent windows. Actual open/censored/unknown position
+state survives aggregation and never becomes a fabricated mature outcome.
+
+Intrinsic composition recipes and original tool choices are frozen before future
+events; only derived dataset-bound passports/assignment hashes are compiled after
+original data exists. No model/certificate is rewritten after its seal. Ordinary
+evaluation and mutation-advice projections cannot consume reserved scoped purposes,
+including malformed or terminal declarations. Reference-only Q:H1 containers are
+inactive and do not replace the current ordinary twenty-seat generation.
+The scoped member adapter renders empty dictionary ports as JSON objects,
+without modifying persisted source fields or the legacy member payload. Native
+authoritative parameter defaults may canonicalize an exact signed declaration;
+an arbitrary gene, overridden original value or execution overlay remains drift.
+Native scoped outcomes also carry ledger-hash/count-bound exact context without
+inventing an instrument assignment. The native publisher locks and rechecks the
+work fence after HTTP; stale ownership retains original response evidence but
+cannot publish a completed economic run. Operator STOP alone does not invalidate
+current-lease raw facts or permit another HTTP job.
+
 New native standalone transport is an original server-owned panel unit, not a
 plain SOLO upgraded by a caller flag. Its signed
 `native_standalone_source_transport_v1` scope requires current work/fence/plan,
@@ -172,7 +211,7 @@ claims the work. The work consumer delegates to canonical construction,
 preparation and dispatch; an exit-zero CLI without its durable batch witness
 does not complete the work. Original request/response and prior-credit records
 are never rewritten. The independent server reservation verifies original
-post-paper window registry seals, complete MTF source bytes and non-exposure.
+untouched pre-2026 window registry seals, complete MTF source bytes and non-exposure.
 Canonical reserved cohorts share one global plan and immutable request hashes.
 The initial global preparation is a separate bounded delivery: it seals every
 request and defers without Python HTTP. Only a fresh, current work lease may
@@ -206,7 +245,7 @@ separately validated observed HTF liquidity. Unbound strategy payloads omit both
 optional council objects; explicit null/list/scalar declarations stay invalid.
 Legacy reference-only input remains refused, and descendant transfer retains
 its original-parent/four-program proof requirements. A discovery snapshot or
-source relabel cannot become a post-paper full-window release.
+source relabel cannot become a untouched pre-2026 full-window release.
 
 Typed descendant reservations derive the unchanged PT control, its genuine P
 component removal, legal PTU intervention and target PU ablation server-side.
@@ -268,7 +307,7 @@ research conversion kernel. Receipt/knowledge closure distinguishes invalid
 technical evidence, missing producer data, insufficient matured power and
 local promising/negative/null comparison. Follow-ups carry explicit blocked,
 non-executable dependencies; they are not requests to an unknown new executor.
-The independent-validation dependency retains the post-paper authorized-data
+The independent-validation dependency retains the untouched pre-2026 authorized-data
 policy, and no planned window authorizes 2026 research or fabricated credit.
 Negative/null closes only the original scoped hypothesis, never a global ban.
 
@@ -432,10 +471,10 @@ liquidity-data gap, never substituted by the modeled execution-cost spread.
 The proof frontier can defer an activation mutation on that prerequisite.
 
 Historical discovery, mutation, screening, repair and causal confirmation end
-before `2026-01-01T00:00:00Z`. The frozen 2026 block is prospective paper-only:
+before `2026-01-01T00:00:00Z`. Every observation from that boundary onward, including 2027 and all later years, is permanently paper-only:
 it may support forward/performance authority but cannot update research
 selection, mutation or instrument posteriors.
-Instrument confirmation uses separately authorized post-paper research
+Instrument confirmation uses separately authorized untouched pre-2026 research
 datasets. Laravel matches their server-owned UTC interval and dataset SHA-256
 against an explicit research-validation replay manifest and the immutable
 candidate/control pair before writing a sealed window receipt;
@@ -448,14 +487,14 @@ uses the protected internal API key (never returned/logged), binding the
 persisted release and exact complete CSV inventory/chronology. Python verifies
 all actual files before cache reuse and validates consumed rows after loading.
 Copied labels, duplicate stream path hiding, inline data, widened cutoffs and
-literal 2026 remain rejected. No clock-dependent signature refresh alters the
+all observations from 2026 onward remain rejected. No clock-dependent signature refresh alters the
 experiment identity; only the HMAC is excluded from the scientific cache key
 so coordinated key rotation cannot manufacture another observation. Original
 window authorization/independence/credit guards remain separate (ADR-023).
 
-`sealed_confirmation_route_v1` is frozen before new causal/Academy model
+`sealed_confirmation_route_v2` is frozen before new causal/Academy model
 construction and in activation plans. It distinguishes historical causal
-research execution from the blocked post-paper independent-authority route;
+research execution from the blocked untouched pre-2026 independent-authority route;
 the route itself is not a dataset, proof or economic permission.
 `authorized_prospective_paper_epoch_v1` supports explicitly approved later
 paper periods through the existing E3/E4/order owners. The future registry is
@@ -470,7 +509,7 @@ is created by registering this contract (ADR-023).
 The future-paper consumer additionally derives
 `archive_baseline_confirmed_single_trait_paper_v1` from original server-owned
 models/runs/artifacts. It accepts an unchanged modern archive baseline or one
-canonical confirmed post-paper exact trait, never an unchecked training flag
+canonical confirmed untouched pre-2026 exact trait, never an unchecked training flag
 or arbitrary future-tuned vector. Original source requests use the real nested
 passport and PHP runtime-contract builder; the four-stream CSV inventory,
 warmup chronology, signed transport/window identity, and per-arm instrument
@@ -496,6 +535,30 @@ secondary archive/discrepancy evidence. Read
 `docs/project-memory/market-data-continuity.md` before changing that boundary.
 
 ## Queue and scheduler
+
+Separately scoped independent requests have a pre-delivery exposure capture
+at both `LabImmutableEvidenceService::attachRequest` and the durable causal fold
+owner. Reopening requests preserves empty dictionary/list and float wire types;
+fold audit verification reads the signed pre-delivery capture, not caller flags.
+Native two/four-arm research uses the canonical constructor and the
+existing `lab-full-validation` queue. Its scheduler delivery prepares/queues
+bounded work only; the per-arm job timeout encloses the actual typed Python
+producer budget and HTTP publication margin beneath the existing 4200-second
+full-worker ceiling (`backend-laravel/ecosystem.config.cjs`). A long work lease
+alone does not enlarge a scheduler subprocess timeout.
+
+The whole original request matrix is immutable before dispatch. Original
+products carry exact window/model/source/cost and clock/account identities;
+the versioned scope issuer reopens them and their exposure records. Native
+settlement locks the current work and commits issuer, credit and next-work
+atomically only with a current lease and running mode; completed raw originals
+remain intact if settlement is stopped or fenced out. The final mode gate uses
+the control owner's shared current read, not the transaction's old status snapshot.
+It creates no operator state or default permission. Scope
+markers are purpose fences, not caller authorization: audit projections are
+allowed, ordinary historical advice and screening memory are not. Future
+planned windows bind server-original bytes before outcomes, never by importing
+an observed old result. Existing research/paper and release boundaries remain.
 
 Academy execution uses two decisions from the existing arbiter: prepare one
 draft with a transactional `edge_academy_trials.outcome.canonical_admission`

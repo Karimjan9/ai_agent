@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-11T12:55:45.921Z",
-  "source_digest": "3304f3122efb515da47e72cb0dc94456b6bbadd5bb4e297d77b6d49eea36ab76",
-  "source_file_count": 1578,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-11T16:27:41.483Z",
+  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
+  "source_file_count": 1612,
+  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [
@@ -14,6 +14,7 @@
     "backend-laravel/app/Services/MarketData",
     "backend-laravel/app/Services/LabDatasetExportService.php",
     "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
+    "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
     "backend-laravel/app/Services/MarketSessionCalendarService.php",
     "backend-laravel/app/Models/MarketTrainingArchive.php",
     "backend-laravel/app/Models/MarketTrainingCandle.php",
@@ -44,6 +45,7 @@
     "backend-laravel/app/Models/MarketDataSyncState.php",
     "backend-laravel/app/Models/MarketTrainingArchive.php",
     "backend-laravel/app/Models/MarketTrainingCandle.php",
+    "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
     "backend-laravel/app/Services/LabDatasetExportService.php",
     "backend-laravel/app/Services/MarketData/CandlePayloadService.php",
     "backend-laravel/app/Services/MarketData/CsvMarketDataProvider.php",
@@ -274,28 +276,46 @@
       "line": 7
     },
     {
+      "symbol": "FrozenM5CalendarAuditService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
+      "line": 10
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
+      "line": 14
+    },
+    {
+      "symbol": "execute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/FrozenM5CalendarAuditService.php",
+      "line": 35
+    },
+    {
       "symbol": "findReusableM15TrainingArchive",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1164
+      "line": 1161
     },
     {
       "symbol": "materializeM15FoundationFromArchive",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1211
+      "line": 1208
     },
     {
       "symbol": "ensureGenerationFoundationSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1386
+      "line": 1383
     },
     {
       "symbol": "assertGenerationDataPartition",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1469
+      "line": 1466
     },
     {
       "symbol": "LabDatasetExportService",
@@ -307,73 +327,73 @@
       "symbol": "validFoundationSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1536
+      "line": 1533
     },
     {
       "symbol": "findReusableFoundationArchive",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1662
+      "line": 1659
     },
     {
       "symbol": "materializeFoundationFromArchive",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1713
+      "line": 1710
     },
     {
       "symbol": "foundationRowsWithGapRepair",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 1809
+      "line": 1806
     },
     {
       "symbol": "ensureGenerationSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 194
+      "line": 191
     },
     {
       "symbol": "writeFoundationRowsCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2054
+      "line": 2051
     },
     {
       "symbol": "summarizeFoundationRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2071
+      "line": 2068
     },
     {
       "symbol": "rowsFromSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2093
+      "line": 2090
     },
     {
       "symbol": "normalizeFoundationOhlcValues",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2139
+      "line": 2136
     },
     {
       "symbol": "foundationOhlcQuality",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2166
+      "line": 2163
     },
     {
       "symbol": "foundationContinuityException",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 2208
+      "line": 2205
     },
     {
       "symbol": "ensureGenerationRegimeSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 272
+      "line": 269
     },
     {
       "symbol": "__construct",
@@ -385,7 +405,7 @@
       "symbol": "materializeGenerationRegimeSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 322
+      "line": 319
     },
     {
       "symbol": "trainingCutoff",
@@ -397,55 +417,55 @@
       "symbol": "export",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 45
+      "line": 42
     },
     {
       "symbol": "foundationDependencyWatermark",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 451
+      "line": 448
     },
     {
       "symbol": "ensureFoundationDataset",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 474
+      "line": 471
     },
     {
       "symbol": "exportPaper",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 55
+      "line": 52
     },
     {
       "symbol": "exportSlice",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 60
+      "line": 57
     },
     {
       "symbol": "ensureFoundationVolumeDataset",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 728
+      "line": 725
     },
     {
       "symbol": "materializeFoundationVolumeDataset",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 739
+      "line": 736
     },
     {
       "symbol": "foundationVolumeSourceProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 926
+      "line": 923
     },
     {
       "symbol": "ensureM15FoundationDataset",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabDatasetExportService.php",
-      "line": 989
+      "line": 986
     },
     {
       "symbol": "__construct",
@@ -1021,7 +1041,7 @@
       "symbol": "importCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 138
+      "line": 139
     },
     {
       "symbol": "trainingCutoff",
@@ -1033,43 +1053,43 @@
       "symbol": "candlesForAgent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 252
+      "line": 253
     },
     {
       "symbol": "query",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 296
-    },
-    {
-      "symbol": "ensureArchive",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 30
+      "line": 297
     },
     {
       "symbol": "refreshCoverage",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 307
+      "line": 308
+    },
+    {
+      "symbol": "ensureArchive",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
+      "line": 31
     },
     {
       "symbol": "normaliseTime",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 326
+      "line": 327
     },
     {
       "symbol": "validOhlc",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 343
+      "line": 344
     },
     {
       "symbol": "upsertCandles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/MarketTrainingDataService.php",
-      "line": 75
+      "line": 76
     },
     {
       "symbol": "sync",
@@ -1159,7 +1179,7 @@
       "symbol": "verify",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 134
+      "line": 132
     },
     {
       "symbol": "SecondaryM5ResearchRecoveryService",
@@ -1171,19 +1191,19 @@
       "symbol": "attributeRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 167
+      "line": 165
     },
     {
       "symbol": "budgetAnchor",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 180
+      "line": 178
     },
     {
       "symbol": "observations",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 199
+      "line": 197
     },
     {
       "symbol": "__construct",
@@ -1201,25 +1221,25 @@
       "symbol": "jsonEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 257
+      "line": 255
     },
     {
       "symbol": "evidencePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 266
+      "line": 264
     },
     {
       "symbol": "priceRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 274
+      "line": 272
     },
     {
       "symbol": "attributionCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketData/SecondaryM5ResearchRecoveryService.php",
-      "line": 279
+      "line": 277
     },
     {
       "symbol": "fetchCandles",
@@ -1429,49 +1449,49 @@
       "symbol": "streamManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1007
+      "line": 1006
     },
     {
       "symbol": "rowContentHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1039
+      "line": 1038
     },
     {
       "symbol": "writeCsv",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1072
+      "line": 1071
     },
     {
       "symbol": "csvColumns",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1097
+      "line": 1096
     },
     {
       "symbol": "csvValues",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1115
+      "line": 1114
     },
     {
       "symbol": "csvHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1125
+      "line": 1124
     },
     {
       "symbol": "attestHistoricalVolumeStreams",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1155
+      "line": 1154
     },
     {
       "symbol": "validBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 1222
+      "line": 1221
     },
     {
       "symbol": "verifiedProspectiveM5Repair",
@@ -1501,31 +1521,31 @@
       "symbol": "forProspectiveCleanDiscovery",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 283
+      "line": 282
     },
     {
       "symbol": "discoveryBundleReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 334
+      "line": 333
     },
     {
       "symbol": "readDiscoveryStream",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 393
+      "line": 392
     },
     {
       "symbol": "discoveryRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 420
+      "line": 419
     },
     {
       "symbol": "forAgentOwnedConfirmationValidation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 433
+      "line": 432
     },
     {
       "symbol": "__construct",
@@ -1537,13 +1557,13 @@
       "symbol": "publishAgentOwnedBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 534
+      "line": 533
     },
     {
       "symbol": "forLiquidityTrapReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 569
+      "line": 568
     },
     {
       "symbol": "agentValidationReadiness",
@@ -1555,67 +1575,67 @@
       "symbol": "forResearchPlaybookReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 654
+      "line": 653
     },
     {
       "symbol": "restoreResearchPlaybookBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 795
+      "line": 794
     },
     {
       "symbol": "restoreAgentOwnedConfirmationValidationBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 833
+      "line": 832
     },
     {
       "symbol": "inspectAndRestoreDiscoveryBundle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 879
+      "line": 878
     },
     {
       "symbol": "result",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 890
+      "line": 889
     },
     {
       "symbol": "researchResult",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 907
+      "line": 906
     },
     {
       "symbol": "commonClosedCutoff",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 930
+      "line": 929
     },
     {
       "symbol": "closedRows",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 946
+      "line": 945
     },
     {
       "symbol": "aggregateH4",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 960
+      "line": 959
     },
     {
       "symbol": "aggregateD1",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 966
+      "line": 965
     },
     {
       "symbol": "aggregateH1",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MultiTimeframeSnapshotService.php",
-      "line": 972
+      "line": 971
     },
     {
       "symbol": "missing_times",
@@ -1660,64 +1680,76 @@
       "line": 34
     },
     {
+      "symbol": "batchProof",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 115
+    },
+    {
       "symbol": "tickOhlc",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 148
+      "line": 166
     },
     {
       "symbol": "rawTickProof",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 161
+      "line": 179
     },
     {
-      "symbol": "source",
+      "symbol": "memoKey",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 19
+      "line": 21
+    },
+    {
+      "symbol": "remember",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 26
     },
     {
       "symbol": "appendRawTick",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 279
+      "line": 300
     },
     {
       "symbol": "revalidateProof",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 288
+      "line": 309
     },
     {
       "symbol": "forkMany",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 301
+      "line": 322
+    },
+    {
+      "symbol": "source",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 35
     },
     {
       "symbol": "csvBytes",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 330
+      "line": 351
     },
     {
       "symbol": "economicRowsHash",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 340
+      "line": 363
     },
     {
       "symbol": "resumeProofs",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 353
-    },
-    {
-      "symbol": "rawTickManifest",
-      "kind": "php_method",
-      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 383
+      "line": 379
     },
     {
       "symbol": "FrozenM5GapRecoveryOperation",
@@ -1726,52 +1758,52 @@
       "line": 4
     },
     {
+      "symbol": "rawTickManifest",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 409
+    },
+    {
       "symbol": "collectRawTickBatch",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 411
+      "line": 437
     },
     {
       "symbol": "collectBatch",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 448
-    },
-    {
-      "symbol": "proof",
-      "kind": "php_method",
-      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 45
+      "line": 474
     },
     {
       "symbol": "configureOfflineTransport",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 500
+      "line": 526
     },
     {
       "symbol": "time",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 512
+      "line": 538
     },
     {
       "symbol": "price",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 520
+      "line": 546
+    },
+    {
+      "symbol": "proof",
+      "kind": "php_method",
+      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
+      "line": 63
     },
     {
       "symbol": "fork",
       "kind": "php_method",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 81
-    },
-    {
-      "symbol": "batchProof",
-      "kind": "php_method",
-      "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
-      "line": 97
+      "line": 99
     }
   ],
   "tests": [
@@ -1788,6 +1820,15 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
+      "tests": [
+        "test_every_year_from_2026_remains_paper_even_after_configuration_changes",
+        "test_future_research_authorization_cannot_override_the_continuous_boundary",
+        "test_no_future_research_calendar_is_invented_and_the_plan_is_bound",
+        "test_original_paper_inputs_cannot_be_reused_as_research_learning"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/DukascopyMarketDataProviderTest.php",
       "tests": [
         "test_windows_uses_the_http_m15_adapter_without_a_node_child_process",
@@ -1797,6 +1838,13 @@
         "test_it_aggregates_jettas_minute_history_into_m15_tick_volume",
         "test_it_exposes_m1_and_derives_m5_and_m30_from_the_same_minute_archive",
         "test_it_uses_timestamp_history_directly_for_the_open_month"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php",
+      "tests": [
+        "test_repeated_exact_audit_is_reused_but_changed_bytes_or_scope_are_audited_again",
+        "test_a_mismatched_original_output_is_never_cached_as_verified"
       ]
     },
     {
@@ -1811,6 +1859,7 @@
         "test_raw_tick_recovery_uses_omitted_actual_minutes_and_treats_sparse_native_m5_as_diagnostic",
         "test_raw_tick_recovery_refuses_native_volume_disagreement_and_missing_minute_attestation",
         "test_hash_bound_raw_tick_recovery_rejects_malformed_columns_crossed_quotes_and_source_drift",
+        "test_successful_pure_cache_cannot_hide_changed_source_bytes",
         "test_bi5_ticks_supply_all_actual_minutes_when_native_candle_endpoint_is_empty",
         "test_raw_supplement_manifest_requires_source_and_byte_hashes_and_bounded_unique_targets",
         "test_raw_decoder_failure_remains_a_typed_dependency_in_a_verifiable_partial_fork",

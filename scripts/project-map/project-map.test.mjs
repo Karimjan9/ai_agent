@@ -17,6 +17,9 @@ test("runtime index points to configuration sections and process owners", () => 
     assert.ok(services.sections.some((row) => row.key === "lab_selection" && row.line > 0));
     assert.ok(runtime.scripts.some((row) => row.path === "backend-laravel/scripts/run-laravel-workers-hidden.ps1"));
     assert.ok(runtime.scripts.some((row) => row.path === "backend-laravel/scripts/audit-research-release.php"));
+    const workers = runtime.configs.find((row) => row.path === "backend-laravel/ecosystem.config.cjs");
+    assert.ok(workers);
+    assert.ok(workers.sections.some((row) => row.key === "lab-replay" && row.line > 0));
 });
 
 function withTextFixtures(run) {

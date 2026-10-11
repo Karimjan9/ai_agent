@@ -83,6 +83,30 @@ class AutonomousModeService
         return (bool) $this->status($symbol, $timeframe)['enabled'];
     }
 
+    /** Current committed permission for new native authority, inside its transaction. */
+    public function enabledForCommit(string $symbol = 'XAUUSD', string $timeframe = 'H1'): bool
+    {
+        if (DB::transactionLevel() < 1) {
+            throw new \LogicException('AUTONOMY_COMMIT_READ_TRANSACTION_REQUIRED');
+        }
+        [$symbol, $timeframe] = $this->scope($symbol, $timeframe);
+        if (! Schema::hasTable('system_events')) {
+            return false;
+        }
+        // A locking read observes the current committed row even under MySQL
+        // REPEATABLE READ. Keep permission stable only until this commit.
+        $event = SystemEvent::query()->where('event_key', $this->eventKey($symbol, $timeframe))->sharedLock()->first();
+        if (! $event) {
+            return false; // A default-enabled policy alone cannot grant new authority.
+        }
+        $payload = $event->payload;
+
+        return $event->event_type === 'autonomous_mode_control'
+            && $event->symbol === $symbol && $event->timeframe === $timeframe
+            && is_array($payload) && ($payload['protocol'] ?? null) === self::PROTOCOL
+            && ($payload['enabled'] ?? null) === true && ($payload['state'] ?? null) === 'running';
+    }
+
     /**
      * Compact, read-only snapshot intended for a lightweight controller.
      *

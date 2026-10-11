@@ -117,6 +117,9 @@ def validate_historical_quotes(frame: pd.DataFrame, payload) -> pd.DataFrame:
     original = frame.attrs.get(_ORIGINAL_QUOTE_ATTR)
     if isinstance(original, _OriginalFullQuoteCalendar):
         calendar |= original.calendar(frame, payload)
+    if (payload.mtf_snapshot_manifest or {}).get('validation_bundle_protocol') == 'authorized_scoped_original_window_bundle_v1':
+        from app.services.scoped_research_runtime import scoped_research_quote_calendar
+        calendar |= scoped_research_quote_calendar(frame, payload)
     valid = (
         calendar
         & quote_time.ge(frame["time"]) & quote_time.lt(close_time)

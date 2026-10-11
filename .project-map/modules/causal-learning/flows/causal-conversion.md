@@ -1,5 +1,45 @@
 # Causal conversion loop
 
+## Separately scoped original confirmation
+
+Existing Foundry copies a source recipe as a fresh prospective question, not
+as independent evidence. Scoped registration freezes exact models, context,
+external risk, statistics and future physical UTC windows. The original
+exposure owner seals a capture boundary and records both laboratory requests
+and durable-fold ingress before evaluator delivery.
+
+Future selector panels preregister unknown-byte physical window slots and an
+intrinsic programme, not invented CSV hashes. Later immutable original data
+binding precedes all fold attempts. Deterministic signed agent-purpose keys
+prevent ordinary jobs from spending an attempt on reserved panel arms. Component
+question references use an inactive Q:H1 namespace rather than ordinary latest-
+generation population ownership.
+
+The existing kernel/arbiter leases typed component or descendant work.
+Canonical construction compiles every original arm/window request before a
+whole-matrix dispatch barrier. `ExecuteScopedResearchArmJob` uses the existing
+full-research queue and original bounded producer budget; the scheduler does
+not synchronously run a long replay. Lease/token/fence, source, actual data,
+clock/account and immutable checkpoints are verified on every delivery.
+
+Complete original products -> exact context and no-regression comparison ->
+scope-specific independent certificate -> idempotent component credit/cartridge
+or explicit negative/null/underpowered closure. Independent selector panels
+measure distinct questions with the same legal space and resource caps; a
+component contrast is not selector proof. Audit projections remain excluded
+from ordinary mutation advice.
+Final native settlement is atomic under the current work lock and fresh
+lease/mode checks; stopped or expired settlement retains the original products
+without partially publishing authority, credit or successor work.
+
+Confirmed component -> existing Foundry's one legal U proposal -> durable
+fresh-later-window dependency -> prospective four-model/capture registration ->
+P/PT/PTU/PU execution -> conditional trait/interaction comparison -> separately
+scoped inheritance credit if retained. No active release hot-fix, old-window
+renewal, fabricated data or automatic Economic Parent/paper authority follows.
+
+## Existing ordinary and council conversion
+
 Original council conversion can preregister a bounded discovery follow-up
 through its existing feedback owner. Server proof, original receipt/plan/source
 and legal parameter delta are verified before the conversion kernel exposes
@@ -72,11 +112,11 @@ all referenced candles were consumed. Missing training/selection/context
 history blocks an unused-window conclusion. `--proposal` wraps the existing
 future six-month reservation in a sealable, non-persisted draft; the caller must
 retain its immutable owner preregistration before validation outcomes. Existing
-paper disjointness, post-paper data and all independent evidence gates still own
+paper disjointness, untouched pre-2026 data and all independent evidence gates still own
 execution. No historical generic instrument route is created.
 
 `--future-schedule` adds six explicit monthly collection drafts under the
-existing post-paper policy. Every dataset/MTF hash and evaluated-row receipt
+existing untouched pre-2026 policy. Every dataset/MTF hash and evaluated-row receipt
 remains null; the draft grants neither preregistration nor authorization.
 Warmup must be inside its own reserved research window, never borrowed from
 2026 paper data. Holding/outcome maturity and actual powered windows still need
@@ -225,7 +265,7 @@ settlement needs an explicit scientific classification and a next action.
    requested context explicitly names the same venue phase; omitting the phase
    cannot turn local evidence into a session-wide preference.
    An instrument research window is admitted only when the replay manifest
-   explicitly declares a post-paper research-validation source, first/last
+   explicitly declares a untouched pre-2026 research-validation source, first/last
    candles inside its authorized UTC bounds, and a dataset hash equal to the
    server-owned window manifest and candidate's frozen replay seal. Ordinary
    pre-2026 foundation screening cannot borrow this authority. The receipt is
@@ -250,23 +290,40 @@ settlement needs an explicit scientific classification and a next action.
     C/A/B/AB identity. Fewer than the preregistered paired or signal
     opportunities means `underpowered_activation`, not a negative claim.
     A context unique to AB may yield only a behavioral activation hypothesis.
-    The future validation interval, six monthly windows, exact comparator and
-    power thresholds are preregistered with the discovery proposal and bound
-    into the four-arm manifest. The conversion kernel hashes that same plan
+    The exact comparator and power thresholds are bound to the discovery
+    proposal. The conversion kernel hashes that same plan
     into one idempotent semantic receipt and a blocked next-work item. The
-    reserved interval starts after the 2026 paper-only epoch; no replay or
-    credit is allowed until a separate research epoch and dataset are
-    authorized and sealed. Economic effect, component credit, Mentor and
+    older reservation is preserved as non-executable history. New v3 plans
+    contain no future research interval: every date from 2026 onward remains
+    paper-only, including 2027 and all later years. Untouched authorized
+    pre-2026 original evidence is still required. Economic effect, component credit, Mentor and
    promotion remain unearned.
     Before prospective construction, seal the intended confirmation route:
     historical causal research uses its existing frozen causal contract;
     Academy/activation/instrument independent authority requires original
     preregistered unused authorized-window provenance. Missing provenance is
     `BLOCKED_DEPENDENCY`, never a renamed discovery window or fake credit.
-    Activation reservations also reject overlap with any approved future paper
-    period; the 2026 paper-only cutoff never moves.
+    Every observation from the fixed 2026 boundary is paper-only, regardless
+    of separately configured paper periods.
 
 ## Modules involved
+
+### Separately scoped prospective proof preparation
+
+Named original source -> separate component/selector/council/inheritance
+question seal -> original four-stream data binding -> original producer
+diagnostic -> independently verified authority boundary (not delivered by the
+diagnostic registry). Original input completeness is not original unused-data
+provenance. The audit includes MTF/context/warmup/related/foundation/inline
+references; unknown complete exposure inventory stays blocked.
+
+The existing confirmation owner recomputes component/control contrasts without
+requiring guided superiority over blind. Selector superiority still needs its
+own preregistered multi-question equal-budget panel. The legacy coupled credit
+path remains unchanged and cannot be borrowed by a new scoped question.
+Descendant diagnostics bind P/PT/PTU/PU original vectors/products and distinguish
+retained trait evidence from interaction-only bundle observations. No new
+scheduler, dispatch, Mentor, Parent, paper or credit authority follows.
 
 `causal-learning` → `laboratory` → `laravel-python-contract` →
 `confirmation-entry` → `paper-execution`
@@ -352,7 +409,7 @@ settlement needs an explicit scientific classification and a next action.
   the exact context; legacy lessons remain hypotheses, not gene-wide bans.
 - Readiness reports `awaiting_authorized_research_data` when no completed
   authorized independent window exists. Future dates are not available data;
-  2026 paper-only observations cannot be substituted.
+  Observations from 2026 and every later year are paper-only and cannot be substituted.
 - Control identity is frozen; a genetic parent is not a causal control by name alone.
 - Lesson, source pair, frozen control, baseline model and composition passport
   must describe the same executable family. Declared architecture and tactic
@@ -438,7 +495,7 @@ CPU remain separate; raw positive outcomes are not memory superiority.
 
 Progress separates technical completion, answer-producing comparisons and
 actual descendant/trait-ablation witnesses. Historical Academy/causal research
-is not the authorized post-paper instrument route. Missing independent data
+is not the authorized untouched pre-2026 instrument route. Missing independent data
 remains a dependency, not a provisional result silently promoted to authority.
 
 ## Research-question improvement

@@ -30,14 +30,14 @@ def authorized(tmp_path, monkeypatch):
     monkeypatch.setattr(owner, "_research_transport_now", lambda: pd.Timestamp("2028-01-01", tz="UTC"))
     monkeypatch.setattr(main, "_internal_api_token", lambda: KEY)
     path = tmp_path / "future.csv"
-    path.write_text("time,open,high,low,close,volume\n2027-02-01T00:00:00Z,100,101,99,100,10\n2027-02-01T00:05:00Z,100,101,99,100,10\n", encoding="utf-8")
+    path.write_text("time,open,high,low,close,volume\n2025-02-01T00:00:00Z,100,101,99,100,10\n2025-02-01T00:05:00Z,100,101,99,100,10\n", encoding="utf-8")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     release = {"protocol": "prospective_research_release_v1", "python_source_hash": owner.source_hash(),
         "source_hash": "b" * 64, "dataset_hash": digest, "agent_execution_hashes": {"1": "e" * 64}}
     release["release_hash"] = hashlib.sha256(owner._release_json(release).encode()).hexdigest()
     window = {"protocol": "instrument_research_window_v1", "authorization_id": "server-window-1",
-        "research_epoch_id": "research-2027", "start_inclusive": "2027-02-01T00:00:00+00:00",
-        "end_exclusive": "2027-03-01T00:00:00+00:00", "dataset_sha256": digest}
+        "research_epoch_id": "research-2025", "start_inclusive": "2025-02-01T00:00:00+00:00",
+        "end_exclusive": "2025-03-01T00:00:00+00:00", "dataset_sha256": digest}
     window["window_key"] = hashlib.sha256(json.dumps(window, separators=(",", ":")).encode()).hexdigest()
     payload = SimpleBacktestRequest(timeframe="M5", evaluation_mode="full", dataset_path=str(path),
         replay_dataset_hash=digest, research_release=release, execution_contract={"execution_hash": "e" * 64})
@@ -45,7 +45,7 @@ def authorized(tmp_path, monkeypatch):
         "generation_id": 1, "release_hash": release["release_hash"], "dataset_hash": digest,
         "symbol": payload.symbol, "timeframe": payload.timeframe, "evaluation_mode": "full", "window": window,
         "files": {"M5": {"path": str(path), "sha256": digest, "rows": 2,
-            "start_inclusive": "2027-02-01T00:00:00+00:00", "last_candle_at": "2027-02-01T00:05:00+00:00"}},
+            "start_inclusive": "2025-02-01T00:00:00+00:00", "last_candle_at": "2025-02-01T00:05:00+00:00"}},
         "paper_exclusions": [{"start_inclusive": "2026-01-01T00:00:00+00:00", "end_exclusive": "2027-01-01T00:00:00+00:00"}],
         "independent_evidence": False, "promotion_evidence": False}
     payload.policy_context = {"authorized_research_transport": identity}
@@ -67,20 +67,20 @@ def test_valid_actual_csv_admits_only_execution_without_independence_and_signatu
 def test_invalid_transport_never_borrows_future_authorization(authorized, tmp_path, mutation):
     if mutation == "unsigned":
         authorized.policy_context = {}
-        with pytest.raises(ValueError, match="AUTHENTICATION_REQUIRED"):
-            main._assert_non_paper_source_pre_2026(authorized, _load_verified_dataset_csv(authorized, authorized.dataset_path, "M5"))
+        assert owner.verify_research_transport(authorized, KEY) is None
+        assert main._verified_research_transport(authorized) is None
         return
     if mutation == "signature": authorized.policy_context["authorized_research_transport"]["hmac_sha256"] = "a" * 64
     if mutation == "release": authorized.research_release["source_hash"] = "f" * 64
     if mutation == "dataset": authorized.replay_dataset_hash = "f" * 64
     if mutation == "mode": authorized.evaluation_mode = "incremental"
-    if mutation == "inline": authorized.candles = [{"time": "2027-02-01", "open": 1, "high": 1, "low": 1, "close": 1}]
+    if mutation == "inline": authorized.candles = [{"time": "2025-02-01", "open": 1, "high": 1, "low": 1, "close": 1}]
     if mutation == "window": resign(authorized, lambda i: i["window"].update(start_inclusive="2026-01-01T00:00:00+00:00"))
     if mutation == "window_identity": resign(authorized, lambda i: i["window"].update(window_key="f" * 64))
     if mutation == "rows": resign(authorized, lambda i: i["files"]["M5"].update(rows=3))
-    if mutation == "paper_overlap": resign(authorized, lambda i: i["paper_exclusions"].append({"start_inclusive": "2027-02-01T00:00:00+00:00", "end_exclusive": "2027-04-01T00:00:00+00:00"}))
+    if mutation == "paper_overlap": resign(authorized, lambda i: i["paper_exclusions"].append({"start_inclusive": "2025-02-01T00:00:00+00:00", "end_exclusive": "2025-04-01T00:00:00+00:00"}))
     if mutation == "legacy_policy": resign(authorized, lambda i: i.update(paper_exclusions=[{"start_inclusive": "2025-01-01T00:00:00+00:00", "end_exclusive": "2025-02-01T00:00:00+00:00"}]))
-    if mutation == "source": Path(authorized.dataset_path).write_text("time,open\n2027-02-02T00:00:00Z,1\n", encoding="utf-8")
+    if mutation == "source": Path(authorized.dataset_path).write_text("time,open\n2025-02-02T00:00:00Z,1\n", encoding="utf-8")
     if mutation == "path": resign(authorized, lambda i: i["files"]["M5"].update(path=str(tmp_path / ".." / "escape.csv")))
     if mutation == "context": authorized.mtf_dataset_paths = {"H4": authorized.dataset_path}
     with pytest.raises((ValueError, FileNotFoundError)):
@@ -92,6 +92,21 @@ def test_immutable_2026_cannot_be_bypassed_by_cutoff_label_or_valid_future_signa
     frame = pd.DataFrame({"time": ["2026-02-01T00:00:00Z", "2026-02-01T00:05:00Z"]})
     with pytest.raises(ValueError, match="faqat paper lane"):
         main._assert_non_paper_source_pre_2026(authorized, frame)
+
+
+@pytest.mark.parametrize("year", [2026, 2027, 2028, 2035, 2098])
+def test_all_paper_years_refuse_even_a_server_signed_research_window(authorized, year):
+    def change_window(identity):
+        window = {key: value for key, value in identity["window"].items() if key != "window_key"}
+        window.update(start_inclusive=f"{year}-02-01T00:00:00+00:00",
+                      end_exclusive=f"{year}-03-01T00:00:00+00:00")
+        identity["window"] = {**window, "window_key": hashlib.sha256(json.dumps(window, separators=(",", ":")).encode()).hexdigest()}
+    resign(authorized, change_window)
+    with pytest.raises(ValueError, match="PAPER_OR_FUTURE_WINDOW_FORBIDDEN"):
+        owner.verify_research_transport(authorized, KEY)
+    authorized.policy_context["data_boundary"] = {"training_end_exclusive": "2100-01-01"}
+    with pytest.raises(ValueError, match="faqat paper lane"):
+        main._assert_non_paper_source_pre_2026(authorized, pd.DataFrame({"time": [f"{year}-02-01T00:00:00Z"]}))
 
 
 def test_same_future_timestamps_changed_actual_rows_refuse_signed_file_identity(authorized):
@@ -116,7 +131,7 @@ def test_all_real_mtf_and_related_streams_are_bound_and_paper_context_cannot_hid
     files = {"M5": authorized.policy_context["authorized_research_transport"]["files"]["M5"]}
     for name, final_time in [("H4", "04:00:00"), ("H1", "01:00:00"), ("M15", "00:15:00"), ("RELATED_M15", "00:15:00")]:
         path = tmp_path / (name + ".csv")
-        prefix = "2026-02-01" if name == bad_stream else "2027-02-01"
+        prefix = "2026-02-01" if name == bad_stream else "2025-02-01"
         path.write_text(f"time,open,high,low,close,volume\n{prefix}T00:00:00Z,100,101,99,100,10\n{prefix}T{final_time}Z,100,101,99,100,10\n", encoding="utf-8")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         streams[name] = {"path": str(path), "sha256": digest}

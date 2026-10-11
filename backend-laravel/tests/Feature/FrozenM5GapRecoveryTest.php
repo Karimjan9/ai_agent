@@ -155,6 +155,31 @@ class FrozenM5GapRecoveryTest extends TestCase
         }
     }
 
+    public function test_successful_pure_cache_cannot_hide_changed_source_bytes(): void
+    {
+        [$m1, $m5, $evidence] = $this->rawTickProofFixture();
+        $first = \FrozenM5GapRecoveryOperation::rawTickProof('2025-12-17 23:00:00', $m1, $m5, $evidence);
+        $this->assertSame($first, \FrozenM5GapRecoveryOperation::rawTickProof('2025-12-17 23:00:00', $m1, $m5, $evidence));
+        file_put_contents($evidence['raw_path'], 'changed original raw bytes');
+        try {
+            \FrozenM5GapRecoveryOperation::rawTickProof('2025-12-17 23:00:00', $m1, $m5, $evidence);
+            $this->fail('Prior raw proof hid changed physical evidence.');
+        } catch (\RuntimeException $error) { $this->assertSame('RECOVERY_RAW_TICK_SOURCE_INVALID', $error->getMessage()); }
+        $source = tempnam(sys_get_temp_dir(), 'recovery-memo-'); $this->rawEvidencePaths[] = $source;
+        $rows = [$this->row('2025-12-17 22:55:00'), $this->row('2025-12-17 23:05:00')];
+        file_put_contents($source, \FrozenM5GapRecoveryOperation::csvBytes($rows));
+        $oldHash = hash_file('sha256', $source);
+        $before = \FrozenM5GapRecoveryOperation::source($source, $oldHash, true);
+        $this->assertSame($before, \FrozenM5GapRecoveryOperation::source($source, $oldHash, true));
+        $rows[0]['volume'] += 1;
+        file_put_contents($source, \FrozenM5GapRecoveryOperation::csvBytes($rows));
+        $after = \FrozenM5GapRecoveryOperation::source($source, hash_file('sha256', $source), true);
+        $this->assertNotSame($before, $after);
+        $this->assertNotSame(\FrozenM5GapRecoveryOperation::economicRowsHash($before), \FrozenM5GapRecoveryOperation::economicRowsHash($after));
+        try { \FrozenM5GapRecoveryOperation::source($source, $oldHash, true); $this->fail('Prior source memo hid drift.'); }
+        catch (\RuntimeException $error) { $this->assertSame('RECOVERY_FROZEN_SOURCE_SHA_MISMATCH', $error->getMessage()); }
+    }
+
     public function test_bi5_ticks_supply_all_actual_minutes_when_native_candle_endpoint_is_empty(): void
     {
         [$m1,$m5,$jetta]=$this->rawTickProofFixture();

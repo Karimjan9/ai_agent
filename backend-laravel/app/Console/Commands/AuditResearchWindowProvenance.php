@@ -33,8 +33,7 @@ class AuditResearchWindowProvenance extends Command
                 : $audit['dependency_status'].': '.$audit['reason_code'].'; historical unused windows demonstrated=0; audit='.$audit['audit_hash']);
             if (! $this->option('json') && isset($result['future_collection_schedule'])) {
                 $schedule = $result['future_collection_schedule'];
-                $this->line('future_schedule_draft: '.$schedule['windows'][0]['start_inclusive'].' -> '
-                    .$schedule['windows'][5]['end_exclusive'].'; '.$schedule['reason_code']
+                $this->line('future_research_schedule: windows='.count($schedule['windows']).'; '.$schedule['reason_code']
                     .'; executable=false; authorization=false; schedule='.$schedule['schedule_hash']);
             }
             // A successful audit may honestly report a blocked dependency. It never admits work.

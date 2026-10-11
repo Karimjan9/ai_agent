@@ -168,6 +168,126 @@ class SpecialistCouncilDataUseService
         return [...$identity, 'inventory_hash' => $this->epochs->parameterHash($identity)];
     }
 
+    /**
+     * Prospective scoped ingress inventory, using the same exact-byte CSV owner.
+     * Every row is included; warmup and context cannot be hidden by a selected-row label.
+     * Unknown auxiliary transports are a dependency, never an omitted exposure.
+     */
+    public function capturedOriginalRequestIntervals(array $request, int $holding): array
+    {
+        if ($holding < 0 || $holding > 31536000) throw new LogicException('EXPOSURE_HOLDING_POLICY_INVALID');
+        foreach ($request as $field => $value) {
+            if (in_array($field, ['candles', 'regime_candles'], true) && is_array($value)
+                && ($value['__canonical_dataset_reference'] ?? false) === true && ($value['row_count'] ?? null) === 0) continue;
+            if (empty(is_object($value) ? (array) $value : $value)) continue;
+            if (($this->uncapturedSourceField((string) $field, $value)
+                    && ! in_array($field, ['dataset_path', 'mtf_dataset_paths'], true))
+                || in_array($field, ['related_mtf_streams', 'regime_candles', 'candles'], true)) {
+                throw new LogicException('EXPOSURE_UNRECOGNIZED_SOURCE:'.$field);
+            }
+            if (is_array($value) && ! in_array($field, ['dataset_path', 'mtf_dataset_paths'], true)) {
+                $this->assertNoUncapturedNestedSources($value, (string) $field);
+            }
+        }
+        if (! empty(data_get($request, 'policy_context.snapshot_transport.regime_dataset_path'))
+            || ! empty(data_get($request, 'policy_context.snapshot_transport.foundation_dataset_path'))) {
+            throw new LogicException('EXPOSURE_UNRECOGNIZED_NESTED_SOURCE');
+        }
+        $manifest = (array) ($request['mtf_snapshot_manifest'] ?? []);
+        $streams = (array) ($manifest['streams'] ?? []);
+        $paths = (array) ($request['mtf_dataset_paths'] ?? []);
+        $keys = array_keys($streams); sort($keys);
+        $pathKeys = array_keys($paths); sort($pathKeys);
+        $canonical = ['H1', 'H4', 'M15', 'M5'];
+        if ($keys !== $canonical || $pathKeys !== $canonical
+            || ($request['timeframe'] ?? null) !== 'M5'
+            || ! preg_match('/^[A-Z0-9_.:-]{1,30}$/D', (string) ($request['symbol'] ?? ''))
+            || ! is_string($request['replay_dataset_hash'] ?? null)
+            || ! hash_equals((string) ($manifest['bundle_hash'] ?? ''), $request['replay_dataset_hash'])) {
+            throw new LogicException('EXPOSURE_ORIGINAL_FOUR_STREAM_TRANSPORT_REQUIRED');
+        }
+        $files = []; $intervals = [];
+        foreach ($canonical as $stream) {
+            $record = (array) $streams[$stream];
+            $path = $paths[$stream];
+            $resolved = is_string($path) ? (realpath($path) ?: realpath(dirname(base_path()).DIRECTORY_SEPARATOR.$path)) : false;
+            $declared = is_string($record['path'] ?? null) ? (realpath($record['path']) ?: realpath(dirname(base_path()).DIRECTORY_SEPARATOR.$record['path'])) : false;
+            $primary = is_string($request['dataset_path'] ?? null) ? (realpath($request['dataset_path']) ?: realpath(dirname(base_path()).DIRECTORY_SEPARATOR.$request['dataset_path'])) : false;
+            $allowed = false;
+            foreach ([storage_path('app/lab-datasets'), dirname(base_path()).DIRECTORY_SEPARATOR.'datasets'] as $root) {
+                $actualRoot = realpath($root);
+                if ($resolved !== false && $actualRoot !== false
+                    && str_starts_with(strtolower($resolved), strtolower($actualRoot).DIRECTORY_SEPARATOR)) $allowed = true;
+            }
+            if (! $allowed || $resolved !== $declared || ! is_file($resolved) || is_link($resolved)
+                || ($stream === 'M5' && $primary !== $resolved)
+                || ! preg_match('/^[a-f0-9]{64}$/D', (string) ($record['sha256'] ?? ''))) {
+                throw new LogicException('EXPOSURE_ORIGINAL_SOURCE_IDENTITY_INVALID:'.$stream);
+            }
+            [$handle, $hash] = $this->verifiedCsv($resolved, $record['sha256']);
+            try {
+                $header = fgetcsv($handle, escape: '');
+                $columns = array_map(fn ($field) => strtolower(trim((string) $field)), $header ?: []);
+                $index = array_search('time', $columns, true);
+                if ($index === false) $index = array_search('timestamp', $columns, true);
+                if ($index === false) throw new LogicException('EXPOSURE_TIME_COLUMN_MISSING:'.$stream);
+                $seconds = app(SpecialistCouncilContractService::class)->timeframeSeconds($stream);
+                $first = null; $last = null; $rows = 0; $identities = hash_init('sha256');
+                while (($row = fgetcsv($handle, escape: '')) !== false) {
+                    $time = $this->time($row[$index] ?? null, true);
+                    $closed = $time->addSeconds($seconds);
+                    if (($last !== null && ! $time->greaterThan($last)) || $closed->greaterThan(now()->utc())) {
+                        throw new LogicException('EXPOSURE_UNCLOSED_OR_UNORDERED_SOURCE:'.$stream);
+                    }
+                    $first ??= $time; $last = $time;
+                    hash_update($identities, $this->epochs->parameterHash(['symbol' => $request['symbol'],
+                        'start' => $time->toIso8601String(), 'end' => $closed->toIso8601String()])."\n");
+                    if (++$rows > 2000000) throw new LogicException('EXPOSURE_SOURCE_ROW_BUDGET_EXCEEDED');
+                }
+                if ($rows < 2) throw new LogicException('EXPOSURE_SOURCE_EMPTY:'.$stream);
+                if ((isset($record['rows']) && $record['rows'] !== $rows)
+                    || (isset($record['first_candle_at']) && ! $this->time($record['first_candle_at'], true)->equalTo($first))
+                    || (isset($record['last_candle_at']) && ! $this->time($record['last_candle_at'], true)->equalTo($last))) {
+                    throw new LogicException('EXPOSURE_DECLARED_SOURCE_ROWS_OR_CHRONOLOGY_DRIFT:'.$stream);
+                }
+                $closed = $last->addSeconds($seconds);
+                $files[$stream] = ['path' => str_replace('\\', '/', $resolved), 'sha256' => $hash,
+                    'rows' => $rows, 'first_candle_at' => $first->toIso8601String(),
+                    'last_candle_at' => $last->toIso8601String(), 'closed_end_exclusive' => $closed->toIso8601String(),
+                    'event_identities_hash' => hash_final($identities), 'all_rows_captured' => true];
+                $intervals[] = ['symbol' => $request['symbol'], 'stream' => $stream,
+                    'start_inclusive' => $first->toIso8601String(),
+                    'observed_end_exclusive' => $closed->toIso8601String(),
+                    'end_exclusive' => $closed->addSeconds($holding)->toIso8601String(),
+                    'holding_fence_seconds' => $holding, 'source_sha256' => $hash,
+                    'event_count' => $rows, 'event_identities_hash' => $files[$stream]['event_identities_hash']];
+            } finally { fclose($handle); }
+        }
+        return ['protocol' => 'captured_original_four_stream_intervals_v1',
+            'dataset_hash' => $request['replay_dataset_hash'], 'files' => $files, 'intervals' => $intervals,
+            'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window',
+            'holding_policy' => 'conservative_potential_holding_not_observed_outcome', 'sampled' => false];
+    }
+
+    private function assertNoUncapturedNestedSources(array $value, string $prefix, int $depth = 0): void
+    {
+        if ($depth > 32) throw new LogicException('EXPOSURE_SOURCE_REFERENCE_DEPTH_EXCEEDED');
+        foreach ($value as $field => $child) {
+            if (empty(is_object($child) ? (array) $child : $child)) continue;
+            if ($this->uncapturedSourceField((string) $field, $child)) {
+                throw new LogicException('EXPOSURE_UNRECOGNIZED_NESTED_SOURCE');
+            }
+            if (is_array($child)) $this->assertNoUncapturedNestedSources($child, $prefix.'.'.$field, $depth + 1);
+        }
+    }
+
+    private function uncapturedSourceField(string $field, mixed $value): bool
+    {
+        return preg_match('/(?:dataset_paths?|mtf_streams)$/', $field)
+            || in_array($field, ['candles', 'regime_candles'], true)
+            || (str_ends_with($field, '_candles') && (is_array($value) || is_object($value)));
+    }
+
     private function replayObservations(SpecialistCouncilVersion $version, array $request, string $runId, ?array $receipt): array
     {
         $timeframe = (string) ($request['timeframe'] ?? 'H1');

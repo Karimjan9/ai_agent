@@ -56,6 +56,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php
   - backend-laravel/tests/Feature/SpecialistPaperAccountTest.php
   - backend-laravel/tests/Feature/ResearchPaperEpochContractTest.php

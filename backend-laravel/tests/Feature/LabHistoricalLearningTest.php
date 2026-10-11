@@ -43,7 +43,7 @@ class LabHistoricalLearningTest extends TestCase
             'run_id' => $run->run_id,
             'lab_generation_id' => $generation->id,
             'lab_agent_id' => $agent->id,
-            'candle_time' => '2026-01-01T00:00:00Z',
+            'candle_time' => '2025-01-01T00:00:00Z',
             'candle_index' => 200,
             'event_type' => 'signal_evaluation',
             'action' => 'BUY',
@@ -68,7 +68,7 @@ class LabHistoricalLearningTest extends TestCase
         $this->assertSame('monthly_survival', data_get($insight?->recommended_mutations, 'primary_target'));
         // A completed screening row is still a diagnostic snapshot. Exact
         // causal history requires the full request/response/trace/ledger
-        // chain from a full, paper or holdout replay.
+        // chain from a pre-2026 full research replay.
         $this->assertSame('diagnostic_only', $insight?->evidence_quality);
         $this->assertFalse((bool) $insight?->causal_prior_allowed);
         $this->assertContains('transition_firewall_enabled', data_get($insight?->recommended_mutations, 'keys', []));
@@ -109,7 +109,7 @@ class LabHistoricalLearningTest extends TestCase
             'run_id' => $run->run_id,
             'lab_generation_id' => $generation->id,
             'lab_agent_id' => $agent->id,
-            'candle_time' => '2026-01-01T00:00:00Z',
+            'candle_time' => '2025-01-01T00:00:00Z',
             'candle_index' => 1,
             'event_type' => 'signal_evaluation',
             'action' => 'WAIT',
@@ -125,7 +125,9 @@ class LabHistoricalLearningTest extends TestCase
             'run_id' => $run->run_id,
             'lab_generation_id' => $generation->id,
             'lab_agent_id' => $agent->id,
-            'bucket_date' => '2026-01-01',
+            'bucket_date' => '2025-01-01',
+            'first_candle_time' => '2025-01-01 00:00:00',
+            'last_candle_time' => '2025-01-01 00:15:00',
             'event_type' => 'signal_evaluation',
             'action' => 'WAIT',
             'accepted' => false,
@@ -146,5 +148,37 @@ class LabHistoricalLearningTest extends TestCase
         $this->assertSame(4, data_get($insight?->metrics, 'candle_event_count'));
         $this->assertSame(4, data_get($insight?->metrics, 'rejected_candle_events'));
         $this->assertSame(4, data_get($insight?->failure_signature, 'dominant_rejections.0.occurrences'));
+
+        // Paper observations must not change this research mutation direction,
+        // even when their count greatly exceeds the original research sample.
+        $paper = (array) DB::table('lab_candle_decision_rollups')->first();
+        unset($paper['id']);
+        $paper['rollup_key'] = hash('sha256', 'paper-rollup-excluded');
+        $paper['run_id'] = 'paper-only-source';
+        $paper['bucket_date'] = '2027-01-01';
+        $paper['first_candle_time'] = '2027-01-01 00:00:00';
+        $paper['last_candle_time'] = '2027-01-01 00:15:00';
+        $paper['event_count'] = 1000;
+        DB::table('lab_candle_decision_rollups')->insert($paper);
+        $event = LabCandleDecisionEvent::firstOrFail()->replicate();
+        $event->decision_id = (string) Str::uuid();
+        $event->run_id = 'paper-only-source';
+        $event->candle_time = '2027-01-01T00:00:00Z';
+        $event->save();
+        $fresh = app(LabHistoricalLearningService::class);
+        $fresh->refreshForLab('XAUUSD', 'H1');
+        $insight = $fresh->latestForFamily('XAUUSD', 'H1', $agent->strategy_family);
+        $this->assertSame(4, data_get($insight?->metrics, 'candle_event_count'));
+        $this->assertSame(4, data_get($insight?->failure_signature, 'dominant_rejections.0.occurrences'));
+
+        $metrics = $insight->metrics;
+        unset($metrics['research_data_cutoff']);
+        $insight->update(['metrics' => $metrics]);
+        $this->assertNull($fresh->latestForFamily('XAUUSD', 'H1', $agent->strategy_family));
+        $lock = \Illuminate\Support\Facades\Cache::lock('lab-history-refresh:XAUUSD:H1', 60);
+        $this->assertTrue($lock->get());
+        try {
+            $this->assertNotContains($insight->id, collect($fresh->refreshForLab('XAUUSD', 'H1'))->pluck('id')->all());
+        } finally { $lock->release(); }
     }
 }

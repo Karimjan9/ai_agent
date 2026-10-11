@@ -354,7 +354,8 @@ class PaperAuthorityAdmissionService
                 $start = $this->strictTime($window['start_inclusive'] ?? null);
                 $end = $this->strictTime($window['end_exclusive'] ?? null);
                 if (! $pair || isset($pairs[$pair->id]) || $start === null || $end === null || ! $end->greaterThan($start)
-                    || ! $start->greaterThanOrEqualTo('2027-01-01T00:00:00Z') || $end->greaterThan($freeze)
+                    || ! $this->epochs->researchIntervalDisjointFromPaper($start->toIso8601String(), $end->toIso8601String())
+                    || $end->greaterThan($freeze)
                     || ($start->lessThan($paperEnd) && $end->greaterThan($paperStart))) return $blocked('PAPER_TRAIT_ORIGINAL_WINDOW_CHRONOLOGY_INVALID');
                 $pairs[$pair->id] = true;
                 if (isset($windows[$window['window_key'] ?? ''])) return $blocked('PAPER_TRAIT_DUPLICATE_SOURCE_WINDOW');
@@ -465,6 +466,8 @@ class PaperAuthorityAdmissionService
     {
         foreach (LabEvaluationRun::where('model_version_id', $model->id)->where('status', 'completed')->orderBy('id')->limit(50)->get() as $run) {
             $finished = $this->strictTime($run->finished_at?->toIso8601String());
+            // Preserve the original archive completion fence. Physical input
+            // chronology below remains strictly pre-2026, regardless of run date.
             if ($finished === null || $finished->greaterThan($freeze) || ! $finished->lessThan('2027-01-01T00:00:00Z')) continue;
             $source = $this->immutableSource($run, $model, $symbol);
             if ($source === null || ! $this->sourceFilesInside($source['request'], $source['response'], null, CarbonImmutable::parse('2026-01-01T00:00:00Z'))) continue;

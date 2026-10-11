@@ -23,6 +23,24 @@ BOOT_SOURCE_HASH = source_hash()
 _UNSET = object()
 
 RESEARCH_TRANSPORT_PROTOCOL = "authorized_research_transport_v1"
+_TRANSPORT_ISSUER = object()
+
+
+class _AuthenticatedResearchTransport(dict):
+    """An internal verification product; caller JSON never carries its issuer."""
+    def __init__(self, envelope, issuer):
+        if issuer is not _TRANSPORT_ISSUER:
+            raise TypeError("RESEARCH_TRANSPORT_PRIVATE_ISSUER_REQUIRED")
+        canonical = _release_json(envelope)
+        super().__init__(json.loads(canonical))
+        self._issuer = issuer
+        self._verified_digest = hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def authenticated_research_transport_current(transport):
+    return (isinstance(transport, _AuthenticatedResearchTransport)
+        and transport._issuer is _TRANSPORT_ISSUER
+        and hashlib.sha256(_release_json(dict(transport)).encode()).hexdigest() == transport._verified_digest)
 
 
 def _research_transport_now() -> pd.Timestamp:
@@ -132,7 +150,7 @@ def verify_research_transport(payload, internal_key: str) -> dict | None:
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("RESEARCH_TRANSPORT_WINDOW_UTC_REQUIRED")
     start = start.tz_convert("UTC"); end = end.tz_convert("UTC")
-    if start < pd.Timestamp("2027-01-01", tz="UTC") or end <= start or end > _research_transport_now():
+    if end > pd.Timestamp("2026-01-01", tz="UTC") or end <= start or end > _research_transport_now():
         raise ValueError("RESEARCH_TRANSPORT_PAPER_OR_FUTURE_WINDOW_FORBIDDEN")
     exclusions = identity.get("paper_exclusions")
     if not isinstance(exclusions, list) or not 1 <= len(exclusions) <= 64:
@@ -183,7 +201,12 @@ def verify_research_transport(payload, internal_key: str) -> dict | None:
                 or pd.Timestamp(signed.get("start_inclusive")) != times.iloc[0]
                 or pd.Timestamp(signed.get("last_candle_at")) != times.iloc[-1]):
             raise ValueError("RESEARCH_TRANSPORT_SOURCE_CHRONOLOGY_MISMATCH:" + stream)
-    return envelope
+    verified = _AuthenticatedResearchTransport(envelope, _TRANSPORT_ISSUER)
+    if ((payload.mtf_snapshot_manifest or {}).get("validation_bundle_protocol") == "authorized_scoped_original_window_bundle_v1"
+            or verified.get("scoped_original_window") is not None):
+        from app.services.scoped_research_runtime import bind_scoped_research_runtime
+        bind_scoped_research_runtime(payload, verified)
+    return verified
 
 
 def _release_json(value: object) -> str:

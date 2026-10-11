@@ -170,7 +170,8 @@ class ResearchExperimentConversionKernelService
     public function claimCouncilContinuationForGeneration(\App\Models\LabGeneration $generation): ?ResearchExperimentWorkItem
     {
         $id = (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id',
-            data_get($generation->trigger_context, 'specialist_council_authorized_panel.work_item_id', 0));
+            data_get($generation->trigger_context, 'specialist_council_authorized_panel.work_item_id',
+                data_get($generation->trigger_context, 'scoped_descendant_execution.work_item_id', 0)));
         if ($id <= 0 || ! $this->available()) return null;
         $this->reconcileOwnershipAndDependencies();
         return $this->claimMatching(1, ResearchLoopArbiterService::class, $id)[0] ?? null;
@@ -212,6 +213,18 @@ class ResearchExperimentConversionKernelService
                         if ($before !== (array) $item->payload) $normalized++;
                         $payload = (array) $item->payload;
                         $councilProof = null;
+                        if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
+                            $proof = app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item);
+                            $payload['executable'] = ($proof['executable'] ?? false) === true;
+                            $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED');
+                            if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
+                        }
+                        if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
+                            $proof = app(DescendantScopedExecutionService::class)->inspectWork($item);
+                            $payload['executable'] = ($proof['executable'] ?? false) === true;
+                            $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'DESCENDANT_ORIGINAL_OWNER_REQUIRED');
+                            if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
+                        }
                         if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
                             $proof = app(SpecialistCouncilResearchFeedbackService::class)->inspectFollowupReadiness($item);
                             $councilProof = $proof;
@@ -312,6 +325,21 @@ class ResearchExperimentConversionKernelService
             $claimed = [];
             foreach ($items as $item) {
                 $leaseSeconds = self::LEASE_SECONDS;
+                if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
+                    $proof = app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item);
+                    if (($proof['executable'] ?? false) !== true) {
+                        $item->update(['status' => 'blocked', 'last_error' => $proof['reason_code'] ?? 'SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED']);
+                        continue;
+                    }
+                }
+                if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
+                    $proof = app(DescendantScopedExecutionService::class)->inspectWork($item);
+                    if (($proof['executable'] ?? false) !== true) {
+                        $item->update(['status' => 'blocked', 'last_error' => $proof['reason_code'] ?? 'DESCENDANT_ORIGINAL_OWNER_REQUIRED']);
+                        continue;
+                    }
+                    $leaseSeconds = DescendantScopedExecutionService::WORK_LEASE_SECONDS;
+                }
                 if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
                     // Ready/executable payload flags are only projections. A
                     // caller cannot extend a lease or claim a stale original
@@ -486,6 +514,9 @@ class ResearchExperimentConversionKernelService
         $type = (string) ($nextWork['type'] ?? '');
         $profiles = [
             'cartridge_confirmation' => [true, 'CANONICAL_CARTRIDGE_AND_BASELINE_READY', 3],
+            DescendantScopedExecutionService::WORK_TYPE => [false, 'DESCENDANT_ACTUAL_AUTHORIZED_ORIGINAL_WINDOW_REQUIRED', 1],
+            DescendantScopedExecutionService::COMPONENT_WORK_TYPE => [false, 'SCOPED_COMPONENT_ACTUAL_AUTHORIZED_ORIGINAL_WINDOW_REQUIRED', 1],
+            ScopedDescendantCandidatePreparationService::WORK_TYPE => [false, 'SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED', 1],
             // Replaying the same deterministic archive is not independent
             // replication. This becomes executable only after a distinct,
             // preregistered window contract is attached by a later compiler.
@@ -547,6 +578,12 @@ class ResearchExperimentConversionKernelService
 
     private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null): bool
     {
+        if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
+            return (app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item)['executable'] ?? false) === true;
+        }
+        if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
+            return (app(DescendantScopedExecutionService::class)->inspectWork($item)['executable'] ?? false) === true;
+        }
         if (str_starts_with((string) $item->work_type, 'specialist_council_')) {
             // Reconciliation just proved this same locked original work. Only
             // operational executable/retry projections changed afterwards.

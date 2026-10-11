@@ -6,9 +6,10 @@ use Carbon\CarbonImmutable;
 use App\Models\LabGeneration;
 use RuntimeException;
 
-/** Server-owned, post-paper research windows for instrument confirmation. */
+/** Server-owned untouched historical windows; every date from 2026 stays paper-only. */
 class InstrumentResearchWindowService
 {
+    public const SCOPED_ORIGINAL_BUNDLE_PROTOCOL = 'authorized_scoped_original_window_bundle_v1';
     public const PROTOCOL = 'instrument_research_window_v1';
 
     public const TRANSPORT_PROTOCOL = 'authorized_research_transport_v1';
@@ -28,13 +29,18 @@ class InstrumentResearchWindowService
             $window = $this->seal((string) ($manifest['authorization_id'] ?? ''), $hash);
             if ($window !== null) $matches[$window['window_key']] = $window;
         }
-        if ($matches === []) return $request; // Historical/default registry unchanged.
+        if ($matches === []) {
+            if (data_get($request, 'policy_context.scoped_research_certificate') !== null) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_ACTUAL_AUTHORIZED_WINDOW_REQUIRED');
+            }
+            return $request; // Historical/default registry unchanged.
+        }
         if (count($matches) !== 1) throw new RuntimeException('RESEARCH_TRANSPORT_AUTHORIZATION_AMBIGUOUS');
         $window = array_values($matches)[0];
         if (($request['evaluation_mode'] ?? null) !== 'full'
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $window['start_inclusive'], $window['end_exclusive'])
-            || CarbonImmutable::parse($window['start_inclusive'])->lessThan('2027-01-01T00:00:00Z')) {
+            || CarbonImmutable::parse($window['end_exclusive'])->greaterThan(app(ResearchPaperEpochContractService::class)->cutoff())) {
             throw new RuntimeException('RESEARCH_TRANSPORT_PURPOSE_OR_PAPER_BOUNDARY_INVALID');
         }
         $persisted = LabGeneration::query()->find($generation->getKey());
@@ -47,7 +53,7 @@ class InstrumentResearchWindowService
         $requestManifest = (array) ($request['mtf_snapshot_manifest'] ?? []);
         $frozenManifest = (array) data_get($persisted->trigger_context, 'mtf_bundle_manifest', []);
         if ($requestManifest !== [] || $frozenManifest !== []) {
-            if ($this->transportJson($requestManifest) !== $this->transportJson($frozenManifest)
+            if ($this->transportJson($this->physicalScopedManifest($requestManifest)) !== $this->transportJson($this->physicalScopedManifest($frozenManifest))
                 || (string) ($requestManifest['bundle_hash'] ?? '') !== $hash) {
                 throw new RuntimeException('RESEARCH_TRANSPORT_PERSISTED_STREAM_MANIFEST_MISMATCH');
             }
@@ -95,6 +101,10 @@ class InstrumentResearchWindowService
         if (data_get($request, 'policy_context.specialist_council_authorized_arm') !== null) {
             $identity['original_council_arm'] = $this->originalCouncilArm($persisted, $request, $files, $window);
         }
+        if (data_get($request, 'policy_context.scoped_research_certificate') !== null) {
+            $request['mtf_snapshot_manifest'] = $this->canonicalScopedManifest($window, $requestManifest);
+            $identity['scoped_original_window'] = $this->originalScopedWindow($persisted, $request, $files, $window);
+        }
         $key = (string) config('services.internal_api.token', '');
         if (strlen($key) < 32) throw new RuntimeException('RESEARCH_TRANSPORT_INTERNAL_KEY_UNAVAILABLE');
         $canonical = $this->transportJson($identity);
@@ -104,6 +114,155 @@ class InstrumentResearchWindowService
             'hmac_sha256' => hash_hmac('sha256', self::TRANSPORT_PROTOCOL."\n".$canonical, $key),
         ];
         return $request;
+    }
+
+    /** Request-only derived metadata; physical registry/model/certificate identities remain unchanged. */
+    public function canonicalScopedManifest(array $window, array $manifest): array
+    {
+        $physical = $this->physicalScopedManifest($manifest);
+        if (($physical['protocol'] ?? null) !== MultiTimeframeSnapshotService::PROTOCOL
+            || (isset($manifest['validation_bundle_protocol'])
+                && $manifest['validation_bundle_protocol'] !== self::SCOPED_ORIGINAL_BUNDLE_PROTOCOL)
+            || count((array) ($physical['streams'] ?? [])) !== 4
+            || array_diff(['M5', 'H4', 'H1', 'M15'], array_keys((array) ($physical['streams'] ?? []))) !== []) {
+            throw new RuntimeException('SCOPED_ORIGINAL_CANONICAL_FOUR_STREAM_MANIFEST_REQUIRED');
+        }
+        $this->verifySealedReplayWindow($window, $physical);
+        return [...$physical, 'validation_bundle_protocol' => self::SCOPED_ORIGINAL_BUNDLE_PROTOCOL];
+    }
+
+    private function physicalScopedManifest(array $manifest): array
+    {
+        if (($manifest['validation_bundle_protocol'] ?? null) === self::SCOPED_ORIGINAL_BUNDLE_PROTOCOL) {
+            unset($manifest['validation_bundle_protocol']);
+        }
+        return $manifest;
+    }
+
+    /** Server-owned scoped declaration and native compiler products, sealed before Python loading. */
+    private function originalScopedWindow(LabGeneration $generation, array &$request, array $files, array $window): array
+    {
+        $declaration = (array) data_get($request, 'policy_context.scoped_research_certificate', []);
+        $purpose = $declaration['purpose'] ?? null;
+        $scope = match ($purpose) {
+            DescendantScopedExecutionService::COMPONENT_PURPOSE => 'component',
+            DescendantScopedExecutionService::PURPOSE => 'inheritance',
+            'independent_scoped_selector_research' => 'selector',
+            default => throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_PURPOSE_REQUIRED'),
+        };
+        if (! is_int($declaration['certificate_id'] ?? null) || $declaration['certificate_id'] <= 0
+            || data_get($request, 'policy_context.specialist_council_authorized_arm') !== null
+            || count($files) !== 4 || array_diff(['M5', 'H4', 'H1', 'M15'], array_keys($files)) !== []) {
+            throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_DECLARATION_REQUIRED');
+        }
+        $registration = app(ScopedResearchCertificateService::class)->verifiedRegistration($declaration['certificate_id']);
+        $design = $registration['design'];
+        if ($registration['scope'] !== $scope || ($design['authority_policy'] ?? null) !== ScopedResearchCertificateService::AUTHORITY_POLICY
+            || ($request['timeframe'] ?? null) !== 'M5'
+            || ($request['symbol'] ?? null) !== ($registration['source_snapshot']['symbol'] ?? null)
+            || (isset($declaration['design_hash']) && $declaration['design_hash'] !== $registration['design_hash'])
+            || (isset($declaration['window_key']) && $declaration['window_key'] !== $window['window_key'])
+            || count(array_filter($design['validation_windows'] ?? [], fn ($planned): bool =>
+                CarbonImmutable::parse($planned['start_inclusive'])->equalTo(CarbonImmutable::parse($window['start_inclusive']))
+                && CarbonImmutable::parse($planned['end_exclusive'])->equalTo(CarbonImmutable::parse($window['end_exclusive'])))) !== 1) {
+            throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_CERTIFICATE_SCOPE_MISMATCH');
+        }
+        $declaration['design_hash'] = $registration['design_hash'];
+        $declaration['window_key'] = $window['window_key'];
+        $request['policy_context']['scoped_research_certificate'] = $declaration;
+        $holding = (int) data_get($design, 'exposure_policy.holding_fence_seconds', -1);
+        $end = CarbonImmutable::parse($window['end_exclusive'])->utc();
+        $fence = ['protocol' => 'scoped_original_maturity_fence_v1',
+            'entry_end_exclusive' => $end->subSeconds($holding)->toIso8601String(),
+            'end_exclusive' => $end->toIso8601String(), 'holding_fence_seconds' => $holding];
+        $execution = app(ExecutionContractService::class)->for((string) $request['symbol'], 'M5');
+        if ($holding < 0 || $this->transportJson(data_get($request, 'policy_context.scoped_position_maturity_fence')) !== $this->transportJson($fence)
+            || ($design['execution_hash'] ?? null) !== $execution['execution_hash']
+            || ! app(ExecutionContractService::class)->matches((array) ($request['execution_contract'] ?? []), $request['symbol'], 'M5')
+            || $this->transportJson($request['execution'] ?? null) !== $this->transportJson($execution['parameters'])) {
+            throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_SHARED_MATURITY_OR_COST_DRIFT');
+        }
+        $strategies = array_values((array) ($request['strategies'] ?? []));
+        if ($scope === 'selector') {
+            $experimentId = (int) data_get($request, 'policy_context.causal_fold_job.experiment_id', 0);
+            $question = $registration['source_snapshot']['questions'][(string) $experimentId] ?? null;
+            $expectedAgentIds = array_column((array) ($question['agents'] ?? []), 'agent_id'); sort($expectedAgentIds);
+            $actualIds = array_column($strategies, 'lab_agent_id'); sort($actualIds);
+            if (count($strategies) !== 3 || $expectedAgentIds !== $actualIds
+                || (int) ($question['lab_generation_id'] ?? 0) !== (int) $generation->id
+                || ($declaration['selector_panel_key'] ?? null) !== data_get($design, 'subject.selector_panel_key')) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_SELECTOR_ROSTER_REQUIRED');
+            }
+            $account = ['initial_balance' => 10000, 'risk_per_trade' => 1];
+        } else {
+            $marker = (array) data_get($generation->trigger_context, 'scoped_descendant_execution', []);
+            $subject = data_get($design, 'subject.arm_models.'.($declaration['arm'] ?? ''));
+            if (count($strategies) !== 1 || ! is_array($subject)
+                || ($marker['protocol'] ?? null) !== DescendantScopedExecutionService::PROTOCOL
+                || ($marker['certificate_id'] ?? null) !== $declaration['certificate_id']
+                || ($marker['design_hash'] ?? null) !== $registration['design_hash']
+                || ($marker['window_key'] ?? null) !== $window['window_key']
+                || data_get($design, 'native_execution.purpose') !== $purpose
+                || $this->transportJson(data_get($request, 'policy_context.full_replay_runtime_policy'))
+                    !== $this->transportJson(data_get($design, 'native_execution.full_replay_runtime_policy'))
+                || ! in_array($window['authorization_id'], (array) data_get($design, 'native_execution.authorization_ids', []), true)) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_NATIVE_ARM_OWNER_REQUIRED');
+            }
+            $account = ['initial_balance' => data_get($design, 'native_execution.initial_capital'),
+                'risk_per_trade' => data_get($design, 'native_execution.risk_policy.risk_per_trade_percent')];
+        }
+        if ($this->transportJson(\Illuminate\Support\Arr::only($request, ['initial_balance', 'risk_per_trade'])) !== $this->transportJson($account)) {
+            throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_SHARED_ACCOUNT_DRIFT');
+        }
+        $bundle = ['bundle_hash' => $request['replay_dataset_hash'], 'manifest' => $request['mtf_snapshot_manifest'],
+            'entry_dataset_path' => $request['dataset_path'], 'dataset_paths' => $request['mtf_dataset_paths']];
+        $sharedModels = $scope === 'selector'
+            ? \App\Models\LabAgent::whereIn('id', $expectedAgentIds)->with('modelVersion')->get()->pluck('modelVersion')->all()
+            : \App\Models\ModelVersion::whereIn('id', array_column((array) data_get($design, 'subject.arm_models', []), 'model_version_id'))->get()->all();
+        $volume = app(LabAgentEvaluationService::class)->scopedOriginalVolumeContext($sharedModels, $request['symbol'], $bundle);
+        if ($this->transportJson($request['volume_context'] ?? null) !== $this->transportJson($volume)) {
+            throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_SHARED_VOLUME_DRIFT');
+        }
+        foreach ($strategies as $strategy) {
+            $agent = \App\Models\LabAgent::with('modelVersion')->find($strategy['lab_agent_id'] ?? 0);
+            $model = $agent?->modelVersion;
+            $snapshot = $registration['source_snapshot']['models'][(string) $model?->id] ?? null;
+            if (! $model || ! is_array($snapshot) || (int) $agent->lab_generation_id !== (int) $generation->id
+                || ($scope !== 'selector' && (int) $model->id !== (int) $subject['model_version_id'])) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_FROZEN_MODEL_REQUIRED');
+            }
+            $kernel = app(CompositionAuthorityKernelService::class);
+            $recipe = $kernel->prospectiveRecipeFromMetadata($model);
+            $compiled = $kernel->compileProspectiveRecipeForRequest($model, ['dataset_hash' => $request['replay_dataset_hash'],
+                'execution_hash' => $execution['execution_hash'], 'timeframe' => 'M5', 'mtf_manifest' => $request['mtf_snapshot_manifest'],
+                'expected_recipe_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($recipe)]);
+            $transient = $compiled['model']; $metadata = (array) $transient->metadata;
+            $metadata['instrument_research_assignment'] = app(LabInstrumentResearchService::class)->bindScopedOriginalAssignment(
+                $model, $transient, $compiled['passport'], $compiled['recipe']);
+            $transient->metadata = $metadata;
+            $expected = app(LabAgentEvaluationService::class)->scopedOriginalMemberPayload($transient, 'M5', $bundle,
+                $request['replay_dataset_hash'], $request['symbol']);
+            $expected['lab_agent_id'] = (int) $agent->id;
+            if ($this->transportJson($expected) !== $this->transportJson($strategy)) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_NATIVE_PROGRAMME_DRIFT');
+            }
+            if ($scope !== 'selector' && ($this->transportJson($request['mtf_pilot'] ?? null) !== $this->transportJson($expected['mtf_pilot'] ?? [])
+                || $this->transportJson($request['composition_runtime_contract'] ?? null) !== $this->transportJson($expected['composition_runtime_contract'] ?? (object) []))) {
+                throw new RuntimeException('SCOPED_ORIGINAL_TRANSPORT_SHARED_NATIVE_RUNTIME_DRIFT');
+            }
+        }
+        $digest = fn ($value): string => hash('sha256', $this->transportJson($value));
+        return ['protocol' => 'scoped_original_window_v1', 'purpose' => $purpose,
+            'certificate_id' => $declaration['certificate_id'], 'design_hash' => $registration['design_hash'],
+            'declaration_hash' => $digest($declaration), 'manifest_hash' => $digest($request['mtf_snapshot_manifest']),
+            'execution_hash' => $execution['execution_hash'], 'maturity_fence_hash' => $digest($fence),
+            'confirmation_contracts_hash' => $digest(data_get($request, 'policy_context.learning_confirmation_contracts', [])),
+            'full_replay_runtime_policy_hash' => app(ResearchPaperEpochContractService::class)->parameterHash(
+                (array) data_get($request, 'policy_context.full_replay_runtime_policy', [])),
+            'strategies_hash' => $digest($request['strategies']),
+            'strategies_json' => $this->transportJson($request['strategies']),
+            'shared_runtime_hash' => $digest(\Illuminate\Support\Arr::only($request, ['initial_balance', 'risk_per_trade', 'execution', 'execution_contract', 'mtf_pilot', 'volume_context'])),
+            'shared_runtime_json' => $this->transportJson(\Illuminate\Support\Arr::only($request, ['initial_balance', 'risk_per_trade', 'execution', 'execution_contract', 'mtf_pilot', 'volume_context']))];
     }
 
     /** Only the persisted original plan/roster can issue the full-arm route. */
@@ -315,13 +474,14 @@ class InstrumentResearchWindowService
     public function verifySealedReplayWindow(array $window, array $manifest): array
     {
         if (! $this->authorized($window, (string) ($manifest['bundle_hash'] ?? ''))
-            || CarbonImmutable::parse((string) ($window['start_inclusive'] ?? ''))->lessThan('2027-01-01T00:00:00Z')) {
+            || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                (string) ($window['start_inclusive'] ?? ''), (string) ($window['end_exclusive'] ?? ''))) {
             throw new RuntimeException('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW');
         }
         $registries = array_values(array_filter((array) config('services.instrument_policy.authorized_research_windows', []),
             fn ($row): bool => is_array($row) && ($row['authorization_id'] ?? null) === $window['authorization_id']));
         if (count($registries) !== 1 || $manifest === []
-            || $this->transportJson($manifest) !== $this->transportJson($registries[0]['mtf_bundle_manifest'] ?? null)) {
+            || $this->transportJson($this->physicalScopedManifest($manifest)) !== $this->transportJson($this->physicalScopedManifest((array) ($registries[0]['mtf_bundle_manifest'] ?? [])))) {
             throw new RuntimeException('RESEARCH_TRANSPORT_ORIGINAL_SERVER_STREAM_REGISTRY_REQUIRED');
         }
         $streams = (array) ($manifest['streams'] ?? []);
@@ -338,6 +498,99 @@ class InstrumentResearchWindowService
         return ['protocol' => 'authorized_panel_original_input_proof_v1', 'window_key' => $window['window_key'],
             'dataset_hash' => $window['dataset_sha256'], 'files' => $files,
             'independent_evidence' => false, 'promotion_evidence' => false];
+    }
+
+    /**
+     * Prospective certificate precondition, separate from legacy window seals.
+     * Actual inputs can be verified today; neither server configuration nor an
+     * absent use row proves the complete original training/selection inventory.
+     * Existing native original runs supply exclusions, never completeness.
+     */
+    public function originalValidationReadiness(array $window, array $manifest, array $originalExposure): array
+    {
+        if (($originalExposure['owner'] ?? null) === ResearchWindowExposureInventoryService::class
+            && is_int($originalExposure['certificate_id'] ?? null) && $originalExposure['certificate_id'] > 0
+            && is_array($originalExposure['run_ids'] ?? null)) {
+            return app(ResearchWindowExposureInventoryService::class)->assessForCertificate(
+                $originalExposure['certificate_id'], $window, $manifest, $originalExposure['run_ids'],
+                is_array($originalExposure['fold_receipt_ids'] ?? null) ? $originalExposure['fold_receipt_ids'] : []);
+        }
+        $missing = ['ORIGINAL_TRAINING_AND_SELECTION_EXPOSURE_INVENTORY_NOT_ATTESTED'];
+        $inputProof = null; $inputComplete = false; $exposures = []; $overlap = false;
+        try {
+            $inputProof = $this->verifySealedReplayWindow($window, $manifest);
+            $inputComplete = true;
+            if (array_diff(array_keys((array) ($manifest['streams'] ?? [])), ['M5', 'H4', 'H1', 'M15']) !== []) {
+                $missing[] = 'ORIGINAL_VALIDATION_AUXILIARY_EXPOSURE_UNVERIFIED';
+                $inputComplete = false;
+            }
+            $until = CarbonImmutable::parse($window['end_exclusive'])->utc();
+            foreach ($inputProof['files'] as $stream => $file) {
+                $seconds = app(SpecialistCouncilContractService::class)->timeframeSeconds($stream);
+                $closed = CarbonImmutable::parse($file['last_candle_at'])->addSeconds($seconds);
+                if ($closed->greaterThan($until) || $closed->greaterThan(now()->utc())) {
+                    $missing[] = 'ORIGINAL_VALIDATION_CLOSED_CONTEXT_OR_WARMUP_OUTSIDE_WINDOW';
+                    $inputComplete = false;
+                }
+            }
+        } catch (\Throwable $error) {
+            $missing[] = $this->provenanceReason($error, 'ORIGINAL_VALIDATION_INPUT_PROOF_UNAVAILABLE');
+        }
+        // A copied audit, caller completeness boolean or self-computed hash is
+        // not a canonical ingress. This optional list is inspected only through
+        // the existing immutable native producer and its original artifact owner.
+        if ($originalExposure !== []) {
+            $runIds = $originalExposure['run_ids'] ?? null;
+            $versionId = $originalExposure['version_id'] ?? null;
+            if (($originalExposure['owner'] ?? null) !== SpecialistCouncilLifecycleService::class
+                || ! is_int($versionId) || $versionId <= 0 || ! is_array($runIds) || ! array_is_list($runIds)
+                || $runIds === [] || count($runIds) > 64 || count(array_unique($runIds, SORT_REGULAR)) !== count($runIds)
+                || count(array_filter($runIds, static fn ($id): bool => is_int($id) && $id > 0)) !== count($runIds)) {
+                $missing[] = 'ORIGINAL_EXPOSURE_CANONICAL_OWNER_REFERENCES_REQUIRED';
+            } else {
+                try {
+                    $version = \App\Models\SpecialistCouncilVersion::findOrFail($versionId);
+                    $from = CarbonImmutable::parse((string) ($window['start_inclusive'] ?? ''))->utc();
+                    $until = CarbonImmutable::parse((string) ($window['end_exclusive'] ?? ''))->utc();
+                    sort($runIds, SORT_NUMERIC);
+                    foreach ($runIds as $runId) {
+                        $run = \App\Models\LabEvaluationRun::findOrFail($runId);
+                        $original = app(SpecialistCouncilLifecycleService::class)->originalNativePanelOutcome($version, $run);
+                        $inventory = $original['physical_intervals'];
+                        foreach ($inventory['intervals'] as $interval) {
+                            if (strtoupper((string) $interval['symbol']) === 'XAUUSD'
+                                && CarbonImmutable::parse($interval['start_inclusive'])->lessThan($until)
+                                && CarbonImmutable::parse($interval['end_exclusive'])->greaterThan($from)) $overlap = true;
+                        }
+                        $exposures[] = ['run_id' => $runId, 'version_id' => $versionId,
+                            'original_exposure' => $inventory, 'original_receipt_bytes_revalidated' => true,
+                            'complete_training_selection_inventory' => false];
+                    }
+                } catch (\Throwable $error) {
+                    $missing[] = $this->provenanceReason($error, 'ORIGINAL_EXPOSURE_OWNER_PROOF_UNAVAILABLE');
+                }
+            }
+        }
+        if ($overlap) $missing[] = 'CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE';
+        $identity = ['protocol' => 'original_authorized_validation_readiness_v1',
+            'window_key' => $window['window_key'] ?? null, 'dataset_hash' => $window['dataset_sha256'] ?? null,
+            'actual_input_proof' => $inputProof, 'complete_input_proof' => $inputComplete,
+            'original_native_exposure_references' => $exposures,
+            'candidate_physical_time_overlap' => $overlap,
+            'original_training_selection_inventory_attested' => false,
+            'absence_of_recorded_use_proves_unused' => false, 'candidate_unused_demonstrated' => false,
+            'unresolved_provenance' => array_values(array_unique($missing)),
+            'status' => 'BLOCKED_DEPENDENCY', 'ready' => false,
+            'reason_code' => $overlap ? 'CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE' : $missing[0],
+            'paper_2026_research_eligible' => false, 'independent_evidence' => false,
+            'promotion_evidence' => false, 'server_authorization_created' => false, 'data_writes' => false];
+        return [...$identity, 'readiness_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($identity)];
+    }
+
+    private function provenanceReason(\Throwable $error, string $fallback): string
+    {
+        return preg_match('/^[A-Z0-9_]+(?::[A-Za-z0-9_.:-]+)?$/D', $error->getMessage())
+            ? $error->getMessage() : $fallback;
     }
 
     private function transportPath(string $path): string
@@ -404,8 +657,8 @@ class InstrumentResearchWindowService
     /** The replay manifest must attest the window's actual data chronology. */
     public function sealForDataset(string $dataHash, array $replayManifest): ?array
     {
-        if (data_get($replayManifest, 'data_partition.screening_source')
-                !== 'authorized_post_paper_research_validation'
+        if (! in_array(data_get($replayManifest, 'data_partition.screening_source'),
+                ['authorized_pre_2026_research_validation', 'authorized_post_paper_research_validation'], true)
             || ! filled(data_get($replayManifest, 'instrument_research_window.authorization_id'))
             || ! filled(data_get($replayManifest, 'instrument_research_window.research_epoch_id'))
             || ! filled(data_get($replayManifest, 'first_candle_at'))
@@ -540,10 +793,7 @@ class InstrumentResearchWindowService
         } catch (\Throwable) {
             return null;
         }
-        $paperEnd = CarbonImmutable::parse((string) data_get(
-            app(ResearchPaperEpochContractService::class)->contract(), 'paper_epoch.end_exclusive', ''
-        ), 'UTC')->utc();
-        if ($start->lessThan($paperEnd) || ! $end->greaterThan($start)
+        if (! $end->greaterThan($start)
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $start->toIso8601String(), $end->toIso8601String(),
             )) {

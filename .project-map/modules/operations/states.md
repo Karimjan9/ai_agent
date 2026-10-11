@@ -8,6 +8,12 @@ the bounded delivery deadline; changed control/source refuses delivery. The API
 requires two authenticated idle probes, and scheduler cadence is refreshed last.
 This grants no scientific source deployment, replay, receipt rewrite or START.
 
+Cold rollout verification reads the existing PHP queue-worker boot binding
+from `runtime:research-worker-boot:<PID>` after restart. Each observation binds
+its actual live PID and boot source hash; it grants no scientific authority.
+Fresh process identity, matching current code/artifact bytes and Python's
+loaded-source health remain separate required observations.
+
 `deeper_ready -> RESUME_NATIVE_DEPTH_AUDIT -> exact_generation_dispatch_admitted`
 uses the original immutable sample/checkpoint watermark, not a minute clock.
 STOP, unavailable/pending queues or invalid original proof produces commandless
@@ -84,6 +90,7 @@ single arbiter and its separately bounded unchanged-question allowance.
 | paused | operator `ai:resume` | running | Existing lineage is reconciled before successor selection; control revision changes the arbiter key | No generation is created by RESUME itself. |
 | paused or running | operator `ai:stop` | draining then stopped | New admission denied; admitted work may finish | STOP is distinct from PAUSE and retains evidence. |
 | stopped after admitted work drains | operator `ai:start` | running | Existing durable lineage and canonical arbiter retain ownership | START creates no generation directly; RESUME rejects stopped/draining state. |
+| native scoped original matrix complete | new authority/credit settlement | terminal or deferred | Current work lock and shared current read of the normalized control row inside one transaction | Missing/malformed control, PAUSE/STOP or expiry rolls back new authority; completed original products and ordinary control defaults remain unchanged. |
 | source deployment requested | replay probe HTTP/authentication/transport/JSON/count failure | reload refused | An online AI owner requires two authenticated zero-count probes; durable idle checks always apply | Exit non-zero before any PM2 mutation; no raw probe diagnostics are printed. |
 | active generation, unchanged after completed settlement child | five-minute retry window | bounded settlement retry, then safety_halt | At most two retries for the same operational state hash | A third unchanged completion persists `UNCHANGED_GENERATION_AFTER_BOUNDED_SETTLEMENT_RETRIES`; no per-minute redispatch or automatic resume. |
 | complete ordinary unadmitted historical draft | verified selected M5 repair has positive full-source gaps | WAIT_DATASET_CONTINUITY | No runs/seals/protected purpose, all agents draft, known-empty generation queue; native readiness and physical proof/calendar watermark | No lifecycle child or retry-cap consumption; unknown/drifted proof stays under normal admission/recovery. Data repair is still required. |

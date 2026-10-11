@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-11T12:55:45.921Z",
-  "source_digest": "3304f3122efb515da47e72cb0dc94456b6bbadd5bb4e297d77b6d49eea36ab76",
-  "source_file_count": 1578,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-11T16:27:41.483Z",
+  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
+  "source_file_count": 1612,
+  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -60,6 +60,7 @@
         "test_valid_actual_csv_admits_only_execution_without_independence_and_signature_is_retry_stable",
         "test_invalid_transport_never_borrows_future_authorization",
         "test_immutable_2026_cannot_be_bypassed_by_cutoff_label_or_valid_future_signature",
+        "test_all_paper_years_refuse_even_a_server_signed_research_window",
         "test_same_future_timestamps_changed_actual_rows_refuse_signed_file_identity",
         "test_actual_primary_cannot_be_overwritten_by_duplicate_mtf_key",
         "test_all_real_mtf_and_related_streams_are_bound_and_paper_context_cannot_hide",
@@ -534,6 +535,44 @@
         "test_noise_null_is_assessed_only_after_thirty_trades",
         "test_signal_delay_moves_only_signal_columns",
         "test_missing_internal_candle_is_hard_blocked"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_scoped_position_maturity.py",
+      "tests": [
+        "test_declared_entry_tail_is_common_and_does_not_close_positions",
+        "test_absent_new_purpose_leaves_the_ordinary_path_unchanged",
+        "test_a_shorter_or_changed_tail_cannot_be_accepted_as_the_original_fence",
+        "test_wire_claim_alone_cannot_narrow_an_original_forward_fence",
+        "test_ordinary_forward_payload_is_not_rebound_or_given_a_new_filter",
+        "test_closed_mature_originals_do_not_force_a_terminal_close",
+        "test_open_position_is_observed_even_with_an_empty_closed_ledger",
+        "test_censoring_and_unknown_maturity_are_not_silently_discarded"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_scoped_research_runtime.py",
+      "tests": [
+        "test_real_authenticated_four_csv_request_compiles_closed_context_and_private_copy_survives",
+        "test_manifest_flag_or_reconstructed_json_cannot_supply_private_authority",
+        "test_post_authentication_runtime_scope_drift_is_refused",
+        "test_actual_source_change_after_authentication_is_refused",
+        "test_only_actual_sealed_slice_can_issue_narrower_partition_fence",
+        "test_signature_and_closed_row_source_checks_are_not_substituted_by_descriptor_labels",
+        "test_authenticated_actual_future_bid_ask_keeps_the_existing_quote_checks",
+        "test_original_full_window_runs_actual_main_and_cache_without_historical_split",
+        "test_canonical_native_parameters_cannot_admit_unsigned_gene_additions",
+        "test_actual_main_admission_preserves_only_authenticated_selector_small_signed_caps"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_scoped_selector_partition.py",
+      "tests": [
+        "test_actual_empty_outcome_context_does_not_invent_instrument_assignment",
+        "test_one_authorized_month_has_disjoint_bounded_strata_without_a_fictitious_two_year_holdout",
+        "test_a_short_window_is_typed_underpowered_not_replaced_by_a_different_archive",
+        "test_aggregate_retains_an_open_position_from_any_original_fold",
+        "test_missing_or_inconsistent_original_state_cannot_be_filled_with_zeroes"
       ]
     },
     {
@@ -1410,6 +1449,15 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
+      "tests": [
+        "test_every_year_from_2026_remains_paper_even_after_configuration_changes",
+        "test_future_research_authorization_cannot_override_the_continuous_boundary",
+        "test_no_future_research_calendar_is_invented_and_the_plan_is_bound",
+        "test_original_paper_inputs_cannot_be_reused_as_research_learning"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ControlRootInheritanceTest.php",
       "tests": [
         "test_parentless_first_generation_is_explicitly_marked_without_a_parent",
@@ -1509,6 +1557,55 @@
         "test_partial_discovery_cohort_is_rebound_to_one_frozen_mtf_bundle_without_reusing_old_authority",
         "test_a_legacy_trade_less_cohort_opens_one_causal_confirmation_breadth_repair_wave",
         "canonicalCoverageFixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DescendantScopedExecutionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_native_prospective_work_requires_an_original_confirmed_component_certificate",
+        "test_fewer_than_six_windows_cannot_shrink_the_original_matrix",
+        "test_native_risk_metric_is_sealed_without_using_the_legacy_profit_only_gate",
+        "test_native_trial_cannot_be_marked_terminal_without_the_original_independent_owner_record",
+        "test_native_component_and_descendant_refuse_intrinsic_programme_changes_before_sealing",
+        "test_missing_actual_windows_keep_existing_arbiter_work_blocked_without_constructing_a_cohort",
+        "test_expired_work_fence_cannot_construct_or_transport_any_original_arm",
+        "test_typed_descendant_cohort_cannot_enter_generic_full_or_screening_projection",
+        "test_future_selector_reservation_blocks_ordinary_delivery_before_any_attempt_even_for_old_serialized_jobs",
+        "test_native_wire_freezes_the_whole_matrix_then_delivers_only_one_original_arm_per_fence",
+        "test_component_native_wire_uses_two_original_arms_and_no_placeholder_descendant",
+        "test_native_http_body_preserves_the_captured_float_and_empty_dictionary_hash",
+        "publicationInterruptions",
+        "test_original_publication_keeps_current_facts_but_quarantines_ownership_loss",
+        "settlementInterruptions",
+        "test_native_commit_permission_requires_an_existing_valid_running_normalized_control_and_never_mutates_it",
+        "test_native_commit_permission_compiles_a_mysql_current_locking_read_from_the_real_owner",
+        "test_new_settlement_writes_roll_back_on_stop_or_expiry_but_completed_original_facts_remain",
+        "test_component_question_reference_namespace_cannot_steal_an_active_twenty_seat_generation",
+        "test_real_compound_source_recipe_binds_original_two_and_four_arm_requests_without_model_mutation",
+        "test_missing_actual_volume_provenance_cannot_silently_disable_a_required_original_lane",
+        "test_existing_foundry_freezes_one_other_gene_hypothesis_then_waits_for_future_server_slots",
+        "test_registered_future_slots_create_pristine_four_arm_question_with_parent_guards_before_any_data",
+        "test_real_native_clock_is_rederived_from_original_bytes_and_a_resealed_wrong_schedule_is_refused",
+        "nativeWire",
+        "fixture"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DescendantScopedProofTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_four_arm_scope_is_registered_without_legacy_inheritance_authority",
+        "test_source_or_parameter_drift_cannot_keep_the_original_scope_valid",
+        "test_any_observed_arm_blocks_retrospective_registration",
+        "test_parameter_ablations_cannot_hide_a_different_runtime_program",
+        "test_paper_2026_interval_and_missing_original_revision_are_refused",
+        "test_original_run_identities_and_interval_maturity_precede_diagnostic_settlement",
+        "test_original_four_products_measure_bundle_without_granting_inheritance_credit",
+        "originalProducts",
+        "fixture"
       ]
     },
     {
@@ -1793,6 +1890,13 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php",
+      "tests": [
+        "test_repeated_exact_audit_is_reused_but_changed_bytes_or_scope_are_audited_again",
+        "test_a_mismatched_original_output_is_never_cached_as_verified"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/FrozenM5GapRecoveryTest.php",
       "tests": [
         "setUp",
@@ -1804,6 +1908,7 @@
         "test_raw_tick_recovery_uses_omitted_actual_minutes_and_treats_sparse_native_m5_as_diagnostic",
         "test_raw_tick_recovery_refuses_native_volume_disagreement_and_missing_minute_attestation",
         "test_hash_bound_raw_tick_recovery_rejects_malformed_columns_crossed_quotes_and_source_drift",
+        "test_successful_pure_cache_cannot_hide_changed_source_bytes",
         "test_bi5_ticks_supply_all_actual_minutes_when_native_candle_endpoint_is_empty",
         "test_raw_supplement_manifest_requires_source_and_byte_hashes_and_bounded_unique_targets",
         "test_raw_decoder_failure_remains_a_typed_dependency_in_a_verifiable_partial_fork",
@@ -2759,6 +2864,19 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/OriginalValidationReadinessTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_actual_four_stream_files_do_not_turn_an_absent_exposure_ledger_into_unused_authority",
+        "test_caller_inventory_flags_and_hashes_never_replace_a_canonical_original_owner",
+        "test_changed_context_bytes_and_paper_warmup_are_refused_before_any_unused_claim",
+        "test_unclosed_context_at_the_end_and_unverified_auxiliary_streams_stay_blocked",
+        "test_future_drafts_and_configured_hashes_without_original_bytes_are_not_data_readiness",
+        "inputs"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/P0EvidenceControlsTest.php",
       "tests": [
         "test_full_dataset_export_has_exact_row_count_and_sha256_manifest",
@@ -3255,6 +3373,28 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_frozen_capture_can_verify_only_its_actual_candidate_scope",
+        "test_real_immutable_request_ingress_captures_every_stream_and_omitted_original_blocks",
+        "test_partial_or_directly_inserted_original_can_never_be_completed_by_absence",
+        "test_caller_run_list_cannot_relabel_screening_selection_as_original_validation",
+        "test_existing_partial_original_prevents_a_new_capture_start",
+        "test_unrecognized_auxiliary_ingress_is_refused_before_delivery_and_remains_incomplete",
+        "test_lost_declared_capture_start_cannot_silently_fall_back_to_legacy_ingress",
+        "test_actual_source_and_capture_seal_drift_block_readiness",
+        "test_context_holding_must_fit_the_registered_physical_window",
+        "test_caller_run_identity_and_duplicate_ingress_do_not_replace_original_receipts",
+        "test_direct_fold_http_has_a_real_original_capture_before_any_response",
+        "test_lost_pre_http_fold_capture_quarantines_actual_raw_response_without_late_attestation",
+        "foldTransport",
+        "question",
+        "inputs"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ResearchWindowProvenanceAuditTest.php",
       "tests": [
         "setUp",
@@ -3271,7 +3411,11 @@
         "test_invalid_calendar_date_and_implicit_timezone_are_not_accepted_as_utc_candidates",
         "test_a_different_instrument_at_the_same_time_is_not_a_known_xauusd_event_overlap",
         "test_six_future_months_are_explicit_drafts_not_available_or_authorized_data",
-        "test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes"
+        "test_future_schedule_cannot_ignore_paper_overlap_or_become_prospective_after_outcomes",
+        "test_context_candle_exposure_cannot_hide_behind_nonoverlapping_m5_dates",
+        "test_original_payload_context_and_inline_warmup_are_exclusion_references",
+        "test_related_market_requires_its_own_identity_and_missing_auxiliary_dates_do_not_prove_unused",
+        "test_hash_only_mtf_stream_is_unassessable_and_cannot_be_reported_as_unused"
       ]
     },
     {
@@ -3387,6 +3531,100 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ScopedOriginalSafetyTest.php",
+      "tests": [
+        "test_bare_original_outcome_context_does_not_require_or_invent_instrument_activation",
+        "test_prospective_recipe_is_identity_bearing_without_changing_legacy_absent_shape",
+        "window",
+        "original",
+        "test_external_ceiling_cannot_be_loosened_and_measured_breach_is_not_missing_data",
+        "test_missing_censor_label_is_not_an_implicit_maturity_flag_but_real_exit_ledger_is_accepted",
+        "test_count_label_cannot_replace_a_missing_original_ledger",
+        "test_closed_trade_ledger_cannot_hide_a_still_open_original_position",
+        "test_forced_terminal_close_and_outside_window_exit_are_not_mature_independent_evidence"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedResearchAuthorityTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_equal_useful_guided_and_blinded_vectors_can_confirm_component_without_selector_credit",
+        "test_blinded_role_has_its_own_positive_component_products",
+        "test_negative_and_null_original_effects_are_terminal_without_credit",
+        "test_missing_window_and_reused_window_labels_never_complete_a_sealed_roster",
+        "test_complete_original_products_with_zero_or_few_context_trades_close_underpowered_without_credit",
+        "test_risk_regression_is_measured_terminal_refusal_even_with_positive_utility",
+        "test_actual_reused_dataset_cannot_be_relabelled_as_a_second_month",
+        "test_caller_evidence_flags_without_original_products_cannot_issue_or_credit",
+        "inheritanceOutcomes",
+        "test_actual_native_component_request_signs_and_loads_one_whole_original_python_arm",
+        "test_original_four_arm_products_require_conditional_retention_before_inheritance_credit",
+        "fullParameterQuestion",
+        "fourArmQuestion",
+        "question",
+        "inputs",
+        "originalProducts",
+        "nativeFixtureResult"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedResearchCertificateTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_future_draft_is_sealed_but_cannot_grant_any_authority",
+        "test_exact_registration_is_idempotent_after_validation_starts",
+        "test_component_and_selector_are_distinct_sealed_questions",
+        "test_design_cannot_be_replaced_after_preregistration",
+        "test_source_outcomes_and_status_do_not_change_immutable_question_identity",
+        "test_changed_original_model_parameters_invalidate_inspection_and_assessment",
+        "test_public_assessment_is_append_only_diagnostic_even_with_caller_success_flags",
+        "test_model_update_and_direct_database_relabel_cannot_rewrite_a_certificate",
+        "test_retrospective_and_paper_year_designs_are_refused",
+        "test_observed_source_needs_explicit_hypothesis_role_and_never_prospective_scope",
+        "test_arbitrary_model_cannot_become_an_original_scope_owner",
+        "test_caller_design_cannot_preregister_an_asserted_confirmed_scope",
+        "test_council_scope_seals_its_actual_manifest_programs_and_original_plan",
+        "test_original_four_stream_binding_is_immutable_and_remains_inventory_blocked",
+        "test_first_actual_binding_cannot_follow_validation_outcomes",
+        "test_hypothesis_certificate_cannot_bind_new_validation_data",
+        "test_future_hash_and_caller_complete_flags_cannot_bind_unavailable_bytes",
+        "syntheticInputs",
+        "question"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScopedSelectorPanelTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_single_question_unequal_cap_and_relabelled_physical_question_are_refused",
+        "test_membership_is_prospective_and_original_seal_cannot_be_rewritten",
+        "test_complete_original_folds_and_artifacts_measure_positive_panel_and_actual_effort",
+        "test_missing_actual_effort_and_tampered_original_fold_cannot_certify",
+        "test_complete_negative_and_equal_useful_components_close_as_valid_terminal_panels",
+        "test_cpu_primary_never_substitutes_wall_measurement",
+        "test_complete_unsafe_native_panel_is_terminal_negative_and_missing_safety_stays_blocked",
+        "test_native_scope_partial_clock_and_wrong_measured_segment_count_are_refused",
+        "test_sealed_selector_certificate_binds_panel_and_terminal_result_is_idempotent",
+        "originalIngressVariants",
+        "test_original_fold_ingress_round_trip_preserves_wire_maps_lists_floats_and_rejects_tamper",
+        "test_original_scoped_wire_preserves_json_hashes_in_both_http_hops_without_changing_legacy_codec",
+        "futureRuntimeVariants",
+        "test_future_physical_roster_binds_real_provider_bytes_before_native_fold_dispatch",
+        "assertPythonOriginalAdmission",
+        "pythonOriginalProof",
+        "publishActualOriginalFold",
+        "members",
+        "compoundModelMetadata",
+        "complete",
+        "clock",
+        "ids",
+        "benchmarkRow"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
       "tests": [
         "test_batch_screen_observation_preserves_original_council_definition_and_remaining_runtime_guards",
@@ -3425,6 +3663,18 @@
         "test_parent_compatibility_rejects_a_foreign_strategy_family",
         "test_group_champion_does_not_cross_a_council_role_boundary",
         "test_genome_crossover_rejects_a_foreign_role_inside_the_same_family"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SeparatedCausalProofTest.php",
+      "tests": [
+        "test_same_beneficial_blind_trait_does_not_erase_component_contrast",
+        "test_component_diagnostic_still_requires_exact_control_and_no_regression",
+        "test_prospective_scope_never_borrows_legacy_confirmed_flag_or_credit",
+        "test_draft_observations_do_not_consume_a_future_original_assessment",
+        "question",
+        "outcome",
+        "design"
       ]
     },
     {
@@ -4325,6 +4575,10 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Fixtures/scoped_selector_python_admission.py",
+      "tests": []
+    },
+    {
       "path": "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
       "tests": [
         "installConditionalQualifiedNativePolicy"
@@ -4422,6 +4676,18 @@
         "test_it_rejects_cross_axis_values_instead_of_registering_them_as_sessions",
         "test_detailed_session_coordinates_participate_in_exact_identity",
         "test_candle_timestamp_is_automatically_resolved_into_detailed_session_coordinates"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/DescendantScopedProofServiceTest.php",
+      "tests": [
+        "test_matched_four_arm_vectors_derive_disjoint_exact_t_and_u",
+        "test_ablated_sibling_cannot_retain_the_trait_or_change_another_parameter",
+        "test_missing_parameter_is_not_a_sealed_old_value",
+        "test_bundle_improvement_does_not_credit_a_redundant_trait",
+        "test_supported_individual_ablations_remain_arithmetic_without_authority",
+        "test_missing_nonfinite_or_renamed_arm_has_no_effect_result",
+        "arms"
       ]
     },
     {
@@ -4563,6 +4829,25 @@
         "test_hard_discipline_violation_overrides_a_perfect_reported_process_score",
         "test_missing_process_or_financial_evidence_stays_unresolved",
         "project"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php",
+      "tests": [
+        "test_future_request_recompiles_exact_program_without_updating_the_persisted_source",
+        "test_child_parameters_are_preserved_under_the_original_parameter_owned_manager",
+        "test_a_plain_native_strategy_keeps_its_primitive_recipe_and_never_gets_a_compound_passport",
+        "test_the_original_recipe_seal_is_required_and_parameter_drift_is_rejected",
+        "test_a_changed_stored_program_recipe_cannot_be_resealed_at_request_time",
+        "test_a_passport_the_existing_compiler_cannot_reproduce_is_rejected",
+        "test_original_management_cannot_silently_erase_a_new_parameter_intervention",
+        "test_the_original_legal_mask_can_exclude_manager_owned_genes_before_selection",
+        "test_missing_actual_stream_identity_cannot_create_a_future_request_passport",
+        "test_programme_parity_ignores_only_parameter_vectors_public_labels_and_old_experiment_bindings",
+        "test_a_source_programme_twist_or_cost_limit_change_cannot_share_parameter_only_parity",
+        "source",
+        "scope",
+        "hash"
       ]
     },
     {

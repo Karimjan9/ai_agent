@@ -36,10 +36,7 @@ class LabDatasetExportService
 
     private function trainingCutoff(): CarbonImmutable
     {
-        return CarbonImmutable::parse(
-            (string) config('services.lab_selection.training_end_exclusive', '2026-01-01 00:00:00'),
-            'UTC',
-        )->utc();
+        return app(\App\Services\MarketData\MarketTrainingDataService::class)->trainingCutoff();
     }
 
     public function export(string $symbol, string $timeframe = 'H1', bool $includeVolume = false): string

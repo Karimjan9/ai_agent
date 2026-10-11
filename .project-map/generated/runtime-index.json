@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
-  "generator_digest": "fe09811ba64e05209c0602683729781a2b653e78a33a1ba3f420afba989b5a55",
-  "generated_at": "2026-10-11T12:55:45.921Z",
-  "source_digest": "3304f3122efb515da47e72cb0dc94456b6bbadd5bb4e297d77b6d49eea36ab76",
-  "source_file_count": 1578,
-  "git_head": "7cd5a1b999a279fef6e09c5e7579f79def868da9",
+  "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
+  "generated_at": "2026-10-11T16:27:41.483Z",
+  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
+  "source_file_count": 1612,
+  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "configs": [
     {
@@ -373,31 +373,31 @@
         },
         {
           "key": "execution_contract",
-          "line": 831
+          "line": 832
         },
         {
           "key": "promotion",
-          "line": 850
+          "line": 851
         },
         {
           "key": "live_trading",
-          "line": 859
+          "line": 860
         },
         {
           "key": "lifecycle_orchestrator",
-          "line": 874
+          "line": 875
         },
         {
           "key": "learning_lane_recovery_limit",
-          "line": 911
+          "line": 912
         },
         {
           "key": "edge_director",
-          "line": 916
+          "line": 917
         },
         {
           "key": "release_seal",
-          "line": 935
+          "line": 936
         }
       ]
     },
@@ -467,6 +467,43 @@
         {
           "key": "partitioned",
           "line": 215
+        }
+      ]
+    },
+    {
+      "path": "backend-laravel/ecosystem.config.cjs",
+      "sections": [
+        {
+          "key": "lab-replay",
+          "line": 178
+        },
+        {
+          "key": "lab-screening-a",
+          "line": 179
+        },
+        {
+          "key": "lab-screening-b",
+          "line": 181
+        },
+        {
+          "key": "lab-learning",
+          "line": 183
+        },
+        {
+          "key": "market-maintenance",
+          "line": 186
+        },
+        {
+          "key": "scheduler-critical",
+          "line": 190
+        },
+        {
+          "key": "strategy-lab",
+          "line": 200
+        },
+        {
+          "key": "backtests",
+          "line": 201
         }
       ]
     }
@@ -596,5 +633,5 @@
       "path": "scripts/restart_mt5.sh"
     }
   ],
-  "scope": "Runtime file and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed."
+  "scope": "Runtime file, named PM2 worker and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed."
 }

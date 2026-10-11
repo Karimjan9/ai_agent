@@ -16,12 +16,39 @@ from app.services.backtester import (
     _management_evidence_report,
     _pf_attribution,
     _run_prepared_simple_backtest,
+    _scoped_maturity_entry_end,
     _trade_ledger_hash,
     prepare_feature_snapshot,
     prepare_replay_feature_context,
     prepare_signal_snapshot,
     run_simple_ema_rsi_backtest_on_dataframe,
 )
+
+
+def _scoped_forward_payload(payload: SimpleBacktestRequest, frame: pd.DataFrame) -> SimpleBacktestRequest:
+    """Apply the frozen holding duration to this original forward frame, before outcomes."""
+    if _scoped_maturity_entry_end(payload) is None:
+        return payload
+    from app.services.scoped_research_runtime import derive_scoped_partition_payload
+    return derive_scoped_partition_payload(payload, frame)
+
+
+def _original_maturity_totals(results: list[dict[str, object]]) -> dict[str, object] | None:
+    """Aggregate observed state only when every original producer supplied it."""
+    receipts = [(result.get("statistical_evidence") or {}).get("original_position_maturity") for result in results]
+    if not results or any(not isinstance(item, dict) or item.get("protocol") != "original_position_maturity_v1"
+            for item in receipts):
+        return None
+    fields = ("closed_trade_count", "open_position_count", "censored_trade_count", "unknown_maturity_count")
+    if any(any(type(item.get(field)) is not int or item[field] < 0 for field in fields)
+            or type(item.get("forced_terminal_close_applied")) is not bool
+            or item["closed_trade_count"] != int(result.get("total_trades", -1))
+            for item, result in zip(receipts, results)):
+        raise ValueError("ORIGINAL_POSITION_MATURITY_AGGREGATE_MISMATCH")
+    return {"protocol": "original_position_maturity_v1",
+            **{field: sum(item[field] for item in receipts) for field in fields},
+            "forced_terminal_close_applied": any(item["forced_terminal_close_applied"] for item in receipts),
+            "original_product_count": len(results)}
 
 
 @dataclass(frozen=True)
@@ -307,7 +334,14 @@ class WalkForwardService:
         declared_horizon = max(0, int((payload.parameters or {}).get("time_stop_candles", 0) or 0))
         maximum_holding = max(1, int(maximum_holding_bars))
         effective_horizon = min(declared_horizon, maximum_holding) if declared_horizon > 0 else maximum_holding
-        execution_payload = payload.model_copy(update={
+        scoped_future = (payload.evaluation_mode == "full"
+            and (payload.policy_context or {}).get("scoped_research_certificate", {}).get("purpose")
+                == "independent_scoped_selector_research")
+        if scoped_future:
+            from app.services.scoped_research_runtime import scoped_research_runtime_current
+            if not scoped_research_runtime_current(payload):
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_WINDOW_RUNTIME_REQUIRED")
+        execution_payload = payload if scoped_future else payload.model_copy(update={
             "parameters": {
                 **(payload.parameters or {}),
                 "time_stop_candles": effective_horizon,
@@ -332,7 +366,21 @@ class WalkForwardService:
         context_compiler_elapsed = time.monotonic() - context_started
         purge_bars = max(maximum_holding, int(purge_bars))
         embargo_bars = max(1, int(embargo_bars))
-        _, holdout = self.rolling_windows(df, purge_bars, embargo_bars)
+        if scoped_future:
+            original_window = payload.policy_context["authorized_research_transport"]["window"]
+            normalized = self._normalize(df)
+            scope_start = pd.Timestamp(original_window["start_inclusive"])
+            scope_end = pd.Timestamp(original_window["end_exclusive"])
+            if (normalized.time.isna().any() or normalized.time.duplicated().any()
+                    or normalized.time.min() < scope_start or normalized.time.max() + pd.Timedelta(minutes=5) > scope_end):
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_WINDOW_CLOCK_DRIFT")
+            # Frozen programmes do not fit/tune on these validation events.
+            # A monthly authorized window is not historical foundation data
+            # and cannot satisfy or silently erase a two-year holdout rule.
+            holdout = normalized.iloc[0:0]
+        else:
+            original_window = None
+            _, holdout = self.rolling_windows(df, purge_bars, embargo_bars)
         # A normal in-process confirmation still requests the complete fold
         # set.  The durable Laravel coordinator may deliberately request one
         # frozen fold at a time, so one is now a valid lower bound.  This does
@@ -355,6 +403,7 @@ class WalkForwardService:
             max_rows_per_fold=max_rows_per_fold,
             purge_bars=purge_bars,
             embargo_bars=embargo_bars,
+            research_end_exclusive=scope_end if scoped_future else None,
         )
         evaluations: list[dict[str, object]] = []
         forward_results: list[dict[str, object]] = []
@@ -379,6 +428,7 @@ class WalkForwardService:
                 "emit_decision_trace": False,
                 "emit_trade_ledger": True,
             })
+            fold_payload = _scoped_forward_payload(fold_payload, forward)
             if progress_callback is not None:
                 progress_callback("causal_fold_started", {
                     "fold": global_index,
@@ -396,7 +446,8 @@ class WalkForwardService:
                 forward,
                 "forward",
                 fast_stateful=True,
-                lightweight=True,
+                lightweight=(str((fold_payload.policy_context or {}).get("scoped_research_certificate", {}).get("purpose", ""))
+                    != "independent_scoped_selector_research"),
                 include_differential_pair=False,
                 replay_context=replay_feature_context,
             )
@@ -472,6 +523,7 @@ class WalkForwardService:
             })
         trace_started = time.monotonic()
         trace_payload = execution_payload.model_copy(update={"emit_decision_trace": True})
+        trace_payload = _scoped_forward_payload(trace_payload, trace_segment)
         trace_result = self._run_segment(
             trace_payload,
             trace_segment,
@@ -570,6 +622,11 @@ class WalkForwardService:
                 "promotion_evidence": False,
             },
         }
+        if scoped_future:
+            maturity = _original_maturity_totals(forward_results)
+            if maturity is None:
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_MATURITY_PRODUCTS_REQUIRED")
+            representative["statistical_evidence"]["original_position_maturity"] = maturity
         representative["pf_attribution"] = _pf_attribution(validated_trade_ledger)
         representative["management_evidence"] = _management_evidence_report(validated_trade_ledger)
         representative["edge_observability"] = self._aggregate_edge_observability(
@@ -630,6 +687,16 @@ class WalkForwardService:
             "overfit_assessment": "withheld_not_a_selection_replay",
             "promotion_evidence": False,
         }
+        if scoped_future:
+            representative["causal_confirmation_replay"]["scoped_original_partition"] = {
+                "protocol": "authorized_scoped_original_partition_v1", "window_key": original_window["window_key"],
+                "start_inclusive": original_window["start_inclusive"], "end_exclusive": original_window["end_exclusive"],
+                "fold_universe_count": fold_universe_count, "fold_offset": fold_offset, "fold_count": fold_count,
+                "source_rows": len(df), "max_rows_per_fold": max_rows_per_fold,
+                "purge_bars": purge_bars, "embargo_bars": embargo_bars,
+                "historical_holdout_substituted": False, "independent_confirmation_units": False,
+                "original_parameters_preserved": True,
+            }
 
         return {
             "train_score": 0,
@@ -776,6 +843,16 @@ class WalkForwardService:
         aggregate_pf = gross_win / gross_loss if gross_loss else (99.0 if gross_win else 0.0)
         aggregate_net = (compounded - 1.0) * 100.0
 
+        partitions = [(result.get("causal_confirmation_replay") or {}).get("scoped_original_partition") for result in fold_results]
+        scoped_aggregate = any(item is not None for item in partitions)
+        if scoped_aggregate:
+            if any(not isinstance(item, dict) or item.get("protocol") != "authorized_scoped_original_partition_v1"
+                    or item.get("original_parameters_preserved") is not True for item in partitions):
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_PARTITION_PRODUCTS_REQUIRED")
+            common_keys = ("window_key", "start_inclusive", "end_exclusive", "fold_universe_count", "source_rows",
+                           "max_rows_per_fold", "purge_bars", "embargo_bars")
+            if any(any(item.get(key) != partitions[0].get(key) for key in common_keys) for item in partitions):
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_PARTITION_SCOPE_MISMATCH")
         representative = dict(fold_results[-1])
         representative['benchmark'] = {**dict(representative.get('benchmark', {}) or {}),
             'arm_replay_resources': WalkForwardService._resource_totals(fold_results)}
@@ -810,7 +887,8 @@ class WalkForwardService:
         representative["monte_carlo"] = {
             **(representative.get("monte_carlo", {}) or {}),
             "risk_of_ruin_percent": max(
-                float((result.get("monte_carlo", {}) or {}).get("risk_of_ruin_percent", 100) or 100)
+                float((result.get("monte_carlo", {}) or {}).get("risk_of_ruin_percent", 100)) if scoped_aggregate
+                    else float((result.get("monte_carlo", {}) or {}).get("risk_of_ruin_percent", 100) or 100)
                 for result in fold_results
             ),
         }
@@ -836,6 +914,10 @@ class WalkForwardService:
             "independence_verified": not overlap,
             "promotion_evidence": False,
         }
+        if scoped_aggregate:
+            merged_protocol.update({"independence_verified": False,
+                "physical_confirmation_units": 1, "window_key": partitions[0]["window_key"],
+                "partition_scope": "computational strata within one original authorized window; not independent validation windows"})
         forward_score = round(sum(forward_scores) / expected)
         representative["walk_forward"] = {
             **(representative.get("walk_forward", {}) or {}),
@@ -866,6 +948,11 @@ class WalkForwardService:
                 "promotion_evidence": False,
             },
         }
+        if scoped_aggregate:
+            maturity = _original_maturity_totals(fold_results)
+            if maturity is None:
+                raise ValueError("SCOPED_SELECTOR_ORIGINAL_MATURITY_PRODUCTS_REQUIRED")
+            representative["statistical_evidence"]["original_position_maturity"] = maturity
         representative["pf_attribution"] = _pf_attribution(validated_trade_ledger)
         representative["management_evidence"] = _management_evidence_report(validated_trade_ledger)
         representative["edge_observability"] = WalkForwardService._aggregate_edge_observability(
@@ -928,6 +1015,7 @@ class WalkForwardService:
         max_rows_per_fold: int,
         purge_bars: int,
         embargo_bars: int,
+        research_end_exclusive: pd.Timestamp | None = None,
     ) -> list[dict[str, pd.DataFrame]]:
         """Build bounded, disjoint chronological confirmation strata.
 
@@ -939,13 +1027,14 @@ class WalkForwardService:
         temporal observations.
         """
         normalized = self._normalize(df)
-        holdout_start = holdout["time"].min()
+        holdout_start = research_end_exclusive if research_end_exclusive is not None else holdout["time"].min()
         research = normalized[normalized["time"] < holdout_start].reset_index(drop=True)
         universe = max(fold_count, int(fold_universe_count or fold_count))
         offset = max(0, int(fold_offset))
         if offset + fold_count > universe:
             raise ValueError("Causal fold partition exceeds its frozen universe.")
-        minimum_rows = universe * (purge_bars + embargo_bars + 128)
+        minimum_usable_rows = 201 if research_end_exclusive is not None else 128
+        minimum_rows = universe * (purge_bars + embargo_bars + minimum_usable_rows)
         if len(research) < minimum_rows:
             raise ValueError(
                 f"Dataset has {len(research)} pre-holdout rows; {minimum_rows} are required for "
@@ -963,7 +1052,7 @@ class WalkForwardService:
                 sample_start = (len(usable) - max_rows_per_fold) // 2
                 usable = usable.iloc[sample_start:sample_start + max_rows_per_fold]
             forward = usable.reset_index(drop=True)
-            if len(forward) < 128:
+            if len(forward) < minimum_usable_rows:
                 raise ValueError(f"Causal fold {index + 1} is underpowered after purge/embargo.")
             folds.append({"forward": forward})
 

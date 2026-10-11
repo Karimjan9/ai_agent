@@ -9,6 +9,7 @@ aliases:
   - hash
   - attestation
 paths:
+  - backend-laravel/ecosystem.config.cjs
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabImmutableEvidenceService.php
   - backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php
@@ -24,6 +25,8 @@ paths:
   - ai-service-python/app/routers
   - ai-service-python/app/services/execution_contract.py
   - ai-service-python/app/services/research_release.py
+  - ai-service-python/app/services/scoped_research_runtime.py
+  - ai-service-python/app/services/scoped_original_replay.py
   - ai-service-python/app/services/market_sessions.py
   - ai-service-python/app/services/composition_runtime.py
   - ai-service-python/app/services/market_adaptive_replay.py
@@ -70,12 +73,19 @@ entry_points:
   - FastAPI /health
   - FastAPI /api/backtest/run
   - run_original_full_arm
+  - bind_scoped_research_runtime
+  - scoped_research_runtime_current
+  - derive_scoped_partition_payload
+  - run_scoped_original_full_window
+  - original_scoped_trade_context
   - validate_composition_runtime_contract
 data_tables:
   - backtest_runs
   - paper_signals
 dependencies:
 invariants:
+  - authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Only an internal nonserialized witness permits the future closed-context and quote calendar route. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.
+  - Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.
   - unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).
   - Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.
   - native_spread_context_study_v1 changes only the computed instrument spread context, never raw quotes, prices, execution fees or hard risk. Its in-loop receipt distinguishes shared eligible gate events, unreached gates and account-diverged coverage; complete immutable original arms must share physical clock/source/program/cost before research-only Entry/WAIT sensitivity can settle.
@@ -117,6 +127,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_scoped_research_runtime.py
+  - ai-service-python/tests/test_scoped_position_maturity.py
+  - ai-service-python/tests/test_scoped_selector_partition.py
   - ai-service-python/tests/test_instrument_research.py
   - backend-laravel/tests/Feature/SpecialistCouncilNativeSoloTest.php
   - backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php

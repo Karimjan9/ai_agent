@@ -1,5 +1,15 @@
 # Cross-runtime contract states
 
+Scoped future assessment follows `prospective intrinsic recipe and physical UTC
+roster -> actual original four-CSV binding -> signed full request -> private
+runtime witness -> exact original stateful window or durable selector partition ->
+immutable request/response/maturity/clock products -> PHP original scope issuer`.
+Unavailable data is a dependency, not an executable plan. Only native-owned
+derivation can narrow a selector partition's common entry fence; existing positions
+retain their original management and are not force-closed. Missing, altered,
+open/censored or incomplete products cannot silently reach authority. Legacy
+diagnostic and ordinary evaluation states remain unchanged.
+
 The diagnostic native depth protocol follows `original six-slot declaration ->
 signed cheap prefix -> original powered rejection pool -> immutable seeded
 sample -> existing deferred dispatcher -> signed deeper prefix -> diagnostic

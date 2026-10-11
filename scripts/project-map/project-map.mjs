@@ -35,6 +35,7 @@ const sourceRoots = [
     "backend-laravel/app",
     "backend-laravel/routes",
     "backend-laravel/config",
+    "backend-laravel/ecosystem.config.cjs",
     "backend-laravel/scripts",
     "backend-laravel/database/migrations",
     "backend-laravel/tests",
@@ -83,6 +84,7 @@ function navigationBytes(path) {
 
 function walk(directory) {
     if (!existsSync(directory)) return [];
+    if (statSync(directory).isFile()) return [directory];
 
     const paths = [];
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -439,7 +441,7 @@ function indexRuntime(files) {
     const scripts = [];
     for (const file of files) {
         const path = normalizedPath(file);
-        if (path.startsWith("backend-laravel/config/")) {
+        if (path.startsWith("backend-laravel/config/") || path === "backend-laravel/ecosystem.config.cjs") {
             const text = readText(file);
             configs.push({
                 path,
@@ -447,7 +449,11 @@ function indexRuntime(files) {
                     ? matchAll(/^ {4}'([^']+)'\s*=>/gm, text, (match) => ({
                         key: match[1], line: lineNumber(text, match.index),
                     }))
-                    : [],
+                    : path === "backend-laravel/ecosystem.config.cjs"
+                        ? matchAll(/\bworker\(\s*['"]([^'"]+)/g, text, (match) => ({
+                            key: match[1], line: lineNumber(text, match.index),
+                        }))
+                        : [],
             });
         }
         if (path.startsWith("backend-laravel/scripts/")
@@ -457,7 +463,7 @@ function indexRuntime(files) {
         }
     }
     return { configs, scripts,
-        scope: "Runtime file and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed.",
+        scope: "Runtime file, named PM2 worker and top-level Laravel config-section navigation only; values, secrets and execution semantics are not indexed.",
     };
 }
 

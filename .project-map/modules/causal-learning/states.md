@@ -1,5 +1,56 @@
 # Causal learning states
 
+## Separately scoped prospective questions (ADR-036)
+
+`preregistered_diagnostic -> data_bound_diagnostic -> assessed_diagnostic`
+uses append-only separately signed registration, original-data binding and
+assessment records. Component, selector, council and inheritance have different
+named sources and cannot borrow each other's proof. A valid question seal does
+not mean executable or confirmed authority. Post-paper UTC bounds, exact current
+model/programme identities and prospective registration remain required.
+
+The existing causal owner separately measures guided/control and blind/control
+component contrasts. Equal useful guided/blind results do not erase either
+component contrast; one question still cannot certify selector superiority.
+Future questions without actual original data/products keep their final
+assessment open. Scope drift or a forged legacy confirmed flag cannot fall
+through to legacy credits. Unscoped v2 and explicit hypothesis-only references
+keep their previous rules; historical outcomes are never upgraded.
+
+The diagnostic input audit still does not infer a complete inventory from
+missing history. The new prospective capture owner starts before the first
+event and all original model runs/folds, then records actual request ingress
+through both immutable laboratory and durable fold owners. Reopened four-stream
+rows, warmup, closed context and holding prove only this frozen candidate scope.
+Preexisting partial history, missed ingress or changed source stays blocked.
+
+Descendant `scoped_preregistered -> scoped_diagnostic` validates exact
+P/P+T/P+T+U/P+U vectors, source cartridge revision and original immutable runs.
+It derives conditional trait and interaction effects rather than caller
+success flags. These states are excluded from old `settled` authority counts.
+The separately declared independent policy can transition to
+`independently_confirmed_component/selector/council/inheritance` only through
+the named original issuer. Incomplete products retain an unconsumed assessment;
+complete unsafe, underpowered, null and negative observations close without
+authority. Caller success flags and the legacy v2 credit path are unavailable.
+
+Native work follows `blocked_dependency -> ready -> leased -> bounded preparation
+-> whole-matrix barrier -> one queued original arm -> checkpoint -> original
+comparison -> terminal`. Missing future data does not spend a scientific arm.
+Duplicate/stale queued deliveries cannot execute a second original. Technical
+outcomes remain immutable and are not combined across source versions.
+Final issuer/credit/next-work/terminal writes share one locked transaction.
+STOP or lease expiry before its final commit rolls them back without erasing
+previously completed original products or permitting another scientific replay.
+
+A positive component handoff writes one `causal_skill_credit` and one
+`scoped_confirmed` cartridge/revision. This is exact trait/context research
+guidance, not a global Parent or paper admission. Existing Foundry seals one
+controlled U proposal into a later unused-window dependency. Fresh P/PT/PTU/PU
+models and capture must precede the new events; the native four-arm owner then
+measures trait retention separately from interaction. Component windows cannot
+become descendant validation merely by acquiring new labels.
+
 Finite program search follows `explicit typed task + verified original library
 -> prospective equal-cap seal -> two original native search products ->
 finite_search_diagnostic_measured`. Incomplete, familiar, tampered or drifted
@@ -351,7 +402,7 @@ neither state implies confirmed compounding or credit (ADR-017).
    control trade slice in the same exact phase and an activation receipt for
    that exact key. Session-only history cannot cross this posterior boundary.
    Even an exact paired slice remains provisional until every observation has
-   a server-authorized, immutable post-paper research-window receipt. Three
+   a server-authorized, immutable untouched pre-2026 research-window receipt. Three
    unique names without distinct non-overlapping datasets, or two positive
    observations confined to one window, cannot become confirmed authority.
 6. `confirmed_component` requires the observed replay context to match the
@@ -388,9 +439,10 @@ neither state implies confirmed compounding or credit (ADR-017).
     is not an executable data receipt or causal credit. It never reaches the
     credit bridge. Incomplete/mismatched arm evidence remains invalid and
    cannot be reinterpreted as a scientific no-effect result.
-    New activation plans also seal `sealed_confirmation_route_v1` and an
-    explicit `BLOCKED_DEPENDENCY` reason; a future paper-period overlap is a
-    separate data-policy blocker. Historical causal research is a distinct
+    New activation plans seal `sealed_confirmation_route_v2` and declare
+    missing untouched pre-2026 original evidence as `BLOCKED_DEPENDENCY`.
+    Their validation dates are null; 2026, 2027 and all later years remain
+    permanently paper-only. Historical causal research is a distinct
     existing frozen-contract route and does not wait for live 2026 candles.
     `activation_future_research_window_v2` adds that route. Historical v1
     plans are validated against their original non-executable reservation

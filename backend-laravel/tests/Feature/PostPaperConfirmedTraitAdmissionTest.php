@@ -204,9 +204,9 @@ class PostPaperConfirmedTraitAdmissionTest extends TestCase
             'preconditions' => [], 'metadata' => ['protocol' => 'exact_instrument_research_bundle_v1', 'primary_instrument_key' => 'volume_confirmation']]);
         $future = []; $manifests = [];
         foreach ([2, 3, 4] as $month) {
-            $future[$month] = $this->producer(sprintf('2027-%02d-10', $month));
+            $future[$month] = $this->producer(sprintf('2025-%02d-10', $month));
             $manifests[] = ['authorization_id' => 'source-'.$month, 'research_epoch_id' => 'synthetic-exact-postpaper',
-                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month), 'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'start_inclusive' => sprintf('2025-%02d-01T00:00:00Z', $month), 'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
                 'dataset_sha256' => $future[$month]['control']['data_hash'], 'purpose' => 'instrument_independent_validation'];
         }
         config()->set('services.instrument_policy.authorized_research_windows', $manifests);
@@ -225,7 +225,7 @@ class PostPaperConfirmedTraitAdmissionTest extends TestCase
                 $sourceModel->update(['strategy' => $parent->strategy, 'metadata' => [...$sourceModel->metadata,
                     ...$this->sealedMetadata($sourceModel->parameters, $future[$month]),
                     ...($arm === 'control' ? ['control_contract' => ['protocol' => 'frozen_control_v2', 'control_only' => true]] : [])]]);
-                $this->originalRun($run, $future[$month], $arm, $manifest['end_exclusive']);
+                $this->originalRun($run, $future[$month], $arm, $manifest['end_exclusive'], true);
                 $facts['source_receipt'][$arm.'_request_hash'] = $run->fresh()->request_hash;
                 $facts['source_receipt'][$arm.'_response_hash'] = $run->fresh()->response_hash;
                 $facts['source_receipt'][$arm.'_parameter_hash'] = app(ResearchPaperEpochContractService::class)->parameterHash($sourceModel->fresh()->parameters);
@@ -282,7 +282,7 @@ class PostPaperConfirmedTraitAdmissionTest extends TestCase
         return [$model, $parent, $passport, $firstPair];
     }
 
-    private function originalRun(LabEvaluationRun $run, array $fixture, string $arm, string $finished): void
+    private function originalRun(LabEvaluationRun $run, array $fixture, string $arm, string $finished, bool $authorizedValidation = false): void
     {
         $this->travelTo(CarbonImmutable::parse($finished)->addHour());
         $agent = $run->agent()->with('modelVersion', 'generation')->firstOrFail();
@@ -302,7 +302,7 @@ class PostPaperConfirmedTraitAdmissionTest extends TestCase
             $request['mtf_snapshot_manifest']['streams'][$timeframe]['path'] = $path;
             if ($timeframe === 'M5') $request['dataset_path'] = $path; else $request['mtf_dataset_paths'][$timeframe] = $path;
         }
-        if (CarbonImmutable::parse($finished)->year >= 2027) {
+        if ($authorizedValidation) {
             $request['evaluation_mode'] = 'full';
             $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
             $hashes = [];
@@ -319,7 +319,9 @@ class PostPaperConfirmedTraitAdmissionTest extends TestCase
             $this->assertNotEmpty(data_get($request, 'policy_context.authorized_research_transport.hmac_sha256'));
         }
         foreach (['mtf_streams', 'mtf_dataset_tail_rows', 'related_mtf_streams', 'related_mtf_dataset_paths', 'related_mtf_dataset_tail_rows',
-            'specialist_context_contract', 'volume_context', 'runtime_ensemble_policy', 'policy_context'] as $map) {
+            'specialist_context_contract', 'volume_context', 'runtime_ensemble_policy', 'policy_context',
+            'specialist_council_contract', 'native_spread_context_study_contract',
+            'native_reachability_depth_audit_contract', 'native_standalone_qualification'] as $map) {
             if (($request[$map] ?? null) === []) $request[$map] = new \stdClass;
         }
         $fixture = $this->producer($fixture['source_date'], [$arm => ['source_request' => $request,

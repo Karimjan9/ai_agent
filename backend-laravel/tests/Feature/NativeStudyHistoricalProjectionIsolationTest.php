@@ -12,6 +12,7 @@ use App\Models\ModelVersion;
 use App\Services\LabHistoricalLearningService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\ResearchPaperEpochContractService;
+use App\Services\ScreeningLearningService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -49,6 +50,10 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
         Queue::fake();
         $ordinary = $this->projectionRun('ordinary', 'outside_session');
         $study = $this->projectionRun($declaration, 'minimum_confidence');
+        $studyAgent = LabAgent::findOrFail($study->lab_agent_id);
+        $this->assertTrue(app(LabHistoricalLearningService::class)->withholdsOrdinaryLearning($studyAgent, $study));
+        $this->assertFalse(app(ScreeningLearningService::class)->record($studyAgent, $study->modelVersion,
+            ['evidence_run_id' => $study->run_id, 'total_trades' => 100, 'profit_factor' => 3], 90));
         $this->assertAndExecuteOnlyProjectionJobs([$ordinary, $study]);
         $this->assertSame(4, (int) DB::table('lab_candle_decision_rollups')->sum('event_count'));
         $history = app(LabHistoricalLearningService::class);
@@ -90,7 +95,9 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
         $base = ['purpose', 'generation_owner', 'malformed_generation_owner',
             'carrier_seed', 'carrier_owner', 'malformed_carrier_owner', 'run_reason', 'request_owner',
             'batch_request_owner', 'response_owner'];
-        $keys = [...$base, ...array_map(fn ($key) => 'depth_'.$key, $base)];
+        $keys = [...$base, ...array_map(fn ($key) => 'depth_'.$key, $base),
+            'scoped_generation', 'scoped_generation_malformed', 'scoped_carrier', 'scoped_request',
+            'scoped_run', 'scoped_run_scalar_id', 'scoped_run_scalar_purpose'];
         return array_combine($keys, array_map(fn ($key): array => [$key], $keys));
     }
 
@@ -138,6 +145,8 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'purpose' => ['native_specialist_council_intent' => ['research_purpose' => $purpose]],
             'generation_owner' => [$marker => ['protocol' => $protocol]],
             'malformed_generation_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
+            'scoped_generation' => ['scoped_descendant_execution' => ['purpose' => 'independent_scoped_descendant_research']],
+            'scoped_generation_malformed' => ['scoped_descendant_execution' => 'UNATTESTED_RESERVED_OWNER'],
             default => [],
         };
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
@@ -147,6 +156,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'carrier_seed' => ['native_specialist_council_seed' => ['research_purpose' => $purpose]],
             'carrier_owner' => [$marker => ['protocol' => $protocol, 'arm' => $arm]],
             'malformed_carrier_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
+            'scoped_carrier' => ['scoped_research_certificate' => 'UNATTESTED_RESERVED_OWNER'],
             default => ['audit_note' => 'The prose native_spread_context_study must not exclude ordinary evidence.'],
         };
         $model = ModelVersion::create(['name' => 'Projection fixture-'.$generation->id, 'strategy' => 'hybrid',
@@ -161,6 +171,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'candles' => array_fill(0, 202, ['time' => '2025-10-01T00:00:00Z', 'close' => 2000])];
         if ($declaration === 'request_owner') $request[$field] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
         if ($declaration === 'batch_request_owner') $request['strategies'] = [[$field => ['protocol' => 'UNATTESTED_RESERVED_OWNER']]];
+        if ($declaration === 'scoped_request') $request['policy_context']['scoped_research_certificate'] = 'UNATTESTED_RESERVED_OWNER';
         $evidence->attachRequest($run, $request);
         $trace = [];
         for ($index = 0; $index < 2; $index++) $trace[] = ['candle_index' => 200 + $index,
@@ -172,8 +183,14 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
                 'complete' => true, 'event_count' => 2, 'evaluated_candle_count' => 2,
                 'trace_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($trace)]]];
         if ($declaration === 'response_owner') $response[$receiptField] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
-        $evidence->finishRun($run, 'completed', $response, $declaration === 'response_owner' ? $response : [], $declaration === 'run_reason'
-            ? ['reason_code' => $depth ? 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY' : 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY'] : []);
+        $runMetadata = match ($declaration) {
+            'run_reason' => ['reason_code' => $depth ? 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY' : 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY'],
+            'scoped_run' => ['scoped_research' => 'UNATTESTED_RESERVED_OWNER'],
+            'scoped_run_scalar_id' => ['scoped_certificate_id' => 1],
+            'scoped_run_scalar_purpose' => ['scoped_native_purpose' => 'independent_scoped_component_research'],
+            default => [],
+        };
+        $evidence->finishRun($run, 'completed', $response, $declaration === 'response_owner' ? $response : [], $runMetadata);
         return $run->fresh();
     }
 }

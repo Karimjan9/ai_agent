@@ -63,8 +63,9 @@ passport flag cannot replace it.
 
 Future E3 provenance is derived server-side even when a caller labels training
 pre-2026. An unchanged archive baseline needs its original modern compressed
-request/model/response seal completed before 2027, not a later replay of old
-CSV. The narrow modified-candidate route permits one confirmed post-paper
+request/model/response seal within its original completion fence; every actual
+source observation must end before 2026. A later replay cannot relabel the
+baseline. The narrow modified-candidate route permits one confirmed pre-2026
 runtime-seal-preserving parameter trait only: exact total vector difference,
 original archive baseline, current evaluator, common original instrument
 treatment, and at least three completed distinct nonoverlapping source windows

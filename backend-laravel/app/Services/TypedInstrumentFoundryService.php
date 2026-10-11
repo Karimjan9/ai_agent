@@ -303,6 +303,28 @@ class TypedInstrumentFoundryService
         });
     }
 
+    /** A separate fixed multi-question producer; ordinary single-triplet benchmarks stay diagnostic. */
+    public function registerSelectorPanel(AgentLearningCausalExperiment $anchor, array $experimentIds, string $seed, array $rules = []): array
+    {
+        return app(ScopedSelectorPanelService::class)->preregister($anchor, $experimentIds, $seed, $rules);
+    }
+
+    public function settleSelectorPanel(string $panelKey, int $certificateId): array
+    {
+        return app(ScopedSelectorPanelService::class)->settlePanel($panelKey, $certificateId);
+    }
+
+    public function registerFutureSelectorPanel(AgentLearningCausalExperiment $anchor, array $experimentIds,
+        array $authorizationIdsByExperiment, string $seed, array $rules = []): array
+    {
+        return app(ScopedSelectorPanelService::class)->preregisterFuturePanel($anchor, $experimentIds, $authorizationIdsByExperiment, $seed, $rules);
+    }
+
+    public function bindSelectorPanelOriginalData(string $panelKey): array
+    {
+        return app(ScopedSelectorPanelService::class)->bindOriginalData($panelKey);
+    }
+
     /** Reuse the original selector verifier; a downstream benchmark cannot self-certify. */
     public function selectorObservationForExperiment(AgentLearningCausalExperiment $experiment): array
     {

@@ -526,6 +526,104 @@ class LabPopulationService
         private LabDataEdgeAuditService $dataEdgeAudits,
     ) {}
 
+    /** Exact four persisted models, under the same canonical constructor mutex. */
+    public function buildScopedDescendant(\App\Models\ResearchExperimentWorkItem $work, array $proof): LabGeneration
+    {
+        $owner = app(DescendantScopedExecutionService::class);
+        $roles = $owner->armRoles($proof);
+        $owner->assertLease($work);
+        $fresh = $owner->inspectWork($work->fresh('receipt'));
+        $matchingWindow = collect($fresh['windows'] ?? [])->contains(fn ($entry): bool => ($entry['window'] ?? null) === ($proof['window'] ?? null));
+        if (($fresh['executable'] ?? false) !== true || ($fresh['design_hash'] ?? null) !== ($proof['design_hash'] ?? null)
+            || ! $matchingWindow) {
+            throw new \LogicException('DESCENDANT_ORIGINAL_CONSTRUCTOR_READINESS_REQUIRED');
+        }
+        $lock = Cache::lock($this->constructorLockKey($work->symbol, $work->timeframe), self::CONSTRUCTOR_LOCK_TTL_SECONDS);
+        if (! $lock->get()) throw new \LogicException('DESCENDANT_CANONICAL_CONSTRUCTOR_BUSY');
+        try {
+            return DB::transaction(function () use ($work, $proof, $owner, $roles): LabGeneration {
+                $owner->assertLease($work);
+                $lab = AiLaboratory::where('symbol', $work->symbol)->where('timeframe', $work->timeframe)->lockForUpdate()->first();
+                if (! $lab) throw new \LogicException('DESCENDANT_EXISTING_LABORATORY_REQUIRED');
+                $owned = $lab->generations()->where('trigger_context->scoped_descendant_execution->work_item_id', $work->id)
+                    ->where('trigger_context->scoped_descendant_execution->window_key', $proof['window']['window_key'])
+                    ->orderBy('id')->limit(2)->get();
+                if ($owned->count() > 1) throw new \LogicException('DESCENDANT_ONE_ORIGINAL_COHORT_REQUIRED');
+                $existing = $owned->first();
+                if ($lab->generations()->whereIn('status', self::ACTIVE_GENERATION_STATUSES)
+                    ->where(fn ($query) => $query->whereNull('trigger_context->scoped_descendant_execution->work_item_id')
+                        ->orWhere('trigger_context->scoped_descendant_execution->work_item_id', '!=', $work->id))->exists()) {
+                    throw new \LogicException('DESCENDANT_ANOTHER_GENERATION_OWNS_STREAM');
+                }
+                if ($existing) {
+                    $marker = data_get($existing->trigger_context, 'scoped_descendant_execution');
+                    if (($marker['protocol'] ?? null) !== DescendantScopedExecutionService::PROTOCOL
+                        || ($marker['certificate_id'] ?? null) !== $proof['certificate_id']
+                        || ($marker['design_hash'] ?? null) !== $proof['design_hash']
+                        || ($marker['window_key'] ?? null) !== $proof['window']['window_key']
+                        || $existing->agents()->count() !== count($roles)
+                        || ! (app(ImmutableGenerationContractService::class)->validate($existing)['valid'] ?? false)) {
+                        throw new \LogicException('DESCENDANT_ORIGINAL_COHORT_CONTRACT_DRIFT');
+                    }
+                    app(ResearchReleaseSealService::class)->assertCurrent($existing);
+                    return $existing->fresh(['agents.modelVersion']);
+                }
+                $design = $proof['design']; $plan = [];
+                foreach ($roles as $arm) $plan[] = [
+                    'family' => $lab->strategy_families[0] ?? 'hybrid', 'origin' => 'scoped_descendant_original',
+                    'target' => 'scoped_inheritance', 'arm' => $arm,
+                    'model_version_id' => $design['subject']['arm_models'][$arm]['model_version_id'],
+                    'parameter_hash' => $design['subject']['arm_models'][$arm]['parameter_hash'],
+                    'runtime_hash' => $design['subject']['arm_models'][$arm]['runtime_hash']];
+                $marker = ['protocol' => DescendantScopedExecutionService::PROTOCOL,
+                    'purpose' => $design['native_execution']['purpose'], 'work_type' => $work->work_type, 'work_item_id' => (int) $work->id,
+                    'work_key' => $work->work_key, 'trial_id' => $proof['trial_id'], 'certificate_id' => $proof['certificate_id'],
+                    'design_hash' => $proof['design_hash'], 'window_key' => $proof['window']['window_key'],
+                    'source_receipt_id' => (int) $work->research_experiment_receipt_id,
+                    'research_only' => true, 'projection_withheld' => true, 'promotion_evidence' => false];
+                $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+                    'generation' => ((int) $lab->generations()->max('generation')) + 1,
+                    'trigger_type' => $work->work_type,
+                    'trigger_context' => ['scoped_descendant_execution' => $marker, 'generation_plan' => $plan,
+                        'mtf_bundle_manifest' => $proof['manifest'], 'mtf_bundle_hash' => $proof['window']['dataset_sha256'],
+                        'research_only' => true, 'promotion_evidence' => false],
+                    'data_fingerprint' => $proof['window']['dataset_sha256'], 'population_size' => count($roles), 'status' => 'research_reserved']);
+                $execution = app(ExecutionContractService::class)->for($work->symbol, 'M5');
+                foreach ($plan as $seat) {
+                    $model = ModelVersion::whereKey($seat['model_version_id'])->lockForUpdate()->firstOrFail();
+                    $sourceAgentId = data_get($design, 'subject.arm_models.'.$seat['arm'].'.source_agent_id');
+                    if (\App\Models\LabEvaluationRun::where('model_version_id', $model->id)
+                            ->when($sourceAgentId, fn ($query) => $query->where('lab_agent_id', '!=', $sourceAgentId))->exists()
+                        || LabAgent::where('model_version_id', $model->id)->when($sourceAgentId, fn ($query) => $query->where('id', '!=', $sourceAgentId))
+                            ->whereHas('generation', fn ($query) => $query
+                            ->whereNull('trigger_context->scoped_descendant_execution->work_item_id')
+                            ->orWhere('trigger_context->scoped_descendant_execution->work_item_id', '!=', $work->id))->exists()) {
+                        throw new \LogicException('DESCENDANT_ORIGINAL_ARM_ALREADY_ENROLLED_OR_OBSERVED');
+                    }
+                    // Costs are already prospective model identity. Never
+                    // modify a frozen model to make release admission fit.
+                    if (! app(LabImmutableEvidenceService::class)->equivalentJsonValue(
+                        data_get($model->metadata, 'execution_contract.parameters'), $execution['parameters'])) {
+                        throw new \LogicException('DESCENDANT_PERSISTED_ARM_EXECUTION_CONTRACT_REQUIRED');
+                    }
+                    LabAgent::create(['lab_generation_id' => $generation->id, 'model_version_id' => $model->id,
+                        'parent_a_model_version_id' => null, 'parent_b_model_version_id' => null,
+                        'symbol' => $work->symbol, 'timeframe' => $work->timeframe,
+                        'strategy_family' => app(StrategyParameterSchemaService::class)->family($model->strategy),
+                        'origin' => 'scoped_descendant_original', 'lifecycle_status' => 'draft',
+                        'decision_reason' => 'Prospective exact four-arm research; generic projections withheld.']);
+                }
+                $context = (array) $generation->trigger_context;
+                $context['immutable_generation_contract'] = app(ImmutableGenerationContractService::class)->compile($generation, $plan,
+                    ['data_hash' => $proof['window']['dataset_sha256'], 'execution_hash' => $design['execution_hash'],
+                    'normal_population' => count($roles), 'new_work_owner' => ResearchLoopArbiterService::class]);
+                $generation->update(['trigger_context' => $context]);
+                app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $work->symbol, $work->timeframe);
+                return app(ResearchReleaseSealService::class)->seal($generation)->fresh(['agents.modelVersion']);
+            });
+        } finally { $lock->release(); }
+    }
+
     public function ensureLaboratories(): void
     {
         $organismSymbol = strtoupper((string) config('services.xauusd_organism.symbol', 'XAUUSD'));

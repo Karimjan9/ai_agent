@@ -71,7 +71,7 @@ class ResearchPaperEpochContractTest extends TestCase
         config()->set('services.instrument_policy.authorized_research_windows', [$window]);
         $this->assertNull(app(InstrumentResearchWindowService::class)->seal('research-2028', str_repeat('a', 64)));
         $this->assertNull(app(ResearchPaperEpochContractService::class)->paperContractForCandidate('paper_2028', '2027-01-15T00:00:00Z'));
-        $window['start_inclusive'] = '2027-02-01T00:00:00Z'; $window['end_exclusive'] = '2027-03-01T00:00:00Z';
+        $window['start_inclusive'] = '2025-02-01T00:00:00Z'; $window['end_exclusive'] = '2025-03-01T00:00:00Z';
         config()->set('services.instrument_policy.authorized_research_windows', [$window]);
         $this->assertNotNull(app(InstrumentResearchWindowService::class)->seal('research-2028', str_repeat('a', 64)));
         $this->assertNotNull(app(ResearchPaperEpochContractService::class)->paperContractForCandidate('paper_2028', '2027-01-15T00:00:00Z'));
@@ -190,7 +190,7 @@ class ResearchPaperEpochContractTest extends TestCase
         $instrument = $epochs->confirmationRoute('instrument_independent_validation', $source);
         $this->assertSame('historical_causal_research', $historical['authority_route']);
         $this->assertSame('existing_frozen_causal_contract', $historical['historical_research_execution_policy']);
-        $this->assertSame('authorized_post_paper_independent_validation', $instrument['authority_route']);
+        $this->assertSame('authorized_untouched_pre_2026_independent_validation', $instrument['authority_route']);
         $this->assertSame('BLOCKED_DEPENDENCY', $instrument['independent_validation_status']);
         $this->assertSame(3, $instrument['minimum_powered_windows']);
         $this->assertSame(2, $instrument['minimum_positive_windows']);
@@ -216,7 +216,7 @@ class ResearchPaperEpochContractTest extends TestCase
             'end_exclusive' => '2028-01-01T00:00:00Z'])]);
         $plan = app(ActivationValidationPlanService::class)->reserve(['hypothesis_key' => 'overlap']);
         $this->assertFalse($plan['validation_period_disjoint_from_paper']);
-        $this->assertSame('RESEARCH_VALIDATION_OVERLAPS_PAPER_EPOCH', $plan['reason_code']);
+        $this->assertSame('ALL_DATA_FROM_2026_RESERVED_FOR_PAPER', $plan['reason_code']);
         $this->assertFalse($plan['executable']);
     }
 
@@ -224,11 +224,24 @@ class ResearchPaperEpochContractTest extends TestCase
     {
         $service = app(ActivationValidationPlanService::class);
         $modern = $service->reserve(['hypothesis_key' => 'legacy-source']);
-        $legacy = array_diff_key($modern, array_flip(['validation_period_disjoint_from_paper',
-            'confirmation_route', 'dependency_status', 'reason_code']));
-        $legacy['protocol'] = ActivationValidationPlanService::LEGACY_PROTOCOL;
+        // Original v1 reservation bytes are diagnostic only, including its now
+        // forbidden 2027 interval. Validation cannot make this executable.
+        $legacy = ['protocol' => ActivationValidationPlanService::LEGACY_PROTOCOL,
+            'hypothesis_key' => 'legacy-source', 'source_data_hash' => '', 'source_response_hash' => '',
+            'source_execution_hash' => '', 'source_mtf_bundle_hash' => '',
+            'paper_epoch_end_exclusive' => '2027-01-01T00:00:00+00:00',
+            'validation_start_inclusive' => '2027-01-01T00:00:00+00:00',
+            'validation_end_exclusive' => '2027-07-01T00:00:00+00:00',
+            'window_count' => 6, 'window_unit' => 'calendar_month', 'execution_timeframe' => 'M5',
+            'context_timeframes' => ['H4', 'H1', 'M15'], 'minimum_trades_per_window' => 8,
+            'minimum_powered_windows' => 6, 'minimum_positive_windows' => 4, 'maximum_holding_bars' => 240,
+            'exact_control_required' => true, 'blinded_comparator_required' => true,
+            'same_cost_and_risk_contract_required' => true, 'paper_2026_eligible' => false,
+            'research_epoch_authorization_required' => true, 'same_evidence_replay_forbidden' => true,
+            'status' => 'reserved_awaiting_authorized_research_epoch', 'executable' => false, 'promotion_evidence' => false];
         $identity = array_diff_key($legacy, array_flip(['plan_hash', 'status', 'executable', 'promotion_evidence']));
-        $legacy['plan_hash'] = hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));
+        $legacy = [...$identity, 'plan_hash' => hash('sha256', json_encode($identity, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)),
+            'status' => 'reserved_awaiting_authorized_research_epoch', 'executable' => false, 'promotion_evidence' => false];
         $before = $legacy;
         $this->assertTrue($service->valid($legacy, $legacy));
         $this->assertSame($before, $legacy);

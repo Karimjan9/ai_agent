@@ -55,7 +55,7 @@ applicable) entry/management contract evidence.
    confirmed exact trait only; re-resolve the original parent/vector, original
    compressed source/request/model seals, common instrument gate treatment and
    at least three nonoverlapping completed authorized research windows before
-   freeze. Require the current evaluator and preserve all other executable
+   freeze and strictly before the fixed 2026 paper boundary. Require the current evaluator and preserve all other executable
    semantics. The original signed source-window envelope is execution
    admission, not independent credit. Missing provenance blocks admission.
 2. Apply external risk and Smart Discipline gates.

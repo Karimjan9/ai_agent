@@ -41,6 +41,45 @@ class LabInstrumentResearchService
         private ExactCausalBaselineService $baselines,
     ) {}
 
+    /** Pure binding of an already chosen original surface; no selection or persistence. */
+    public function bindScopedOriginalAssignment(\App\Models\ModelVersion $original,
+        \App\Models\ModelVersion $transient, array $passport, array $recipe): array
+    {
+        $assignment = (array) data_get($original->metadata, 'instrument_research_assignment', []);
+        if ($assignment === []) {
+            if ($passport !== []) throw new \LogicException('SCOPED_ORIGINAL_COMPOSITION_ASSIGNMENT_REQUIRED');
+            return [];
+        }
+        $unsigned = array_diff_key($assignment, ['assignment_hash' => true]);
+        if (($assignment['protocol'] ?? null) !== self::PROTOCOL
+            || ($assignment['assignment_hash'] ?? null) !== $this->hash($unsigned)) {
+            throw new \LogicException('SCOPED_ORIGINAL_INSTRUMENT_ASSIGNMENT_INVALID');
+        }
+        // The source selection and activation doctrine remain exact. Only
+        // derived parameter and data-bound programme identities are rebound.
+        $assignment['parameter_hash'] = $this->hash((array) $transient->parameters);
+        if ($passport !== []) {
+            $components = (array) ($passport['components'] ?? []);
+            $source = (array) ($assignment['source_components'] ?? []);
+            foreach (['strategy_library_id' => 'strategy_id', 'tactic_library_key' => 'tactic_id',
+                'risk_library_id' => 'risk_id', 'management_id' => 'management_id'] as $field => $component) {
+                if (($source[$field] ?? null) !== null && ($source[$field] ?? null) !== ($components[$component] ?? null)) {
+                    throw new \LogicException('SCOPED_ORIGINAL_INSTRUMENT_PROGRAMME_CHANGED');
+                }
+                $source[$field] = $components[$component] ?? null;
+            }
+            $source['composition_id'] = $passport['composition_id'] ?? null;
+            $assignment['source_components'] = $source;
+        }
+        $assignment['scoped_prospective_binding'] = ['protocol' => 'scoped_original_assignment_binding_v1',
+            'recipe_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($recipe),
+            'original_assignment_hash' => $unsigned['assignment_hash'] ?? data_get($original->metadata, 'instrument_research_assignment.assignment_hash'),
+            'original_model_version_id' => (int) $original->id, 'selection_unchanged' => true, 'promotion_evidence' => false];
+        unset($assignment['assignment_hash']);
+        $assignment['assignment_hash'] = $this->hash($assignment);
+        return $assignment;
+    }
+
     /** @return array<string, mixed> */
     public function assignment(LabAgent $agent): array
     {

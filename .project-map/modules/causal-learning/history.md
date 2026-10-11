@@ -1,5 +1,31 @@
 # Causal-learning history
 
+## 2026-10-11 - Continuous paper-only boundary
+
+All data from 2026-01-01 onward is permanently reserved for paper, including
+2027 and every later year. New research plans declare missing untouched
+pre-2026 evidence rather than reserving future paper data. Original seals and
+scientific evidence gates remain unchanged. See ADR-037.
+
+## 2026-10-09 - Original scope issuer and canonical native follow-through
+
+Prospective candidate-scoped exposure is recorded by both original request
+owners. A separate issuer verifies complete physical windows and exact trait,
+context, maturity, risk and no-regression evidence. Component credit/cartridge
+is independent of selector superiority; native two/four-arm work is owned by
+the existing kernel, arbiter, constructor and full queue. Foundry proposes one
+controlled later-window descendant question. Historical flags remain diagnostic
+and study projections cannot influence ordinary selection. See ADR-036.
+This entry records architecture, not a production or market-success receipt.
+
+## 2026-10-09 - Separately scoped prospective proof preparation
+
+Append-only component/selector/council/inheritance questions, actual data-binding
+diagnostics and exact descendant four-arm observations separate measured effects
+from untouched-data authority. Existing legacy credit behavior is retained.
+Independent issuance, native descendant dispatch and market proof remain open.
+See ADR-036; code delivery status is not inferred from this map entry.
+
 ## 2026-10-08 - Bounded archive consumption and native finite search
 
 Original behavior entries can influence sealed research priorities through a

@@ -9,6 +9,7 @@ use App\Models\CooperativeExperimentSettlement;
 use App\Models\CooperativeModuleSpeciesMember;
 use App\Models\LabAgent;
 use App\Models\LabEvidenceArtifact;
+use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Models\ResearchExperimentReceipt;
@@ -71,8 +72,12 @@ class ProofFrontierActivationTest extends TestCase
     public function test_unphased_hypothesis_creates_a_prospective_phase_bound_exact_control_pair(): void
     {
         [$lab, $passport] = $this->source(false);
+        $source = $lab->generations()->firstOrFail()->agents()->with('modelVersion')->firstOrFail();
+        $run = LabEvaluationRun::where('lab_agent_id', $source->id)->firstOrFail();
+        $eligibility = app(LabImmutableEvidenceService::class)->learningEligibility($run);
+        $this->assertTrue($eligibility['complete'], json_encode($eligibility));
         $proposal = app(ProofFrontierService::class)->proposePhaseScope($lab, $this->plan($passport));
-        $this->assertSame('proposed', $proposal['status']);
+        $this->assertSame('proposed', $proposal['status'], json_encode($proposal));
         $this->assertSame(ProofFrontierService::PHASE_PROBE_REFREEZE_PROTOCOL,
             $proposal['protocol']);
         $this->assertNotSame(data_get($proposal, 'proposal.source_composition_id'),
@@ -292,7 +297,7 @@ class ProofFrontierActivationTest extends TestCase
             && data_get($seat, 'niche.composition_passport.components') === $passport['components']));
         $plans = $seats->pluck('niche.activation_factorial.validation_plan');
         $this->assertCount(1, $plans->unique(fn (array $plan): string => (string) $plan['plan_hash']));
-        $this->assertSame('2027-01-01T00:00:00+00:00', data_get($plans->first(), 'validation_start_inclusive'));
+        $this->assertNull(data_get($plans->first(), 'validation_start_inclusive'));
         $this->assertFalse((bool) data_get($plans->first(), 'paper_2026_eligible'));
 
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 2,
@@ -533,8 +538,8 @@ class ProofFrontierActivationTest extends TestCase
         $proposal = (array) data_get(app(ProofFrontierService::class)->propose($lab, $this->plan($passport)), 'proposal');
         $plan = (array) data_get($proposal, 'validation_plan');
         $this->assertTrue(app(ActivationValidationPlanService::class)->valid($plan, $proposal));
-        $this->assertSame('reserved_awaiting_authorized_research_epoch', $plan['status']);
-        $this->assertSame('2027-07-01T00:00:00+00:00', $plan['validation_end_exclusive']);
+        $this->assertSame('blocked_by_continuous_paper_policy', $plan['status']);
+        $this->assertNull($plan['validation_end_exclusive']);
         $this->assertFalse($plan['executable']);
         $this->assertFalse(app(ActivationValidationPlanService::class)->valid($plan, [
             ...$proposal, 'source_data_hash' => str_repeat('0', 64),
@@ -690,9 +695,13 @@ class ProofFrontierActivationTest extends TestCase
                         'no_signal_count' => 100 - $signals,
                         'rejection_counts' => []]];
         $evidence->finishRun($run, 'completed', [
-            'decision_trace' => [['event_type' => 'test', 'action' => 'WAIT']],
-            'data_quality' => ['decision_trace' => ['requested' => true,
-                'complete' => true, 'evaluated_candle_count' => 1],
+            'decision_trace' => array_map(static fn (int $index): array => [
+                'event_type' => 'signal_evaluation', 'action' => 'WAIT',
+                'candle_index' => $index, 'candle_time' => '2025-01-01T'.sprintf('%02d:%02d:00Z', intdiv($index - 200, 12), (($index - 200) % 12) * 5),
+            ], range(200, 299)),
+            'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1',
+                'requested' => true, 'complete' => true, 'input_candle_count' => 300,
+                'event_count' => 100, 'evaluated_candle_count' => 100],
                 ...($signalScope === null ? [] : ['specialist_signal_scope' => $signalScope])],
             'trade_ledger' => [], 'trade_ledger_hash' => hash('sha256', json_encode([])),
             'total_trades' => 0, 'displayed_trade_count' => 0,
