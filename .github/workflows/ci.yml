@@ -47,10 +47,12 @@ jobs:
         run: npm ci && npm audit --audit-level=moderate
       - name: Python dependencies
         working-directory: ai-service-python
-        run: pip install -r requirements.lock.txt -r requirements-dev.txt
+        run: python -m pip install -r requirements.lock.txt -r requirements-dev.txt
       - name: Python security audit
         working-directory: ai-service-python
-        run: pip-audit -r requirements.lock.txt --no-deps --disable-pip
+        run: |
+          python -m pip_audit -r requirements.lock.txt --no-deps --disable-pip
+          python -m pip_audit
       - name: Python tests
         working-directory: ai-service-python
         run: PYTHONPATH=. python -m pytest -q --junitxml=python-test-results.xml

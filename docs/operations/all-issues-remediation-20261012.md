@@ -165,6 +165,54 @@ after original file backups. CHECK returned OK and all four original privilege
 rows and their values matched. Storage header bytes changed; byte preservation
 is not claimed.
 
+## Main runtime publication
+
+Implementation commit `35d1eb7ec2ab0df7b0b2cc41a3de9710646d2fa8` was
+fast-forwarded into the main workspace after a fresh durable idle preflight,
+two authenticated idle Python probes, live STOP/transport-pause checks and
+verification that PM2 managed only this project's processes and log rotation.
+The three existing user edits were preserved byte-for-byte. The known daemon
+was stopped before publication; the source MySQL server remained running.
+
+Main Composer and npm dependencies were installed from their updated locks;
+the main frontend build passed. Consumers started first with the private GUI
+PHP and Python executables. All twelve actual queue-worker PID boot receipts
+match the main PHP runtime hash
+`d5f53779f3e151d8f3f24311f9a2657ad5f1968675990e7f5b85f7e3f4ea02ba`.
+The running Python service's disk and boot hashes both match
+`acc68cae6e0275c32c4dda6b6c3a7700d1828bad965b9bc245186b2fa167428e`.
+These are actual main-workspace hashes; Git's normal line-ending conversion
+means they are not reused from the isolated worktree.
+
+Only the fourteen maintenance-owned transport pauses were resumed. Autonomous
+control is RUNNING with its original `lightweight_monitor` profile. The
+scheduler started last and PM2 saved the fifteen-process online topology:
+twelve queue workers, the AI service, scheduler and log rotation. The separate
+backup worker is online and the effective database retention is one. A desktop
+inspection of the exact daemon PID/start identity found zero visible owned
+console windows. This is an observed check, not a guarantee against every
+possible future external process.
+
+Final loaded-worker and authenticated Python checks passed after resume, and
+all original twenty G263 facts still match the original hash. Certificate
+count remains zero. This publishes software fixes and restores background
+services; it creates no new scientific or economic authority. Main workspace
+Project Map freshness also passed. Local receipts include
+`cold-stop-before.json`, `loaded-workers-final.json`, `loaded-python-final.json`,
+`control-final.json` and `runtime-final-save.json`.
+
+An additional audit of the actual main Python environment found twelve advisory
+records in its bootstrap `pip 24.3.1` installer (some IDs were duplicated),
+although the thirty-package application lock audit had passed. Both private
+environments now use `pip 26.2`, a published release in the
+[official pip changelog](https://pip.pypa.io/en/stable/news/). The development
+requirements pin the installer and CI audits the whole installed environment
+as well as the application lock, so bootstrap packages are covered too.
+Both final full-environment audits passed with zero known vulnerabilities;
+their receipts are `python-security-main-final.json` and
+`python-security-all-tools-final.json`. Updating this installer changes no
+application source or market evidence and required no second runtime restart.
+
 ## Remaining original-data dependencies
 
 The verified native M5 foundation still has seventeen unresolved source gaps:
