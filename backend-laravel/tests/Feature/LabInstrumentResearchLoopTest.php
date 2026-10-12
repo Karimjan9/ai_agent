@@ -441,12 +441,12 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_verified_frozen_pair_moves_only_changed_instrument_into_value_block(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         config()->set('services.instrument_policy.authorized_research_windows', [[
             'authorization_id' => 'sealed-paired-window',
-            'research_epoch_id' => 'test-post-paper-research',
-            'start_inclusive' => '2027-01-01T00:00:00+00:00',
-            'end_exclusive' => '2027-02-01T00:00:00+00:00',
+            'research_epoch_id' => 'test-historical-research',
+            'start_inclusive' => '2025-01-01T00:00:00+00:00',
+            'end_exclusive' => '2025-02-01T00:00:00+00:00',
             'dataset_sha256' => str_repeat('a', 64),
             'purpose' => 'instrument_independent_validation',
         ]]);
@@ -527,9 +527,9 @@ class LabInstrumentResearchLoopTest extends TestCase
             ['evidence_run_id' => 'candidate-screen-run', 'data_manifest' => [
                 'data_partition' => ['screening_source' => 'authorized_post_paper_research_validation'],
                 'instrument_research_window' => ['authorization_id' => 'sealed-paired-window',
-                    'research_epoch_id' => 'test-post-paper-research'],
-                'first_candle_at' => '2027-01-01T00:00:00Z',
-                'last_candle_at' => '2027-01-31T23:55:00Z',
+                    'research_epoch_id' => 'test-historical-research'],
+                'first_candle_at' => '2025-01-01T00:00:00Z',
+                'last_candle_at' => '2025-01-31T23:55:00Z',
             ]],
             $candidateMap->toArray(),
         );
@@ -617,14 +617,14 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_authorized_window_stays_frozen_when_control_finishes_after_candidate(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         $dataHash = str_repeat('a', 64);
         $executionHash = str_repeat('b', 64);
         config()->set('services.instrument_policy.authorized_research_windows', [[
             'authorization_id' => 'late-control-window',
-            'research_epoch_id' => 'test-post-paper-research',
-            'start_inclusive' => '2027-01-01T00:00:00Z',
-            'end_exclusive' => '2027-02-01T00:00:00Z',
+            'research_epoch_id' => 'test-historical-research',
+            'start_inclusive' => '2025-01-01T00:00:00Z',
+            'end_exclusive' => '2025-02-01T00:00:00Z',
             'dataset_sha256' => $dataHash,
             'purpose' => 'instrument_independent_validation',
         ]]);
@@ -645,9 +645,9 @@ class LabInstrumentResearchLoopTest extends TestCase
         $result = ['evidence_run_id' => 'late-window-run', 'data_manifest' => [
             'data_partition' => ['screening_source' => 'authorized_post_paper_research_validation'],
             'instrument_research_window' => ['authorization_id' => 'late-control-window',
-                'research_epoch_id' => 'test-post-paper-research'],
-            'first_candle_at' => '2027-01-01T00:00:00Z',
-            'last_candle_at' => '2027-01-31T23:55:00Z',
+                'research_epoch_id' => 'test-historical-research'],
+            'first_candle_at' => '2025-01-01T00:00:00Z',
+            'last_candle_at' => '2025-01-31T23:55:00Z',
         ]];
         $initial = $service->pairScreeningObservation($candidate->fresh(['modelVersion', 'generation']),
             $result, $candidateMap->toArray());
@@ -725,7 +725,7 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_instrument_policy_keeps_london_value_out_of_asia_and_global_scope(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         app(TradingInstrumentOperatingSystemService::class)->seedDefaults();
         $instrument = TradingInstrument::query()->where('instrument_key', 'volume_confirmation')->firstOrFail();
         InstrumentValuePosterior::create([
@@ -767,7 +767,7 @@ class LabInstrumentResearchLoopTest extends TestCase
 
     public function test_phase_local_posterior_cannot_mutate_a_session_wide_successor(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         app(TradingInstrumentOperatingSystemService::class)->seedDefaults();
         $instrument = TradingInstrument::query()->where('instrument_key', 'volume_confirmation')->firstOrFail();
         $key = 'trend_up|london|normal|normal|stable|0|buy|hybrid|london_am_fix';
@@ -1070,9 +1070,9 @@ class LabInstrumentResearchLoopTest extends TestCase
         foreach ([1, 2, 3] as $month) {
             $manifests[] = [
                 'authorization_id' => 'test-instrument-window-'.$month,
-                'research_epoch_id' => 'test-post-paper-research',
-                'start_inclusive' => sprintf('2027-%02d-01T00:00:00+00:00', $month),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00+00:00', $month + 1),
+                'research_epoch_id' => 'test-historical-research',
+                'start_inclusive' => sprintf('2025-%02d-01T00:00:00+00:00', $month),
+                'end_exclusive' => sprintf('2025-%02d-01T00:00:00+00:00', $month + 1),
                 'dataset_sha256' => hash('sha256', 'test-window-'.$month),
                 'purpose' => 'instrument_independent_validation',
             ];

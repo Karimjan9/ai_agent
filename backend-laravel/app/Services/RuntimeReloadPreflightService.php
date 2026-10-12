@@ -36,7 +36,7 @@ class RuntimeReloadPreflightService
         $backlog = $this->queues->reservedQueueBacklog([
             'lab-screening', 'lab-frontier', 'lab-full-validation',
             'lab-xauusd', 'lab-eurusd', 'lab-gbpusd', 'lab-learning',
-            'market-maintenance', 'scheduler-critical', 'scheduler-ops',
+            'market-maintenance', 'scheduler-critical', 'scheduler-ops', 'scheduler-backup',
             'scheduler-constructor', 'scheduler-research', 'strategy-lab', 'backtests',
         ]);
         $activeGenerations = LabGeneration::query()->whereIn('status', [

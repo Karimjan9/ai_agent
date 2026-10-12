@@ -14,7 +14,7 @@ import pandas as pd
 def source_hash(root: Path | None = None) -> str:
     root = root or Path(__file__).resolve().parents[2]
     paths = sorted((root / "app").rglob("*.py"))
-    paths += [root / name for name in ("requirements.txt", "pyproject.toml", "poetry.lock") if (root / name).is_file()]
+    paths += [root / name for name in ("requirements.txt", "requirements.lock.txt", "pyproject.toml", "poetry.lock") if (root / name).is_file()]
     parts = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     return hashlib.sha256(json.dumps(parts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

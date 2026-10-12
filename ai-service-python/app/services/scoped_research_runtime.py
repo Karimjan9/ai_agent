@@ -1,4 +1,4 @@
-"""Private admission for original scoped research on authenticated future CSVs."""
+"""Private admission for original scoped research on authenticated pre-2026 CSVs."""
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -275,7 +275,7 @@ def derive_scoped_partition_payload(payload, frame):
 
 
 def scoped_research_quote_calendar(frame, payload):
-    """Only an authenticated actual source slice may extend the quote calendar."""
+    """Authenticate the original historical source slice without expanding its dates."""
     if not scoped_research_runtime_current(payload, frame):
         raise ValueError("SCOPED_ORIGINAL_RUNTIME_PRIVATE_WITNESS_REQUIRED")
     witness = getattr(payload, _WITNESS_ATTR)

@@ -24,7 +24,7 @@ class AuthorizedResearchTransportTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12T00:00:00Z'));
         $this->root = sys_get_temp_dir().'/authorized-research-transport-test-'.bin2hex(random_bytes(8));
         $this->originalStorage = storage_path();
         File::ensureDirectoryExists($this->root.'/app/lab-datasets');
@@ -59,7 +59,7 @@ class AuthorizedResearchTransportTest extends TestCase
         $this->assertArrayNotHasKey('expires_at', $signed);
         $fixture = base_path('../ai-service-python/tests/support/authorized_research_transport_fixture.py');
         if (getenv('AUTHORIZED_RESEARCH_TRANSPORT_STAGING') === '1') $fixture = base_path('../.runtime/authorized-research-transport-staging-2026-10-03/authorized_research_transport_fixture.py');
-        $process = new Process(['python', $fixture, '--test-data-root', $this->root, '--fixture-clock', '2028-01-01T00:00:00Z'],
+        $process = new Process([getenv('PYTHON_BINARY') ?: 'python', $fixture, '--test-data-root', $this->root, '--fixture-clock', '2026-10-12T00:00:00Z'],
             base_path('../ai-service-python'), ['INTERNAL_API_TOKEN' => self::KEY, 'INTERNAL_API_TOKEN_FILE' => ''],
             json_encode($first, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), timeout: 30);
         $process->mustRun();
@@ -98,7 +98,7 @@ class AuthorizedResearchTransportTest extends TestCase
 
     public function test_full_file_warmup_may_not_cross_an_authorized_window_boundary(): void
     {
-        [$generation, $request] = $this->fixture('2027-01-31T23:55:00Z');
+        [$generation, $request] = $this->fixture('2025-02-02T23:55:00Z');
         $this->expectExceptionMessage('RESEARCH_TRANSPORT_TIME_SCOPE_INVALID');
         app(InstrumentResearchWindowService::class)->bindReplayRequest($generation, $request);
     }
@@ -148,20 +148,20 @@ class AuthorizedResearchTransportTest extends TestCase
     public function test_path_escape_cannot_receive_server_signature_even_if_bytes_match(): void
     {
         [$generation, $request] = $this->fixture();
-        $request['dataset_path'] = $this->root.'/app/lab-datasets/../lab-datasets/future.csv';
+        $request['dataset_path'] = $this->root.'/app/lab-datasets/../lab-datasets/historical.csv';
         $this->expectExceptionMessage('RESEARCH_TRANSPORT_SOURCE_PATH_INVALID');
         app(InstrumentResearchWindowService::class)->bindReplayRequest($generation, $request);
     }
 
-    private function fixture(string $firstTime = '2027-02-01T00:00:00Z'): array
+    private function fixture(string $firstTime = '2025-02-03T00:00:00Z'): array
     {
-        $path = $this->root.'/app/lab-datasets/future.csv';
-        File::put($path, "time,open,high,low,close,volume\n{$firstTime},100,101,99,100,10\n2027-02-01T00:05:00Z,100,101,99,100,10\n");
+        $path = $this->root.'/app/lab-datasets/historical.csv';
+        File::put($path, "time,open,high,low,close,volume\n{$firstTime},100,101,99,100,10\n2025-02-03T00:05:00Z,100,101,99,100,10\n");
         $hash = hash_file('sha256', $path);
         config(['services.instrument_policy.authorized_research_windows' => [[
-            'authorization_id' => 'original-server-window', 'research_epoch_id' => 'post-paper-research',
+            'authorization_id' => 'original-server-window', 'research_epoch_id' => 'historical-research',
             'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $hash,
-            'start_inclusive' => '2027-02-01T00:00:00Z', 'end_exclusive' => '2027-03-01T00:00:00Z',
+            'start_inclusive' => '2025-02-03T00:00:00Z', 'end_exclusive' => '2025-03-01T00:00:00Z',
         ]]]);
         $identity = ['protocol' => 'prospective_research_release_v1',
             'source_hash' => app(LabImmutableEvidenceService::class)->codeHash(),

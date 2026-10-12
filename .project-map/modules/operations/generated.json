@@ -2,17 +2,31 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-11T16:27:41.483Z",
-  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
-  "source_file_count": 1612,
-  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
+  "generated_at": "2026-10-12T18:23:26.010Z",
+  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
+  "source_file_count": 1629,
+  "git_head": "606d999c3efe83311938a6c90206a02f3fd82692",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
+    "backend-laravel/routes/console.php",
+    "backend-laravel/app/Console/Commands/BackupDatabase.php",
+    "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+    "backend-laravel/app/Console/Commands/CleanupLegacyBackups.php",
+    "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+    "backend-laravel/scripts/create-database-backup.py",
+    "backend-laravel/scripts/test_create_database_backup.py",
+    "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+    "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+    "backend-laravel/scripts/benchmark-research-provenance.php",
+    "backend-laravel/scripts/restore-backup-drill.php",
+    "backend-laravel/scripts/restore-backup-stream.py",
+    "backend-laravel/scripts/browser-audit.cjs",
     "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
     "backend-laravel/app/Services/RuntimeMonitoringService.php",
+    "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
     "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
     "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
     "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
@@ -77,10 +91,13 @@
     "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
     "backend-laravel/app/Console/Commands/AutonomousRuntimeGate.php",
+    "backend-laravel/app/Console/Commands/BackupDatabase.php",
     "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+    "backend-laravel/app/Console/Commands/CleanupLegacyBackups.php",
     "backend-laravel/app/Console/Commands/PauseAutonomousMode.php",
     "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
     "backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php",
+    "backend-laravel/app/Console/Commands/RestoreDatabase.php",
     "backend-laravel/app/Console/Commands/ResumeAutonomousMode.php",
     "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
     "backend-laravel/app/Console/Commands/RunResearchLoop.php",
@@ -93,7 +110,9 @@
     "backend-laravel/app/Services/GenerationAutonomyReceiptService.php",
     "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
     "backend-laravel/app/Services/LabLifecycleWatchdogService.php",
+    "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
     "backend-laravel/app/Services/MarketHealthService.php",
+    "backend-laravel/app/Services/PhaseTwoFoundationService.php",
     "backend-laravel/app/Services/ResearchLoopArbiterService.php",
     "backend-laravel/app/Services/ResearchReleaseSealService.php",
     "backend-laravel/app/Services/RuntimeMonitoringService.php",
@@ -104,8 +123,12 @@
     "backend-laravel/config/cache.php",
     "backend-laravel/config/queue.php",
     "backend-laravel/config/redis-local.conf",
+    "backend-laravel/routes/console.php",
     "backend-laravel/scripts/audit-research-release.php",
+    "backend-laravel/scripts/benchmark-research-provenance.php",
+    "backend-laravel/scripts/browser-audit.cjs",
     "backend-laravel/scripts/build-windows-hidden-shell.ps1",
+    "backend-laravel/scripts/create-database-backup.py",
     "backend-laravel/scripts/headless-terminal.test.cjs",
     "backend-laravel/scripts/inspect-display-env-readiness.php",
     "backend-laravel/scripts/install-autonomous-runtime-task.ps1",
@@ -116,6 +139,8 @@
     "backend-laravel/scripts/pm2-summary.test.cjs",
     "backend-laravel/scripts/pm2-sync-runtime.mjs",
     "backend-laravel/scripts/pm2-sync-runtime.test.cjs",
+    "backend-laravel/scripts/restore-backup-drill.php",
+    "backend-laravel/scripts/restore-backup-stream.py",
     "backend-laravel/scripts/run-ai-service.cmd",
     "backend-laravel/scripts/run-ai-service.py",
     "backend-laravel/scripts/run-laravel-server.cmd",
@@ -124,10 +149,13 @@
     "backend-laravel/scripts/run-laravel-workers.cmd",
     "backend-laravel/scripts/start-redis.ps1",
     "backend-laravel/scripts/supervise-laravel-runtime.ps1",
+    "backend-laravel/scripts/test_create_database_backup.py",
     "backend-laravel/scripts/windows-hidden-shell.test.cjs",
     "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
+    "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
     "backend-laravel/tests/Feature/DraftIntegrityRecoveryDispositionTest.php",
     "backend-laravel/tests/Feature/HistoricalDataQualityDispositionTest.php",
+    "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
     "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
@@ -256,6 +284,24 @@
       "line": 8
     },
     {
+      "symbol": "BackupDatabase",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/BackupDatabase.php",
+      "line": 11
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackupDatabase.php",
+      "line": 16
+    },
+    {
+      "symbol": "pruneVerified",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/BackupDatabase.php",
+      "line": 59
+    },
+    {
       "symbol": "handle",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
@@ -265,6 +311,18 @@
       "symbol": "CheckMarketHealth",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/CheckMarketHealth.php",
+      "line": 8
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/CleanupLegacyBackups.php",
+      "line": 14
+    },
+    {
+      "symbol": "CleanupLegacyBackups",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/CleanupLegacyBackups.php",
       "line": 8
     },
     {
@@ -356,6 +414,18 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RecoverLabReplayMutex.php",
       "line": 603
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 13
+    },
+    {
+      "symbol": "RestoreDatabase",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 8
     },
     {
       "symbol": "handle",
@@ -463,7 +533,7 @@
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Jobs/RunScheduledArtisanCommandJob.php",
-      "line": 120
+      "line": 121
     },
     {
       "symbol": "uniqueId",
@@ -922,6 +992,132 @@
       "line": 84
     },
     {
+      "symbol": "blockedScopeReport",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 215
+    },
+    {
+      "symbol": "entryLayerState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 242
+    },
+    {
+      "symbol": "finish",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 275
+    },
+    {
+      "symbol": "LighthouseVerticalLoopMonitoringService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 30
+    },
+    {
+      "symbol": "__construct",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 38
+    },
+    {
+      "symbol": "isTransientLockContention",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 388
+    },
+    {
+      "symbol": "scopeContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 400
+    },
+    {
+      "symbol": "evidenceState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 465
+    },
+    {
+      "symbol": "inspect",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 48
+    },
+    {
+      "symbol": "milestones",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 512
+    },
+    {
+      "symbol": "technicalState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 622
+    },
+    {
+      "symbol": "strategyState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 718
+    },
+    {
+      "symbol": "paperState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 736
+    },
+    {
+      "symbol": "realityState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 768
+    },
+    {
+      "symbol": "queueState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 782
+    },
+    {
+      "symbol": "replayState",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 826
+    },
+    {
+      "symbol": "addMilestoneCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 831
+    },
+    {
+      "symbol": "currentStage",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 841
+    },
+    {
+      "symbol": "nextAction",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 852
+    },
+    {
+      "symbol": "isSha256",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 884
+    },
+    {
+      "symbol": "organismContract",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
+      "line": 890
+    },
+    {
       "symbol": "latestCandle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketHealthService.php",
@@ -992,6 +1188,144 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Services/MarketHealthService.php",
       "line": 47
+    },
+    {
+      "symbol": "writeExperienceMemory",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 124
+    },
+    {
+      "symbol": "matchMemories",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 160
+    },
+    {
+      "symbol": "healthDefinitions",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 203
+    },
+    {
+      "symbol": "PhaseTwoFoundationService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 29
+    },
+    {
+      "symbol": "upsertHealth",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 291
+    },
+    {
+      "symbol": "recordEvent",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 31
+    },
+    {
+      "symbol": "freshnessStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 311
+    },
+    {
+      "symbol": "mtfPilotStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 332
+    },
+    {
+      "symbol": "lighthouseVerticalLoopStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 381
+    },
+    {
+      "symbol": "marketFeedStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 427
+    },
+    {
+      "symbol": "signalFoundationStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 492
+    },
+    {
+      "symbol": "labPipelineStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 515
+    },
+    {
+      "symbol": "runHealthCheck",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 53
+    },
+    {
+      "symbol": "captureSignalMarketSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 63
+    },
+    {
+      "symbol": "accessControlStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 748
+    },
+    {
+      "symbol": "realityLoopStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 782
+    },
+    {
+      "symbol": "databaseBackupStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 831
+    },
+    {
+      "symbol": "schedulerStatus",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 894
+    },
+    {
+      "symbol": "latestMarketSnapshot",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 947
+    },
+    {
+      "symbol": "activeMarketProvider",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 961
+    },
+    {
+      "symbol": "configuredMarketSymbols",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 969
+    },
+    {
+      "symbol": "configuredMarketTimeframes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 977
+    },
+    {
+      "symbol": "memorySimilarity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+      "line": 985
     },
     {
       "symbol": "fidelityPlanForAction",
@@ -1441,7 +1775,7 @@
       "symbol": "isTransientExternalDependencyFailure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
-      "line": 130
+      "line": 152
     },
     {
       "symbol": "classify",
@@ -1453,7 +1787,7 @@
       "symbol": "result",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ScheduledCommandOutcomeClassifierService.php",
-      "line": 167
+      "line": 189
     },
     {
       "symbol": "SettlementWatermarkService",
@@ -1522,6 +1856,36 @@
       "line": 57
     },
     {
+      "symbol": "ResearchWindowProvenanceAuditService",
+      "kind": "php_type",
+      "path": "backend-laravel/scripts/benchmark-research-provenance.php",
+      "line": 19
+    },
+    {
+      "symbol": "LegacyResearchWindowProvenanceBenchmark",
+      "kind": "php_type",
+      "path": "backend-laravel/scripts/benchmark-research-provenance.php",
+      "line": 19
+    },
+    {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/create-database-backup.py",
+      "line": 15
+    },
+    {
+      "symbol": "stop_native_dump",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/create-database-backup.py",
+      "line": 35
+    },
+    {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/restore-backup-stream.py",
+      "line": 13
+    },
+    {
       "symbol": "_healthy_peer",
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-ai-service.py",
@@ -1532,6 +1896,120 @@
       "kind": "python_function",
       "path": "backend-laravel/scripts/run-ai-service.py",
       "line": 59
+    },
+    {
+      "symbol": "close",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 103
+    },
+    {
+      "symbol": "BlockingNative",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 106
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 109
+    },
+    {
+      "symbol": "kill",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 112
+    },
+    {
+      "symbol": "wait",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 115
+    },
+    {
+      "symbol": "NativeProcess",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 20
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 21
+    },
+    {
+      "symbol": "wait",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 25
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 28
+    },
+    {
+      "symbol": "BackupStreamTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 32
+    },
+    {
+      "symbol": "setUp",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 33
+    },
+    {
+      "symbol": "run_backup",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 46
+    },
+    {
+      "symbol": "test_complete_stream_verifies_native_bytes_and_keeps_old_backup_for_owner_prune",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 54
+    },
+    {
+      "symbol": "test_failed_native_dump_never_publishes_or_deletes_old_backup",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 69
+    },
+    {
+      "symbol": "test_truncated_gzip_is_refused_before_atomic_publication",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 75
+    },
+    {
+      "symbol": "corrupted_open",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 79
+    },
+    {
+      "symbol": "test_native_timeout_stops_owned_dump_and_preserves_the_previous_backup",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 94
+    },
+    {
+      "symbol": "BlockingOutput",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 97
+    },
+    {
+      "symbol": "read",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 98
     },
     {
       "symbol": "approve",
@@ -1604,6 +2082,66 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
       "line": 36
+    },
+    {
+      "symbol": "newBackup",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 106
+    },
+    {
+      "symbol": "setUp",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 13
+    },
+    {
+      "symbol": "tearDown",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 20
+    },
+    {
+      "symbol": "test_verified_new_gzip_replaces_old_sql_and_gzip_with_their_manifests",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 28
+    },
+    {
+      "symbol": "test_corrupt_new_backup_preserves_every_old_copy",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 42
+    },
+    {
+      "symbol": "test_outside_new_backup_cannot_authorize_deletion_in_another_directory",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 60
+    },
+    {
+      "symbol": "test_health_accepts_a_hash_verified_compressed_backup",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 73
+    },
+    {
+      "symbol": "test_health_refuses_a_changed_compressed_backup",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 84
+    },
+    {
+      "symbol": "DatabaseBackupRetentionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 9
+    },
+    {
+      "symbol": "oldBackups",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "line": 96
     },
     {
       "symbol": "unattestedOrObservedShapes",
@@ -1726,64 +2264,136 @@
       "line": 96
     },
     {
+      "symbol": "test_scheduler_health_requires_a_fresh_runtime_heartbeat",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 106
+    },
+    {
+      "symbol": "test_access_control_health_requires_an_active_admin",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 120
+    },
+    {
+      "symbol": "test_reality_loop_marks_p0_freeze_as_intentional_policy_state",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 134
+    },
+    {
+      "symbol": "test_lab_pipeline_health_rejects_an_active_generation_with_a_terminal_timestamp",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 146
+    },
+    {
+      "symbol": "test_lab_pipeline_health_tracks_active_work_without_calling_it_promotion_evidence",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 160
+    },
+    {
+      "symbol": "test_lab_pipeline_health_blocks_full_validation_without_foundation_coverage",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 173
+    },
+    {
+      "symbol": "test_market_feed_health_rejects_a_stale_confirmed_candle",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 186
+    },
+    {
+      "symbol": "test_global_health_projects_monitor_runs_without_recursively_nesting_owned_health_rows",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 210
+    },
+    {
+      "symbol": "PhaseTwoFoundationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 22
+    },
+    {
+      "symbol": "test_foundation_records_events_snapshots_and_agent_memory_matches",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 26
+    },
+    {
+      "symbol": "test_health_center_dashboard_manual_check_and_command_work",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "line": 87
+    },
+    {
+      "symbol": "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 104
+    },
+    {
       "symbol": "test_cold_maintenance_refuses_other_active_generation_or_missing_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 106
+      "line": 117
     },
     {
       "symbol": "test_cold_maintenance_never_overrides_running_pause_or_safety_halt",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 116
+      "line": 127
     },
     {
       "symbol": "test_cold_maintenance_refuses_missing_or_authority_granting_proof",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 130
+      "line": 141
     },
     {
       "symbol": "test_cli_refuses_invalid_explicit_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 148
+      "line": 159
     },
     {
       "symbol": "test_named_unused_draft_allows_only_read_only_cold_maintenance_and_retains_data_dependency",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 154
+      "line": 165
     },
     {
       "symbol": "test_unused_draft_requires_every_original_slot_model_and_draft_agent",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 185
+      "line": 196
     },
     {
       "symbol": "unusedDraftConstructionFailures",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 209
+      "line": 220
     },
     {
       "symbol": "test_unused_draft_refuses_original_seals_and_separate_owners",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 224
+      "line": 235
     },
     {
       "symbol": "unusedDraftForbiddenMarkers",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 242
+      "line": 253
     },
     {
       "symbol": "test_unused_draft_cannot_hide_original_attempts_or_queue_history",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 268
+      "line": 279
     },
     {
       "symbol": "RuntimeReloadPreflightTest",
@@ -1795,85 +2405,85 @@
       "symbol": "unusedDraftHistoricalEvidence",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 299
+      "line": 310
     },
     {
       "symbol": "test_unused_draft_refuses_unknown_or_nonempty_queues",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 304
+      "line": 315
     },
     {
-      "symbol": "test_unused_draft_refuses_running_pause_safety_halt_and_unknown_control",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 317
-    },
-    {
-      "symbol": "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
+      "symbol": "test_an_inflight_backup_is_checked_before_source_reload",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "line": 32
     },
     {
+      "symbol": "test_unused_draft_refuses_running_pause_safety_halt_and_unknown_control",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 328
+    },
+    {
       "symbol": "test_unused_draft_refuses_constructor_owner_and_lease_without_changing_them",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 329
+      "line": 340
     },
     {
       "symbol": "test_unused_draft_refuses_missing_competing_target_or_ambiguous_mode",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 346
+      "line": 357
     },
     {
       "symbol": "test_unused_draft_refuses_cache_stores_whose_reads_can_mutate_expired_owner_records",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 357
+      "line": 368
     },
     {
       "symbol": "test_unused_draft_cli_requires_explicit_single_valid_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 366
+      "line": 377
     },
     {
       "symbol": "unusedDraft",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 379
+      "line": 390
     },
     {
       "symbol": "emptyQueueService",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 412
+      "line": 423
+    },
+    {
+      "symbol": "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 43
     },
     {
       "symbol": "activeProjection",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 421
+      "line": 432
     },
     {
       "symbol": "test_runnable_job_or_active_generation_refuses_reload",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 46
+      "line": 57
     },
     {
       "symbol": "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 70
-    },
-    {
-      "symbol": "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 93
+      "line": 81
     },
     {
       "symbol": "registered",
@@ -2334,6 +2944,7 @@
         "test_release_requires_current_and_loaded_source",
         "test_source_hash_is_relative_ordered_content_hash",
         "test_health_reports_actual_boot_drift_without_claiming_replay_proof",
+        "test_effective_dependency_lock_changes_the_release_identity",
         "test_release_hash_orders_numeric_agent_ids_like_php",
         "test_real_source_seal_exposes_distinct_aggregate_without_reinterpreting_python_hash",
         "test_missing_or_unsealed_aggregate_cannot_borrow_full_runtime_identity",
@@ -2388,6 +2999,20 @@
         "test_enabled_mode_can_accumulate_a_zero_pass_observation_on_fresh_data",
         "test_stop_prevents_a_scheduled_mtf_research_job_from_being_queued",
         "laboratory"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_verified_new_gzip_replaces_old_sql_and_gzip_with_their_manifests",
+        "test_corrupt_new_backup_preserves_every_old_copy",
+        "test_outside_new_backup_cannot_authorize_deletion_in_another_directory",
+        "test_health_accepts_a_hash_verified_compressed_backup",
+        "test_health_refuses_a_changed_compressed_backup",
+        "oldBackups",
+        "newBackup"
       ]
     },
     {
@@ -2494,6 +3119,14 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php",
+      "tests": [
+        "test_monitor_is_fail_closed_outside_the_lighthouse_scope",
+        "test_monitor_records_the_first_missing_milestone_without_mutating_strategy_state",
+        "test_monitor_defers_disposable_persistence_while_population_constructor_owns_generation"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/MarketHealthEngineTest.php",
       "tests": [
         "setUp",
@@ -2504,6 +3137,21 @@
         "test_fallback_provider_cannot_mask_the_configured_provider_outage",
         "test_market_health_defers_freshness_during_a_closed_weekend_session",
         "createCandle"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+      "tests": [
+        "test_foundation_records_events_snapshots_and_agent_memory_matches",
+        "test_health_center_dashboard_manual_check_and_command_work",
+        "test_scheduler_health_requires_a_fresh_runtime_heartbeat",
+        "test_access_control_health_requires_an_active_admin",
+        "test_reality_loop_marks_p0_freeze_as_intentional_policy_state",
+        "test_lab_pipeline_health_rejects_an_active_generation_with_a_terminal_timestamp",
+        "test_lab_pipeline_health_tracks_active_work_without_calling_it_promotion_evidence",
+        "test_lab_pipeline_health_blocks_full_validation_without_foundation_coverage",
+        "test_market_feed_health_rejects_a_stale_confirmed_candle",
+        "test_global_health_projects_monitor_runs_without_recursively_nesting_owned_health_rows"
       ]
     },
     {
@@ -2637,6 +3285,7 @@
     {
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "tests": [
+        "test_an_inflight_backup_is_checked_before_source_reload",
         "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
         "test_runnable_job_or_active_generation_refuses_reload",
         "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
@@ -2661,6 +3310,30 @@
         "unusedDraft",
         "emptyQueueService",
         "activeProjection"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+      "tests": [
+        "test_backup_has_a_private_hour_lease_below_redis_visibility",
+        "test_all_native_pending_symbol_lines_defer_the_original_nonzero_exit",
+        "test_native_pending_cannot_hide_an_authentication_failure_or_ambiguous_marker",
+        "test_native_archive_pending_is_deferred_without_poisoning_queue_health",
+        "test_scheduled_mixed_market_failure_remains_a_real_failed_job",
+        "test_native_pending_marker_does_not_hide_unrelated_or_schema_failures",
+        "test_cross_platform_runner_builds_a_shell_free_artisan_command_line",
+        "test_windows_console_process_group_is_not_created_by_php",
+        "test_scheduled_process_runner_executes_artisan_without_a_shell_contract",
+        "test_windows_native_runner_enforces_its_hard_timeout_without_blocking_on_output",
+        "test_learning_dispatch_uses_a_short_private_unique_worker_contract",
+        "test_expected_lifecycle_block_is_not_recorded_as_a_failed_job",
+        "test_proposal_only_rescue_deferral_is_not_a_failed_job",
+        "test_unknown_nonzero_exit_remains_a_technical_failure",
+        "test_transient_external_feed_outage_is_deferred_without_hiding_application_errors",
+        "test_argument_order_does_not_change_the_overlap_identity",
+        "test_memory_heavy_research_has_a_separate_serial_lane",
+        "test_lifecycle_scheduler_job_has_a_full_population_constructor_budget",
+        "test_redis_uniqueness_outlives_visibility_timeout_and_allows_one_transport_retry"
       ]
     },
     {

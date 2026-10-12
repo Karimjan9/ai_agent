@@ -1813,7 +1813,9 @@ class SpecialistCouncilResearchFeedbackService
         if ($direction === 'locally_promising') return ['BEHAVIORAL_ACTIVATION_HYPOTHESIS', [...$base,
             'type' => 'specialist_council_independent_validation',
             'dependency_key' => 'authorized_unused_council_validation:'.$version->id,
-            'data_policy' => ['paper_2026_is_research' => false, 'minimum_research_year' => 2027,
+            'data_policy' => ['paper_2026_is_research' => false,
+                'research_end_exclusive' => ResearchPaperEpochContractService::PAPER_ONLY_START,
+                'all_future_data_paper_only' => true,
                 'unused_authorized_window_required' => true, 'original_plan_does_not_authorize_validation' => true],
             'retry_condition' => ['code' => 'AUTHORIZED_UNUSED_INDEPENDENT_COUNCIL_WINDOW_REQUIRED',
                 'max_experiments' => 1, 'same_evidence_replay_forbidden' => true]], []];

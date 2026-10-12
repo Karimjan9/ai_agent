@@ -269,7 +269,12 @@ class NativeSpreadContextStudyTest extends TestCase
         [$masked, $unmasked, $spec] = $this->fixture('wire', true, $family);
         $rows = []; $start = new \DateTimeImmutable('2025-01-06T02:00:00Z');
         for ($index = 0; $index < 320; $index++) {
-            $time = $start->modify('+'.($index * 5).' minutes'); $price = 2000.0 + 10 * sin($index / 12) + $index * .025;
+            $time = $start->modify('+'.($index * 5).' minutes');
+            // A flat warmup gives the breakout arms the same account before
+            // their first preregistered opportunity. Prior unrelated fills
+            // correctly exclude a pair with already-diverged account state.
+            $signalIndex = $family === 'breakout' ? max(0, $index - 40) : $index;
+            $price = 2000.0 + 10 * sin($signalIndex / 12) + $signalIndex * .025;
             $rows[] = ['time' => $time->format(DATE_ATOM), 'open' => $price, 'high' => $price + .5, 'low' => $price - .5,
                 'close' => $price, 'volume' => 100, 'volume_available' => 1, 'spread_available' => 1, 'spread' => .1,
                 'bid_close' => $price, 'ask_close' => $price + .1, 'quote_time_utc' => $time->modify('+270 seconds')->format(DATE_ATOM),
@@ -306,8 +311,8 @@ class NativeSpreadContextStudyTest extends TestCase
                 $evidence->finishRun($run, 'completed', $results[$arm]); $runs[$arm] = $run->fresh();
             }
             $settled = $owner->settleOriginalPair($runs['unmasked']);
-            $this->assertSame($expectedEffect ? 'INCONCLUSIVE' : 'UNDERPOWERED', $settled['classification']);
             $outcome = ResearchExperimentReceipt::findOrFail($settled['receipt_id'])->payload['evidence']['outcome'];
+            $this->assertSame($expectedEffect ? 'INCONCLUSIVE' : 'UNDERPOWERED', $settled['classification'], json_encode($outcome));
             $this->assertSame($expectedEffect ? 'measured_existing_data_sensitivity' : 'data_missing', $outcome['status']);
             if ($expectedEffect) {
                 $this->assertGreaterThan(0, $outcome['eligible_paired_opportunities']);

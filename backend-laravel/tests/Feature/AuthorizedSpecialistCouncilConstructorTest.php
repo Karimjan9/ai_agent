@@ -62,7 +62,7 @@ class AuthorizedSpecialistCouncilConstructorTest extends TestCase
             'source_version_id' => 17, 'evaluator_id' => 'independent-original-examiner',
             'current_source_hash' => str_repeat('a', 64), 'current_python_source_hash' => str_repeat('b', 64),
             'authorized_window' => ['window_key' => 'window_'.$ordinal, 'dataset_sha256' => str_repeat((string) $ordinal, 64),
-                'start_inclusive' => '2027-0'.$ordinal.'-01T00:00:00Z', 'end_exclusive' => '2027-0'.($ordinal + 1).'-01T00:00:00Z'],
+                'start_inclusive' => '2025-0'.$ordinal.'-01T00:00:00Z', 'end_exclusive' => '2025-0'.($ordinal + 1).'-01T00:00:00Z'],
             'arm_roots' => $arms, 'authority' => 'research_only', 'promotion_evidence' => false,
             'independent_evidence_claimed' => false];
     }

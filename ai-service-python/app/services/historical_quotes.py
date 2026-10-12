@@ -40,7 +40,8 @@ class _OriginalFullQuoteCalendar:
                 or (payload.policy_context or {}).get('specialist_council_authorized_arm', {}).get('plan_hash') != self.plan_hash):
             raise ValueError('HISTORICAL_QUOTE_ORIGINAL_SOURCE_SCOPE_MISMATCH')
         start, last = pd.Timestamp(record[4]), pd.Timestamp(record[5])
-        if start < pd.Timestamp('2027-01-01', tz='UTC'):
+        boundary = pd.Timestamp('2026-01-01', tz='UTC')
+        if start >= boundary or last >= boundary:
             raise ValueError('HISTORICAL_QUOTE_ORIGINAL_PAPER_SCOPE_FORBIDDEN')
         return times.ge(start) & times.le(last)
 

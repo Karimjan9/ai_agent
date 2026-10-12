@@ -832,7 +832,7 @@ class PhaseTwoFoundationService
     {
         $directory = (string) config('database.backup.directory', 'G:/NeuroTrader/backups');
         $staleAfter = (int) config('database.backup.stale_after_seconds', 172800);
-        $files = collect(File::glob($directory.'/neurotrader_*.sql'))
+        $files = collect(array_merge(File::glob($directory.'/neurotrader_*.sql'), File::glob($directory.'/neurotrader_*.sql.gz')))
             ->filter(fn (string $path): bool => File::isFile($path))
             ->sortByDesc(fn (string $path): int => File::lastModified($path))
             ->values();

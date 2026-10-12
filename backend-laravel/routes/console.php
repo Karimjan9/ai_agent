@@ -38,7 +38,7 @@ $scheduleStaggeredFive = static function (string $command, array $arguments = []
 
 $scheduleArtisan('trading:daily-report')->dailyAt('23:50');
 $scheduleArtisan('ops:backup-database', [
-    '--retain' => config('database.backup.retention', 3),
+    '--retain' => config('database.backup.retention', 1),
 ])
     ->dailyAt(config('database.backup.schedule_time', '02:30'))
     ->withoutOverlapping();

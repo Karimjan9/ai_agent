@@ -2,13 +2,16 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-11T16:27:41.483Z",
-  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
-  "source_file_count": 1612,
-  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
+  "generated_at": "2026-10-12T18:23:26.010Z",
+  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
+  "source_file_count": 1629,
+  "git_head": "606d999c3efe83311938a6c90206a02f3fd82692",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [
+    "ai-service-python/requirements.lock.txt",
+    "ai-service-python/requirements-dev.txt",
+    "ai-service-python/tests/test_market_regime.py",
     "backend-laravel/ecosystem.config.cjs",
     "backend-laravel/app/Services/LabAgentEvaluationService.php",
     "backend-laravel/app/Services/LabImmutableEvidenceService.php",
@@ -96,6 +99,7 @@
     "ai-service-python/tests/support/native_spread_context_study_fixture.py",
     "ai-service-python/tests/test_authorized_council_arm.py",
     "ai-service-python/tests/test_finite_program_search.py",
+    "ai-service-python/tests/test_market_regime.py",
     "ai-service-python/tests/test_native_reachability_depth_audit.py",
     "ai-service-python/tests/test_native_spread_context_study.py",
     "ai-service-python/tests/test_research_program_tasks.py",
@@ -2390,19 +2394,19 @@
       "symbol": "bind_original_full_quote_calendar",
       "kind": "python_function",
       "path": "ai-service-python/app/services/historical_quotes.py",
-      "line": 48
+      "line": 49
     },
     {
       "symbol": "original_full_mtf_bundle_current",
       "kind": "python_function",
       "path": "ai-service-python/app/services/historical_quotes.py",
-      "line": 67
+      "line": 68
     },
     {
       "symbol": "validate_historical_quotes",
       "kind": "python_function",
       "path": "ai-service-python/app/services/historical_quotes.py",
-      "line": 85
+      "line": 86
     },
     {
       "symbol": "build_instrument_research_trace",
@@ -2723,10 +2727,10 @@
       "line": 743
     },
     {
-      "symbol": "_average_true_range",
+      "symbol": "_adx",
       "kind": "python_function",
       "path": "ai-service-python/app/services/market_regime.py",
-      "line": 106
+      "line": 111
     },
     {
       "symbol": "apply_market_regime",
@@ -2735,10 +2739,10 @@
       "line": 12
     },
     {
-      "symbol": "_adx",
+      "symbol": "_average_true_range",
       "kind": "python_function",
       "path": "ai-service-python/app/services/market_regime.py",
-      "line": 120
+      "line": 97
     },
     {
       "symbol": "_phase_at",
@@ -3572,31 +3576,31 @@
       "symbol": "test_truncated_consumed_frame_is_not_a_successful_original_arm",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 102
+      "line": 103
     },
     {
       "symbol": "test_aggregate_result_without_measured_original_costs_is_refused",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 109
+      "line": 110
     },
     {
       "symbol": "signed_trading_frame",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 117
+      "line": 118
     },
     {
       "symbol": "test_real_signed_solo_engine_account_reconciles_actual_fills_costs_and_scope",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 174
+      "line": 176
     },
     {
       "symbol": "deterministic",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 177
+      "line": 179
     },
     {
       "symbol": "arm",
@@ -3608,97 +3612,97 @@
       "symbol": "test_normalized_drop_or_native_wrong_scope_never_gets_original_scope_receipt",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 232
+      "line": 234
     },
     {
       "symbol": "test_unsigned_historical_route_unchanged",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 241
+      "line": 243
     },
     {
       "symbol": "test_unavailable_closed_instrument_scalars_never_assert_an_observation",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 247
+      "line": 249
     },
     {
       "symbol": "test_ordinary_single_strategy_keeps_legacy_clock_without_original_account",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 259
+      "line": 261
     },
     {
       "symbol": "deterministic",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 268
+      "line": 270
     },
     {
       "symbol": "test_signed_declared_mtf_confirmation_keeps_unclosed_context_wait",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 280
+      "line": 282
     },
     {
       "symbol": "deterministic",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 290
+      "line": 292
     },
     {
       "symbol": "signed_original_window_bundle",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 304
+      "line": 306
     },
     {
       "symbol": "test_signed_original_window_bundle_requires_private_owner_at_direct_context_entry",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 320
+      "line": 322
     },
     {
       "symbol": "test_real_signed_native_window_publishes_actual_zero_warmup_clock_and_closed_member_inputs",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 336
+      "line": 338
     },
     {
       "symbol": "unavailable",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 355
+      "line": 357
     },
     {
-      "symbol": "test_actual_signed_future_quotes_activate_original_liquidity_scope_without_calendar_flags",
+      "symbol": "test_actual_signed_historical_quotes_activate_original_liquidity_scope_without_calendar_flags",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 388
+      "line": 390
     },
     {
       "symbol": "deterministic",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 407
+      "line": 410
     },
     {
       "symbol": "test_default_quote_calendar_still_refuses_paper_and_unsigned_future",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 432
+      "line": 435
     },
     {
       "symbol": "test_actual_signed_full_solo_runs_original_engine_once_never_walkforward",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 72
+      "line": 73
     },
     {
       "symbol": "test_only_actual_signed_original_identity_selects_full_route",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_authorized_council_arm.py",
-      "line": 88
+      "line": 89
     },
     {
       "symbol": "seal",
@@ -3753,6 +3757,36 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_finite_program_search.py",
       "line": 97
+    },
+    {
+      "symbol": "MarketRegimeWarmupTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 10
+    },
+    {
+      "symbol": "candles",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 11
+    },
+    {
+      "symbol": "test_short_closed_histories_remain_unknown_without_fabricated_adx",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 15
+    },
+    {
+      "symbol": "test_mature_history_preserves_original_ta_indicator_values",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 24
+    },
+    {
+      "symbol": "test_first_complete_adx_window_uses_only_its_closed_prefix",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 30
     },
     {
       "symbol": "replay",
@@ -6602,25 +6636,13 @@
       "symbol": "fixture",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 329
+      "line": 334
     },
     {
       "symbol": "batch",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 378
-    },
-    {
-      "symbol": "context",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 387
-    },
-    {
-      "symbol": "single",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 388
+      "line": 383
     },
     {
       "symbol": "test_two_unused_native_carriers_receive_original_signed_contracts_idempotently",
@@ -6629,22 +6651,34 @@
       "line": 39
     },
     {
+      "symbol": "context",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+      "line": 392
+    },
+    {
+      "symbol": "single",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
+      "line": 393
+    },
+    {
       "symbol": "python",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 395
+      "line": 400
     },
     {
       "symbol": "receipt",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 403
+      "line": 408
     },
     {
       "symbol": "event",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
-      "line": 415
+      "line": 420
     },
     {
       "symbol": "test_observed_carrier_cannot_be_preregistered",
@@ -6716,19 +6750,19 @@
       "symbol": "originalSpreadStudyTerminalCases",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1138
+      "line": 1143
     },
     {
       "symbol": "test_original_depth_audit_constructor_seals_physical_inventory_and_dispatches_only_cheap",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1140
+      "line": 1145
     },
     {
       "symbol": "test_original_depth_real_native_view_consumes_empty_or_sealed_deferred_phase",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1186
+      "line": 1191
     },
     {
       "symbol": "test_assignment_json_storage_number_normalization_preserves_exact_presealed_semantics",
@@ -6740,43 +6774,43 @@
       "symbol": "originalDepthNativeCadences",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1338
+      "line": 1343
     },
     {
       "symbol": "test_original_depth_technical_cheap_closes_unused_deeper_and_six_episodes_without_fanout",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1341
+      "line": 1346
     },
     {
       "symbol": "originalDepthTechnicalResponses",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1371
+      "line": 1376
     },
     {
       "symbol": "test_original_depth_request_projection_and_legacy_inline_registry_cannot_authorize_a_phase",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1376
+      "line": 1381
     },
     {
       "symbol": "test_original_depth_archived_technical_witness_survives_source_change_without_phase_authority",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1398
+      "line": 1403
     },
     {
       "symbol": "test_original_prepared_depth_cheap_cli_publishes_one_job_without_replay",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1436
+      "line": 1441
     },
     {
       "symbol": "originalDepthFixture",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1470
+      "line": 1475
     },
     {
       "symbol": "test_changed_assignment_numeric_value_is_not_json_normalization_and_rolls_back",
@@ -6788,55 +6822,55 @@
       "symbol": "depthDeclaration",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1495
+      "line": 1500
     },
     {
       "symbol": "syntheticOriginalStudyBundle",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1503
+      "line": 1508
     },
     {
       "symbol": "test_future_native_constructor_refuses_missing_solo_declaration_without_partial_seals",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1570
+      "line": 1575
     },
     {
       "symbol": "test_future_native_constructor_seals_exact_matched_allocation_solo_without_model_mutation",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1587
+      "line": 1592
     },
     {
       "symbol": "test_fresh_native_constructor_seals_chosen_full_account_view_without_renormalizing_manifest",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1611
+      "line": 1616
     },
     {
       "symbol": "test_original_matched_preparation_cannot_be_upgraded_to_full_account_choice",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1637
+      "line": 1642
     },
     {
       "symbol": "fullAccountChosenSoloSelector",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1654
+      "line": 1659
     },
     {
       "symbol": "test_full_account_choice_refuses_an_original_source_attempt_before_partial_preparation",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1662
+      "line": 1667
     },
     {
       "symbol": "test_unprepared_native_constructor_and_removed_intent_cannot_fall_back_to_ordinary_dispatch",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1678
+      "line": 1683
     },
     {
       "symbol": "test_plan_that_cannot_bind_to_actual_execution_rolls_back_before_dispatch",
@@ -6848,19 +6882,19 @@
       "symbol": "test_prepared_native_constructor_seed_drift_is_not_a_new_or_ordinary_authority",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1699
+      "line": 1704
     },
     {
       "symbol": "test_actual_prepared_native_constructor_uses_original_comparison_in_normal_dispatch_not_legacy_pair_flags",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1710
+      "line": 1715
     },
     {
       "symbol": "fixture",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1733
+      "line": 1738
     },
     {
       "symbol": "test_dispatcher_and_preparation_share_one_lease",
@@ -6872,13 +6906,13 @@
       "symbol": "model",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1820
+      "line": 1825
     },
     {
       "symbol": "passport",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
-      "line": 1826
+      "line": 1831
     },
     {
       "symbol": "test_snapshot_or_original_observation_prevents_prospective_binding",
@@ -7469,6 +7503,14 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "tests": [
+        "test_short_closed_histories_remain_unknown_without_fabricated_adx",
+        "test_mature_history_preserves_original_ta_indicator_values",
+        "test_first_complete_adx_window_uses_only_its_closed_prefix"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_market_sessions.py",
       "tests": [
         "test_exact_context_quote_coverage_is_measured_before_liquidity_removes_unknown_rows",
@@ -7581,6 +7623,7 @@
         "test_release_requires_current_and_loaded_source",
         "test_source_hash_is_relative_ordered_content_hash",
         "test_health_reports_actual_boot_drift_without_claiming_replay_proof",
+        "test_effective_dependency_lock_changes_the_release_identity",
         "test_release_hash_orders_numeric_agent_ids_like_php",
         "test_real_source_seal_exposes_distinct_aggregate_without_reinterpreting_python_hash",
         "test_missing_or_unsealed_aggregate_cannot_borrow_full_runtime_identity",

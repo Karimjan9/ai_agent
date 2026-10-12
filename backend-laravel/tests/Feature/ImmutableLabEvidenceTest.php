@@ -1009,7 +1009,7 @@ class ImmutableLabEvidenceTest extends TestCase
         $evidence->attachRequest($run, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
-            'candles' => array_fill(0, 201, ['time' => '2026-01-01T00:00:00Z', 'close' => 2000]),
+            'candles' => array_fill(0, 201, ['time' => '2025-01-01T00:00:00Z', 'close' => 2000]),
         ], ['request_id' => $requestId]);
         $evidence->finishRun($run, 'completed', [
             'total_trades' => 0,
@@ -1019,7 +1019,7 @@ class ImmutableLabEvidenceTest extends TestCase
             'displayed_trade_count' => 0,
             'decision_trace' => [[
                 'candle_index' => 200,
-                'candle_time' => '2026-01-01T00:00:00Z',
+                'candle_time' => '2025-01-01T00:00:00Z',
                 'event_type' => 'signal_evaluation',
                 'action' => 'WAIT',
                 'accepted' => false,

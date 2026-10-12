@@ -108,7 +108,7 @@ class AcademyCanonicalHandoffTest extends TestCase
         $this->assertSame('blocked', json_decode(Artisan::output(), true)['status']);
     }
 
-    public function test_real_python_semantic_receipts_settle_the_exact_cohort_into_a_distinct_candidate_scaffold(): void
+    public function test_underpowered_python_receipts_create_a_diagnostic_scaffold_without_unlocking_next_stage(): void
     {
         Queue::fake();
         Storage::fake('academy_fixture_evidence');
@@ -190,15 +190,13 @@ class AcademyCanonicalHandoffTest extends TestCase
         $this->assertSame($candidate->model_version_id, data_get($successorContract, 'baseline_model_version_id'));
         $this->assertSame($identity['data_hash'], data_get($successorContract, 'prospective_source_identity.data_hash'));
         $this->assertSame($identity['mtf_bundle_hash'], data_get($successorContract, 'prospective_source_identity.mtf_bundle_hash'));
-        $this->assertSame('planned', data_get($settled, 'stage_progress.next_trial.status'));
-        $next = app(AcademyExperimentMaterializerService::class)->proposal();
-        $this->assertSame('would_materialize', $next['status'], json_encode($next));
-        $this->assertSame($candidate->model_version_id, $next['baseline_model_version_id']);
-        $this->assertSame(data_get($settled, 'stage_progress.next_trial.trial_id'), $next['trial_id']);
-        $continuation = app(XauusdEdgeFormationAcademyService::class)->curriculumContinuationEvidence($next['trial_id']);
-        $this->assertTrue($continuation['eligible'], json_encode($continuation));
-        $this->assertSame($candidate->model_version_id, $next['baseline_model_version_id']);
-        $this->assertSame($continuation, app(XauusdEdgeFormationAcademyService::class)->curriculumContinuationEvidence($next['trial_id']));
+        // Controllability is a diagnostic scaffold. UNDERPOWERED is not the
+        // immutable positive prerequisite required to admit a later axis.
+        $this->assertSame('blocked', data_get($settled, 'stage_progress.next_trial.status'));
+        $this->assertSame('ACADEMY_LEARNING_PROGRESS_HOLDS_NEW_WORK', data_get($settled, 'stage_progress.next_trial.reason'));
+        $this->assertSame('ACADEMY_IMMUTABLE_POSITIVE_PREREQUISITE_REQUIRED',
+            data_get($settled, 'stage_progress.next_trial.learning_progress.reason'));
+        $this->assertFalse(data_get($settled, 'stage_progress.next_trial.dispatch_allowed'));
         $this->assertFalse(data_get($settled, 'stage_progress.independent_causal_skill'));
         $this->assertSame('idle', app(AcademyExperimentSettlementReconcilerService::class)->reconcile('XAUUSD', 'H1', true)['status']);
         $this->assertDatabaseCount('edge_academy_passports', 2);

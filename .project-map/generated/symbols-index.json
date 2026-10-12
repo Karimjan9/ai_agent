@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-11T16:27:41.483Z",
-  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
-  "source_file_count": 1612,
-  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
+  "generated_at": "2026-10-12T18:23:26.010Z",
+  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
+  "source_file_count": 1629,
+  "git_head": "606d999c3efe83311938a6c90206a02f3fd82692",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -260,6 +260,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_market_adaptive_replay.py",
       "line": 562
+    },
+    {
+      "symbol": "MarketRegimeWarmupTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_market_regime.py",
+      "line": 10
     },
     {
       "symbol": "MonteCarloServiceTest",
@@ -535,7 +541,7 @@
       "symbol": "BackupDatabase",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/BackupDatabase.php",
-      "line": 10
+      "line": 11
     },
     {
       "symbol": "BuildAgentCouncilGeneration",
@@ -4525,19 +4531,19 @@
       "symbol": "caused",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 401
+      "line": 402
     },
     {
       "symbol": "removed",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 570
+      "line": 571
     },
     {
       "symbol": "ablation",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/EvolutionaryAuthorityFoundryService.php",
-      "line": 571
+      "line": 572
     },
     {
       "symbol": "EvolutionaryAuthorityLadderService",
@@ -5026,22 +5032,64 @@
       "line": 32
     },
     {
-      "symbol": "LabPopulationService",
+      "symbol": "LabPopulationAgentFactoryTrait",
       "kind": "php_type",
-      "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 31
+      "path": "backend-laravel/app/Services/LabPopulationAgentFactoryTrait.php",
+      "line": 32
+    },
+    {
+      "symbol": "LabPopulationConstructionTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
+      "line": 32
+    },
+    {
+      "symbol": "LabPopulationCouncilPlanningTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationCouncilPlanningTrait.php",
+      "line": 32
+    },
+    {
+      "symbol": "LabPopulationLineageTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationLineageTrait.php",
+      "line": 32
+    },
+    {
+      "symbol": "LabPopulationMutationTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationMutationTrait.php",
+      "line": 32
     },
     {
       "symbol": "forward",
       "kind": "php_type",
-      "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 4499
+      "path": "backend-laravel/app/Services/LabPopulationPlanningTrait.php",
+      "line": 1109
+    },
+    {
+      "symbol": "LabPopulationPlanningTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationPlanningTrait.php",
+      "line": 32
+    },
+    {
+      "symbol": "LabPopulationReplacementTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationReplacementTrait.php",
+      "line": 32
     },
     {
       "symbol": "gene",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/LabPopulationService.php",
-      "line": 471
+      "line": 195
+    },
+    {
+      "symbol": "LabPopulationService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/LabPopulationService.php",
+      "line": 31
     },
     {
       "symbol": "LabQueueJobInspector",
@@ -5818,6 +5866,12 @@
       "line": 14
     },
     {
+      "symbol": "ResearchRequestReferenceInventoryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ResearchRequestReferenceInventoryService.php",
+      "line": 9
+    },
+    {
       "symbol": "ResearchWindowExposureInventoryService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchWindowExposureInventoryService.php",
@@ -5846,6 +5900,12 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Services/RiskManagementLibraryService.php",
       "line": 9
+    },
+    {
+      "symbol": "RootExperimentPortfolioPlannerService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/RootExperimentPortfolioPlannerService.php",
+      "line": 8
     },
     {
       "symbol": "RuntimeEnsemblePolicyService",
@@ -7420,6 +7480,18 @@
       "line": 7
     },
     {
+      "symbol": "ResearchWindowProvenanceAuditService",
+      "kind": "php_type",
+      "path": "backend-laravel/scripts/benchmark-research-provenance.php",
+      "line": 19
+    },
+    {
+      "symbol": "LegacyResearchWindowProvenanceBenchmark",
+      "kind": "php_type",
+      "path": "backend-laravel/scripts/benchmark-research-provenance.php",
+      "line": 19
+    },
+    {
       "symbol": "NativeBi5DecoderTest",
       "kind": "python_class",
       "path": "backend-laravel/scripts/decode-dukascopy-tick-hour.test.py",
@@ -7430,6 +7502,30 @@
       "kind": "php_type",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
       "line": 4
+    },
+    {
+      "symbol": "BlockingNative",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 106
+    },
+    {
+      "symbol": "NativeProcess",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 20
+    },
+    {
+      "symbol": "BackupStreamTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 32
+    },
+    {
+      "symbol": "BlockingOutput",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 97
     },
     {
       "symbol": "AcademyCanonicalHandoffTest",
@@ -7765,6 +7861,12 @@
       "symbol": "DailyReportPagesTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/DailyReportPagesTest.php",
+      "line": 9
+    },
+    {
+      "symbol": "DatabaseBackupRetentionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
       "line": 9
     },
     {

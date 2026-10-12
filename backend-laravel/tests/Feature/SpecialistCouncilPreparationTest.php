@@ -998,7 +998,12 @@ PY;
                 'active_requests' => 0, 'screening_active' => 0, 'screening_capacity' => 1, 'full_active' => 0]),
             '*/api/backtest/run-all' => function ($http) use (&$requests, &$productions, &$processBudgets, $technicalSecondArm) {
                 $batch = $http->data(); $this->assertCount(1, $batch['strategies']);
-                $strategy = $batch['strategies'][0]; $requests[] = $batch;
+                $strategy = $batch['strategies'][0];
+                // Diagnostic capture needs only the original arm identity;
+                // retaining both full request/response graphs duplicates the
+                // real 15k-bar evidence already held by the transport/owner.
+                $requests[] = ['strategies' => [['native_spread_context_study_contract' => [
+                    'arm' => data_get($strategy, 'native_spread_context_study_contract.arm')]]]];
                 if ($technicalSecondArm) return Http::response(['error' => 'CONDITIONAL_ORIGINAL_STUDY_TRANSPORT_FAILURE'], 503);
                 $native = [...array_diff_key($batch, ['strategies' => true]), ...$strategy];
                 // Ask the same request-specific production selector, rather
@@ -1025,7 +1030,7 @@ PY;
                     dirname(base_path()).'/ai-service-python', $runtimeEnvironment);
                 $process->setTimeout($budget['seconds']); $process->setInput(json_encode(['mode' => 'replay', 'request' => $native], JSON_THROW_ON_ERROR));
                 $process->mustRun(); $result = json_decode($process->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-                $productions[] = $result;
+                $productions[] = true;
                 // Mirror the real Python JSON transport: preserve integral
                 // floats (2000.0 / 10000.0) used by the sealed native trace.
                 return Http::response(json_encode(['leaderboard' => [['strategy' => $strategy['strategy'], 'version' => $strategy['version'],

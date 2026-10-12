@@ -25,21 +25,12 @@ def apply_market_regime(df: pd.DataFrame, variant: str = "frozen") -> pd.DataFra
         df["ema_50_regime"] = EMAIndicator(close=df["close"], window=50).ema_indicator()
         df["ema_200_regime"] = EMAIndicator(close=df["close"], window=200).ema_indicator()
 
-        adx = ADXIndicator(
-            high=df["high"],
-            low=df["low"],
-            close=df["close"],
-            window=14,
-        )
-        df["adx"] = adx.adx()
-
-        atr = AverageTrueRange(
-            high=df["high"],
-            low=df["low"],
-            close=df["close"],
-            window=14,
-        )
-        df["atr_regime"] = atr.average_true_range()
+        # Wilder ADX needs two windows; ta indexes its initial average at 14.
+        # A short closed history is warmup, not an executable regime signal.
+        df["adx"] = (ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14).adx()
+                     if len(df) >= 28 else float("nan"))
+        df["atr_regime"] = (AverageTrueRange(high=df["high"], low=df["low"], close=df["close"], window=14).average_true_range()
+                            if len(df) >= 14 else float("nan"))
     else:
         df["ema_50_regime"] = df["close"].ewm(span=50, adjust=False).mean()
         df["ema_200_regime"] = df["close"].ewm(span=200, adjust=False).mean()

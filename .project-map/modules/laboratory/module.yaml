@@ -10,6 +10,14 @@ aliases:
   - native-depth-audit
   - qualified-solo
 paths:
+  - backend-laravel/app/Services/LabPopulationConstructionTrait.php
+  - backend-laravel/app/Services/LabPopulationReplacementTrait.php
+  - backend-laravel/app/Services/LabPopulationPlanningTrait.php
+  - backend-laravel/app/Services/LabPopulationCouncilPlanningTrait.php
+  - backend-laravel/app/Services/LabPopulationAgentFactoryTrait.php
+  - backend-laravel/app/Services/LabPopulationMutationTrait.php
+  - backend-laravel/app/Services/LabPopulationLineageTrait.php
+  - backend-laravel/app/Services/RootExperimentPortfolioPlannerService.php
   - backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php
   - backend-laravel/app/Services/UnusedDraftPriceDiscoveryPreparationService.php
   - backend-laravel/app/Services/UnusedDraftPriceDiscoveryReceiptService.php
@@ -22,6 +30,7 @@ paths:
   - backend-laravel/app/Console/Commands/DispatchFullLabValidation.php
   - backend-laravel/app/Http/Controllers/EvolutionLabController.php
   - backend-laravel/app/Services/LabPopulationService.php
+  - backend-laravel/app/Services/RescueCircuitBreakerService.php
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabImmutableEvidenceService.php
   - backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php
@@ -235,6 +244,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/RescueCircuitBreakerTest.php
+  - backend-laravel/tests/Feature/CausalEdgeAccountingTest.php
   - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php
   - backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php

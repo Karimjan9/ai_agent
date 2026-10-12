@@ -1,5 +1,12 @@
 # Causal-learning history
 
+## 2026-10-12 - Historical first-exposure registration
+
+ADR-038 separates historical market time from the preregistration and first
+exposure clock. Explicit v2 registrations can seal pre-2026 questions today;
+issuance still requires the original training, selection, context, warmup and
+holding exposure attestations. New capture records do not attest old history.
+
 ## 2026-10-11 - Continuous paper-only boundary
 
 All data from 2026-01-01 onward is permanently reserved for paper, including

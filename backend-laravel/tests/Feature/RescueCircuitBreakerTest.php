@@ -25,6 +25,103 @@ class RescueCircuitBreakerTest extends TestCase
 {
     use RefreshDatabase;
 
+    private string $originalStorage;
+    private string $fixtureStorage;
+    private string $holdoutHash;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->originalStorage = storage_path();
+        $this->fixtureStorage = sys_get_temp_dir().'/rescue-contract-fixture-'.bin2hex(random_bytes(8));
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($this->fixtureStorage.'/app/temporal-ablation');
+        $this->app->useStoragePath($this->fixtureStorage);
+        $this->writeSyntheticHoldout();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->app->useStoragePath($this->originalStorage);
+        $resolved = realpath($this->fixtureStorage);
+        $prefix = str_replace('\\', '/', (string) realpath(sys_get_temp_dir())).'/rescue-contract-fixture-';
+        if ($resolved && str_starts_with(str_replace('\\', '/', $resolved), $prefix)) {
+            \Illuminate\Support\Facades\File::deleteDirectory($resolved);
+        }
+        parent::tearDown();
+    }
+
+    /** Synthetic contract mechanics; these bytes never prove unused market history. */
+    private function writeSyntheticHoldout(string $first = '2014-01-01T00:00:00Z'): void
+    {
+        $file = storage_path('app/temporal-ablation/fixture.csv');
+        $csv = "time,open,high,low,close,volume\n";
+        $origin = \Carbon\CarbonImmutable::parse($first, 'UTC');
+        foreach (range(0, 23) as $index) $csv .= $origin->addHours($index)->toIso8601String().",100,101,99,100,10\n";
+        file_put_contents($file, $csv);
+        $this->holdoutHash = hash_file('sha256', $file);
+        file_put_contents(storage_path('app/temporal-ablation/XAUUSD_H1_manifest.json'), json_encode([
+            'protocol' => 'temporal_clean_ablation_manifest_v2', 'symbol' => 'XAUUSD', 'timeframe' => 'H1',
+            'independent_attestation' => true, 'independent_holdout' => true,
+            'data_identity_protocol' => 'content_and_timestamp_disjoint_v1', 'synthetic_test_fixture' => true,
+            'windows' => [['role' => 'sealed_holdout', 'window_id' => 'synthetic-disjoint-input',
+                'dataset_path' => $file, 'data_hash' => $this->holdoutHash, 'sealed' => true,
+                'independent_from_rescue' => true, 'candle_count' => 24,
+                'attestation' => 'derived_from_independent_source_non_overlap_v1']],
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    public function test_paper_clocks_cannot_reopen_rescue_even_with_a_real_disjoint_historical_file(): void
+    {
+        $lab = $this->lab();
+        $profile = [...$this->profile(), 'cohort_mode' => StructuralResearchCohortService::COHORT_MODE];
+        $service = app(RescueCircuitBreakerService::class);
+        $generation = $this->rescueGeneration($lab, 1, 'old-source', 100, $profile);
+        foreach ([null, 'invalid', '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z',
+            '2028-01-01T00:00:00Z', '2035-01-01T00:00:00Z', '2098-01-01T00:00:00Z'] as $clock) {
+            $snapshot = ['data_fingerprint' => 'new-source', 'data_count' => 124, 'latest_candle' => $clock];
+            $decision = $service->admission($lab, $profile, $generation, $snapshot);
+            $this->assertFalse($decision['allowed'], (string) $clock);
+            $this->assertFalse(data_get($decision, 'history.independent_new_evidence'));
+            $this->assertFalse($service->independentEvidenceAdmission($lab, $generation, $profile, $snapshot)['allowed']);
+        }
+    }
+
+    public function test_copied_holdout_labels_cannot_replace_original_bytes(): void
+    {
+        \Illuminate\Support\Facades\File::delete(storage_path('app/temporal-ablation/XAUUSD_H1_manifest.json'));
+        $profile = [...$this->profile(), 'cohort_mode' => StructuralResearchCohortService::COHORT_MODE,
+            'evidence_admission' => ['independent_holdout' => ['status' => 'ready']],
+            'sealed_holdout' => ['status' => 'sealed']];
+        $decision = app(RescueCircuitBreakerService::class)->independentEvidenceAdmission($this->lab(), null, $profile,
+            ['data_count' => 200, 'latest_candle' => '2025-01-01T00:00:00Z', 'independent_data_hash' => str_repeat('a', 64)]);
+        $this->assertFalse($decision['allowed']);
+        $this->assertFalse(data_get($decision, 'sealed_holdout_evidence.allowed'));
+        $this->assertSame('SEALED_HOLDOUT_MANIFEST_MISSING', data_get($decision, 'sealed_holdout_evidence.reason'));
+    }
+
+    public function test_hash_matching_paper_file_cannot_use_a_historical_manifest_label(): void
+    {
+        $this->writeSyntheticHoldout('2027-01-01T00:00:00Z');
+        $profile = [...$this->profile(), 'cohort_mode' => StructuralResearchCohortService::COHORT_MODE];
+        $decision = app(RescueCircuitBreakerService::class)->independentEvidenceAdmission($this->lab(), null, $profile,
+            ['data_count' => 200, 'latest_candle' => '2025-01-01T00:00:00Z']);
+        $this->assertFalse($decision['allowed']);
+        $this->assertTrue(data_get($decision, 'sealed_holdout_evidence.file_hash_matches_manifest'));
+        $this->assertFalse(data_get($decision, 'sealed_holdout_evidence.file_events_pre_paper'));
+    }
+
+    public function test_snapshot_counts_only_historical_candles(): void
+    {
+        $symbol = \App\Models\Symbol::create(['code' => 'XAUUSD', 'display_name' => 'Synthetic gold']);
+        foreach (['2025-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2027-01-01T00:00:00Z'] as $time) {
+            \App\Models\Candle::create(['symbol_id' => $symbol->id, 'timeframe' => 'H1', 'time' => $time,
+                'open' => 100, 'high' => 101, 'low' => 99, 'close' => 100, 'volume' => 10]);
+        }
+        $snapshot = app(RescueCircuitBreakerService::class)->currentDataSnapshot($this->lab());
+        $this->assertSame(1, $snapshot['data_count']);
+        $this->assertStringStartsWith('2025-01-01', $snapshot['latest_candle']);
+    }
+
     public function test_three_same_temporal_cohorts_and_twelve_siblings_are_blocked(): void
     {
         $lab = $this->lab();
@@ -40,7 +137,7 @@ class RescueCircuitBreakerTest extends TestCase
         $decision = $service->admission($lab, $profile, $latest, [
             'data_fingerprint' => 'same-dataset',
             'data_count' => 100,
-            'latest_candle' => '2026-08-01 00:00:00',
+            'latest_candle' => '2025-08-01 00:00:00',
         ]);
 
         $this->assertFalse($decision['allowed']);
@@ -66,12 +163,14 @@ class RescueCircuitBreakerTest extends TestCase
         $same = $service->admission($lab, $profile, $generation, [
             'data_fingerprint' => 'dataset-a',
             'data_count' => 100,
+            'latest_candle' => '2025-08-01 00:00:00',
         ]);
         $this->assertFalse($same['allowed']);
 
         $newWindow = $service->admission($lab, $profile, $generation, [
             'data_fingerprint' => 'dataset-b',
             'data_count' => 124,
+            'latest_candle' => '2025-08-02 00:00:00',
         ]);
         $this->assertTrue($newWindow['allowed']);
         $this->assertTrue(data_get($newWindow, 'history.independent_new_evidence'));
@@ -113,7 +212,7 @@ class RescueCircuitBreakerTest extends TestCase
             [
                 'data_fingerprint' => 'rolling-source-new',
                 'data_count' => 6180,
-                'latest_candle' => '2026-08-18 00:00:00',
+                'latest_candle' => '2025-08-18 00:00:00',
             ],
         );
 
@@ -122,6 +221,8 @@ class RescueCircuitBreakerTest extends TestCase
         $this->assertTrue(data_get($decision, 'sealed_holdout_evidence.file_hash_matches_manifest'));
         $this->assertSame(7, $decision['fresh_candles']);
         $this->assertFalse($decision['promotion_evidence']);
+        $this->assertFalse($decision['candidate_unused_demonstrated']);
+        $this->assertFalse($decision['scientific_independent_validation_authority']);
     }
 
     public function test_a_sealed_holdout_hash_cannot_reopen_the_same_rescue_family(): void
@@ -134,7 +235,7 @@ class RescueCircuitBreakerTest extends TestCase
         $service = app(RescueCircuitBreakerService::class);
         $profile['hypothesis_hash'] = $service->hypothesisHash($profile);
         $generation = $this->rescueGeneration($lab, 1, 'rolling-source', 6173, $profile);
-        $holdoutHash = 'd9622f339dbb6c99d89234fa45306550d08aa5eb2ad688d48e72760a3bf4ccd1';
+        $holdoutHash = $this->holdoutHash;
         $generation->update(['trigger_context' => [
             ...$generation->trigger_context,
             'independent_evidence_admission' => [
@@ -145,7 +246,7 @@ class RescueCircuitBreakerTest extends TestCase
         $decision = $service->admission($lab, $profile, $generation->fresh(), [
             'data_fingerprint' => 'rolling-source',
             'data_count' => 6173,
-            'latest_candle' => '2026-08-18 00:00:00',
+            'latest_candle' => '2025-08-18 00:00:00',
         ]);
 
         $this->assertFalse($decision['allowed']);
@@ -163,7 +264,7 @@ class RescueCircuitBreakerTest extends TestCase
         $service = app(RescueCircuitBreakerService::class);
         $profile['hypothesis_hash'] = $service->hypothesisHash($profile);
         $generation = $this->rescueGeneration($lab, 1, 'rolling-source', 6173, $profile);
-        $holdoutHash = 'd9622f339dbb6c99d89234fa45306550d08aa5eb2ad688d48e72760a3bf4ccd1';
+        $holdoutHash = $this->holdoutHash;
         $generation->update(['trigger_context' => [
             ...$generation->trigger_context,
             'independent_evidence_admission' => [
@@ -174,7 +275,7 @@ class RescueCircuitBreakerTest extends TestCase
         $decision = $service->admission($lab, $profile, $generation->fresh(), [
             'data_fingerprint' => 'rolling-source-new-window',
             'data_count' => 6197,
-            'latest_candle' => '2026-08-19 00:00:00',
+            'latest_candle' => '2025-08-19 00:00:00',
         ]);
 
         $this->assertTrue($decision['allowed']);

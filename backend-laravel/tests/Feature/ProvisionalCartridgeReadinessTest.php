@@ -71,8 +71,14 @@ class ProvisionalCartridgeReadinessTest extends TestCase
         $failed = ['status' => 'assessed', 'assessment' => ['status' => 'non_controlling_axis', 'target_stage' => 'setup',
             'checks' => ['upstream_identity_preserved' => false, 'decision_identity_valid' => true]]];
         $this->assertSame('market_cartographer', $method->invoke($foundry, $failed));
-        $passed = ['status' => 'assessed', 'assessment' => ['status' => 'controllable', 'target_stage' => 'setup',
-            'checks' => ['upstream_identity_preserved' => true, 'decision_identity_valid' => true]]];
+        $passed = ['status' => 'assessed', 'assessment' => [
+            'protocol' => CausalStageMasteryDirectorService::PROTOCOL,
+            'status' => 'controllable', 'target_stage' => 'setup',
+            'evidence_assessable' => true, 'semantic_effect_observed' => true,
+            'candidate_counts' => ['setup' => 2], 'control_counts' => ['setup' => 1],
+            'checks' => ['parameter_changed' => true, 'target_transition_changed' => true,
+                'upstream_identity_preserved' => true, 'decision_identity_valid' => true,
+                'minimum_event_delta_reached' => true, 'duplicate_behavior' => true, 'behavior_excessive' => true]]];
         $this->assertSame('confirmation_specialist', $method->invoke($foundry, $passed));
         unset($passed['assessment']['checks']['decision_identity_valid']);
         $this->assertSame('market_cartographer', $method->invoke($foundry, $passed));

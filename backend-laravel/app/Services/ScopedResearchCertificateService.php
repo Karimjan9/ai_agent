@@ -28,6 +28,8 @@ class ScopedResearchCertificateService
 
     public const AUTHORITY_POLICY = 'independent_scoped_research_authority_v1';
 
+    public const FIRST_EXPOSURE_TIME_POLICY = 'historical_first_exposure_v2';
+
     public const SCOPES = ['component', 'selector', 'council', 'inheritance'];
 
     public function __construct(private ResearchPaperEpochContractService $epochs) {}
@@ -67,7 +69,8 @@ class ScopedResearchCertificateService
                 return $this->inspect((int) $existing->id);
             }
             $clock = CarbonImmutable::now('UTC');
-            if (! $clock->lessThan(CarbonImmutable::parse($design['validation_start']))) {
+            if (($design['registration_time_policy'] ?? null) !== self::FIRST_EXPOSURE_TIME_POLICY
+                && ! $clock->lessThan(CarbonImmutable::parse($design['validation_start']))) {
                 throw new LogicException('SCOPED_CERTIFICATE_RETROSPECTIVE_REGISTRATION_FORBIDDEN');
             }
             if (($design['source_hypothesis_only'] ?? false) !== true && $this->alreadyObserved($original, $snapshot)) {
@@ -417,6 +420,14 @@ class ScopedResearchCertificateService
             || ! $this->epochs->researchIntervalDisjointFromPaper($start->toIso8601String(), $end->toIso8601String())) {
             throw new LogicException('SCOPED_CERTIFICATE_PAPER_DATA_FORBIDDEN');
         }
+        if (array_key_exists('registration_time_policy', $design)) {
+            if ($design['registration_time_policy'] !== self::FIRST_EXPOSURE_TIME_POLICY
+                || ($design['authority_policy'] ?? null) !== self::AUTHORITY_POLICY
+                || ($design['source_hypothesis_only'] ?? false) === true
+                || ($design['data_manifest_hash'] ?? null) !== null) {
+                throw new LogicException('SCOPED_CERTIFICATE_FIRST_EXPOSURE_DESIGN_REQUIRED');
+            }
+        }
         if (isset($design['authority_policy'])) {
             if ($design['authority_policy'] !== self::AUTHORITY_POLICY || ($design['source_hypothesis_only'] ?? false) === true) {
                 throw new LogicException('SCOPED_CERTIFICATE_ORIGINAL_AUTHORITY_POLICY_REQUIRED');
@@ -448,7 +459,9 @@ class ScopedResearchCertificateService
                 || ($policy['execution_timeframe'] ?? null) !== 'M5'
                 || ($policy['context_timeframes'] ?? null) !== ['H4', 'H1', 'M15']
                 || ($policy['warmup_policy'] ?? null) !== 'all_original_closed_source_rows_inside_registered_window'
-                || ($policy['selection_policy'] ?? null) !== 'frozen_before_first_event') {
+                || ($policy['selection_policy'] ?? null) !==
+                    (($design['registration_time_policy'] ?? null) === self::FIRST_EXPOSURE_TIME_POLICY
+                        ? 'frozen_before_first_exposure' : 'frozen_before_first_event')) {
                 throw new LogicException('SCOPED_CERTIFICATE_COMPLETE_EXPOSURE_POLICY_REQUIRED');
             }
             $roster = $design['validation_windows'] ?? null;
@@ -620,7 +633,8 @@ class ScopedResearchCertificateService
         $design = $this->normalizeDesign($row->scope, (array) ($row->payload['design'] ?? []));
         if (! hash_equals($row->design_hash, $this->hash($design))
             || ! hash_equals($row->source_hash, $this->hash($this->sourceSnapshot($source, $design)))
-            || ! $row->preregistered_at->lessThan(CarbonImmutable::parse($design['validation_start']))) {
+            || (($design['registration_time_policy'] ?? null) !== self::FIRST_EXPOSURE_TIME_POLICY
+                && ! $row->preregistered_at->lessThan(CarbonImmutable::parse($design['validation_start'])))) {
             throw new LogicException('SCOPED_CERTIFICATE_ORIGINAL_SOURCE_OR_DESIGN_DRIFT');
         }
 

@@ -196,7 +196,8 @@ class SpecialistCouncilFollowupReadinessTest extends TestCase
                 $this->assertTrue(File::copyDirectory($originalProject.'/'.$directory, $mirror.'/'.$directory));
             }
             foreach (['backend-laravel/composer.lock', 'backend-laravel/package-lock.json',
-                'ai-service-python/requirements.txt', 'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock'] as $file) {
+                'ai-service-python/requirements.txt', 'ai-service-python/requirements.lock.txt',
+                'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock'] as $file) {
                 if (is_file($originalProject.'/'.$file)) $this->assertTrue(File::copy($originalProject.'/'.$file, $mirror.'/'.$file));
             }
             // Only the source lookup moves. The original evidence storage and

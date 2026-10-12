@@ -68,7 +68,7 @@ class LighthouseVerticalLoopMonitoringTest extends TestCase
         $this->assertDatabaseCount('lighthouse_vertical_loop_monitor_runs', 1);
         $this->assertDatabaseHas('service_health_checks', [
             'service_key' => 'lighthouse_vertical_loop:XAUUSD:H1',
-            'status' => 'warning',
+            'status' => 'critical',
         ]);
     }
 

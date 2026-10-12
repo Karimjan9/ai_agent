@@ -195,14 +195,14 @@ class TradingInstrumentOperatingSystemTest extends TestCase
     /** @return array<string,string> */
     private function authorizedWindow(int $index): array
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         $manifests = [];
         foreach (range(1, 5) as $month) {
             $manifests[] = [
                 'authorization_id' => 'operating-window-'.$month,
-                'research_epoch_id' => 'synthetic-post-paper-research',
-                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'research_epoch_id' => 'synthetic-pre-paper-research',
+                'start_inclusive' => sprintf('2025-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
                 'dataset_sha256' => hash('sha256', 'operating-dataset-'.$month),
                 'purpose' => 'instrument_independent_validation',
             ];

@@ -312,12 +312,12 @@ class InstrumentValidationEpochTest extends TestCase
 
     private function setupProof(): array
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12', 'UTC'));
         $manifests = [];
         foreach ([1, 2, 3] as $month) {
             $manifests[] = ['authorization_id' => 'delta-window-'.$month, 'research_epoch_id' => 'delta-validation-v2',
-                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'start_inclusive' => sprintf('2025-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
                 'dataset_sha256' => hash('sha256', 'delta-data-'.$month), 'purpose' => 'instrument_independent_validation'];
         }
         config()->set('services.instrument_policy.authorized_research_windows', $manifests);

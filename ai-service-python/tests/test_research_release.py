@@ -63,6 +63,18 @@ def test_health_reports_actual_boot_drift_without_claiming_replay_proof(monkeypa
     assert research_release.health_receipt()["loaded_code_current"] is True
 
 
+def test_effective_dependency_lock_changes_the_release_identity(tmp_path: Path):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "runtime.py").write_bytes(b"unchanged runtime")
+    baseline = research_release.source_hash(tmp_path)
+    lock = tmp_path / "requirements.lock.txt"
+    lock.write_bytes(b"dependency==1.0\n")
+    locked = research_release.source_hash(tmp_path)
+    assert locked != baseline
+    lock.write_bytes(b"dependency==2.0\n")
+    assert research_release.source_hash(tmp_path) != locked
+
+
 def test_release_hash_orders_numeric_agent_ids_like_php():
     identity = {"protocol": "prospective_research_release_v1",
                 "agent_execution_hashes": {"10": "b", "9": "a"}}

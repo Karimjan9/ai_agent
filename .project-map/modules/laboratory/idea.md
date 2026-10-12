@@ -30,3 +30,11 @@ dependencies; registration or deployment alone grants no trading authority.
 
 For the complete policy, read `docs/project-memory/ai-learning-laboratory.md`
 and `docs/project-memory/adaptive-evolution.md`.
+
+`LabPopulationService` retains its public API, dependencies, constructor state
+and constants. Its construction, replacement, planning, council planning,
+agent factory, mutation and lineage methods live in seven `LabPopulation*Trait`
+files composed into that same class. These are internal method groups, not
+new admission/execution owners. `RootExperimentPortfolioPlannerService` owns
+the extracted root portfolio plan. Use the trait source anchors for method
+bodies and the service for state and dependency wiring.

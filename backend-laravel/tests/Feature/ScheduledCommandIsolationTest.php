@@ -14,6 +14,89 @@ use Tests\TestCase;
 
 class ScheduledCommandIsolationTest extends TestCase
 {
+    public function test_backup_has_a_private_hour_lease_below_redis_visibility(): void
+    {
+        config(['queue.default'=>'redis', 'queue.connections.redis.retry_after'=>4500]);
+        $lane = RunScheduledArtisanCommandJob::scheduledLane('ops:backup-database');
+        $job = new RunScheduledArtisanCommandJob('ops:backup-database', ['--retain'=>1], $lane);
+        $this->assertSame('scheduler-backup', $lane);
+        $this->assertSame('scheduler-backup', $job->queue);
+        $this->assertSame(3600, $job->timeout);
+        $this->assertLessThan(config('queue.connections.redis.retry_after'), $job->timeout);
+        $this->assertSame(4800, $job->uniqueFor);
+        $this->assertSame('scheduler-ops', RunScheduledArtisanCommandJob::scheduledLane('ops:cleanup-legacy-backups'));
+    }
+
+    public function test_all_native_pending_symbol_lines_defer_the_original_nonzero_exit(): void
+    {
+        $result = app(ScheduledCommandOutcomeClassifierService::class)->classify('market-data:update', [], 1,
+            "XAUUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending\nEURUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending");
+        $this->assertSame('deferred_external_dependency', $result['status']);
+        $this->assertFalse($result['throw']);
+        $this->assertSame(1, $result['exit_code']);
+    }
+
+    public function test_native_pending_cannot_hide_an_authentication_failure_or_ambiguous_marker(): void
+    {
+        foreach ([
+            ['market-data:update', "XAUUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending\nEURUSD: HTTP403 authentication refused"],
+            ['market-data:update', "XAUUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: service unavailable\nEURUSD: HTTP403 authentication refused"],
+            ['market-data:update', 'Unhandled wrapper: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending'],
+            ['market-data:sync-volume', 'XAUUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending'],
+            ['market-data:sync-volume', 'DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED:'],
+        ] as [$command, $output]) {
+            $result = app(ScheduledCommandOutcomeClassifierService::class)->classify($command, [], 1, $output);
+            $this->assertSame('technical_failure', $result['status'], $output);
+            $this->assertTrue($result['throw'], $output);
+        }
+    }
+
+    public function test_native_archive_pending_is_deferred_without_poisoning_queue_health(): void
+    {
+        $arguments = ['symbol' => 'XAUUSD', '--timeframe' => 'M15', '--tail-hours' => 72];
+        $message = 'DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: no completed native price/tick evidence';
+        Artisan::shouldReceive('call')->once()->with('market-data:sync-volume', $arguments)->andReturn(1);
+        Artisan::shouldReceive('output')->once()->andReturn($message);
+        $job = new RunScheduledArtisanCommandJob('market-data:sync-volume', $arguments, 'scheduler-market');
+
+        $job->handle(app(ScheduledCommandOutcomeClassifierService::class));
+
+        $status = Cache::get($job->statusCacheKey());
+        $this->assertSame('deferred_external_dependency', $status['status']);
+        $this->assertSame(1, $status['outcome']['exit_code']);
+        $this->assertFalse($status['outcome']['throw']);
+    }
+
+    public function test_scheduled_mixed_market_failure_remains_a_real_failed_job(): void
+    {
+        $message = "XAUUSD: DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: archive pending\nEURUSD: HTTP403 authentication refused";
+        Artisan::shouldReceive('call')->once()->with('market-data:update', [])->andReturn(1);
+        Artisan::shouldReceive('output')->once()->andReturn($message);
+        $job = new RunScheduledArtisanCommandJob('market-data:update', [], 'scheduler-market');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Scheduled command market-data:update returned exit code 1');
+        try {
+            $job->handle(app(ScheduledCommandOutcomeClassifierService::class));
+        } finally {
+            $this->assertSame('failed', Cache::get($job->statusCacheKey())['status']);
+        }
+    }
+
+    public function test_native_pending_marker_does_not_hide_unrelated_or_schema_failures(): void
+    {
+        $classifier = app(ScheduledCommandOutcomeClassifierService::class);
+        foreach ([
+            ['trading:dispatch-full-validation', 'DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED: unavailable'],
+            ['market-data:sync-volume', 'HTTP 202'],
+            ['market-data:sync-volume', 'DUKASCOPY_NATIVE_SCHEMA_INVALID'],
+            ['market-data:sync-volume', 'HTTP 403 authentication refused'],
+        ] as [$command, $message]) {
+            $outcome = $classifier->classify($command, [], 1, $message);
+            $this->assertTrue($outcome['throw']);
+            $this->assertSame('technical_failure', $outcome['status']);
+        }
+    }
+
     public function test_cross_platform_runner_builds_a_shell_free_artisan_command_line(): void
     {
         $runner = app(ScheduledArtisanProcessRunnerService::class);

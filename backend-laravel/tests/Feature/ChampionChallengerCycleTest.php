@@ -21,11 +21,10 @@ class ChampionChallengerCycleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_challenger_replaces_only_the_same_market_champion_after_all_gates(): void
+    public function test_copied_paper_metrics_and_admission_flags_cannot_replace_a_market_champion(): void
     {
-        // This is the legacy promotion protocol contract. Production keeps
-        // the final champion mutation frozen until the evidence repair is
-        // explicitly reopened.
+        // Even with the operator freeze lifted, caller summaries and a fixture
+        // admission row do not establish market or measured paper readiness.
         config(['services.promotion.freeze_champion' => false]);
         $champion = ModelVersion::create($this->model('breakout_v1', 'v1'));
         $challenger = ModelVersion::create($this->model('breakout_v2', 'v2'));
@@ -47,17 +46,19 @@ class ChampionChallengerCycleTest extends TestCase
 
         $second = $service->evaluate('breakout_v2', 'XAUUSD', 'H1', 84, $this->resultMetrics(80, [80, 79, 81]));
         $this->assertSame('forward_validated', $second->status);
-        $this->assertDatabaseHas('model_market_performance', ['model_version_id' => $champion->id, 'status' => 'champion']);
+        $this->assertDatabaseHas('model_market_performance', ['model_version_id' => $champion->id, 'status' => 'paper']);
         $service->recordPaperResult($second, ['sample_count' => 55, 'profit_factor' => 1.3, 'max_drawdown' => 9, 'net_profit_percent' => 5]);
         $this->grantPaperAuthority($challenger);
         $service->finalizeHoldout($second, ['score' => 82, 'result' => ['profit_factor' => 1.5, 'max_drawdown_percent' => 8, 'total_trades' => 50, 'monte_carlo' => ['risk_of_ruin_percent' => 3]]]);
 
         $this->assertDatabaseHas('model_market_performance', [
-            'model_version_id' => $challenger->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'champion',
+            'model_version_id' => $challenger->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'paper',
         ]);
         $this->assertDatabaseHas('model_market_performance', [
-            'model_version_id' => $champion->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'archived',
+            'model_version_id' => $champion->id, 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'status' => 'paper',
         ]);
+        $this->assertDatabaseMissing('model_market_performance', ['status' => 'champion']);
+        $this->assertDatabaseMissing('model_versions', ['status' => 'active']);
     }
 
     private function grantPaperAuthority(ModelVersion $model): void

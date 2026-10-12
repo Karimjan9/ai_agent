@@ -77,7 +77,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
     /** Conditional consumed-proof shape isolates authorization; actual public replay is tested separately. */
     public function test_signed_original_authorization_survives_registry_removal_but_unsigned_and_mismatched_proofs_refuse(): void
     {
-        $this->travelTo(\Carbon\CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-12T00:00:00Z'));
         [$source, $run, $request, $response, $plan] = $this->original(true);
         $owner = app(SpecialistCouncilLifecycleService::class);
         $archive = (new \ReflectionMethod($owner, 'assertArchivedOriginalRelease'))->invoke($owner, $run, $request, $response, $plan);
@@ -106,7 +106,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
     /** Pure post-attestation witness guard; this conditional shape grants no native/exam authority. */
     public function test_native_context_witness_requires_every_member_to_match_the_original_signed_source(): void
     {
-        $this->travelTo(\Carbon\CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-12T00:00:00Z'));
         [, , $request, $response] = $this->original(true);
         $owner = app(SpecialistCouncilLifecycleService::class);
         $check = new \ReflectionMethod(SpecialistCouncilLifecycleService::class, 'originalNativeContextWitness');
@@ -120,7 +120,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
         $bad = $receipt; unset($bad['members'][2]['context_source_attestations']['H1']); $variants[] = $bad;
         foreach (['actual_source_sha256' => hash('sha256', 'wrong native context bytes'), 'consumed_rows' => 1,
             'consumed_data_hash' => hash('sha256', 'different actual member consumption'), 'status' => 'unsealed', 'stream' => 'H4',
-            'first_candle_utc' => '2027-02-01T00:01:00Z', 'last_candle_utc' => '2027-02-01T02:00:00Z'] as $field => $value) {
+            'first_candle_utc' => '2025-02-01T00:01:00Z', 'last_candle_utc' => '2025-02-01T02:00:00Z'] as $field => $value) {
             $bad = $receipt; $bad['members'][2]['context_source_attestations']['H1'][$field] = $value; $variants[] = $bad;
         }
         foreach ($variants as $bad) {
@@ -141,7 +141,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
             config(['services.internal_api.token' => str_repeat('historical-test-issuer-key-', 3)]);
             foreach (['M5' => 300, 'H4' => 14400, 'H1' => 3600, 'M15' => 900] as $stream => $step) {
                 $path = $this->fixtureRoot.'/datasets/'.$stream.'.csv'; File::ensureDirectoryExists(dirname($path));
-                $first = '2027-02-01T00:00:00Z'; $last = \Carbon\CarbonImmutable::parse($first)->addSeconds($step)->format('Y-m-d\TH:i:s\Z');
+                $first = '2025-02-01T00:00:00Z'; $last = \Carbon\CarbonImmutable::parse($first)->addSeconds($step)->format('Y-m-d\TH:i:s\Z');
                 File::put($path, "time,open,high,low,close,volume\n{$first},100,101,99,100,10\n{$last},100,102,99,101,11\n");
                 $records[$stream] = ['path' => $path, 'sha256' => hash_file('sha256', $path), 'rows' => 2, 'first_candle_at' => $first, 'last_candle_at' => $last];
                 $files[$stream] = ['path' => $path, 'sha256' => $records[$stream]['sha256'], 'rows' => 2, 'start_inclusive' => $first, 'last_candle_at' => $last];
@@ -149,7 +149,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
             $dataHash = app(ResearchPaperEpochContractService::class)->parameterHash($records);
             config(['services.instrument_policy.authorized_research_windows' => [['authorization_id' => 'original-history-unit',
                 'research_epoch_id' => 'original-history', 'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $dataHash,
-                'start_inclusive' => '2027-02-01T00:00:00Z', 'end_exclusive' => '2027-03-01T00:00:00Z']]]);
+                'start_inclusive' => '2025-02-01T00:00:00Z', 'end_exclusive' => '2025-03-01T00:00:00Z']]]);
             $window = app(\App\Services\InstrumentResearchWindowService::class)->seal('original-history-unit', $dataHash);
             $this->assertNotNull($window);
         }
@@ -176,7 +176,7 @@ class SpecialistCouncilHistoricalProofTest extends TestCase
                 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'ema_rsi', 'origin' => 'archive_guard_fixture', 'lifecycle_status' => 'completed']);
             $generationId = (int) $generation->id; $agentId = (int) $agent->id;
             $runtimePolicy = ['protocol' => 'specialist_council_original_full_source_v1', 'maximum_source_rows' => 200000, 'warmup_rows' => 0];
-            $scope = ['start_inclusive' => $files['M5']['start_inclusive'], 'end_exclusive' => '2027-02-01T00:10:00Z', 'rows' => 2, 'decision_rows' => 1, 'warmup_rows' => 0,
+            $scope = ['start_inclusive' => $files['M5']['start_inclusive'], 'end_exclusive' => '2025-02-01T00:10:00Z', 'rows' => 2, 'decision_rows' => 1, 'warmup_rows' => 0,
                 'policy_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($runtimePolicy)];
             $binding = ['version_id' => 41, 'manifest_hash' => hash('sha256', 'isolated manifest'), 'plan_hash' => hash('sha256', 'isolated plan'), 'arm_key' => 'original-solo'];
             $strategy = ['lab_agent_id' => $agentId, 'strategy' => $model->strategy, 'version' => $model->version, 'parameters' => [], 'specialist_council_evaluation' => $binding];

@@ -453,3 +453,11 @@ generation, so an unrelated discovery slot cannot make it incomplete. A
 technical-quarantine generation with `constructor_contract_abort` and a
 persisted failed slot is terminal evidence, not a resumable draft; successor
 construction does not mutate its agents or erase the abort receipt.
+
+Rescue admission requires an actual pre-paper snapshot clock. Its canonical
+candle snapshot excludes all events from 2026-01-01 onward. Copied `ready` or
+`sealed` labels cannot replace the source file. A rescue holdout must match its
+content hash, chronological CSV clock and physical row count. Disjoint rescue
+input grants no historical non-exposure or scientific independent-validation
+authority. The native panel constructor likewise consumes only pre-paper
+market intervals through the central epoch contract.

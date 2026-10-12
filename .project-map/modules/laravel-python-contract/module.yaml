@@ -9,6 +9,9 @@ aliases:
   - hash
   - attestation
 paths:
+  - ai-service-python/requirements.lock.txt
+  - ai-service-python/requirements-dev.txt
+  - ai-service-python/tests/test_market_regime.py
   - backend-laravel/ecosystem.config.cjs
   - backend-laravel/app/Services/LabAgentEvaluationService.php
   - backend-laravel/app/Services/LabImmutableEvidenceService.php
@@ -84,7 +87,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
-  - authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Only an internal nonserialized witness permits the future closed-context and quote calendar route. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.
+  - authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.
   - Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.
   - unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).
   - Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.
@@ -127,6 +130,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_market_regime.py
   - ai-service-python/tests/test_scoped_research_runtime.py
   - ai-service-python/tests/test_scoped_position_maturity.py
   - ai-service-python/tests/test_scoped_selector_partition.py

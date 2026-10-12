@@ -1,4 +1,4 @@
-"""Mechanism fixtures: future clock/data are not real independent evidence."""
+"""Synthetic pre-2026 inputs verify execution mechanics, not market independence."""
 import json
 import hashlib
 from copy import deepcopy
@@ -19,16 +19,17 @@ from app.services.execution_contract import execution_contract_metadata
 def arm(authorized, tmp_path, monkeypatch):
     payload = authorized
     files = payload.policy_context['authorized_research_transport']['files']
+    first = pd.Timestamp(files['M5']['start_inclusive'])
     records = {'M5': {'path': payload.dataset_path, 'sha256': payload.replay_dataset_hash}}
     for timeframe, minutes in [('M15', 15), ('H1', 60), ('H4', 240)]:
         path = tmp_path / (timeframe + '.csv')
-        last = pd.Timestamp('2027-02-01', tz='UTC') + pd.Timedelta(minutes=minutes)
-        path.write_text('time,open,high,low,close,volume\n2027-02-01T00:00:00Z,100,101,99,100,10\n'
+        last = first + pd.Timedelta(minutes=minutes)
+        path.write_text('time,open,high,low,close,volume\n' + first.isoformat() + ',100,101,99,100,10\n'
                         + last.isoformat() + ',100,101,99,100,10\n', encoding='utf-8')
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         records[timeframe] = {'path': str(path), 'sha256': digest}
         files[timeframe] = {'path': str(path), 'sha256': digest, 'rows': 2,
-                            'start_inclusive': '2027-02-01T00:00:00+00:00', 'last_candle_at': last.isoformat()}
+                            'start_inclusive': first.isoformat(), 'last_candle_at': last.isoformat()}
     payload.mtf_dataset_paths = {key: value['path'] for key, value in records.items()}
     payload.mtf_snapshot_manifest = {'bundle_hash': payload.replay_dataset_hash, 'streams': records}
     payload.emit_decision_trace = True
@@ -116,7 +117,8 @@ def test_aggregate_result_without_measured_original_costs_is_refused(arm):
 
 def signed_trading_frame(arm, *, win=True, censored=False, quotes=False):
     """Actual CSV/signature mechanism fixture, never market authority."""
-    times = pd.date_range('2027-02-01', periods=24, freq='5min', tz='UTC')
+    first = arm.policy_context['authorized_research_transport']['files']['M5']['start_inclusive']
+    times = pd.date_range(first, periods=24, freq='5min')
     frame = pd.DataFrame({'time': times, 'open': 100.0,
                           'high': 100.01 if censored or not win else 102.0,
                           'low': 99.99 if censored or win else 98.0,
@@ -201,9 +203,9 @@ def test_real_signed_solo_engine_account_reconciles_actual_fills_costs_and_scope
             - row['commission'] - row['carry'])
         assert row['gross_market_pnl'] - row['total_costs'] == pytest.approx(row['net_pnl'])
         assert row['cash_after_exit'] - row['cash_before_exit'] == pytest.approx(row['net_pnl'])
-    assert account['decision_clock'] == {'first_signal_at': '2027-02-01T00:00:00+00:00',
-        'last_signal_at': '2027-02-01T01:50:00+00:00', 'first_execution_at': '2027-02-01T00:05:00+00:00',
-        'last_execution_at': '2027-02-01T01:55:00+00:00', 'rows': 23}
+    assert account['decision_clock'] == {'first_signal_at': '2025-02-03T00:00:00+00:00',
+        'last_signal_at': '2025-02-03T01:50:00+00:00', 'first_execution_at': '2025-02-03T00:05:00+00:00',
+        'last_execution_at': '2025-02-03T01:55:00+00:00', 'rows': 23}
     assert account['reconciliation_error'] == pytest.approx(0, abs=1e-8)
     assert account['realized_cash'] == pytest.approx(result['final_balance'], abs=0.006)
     if censored:
@@ -385,7 +387,7 @@ def test_real_signed_native_window_publishes_actual_zero_warmup_clock_and_closed
                 assert member['rejection_code'].startswith('mtf_')
 
 
-def test_actual_signed_future_quotes_activate_original_liquidity_scope_without_calendar_flags(arm, monkeypatch):
+def test_actual_signed_historical_quotes_activate_original_liquidity_scope_without_calendar_flags(arm, monkeypatch):
     """Synthetic source-column mechanism fixture, never provider/market evidence."""
     from app.services import backtester
     from app.services.historical_quotes import validate_historical_quotes
@@ -396,14 +398,15 @@ def test_actual_signed_future_quotes_activate_original_liquidity_scope_without_c
     raw['specialist_context_contract'] = arm.strategies[0].specialist_context_contract
     signed['strategy_payload_json'] = json.dumps(raw)
     resign(arm)
-    # A genuine envelope or caller-shaped attrs alone do not select the private
-    # admission. Only the already-authenticated original full helper does.
+    # Pre-2026 observed quotes use the historical calendar. Caller-shaped attrs
+    # cannot manufacture the authenticated original full-scope receipt.
     for declared in (None, {'verified': True, 'start_inclusive': '2027-01-01T00:00:00Z'}):
         unadmitted = frame.copy()
         if declared is not None:
             unadmitted.attrs['_authorized_original_quote_calendar'] = declared
-        with pytest.raises(ValueError, match='HISTORICAL_QUOTE_ALIGNMENT_INVALID'):
-            validate_historical_quotes(unadmitted, arm)
+        quality = validate_historical_quotes(unadmitted, arm).attrs['quote_spread_quality']
+        assert quality['status'] == 'observed'
+        assert 'calendar_admission' not in quality
     def deterministic(frame, parameters):
         frame = frame.copy()
         frame['signal'] = 'BUY'
@@ -428,7 +431,7 @@ def test_actual_signed_future_quotes_activate_original_liquidity_scope_without_c
         run_original_full_arm(arm, damaged, identity, lambda *args, **kwargs: pytest.fail('altered quote entered replay'))
 
 
-@pytest.mark.parametrize('year', [2026, 2027])
+@pytest.mark.parametrize('year', [2026, 2027, 2028, 2035, 2098])
 def test_default_quote_calendar_still_refuses_paper_and_unsigned_future(year):
     from app.schemas import SimpleBacktestRequest
     from app.services.historical_quotes import validate_historical_quotes

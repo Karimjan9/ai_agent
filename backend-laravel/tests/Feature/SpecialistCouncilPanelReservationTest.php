@@ -50,7 +50,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12T00:00:00Z'));
         $this->root = sys_get_temp_dir().'/council-panel-original-test-'.bin2hex(random_bytes(8));
         $this->originalStorage = storage_path();
         File::ensureDirectoryExists($this->root.'/app/lab-datasets');
@@ -88,7 +88,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
     public function test_public_preparation_seals_all_original_requests_then_uses_a_fresh_real_budget_for_native_and_solo(): void
     {
         $this->monotonicClockStart = hrtime(true);
-        $this->travelTo(fn () => CarbonImmutable::parse('2028-01-01T00:00:00Z')
+        $this->travelTo(fn () => CarbonImmutable::parse('2026-10-12T00:00:00Z')
             ->addMicroseconds(intdiv(hrtime(true) - $this->monotonicClockStart, 1000))
             ->addSeconds($this->monotonicClockOffset));
         $this->originalPanelAcceptance(2);
@@ -98,7 +98,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
     public function test_real_prepared_questions_freeze_policy_order_and_publish_first_original_consumption(): void
     {
         $this->monotonicClockStart = hrtime(true);
-        $this->travelTo(fn () => CarbonImmutable::parse('2028-01-01T00:00:00Z')
+        $this->travelTo(fn () => CarbonImmutable::parse('2026-10-12T00:00:00Z')
             ->addMicroseconds(intdiv(hrtime(true) - $this->monotonicClockStart, 1000))->addSeconds($this->monotonicClockOffset));
         $this->originalPanelAcceptance(1, true);
     }
@@ -263,7 +263,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
         $this->assertFalse($signed['independent_evidence']);
         $this->assertFalse($signed['promotion_evidence']);
         $fixture = base_path('../ai-service-python/tests/support/authorized_research_transport_fixture.py');
-        $process = new Process(['python', $fixture, '--test-data-root', $this->root, '--fixture-clock', '2028-01-01T00:00:00Z'],
+        $process = new Process(['python', $fixture, '--test-data-root', $this->root, '--fixture-clock', '2026-10-12T00:00:00Z'],
             base_path('../ai-service-python'), ['INTERNAL_API_TOKEN' => self::KEY, 'INTERNAL_API_TOKEN_FILE' => ''],
             json_encode($request, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), timeout: 45);
         $process->mustRun();
@@ -296,7 +296,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
             $this->assertStringEndsWith('/api/backtest/run-all', $httpRequest->url());
             $posts++;
             $runner = new Process(['python', base_path('../ai-service-python/tests/support/authorized_council_arm_fixture.py'),
-                '--test-data-root', $this->root, '--fixture-clock', '2028-01-01T00:00:00Z'],
+                '--test-data-root', $this->root, '--fixture-clock', '2026-10-12T00:00:00Z'],
                 base_path('../ai-service-python'), ['INTERNAL_API_TOKEN' => self::KEY, 'INTERNAL_API_TOKEN_FILE' => ''],
                 json_encode($httpRequest->data(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), timeout: 60);
             $runner->mustRun();
@@ -657,7 +657,7 @@ class SpecialistCouncilPanelReservationTest extends TestCase
     {
         [$work, $input] = $this->fixture();
         $registry = config('services.instrument_policy.authorized_research_windows');
-        $registry[0]['end_exclusive'] = '2027-05-01T00:00:00Z';
+        $registry[0]['end_exclusive'] = '2025-05-01T00:00:00Z';
         config(['services.instrument_policy.authorized_research_windows' => $registry]);
         $this->expectExceptionMessage('COUNCIL_PANEL_WINDOWS_MUST_BE_ORIGINAL_DISJOINT_EVENTS');
         try { app(SpecialistCouncilResearchFeedbackService::class)->registerFollowupProof($work->id, $input, 'fixture-operator'); }
@@ -748,8 +748,8 @@ trait OriginalCouncilPanelReservationFixture
         $this->assertSame('specialist_council_independent_validation', $work->work_type);
         $registries = [];
         foreach ([2, 4, 6] as $month) {
-            $start = sprintf('2027-%02d-01T00:00:00Z', $month);
-            $end = sprintf('2027-%02d-01T00:00:00Z', $month + 1);
+            $start = sprintf('2025-%02d-01T00:00:00Z', $month);
+            $end = sprintf('2025-%02d-01T00:00:00Z', $month + 1);
             $streams = [];
             foreach (['M5' => 300, 'M15' => 900, 'H1' => 3600, 'H4' => 14400] as $tf => $step) {
                 $path = $this->root.'/app/lab-datasets/window-'.$month.'-'.$tf.'.csv';
@@ -759,7 +759,7 @@ trait OriginalCouncilPanelReservationFixture
                     'first_candle_at' => $start, 'last_candle_at' => $second];
             }
             $bundleHash = app(ResearchPaperEpochContractService::class)->parameterHash($streams);
-            $registries[] = ['authorization_id' => 'actual-panel-window-'.$month, 'research_epoch_id' => 'post-paper-research',
+            $registries[] = ['authorization_id' => 'actual-panel-window-'.$month, 'research_epoch_id' => 'historical-research',
                 'purpose' => 'instrument_independent_validation', 'dataset_sha256' => $bundleHash, 'start_inclusive' => $start, 'end_exclusive' => $end,
                 'mtf_bundle_manifest' => ['protocol' => $invalidOriginalBundleProtocol ? 'multi_timeframe_snapshot_v1'
                         : \App\Services\MultiTimeframeSnapshotService::PROTOCOL,

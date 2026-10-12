@@ -189,14 +189,14 @@ class LearningEvolutionChainAcceptanceTest extends TestCase
 
     private function posteriorVector(string $stateKey): array
     {
-        $this->travelTo(\Carbon\CarbonImmutable::parse('2028-01-01 00:00:00', 'UTC'));
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-12 00:00:00', 'UTC'));
         $manifests = [];
         foreach ([1, 2, 3] as $month) {
             $manifests[] = [
                 'authorization_id' => 'golden-window-'.$month,
-                'research_epoch_id' => 'synthetic-post-paper-research',
-                'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
-                'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+                'research_epoch_id' => 'synthetic-historical-research',
+                'start_inclusive' => sprintf('2025-%02d-01T00:00:00Z', $month),
+                'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
                 'dataset_sha256' => hash('sha256', 'golden-dataset-'.$month),
                 'purpose' => 'instrument_independent_validation',
             ];

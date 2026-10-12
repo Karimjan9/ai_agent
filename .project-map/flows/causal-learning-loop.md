@@ -36,3 +36,10 @@ Laboratory diagnosis / Academy plan
 - Performance/Economic Parent authority is a separate 2026 paper transition,
   not a side effect of historical forward replay.
 - Current code/tests decide exact behavior; this flow is the cross-module map.
+
+Explicit historical first-exposure questions seal their model and selection
+before new exposure, using today's actual clock and pre-2026 market data.
+Registration then capture precede any admitted run. The original provenance
+audit remains a separate issuance guard; a new registration or capture never
+proves that historical data was untouched. Legacy seals retain their contract
+(ADR-038). All events from 2026 onward remain paper-only (ADR-037).

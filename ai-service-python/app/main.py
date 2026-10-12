@@ -2485,7 +2485,7 @@ def _runtime_dependency_manifest() -> dict[str, object]:
     ]
     paths += [
         app_root.parent / name
-        for name in ("requirements.txt", "pyproject.toml", "poetry.lock")
+        for name in ("requirements.txt", "requirements.lock.txt", "pyproject.toml", "poetry.lock")
         if (app_root.parent / name).is_file()
     ]
     signature = tuple(

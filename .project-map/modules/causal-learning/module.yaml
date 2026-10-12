@@ -10,6 +10,8 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/app/Services/ResearchRequestReferenceInventoryService.php
+  - .project-map/decisions/ADR-038-historical-first-exposure-registration.md
   - backend-laravel/app/Models/ScopedResearchCertificate.php
   - backend-laravel/app/Models/DescendantValueTrial.php
   - backend-laravel/app/Services/ScopedResearchCertificateService.php

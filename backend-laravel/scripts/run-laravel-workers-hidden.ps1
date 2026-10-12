@@ -95,6 +95,7 @@ $specifications = @(
     # Research remains long-running, but population construction has its own
     # serial lane above so this backlog cannot starve lifecycle recovery.
     @{ Name = 'scheduler-research'; Pattern = 'queue:work.*scheduler-research'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=scheduler-research', '--sleep=1', '--tries=0', '--timeout=2700', '--memory=2048', '--max-time=4500') },
+    @{ Name = 'scheduler-backup'; Pattern = 'queue:work.*scheduler-backup'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=scheduler-backup', '--sleep=1', '--tries=0', '--timeout=3700', '--memory=2048', '--max-time=5500') },
     @{ Name = 'strategy-lab'; Pattern = 'queue:work.*strategy-lab'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=strategy-lab', '--sleep=1', '--tries=0', '--timeout=2400', '--memory=2048', '--max-time=4200') },
     @{ Name = 'backtests'; Pattern = 'queue:work.*backtests'; Instances = 1; Arguments = @('artisan', 'queue:work', 'redis', '--queue=backtests', '--sleep=1', '--tries=0', '--timeout=900', '--memory=1024', '--max-time=3600') }
 )

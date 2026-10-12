@@ -236,10 +236,18 @@ class EvolutionAuditRegressionTest extends TestCase
         config()->set('services.instrument_policy.authorized_research_windows', []);
         $this->assertSame('awaiting_authorized_research_data', app(InstrumentResearchWindowService::class)->readiness()['status']);
         $this->settlement(1);
+        $windows = config('services.instrument_policy.authorized_research_windows');
+        foreach ($windows as &$window) {
+            $window['start_inclusive'] = str_replace('2025-', '2027-', $window['start_inclusive']);
+            $window['end_exclusive'] = str_replace('2025-', '2027-', $window['end_exclusive']);
+        }
+        unset($window);
+        config()->set('services.instrument_policy.authorized_research_windows', $windows);
         $this->travelTo(CarbonImmutable::parse('2026-09-28', 'UTC'));
         $readiness = app(InstrumentResearchWindowService::class)->readiness();
         $this->assertSame([], $readiness['eligible_windows']);
-        $this->assertCount(4, $readiness['future_windows']);
+        $this->assertSame([], $readiness['future_windows']);
+        $this->assertSame('NO_COMPLETED_AUTHORIZED_INDEPENDENT_WINDOW', $readiness['reason_code']);
         $this->assertFalse($readiness['paper_2026_eligible']);
     }
 
@@ -304,12 +312,12 @@ class EvolutionAuditRegressionTest extends TestCase
     private function settlement(int $number, ?int $window = null, float $newValue = 1.25): AgentLearningSettlement
     {
         $window ??= $number;
-        $this->travelTo(CarbonImmutable::parse('2028-01-01', 'UTC'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12', 'UTC'));
         $manifests = [];
         foreach (range(1, 4) as $month) $manifests[] = ['authorization_id' => 'w'.$month,
             'research_epoch_id' => 'synthetic-research', 'purpose' => 'instrument_independent_validation',
-            'start_inclusive' => sprintf('2027-%02d-01T00:00:00Z', $month),
-            'end_exclusive' => sprintf('2027-%02d-01T00:00:00Z', $month + 1),
+            'start_inclusive' => sprintf('2025-%02d-01T00:00:00Z', $month),
+            'end_exclusive' => sprintf('2025-%02d-01T00:00:00Z', $month + 1),
             'dataset_sha256' => hash('sha256', 'w'.$month)];
         config()->set('services.instrument_policy.authorized_research_windows', $manifests);
         $receipt = app(InstrumentResearchWindowService::class)->seal('w'.$window, hash('sha256', 'w'.$window));

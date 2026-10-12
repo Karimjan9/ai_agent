@@ -23,7 +23,7 @@ class ResearchReleaseSealService
         'backend-laravel/artisan', 'backend-laravel/bootstrap/app.php', 'backend-laravel/bootstrap/providers.php',
         'backend-laravel/composer.json', 'backend-laravel/composer.lock', 'backend-laravel/package.json',
         'backend-laravel/package-lock.json', 'backend-laravel/phpunit.xml', 'backend-laravel/ecosystem.config.cjs',
-        'backend-laravel/config/redis-local.conf', 'ai-service-python/requirements.txt',
+        'backend-laravel/config/redis-local.conf', 'ai-service-python/requirements.txt', 'ai-service-python/requirements.lock.txt',
         'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock',
         'backend-laravel/scripts/audit-research-release.php', 'backend-laravel/scripts/pm2-clean-env.mjs',
         'backend-laravel/scripts/pm2-sync-runtime.mjs', 'backend-laravel/scripts/pm2-summary.cjs',
@@ -432,11 +432,11 @@ class ResearchReleaseSealService
         $runtime = $python = [];
         foreach ($files as $path => $record) {
             if (preg_match('~^(backend-laravel/(app|config)/.*\.php|ai-service-python/app/.*\.py)$~D', $path)
-                || in_array($path, ['backend-laravel/composer.lock', 'backend-laravel/package-lock.json', 'ai-service-python/requirements.txt', 'ai-service-python/pyproject.toml'], true)) {
+                || in_array($path, ['backend-laravel/composer.lock', 'backend-laravel/package-lock.json', 'ai-service-python/requirements.txt', 'ai-service-python/requirements.lock.txt', 'ai-service-python/pyproject.toml'], true)) {
                 $runtime[$path] = $record['sha256'];
             }
             if (str_starts_with($path, 'ai-service-python/app/') || in_array($path,
-                ['ai-service-python/requirements.txt', 'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock'], true)) {
+                ['ai-service-python/requirements.txt', 'ai-service-python/requirements.lock.txt', 'ai-service-python/pyproject.toml', 'ai-service-python/poetry.lock'], true)) {
                 $python[substr($path, strlen('ai-service-python/'))] = $record['sha256'];
             }
         }
@@ -548,7 +548,7 @@ class ResearchReleaseSealService
                 $parts[str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1))] = hash_file('sha256', $file->getPathname());
             }
         }
-        foreach (['requirements.txt', 'pyproject.toml', 'poetry.lock'] as $name) {
+        foreach (['requirements.txt', 'requirements.lock.txt', 'pyproject.toml', 'poetry.lock'] as $name) {
             if (is_file($root.'/'.$name)) $parts[$name] = hash_file('sha256', $root.'/'.$name);
         }
         ksort($parts);

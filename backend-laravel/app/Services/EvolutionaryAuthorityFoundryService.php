@@ -152,7 +152,8 @@ class EvolutionaryAuthorityFoundryService
             $source = \App\Models\AgentLearningCausalExperiment::whereKey($source->id)->lockForUpdate()->firstOrFail();
             $role = data_get($design, 'subject.candidate_role');
             if (! in_array($role, ['guided', 'blinded'], true) || ! isset($design['native_execution'])
-                || CarbonImmutable::parse($design['validation_start'])->lte(now()->utc())) {
+                || (($design['registration_time_policy'] ?? null) !== ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY
+                    && CarbonImmutable::parse($design['validation_start'])->lte(now()->utc()))) {
                 throw new \LogicException('SCOPED_COMPONENT_FRESH_PROSPECTIVE_QUESTION_REQUIRED');
             }
             $context = (string) ($design['context_hash'] ?? '');

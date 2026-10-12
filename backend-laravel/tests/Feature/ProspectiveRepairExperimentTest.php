@@ -122,16 +122,22 @@ class ProspectiveRepairExperimentTest extends TestCase
                     ? ['transition_wait_candles' => ['old' => 4, 'new' => 5]] : []]);
             $evidence = app(LabImmutableEvidenceService::class);
             $run = $evidence->beginRun($agent, 'screening', 'screen', ['source' => 'prospective-test']);
+            $origin = \Carbon\CarbonImmutable::parse('2025-12-01T00:00:00Z');
+            $candles = array_map(fn (int $index): array => ['time' => $origin->addMinutes($index * 5)->toIso8601String(),
+                'close' => 2000], range(0, 200));
             $evidence->attachRequest($run, ['symbol' => 'XAUUSD', 'timeframe' => 'M5',
-                'candles' => [['time' => '2025-12-01T00:00:00Z', 'close' => 2000]]], ['request_id' => 'repair-'.$role]);
+                'candles' => $candles], ['request_id' => 'repair-'.$role]);
             $ledger = $role === 'candidate' ? array_fill(0, 3, ['profit_percent' => 1,
                 'entry_time' => '2025-12-01T00:00:00Z', 'exit_time' => '2025-12-01T00:05:00Z']) : [];
             $evidence->finishRun($run, 'completed', ['total_trades' => count($ledger), 'profit_factor' => 2.31,
                 'trade_ledger' => $ledger, 'trades' => $ledger,
                 'displayed_trade_count' => count($ledger), 'trade_ledger_hash' => hash('sha256', json_encode($ledger)),
-                'decision_trace' => [['candle_time' => '2025-12-01T00:00:00Z', 'action' => 'WAIT', 'accepted' => false]],
-                'data_quality' => ['decision_trace' => ['requested' => true, 'complete' => true, 'evaluated_candle_count' => 1]]]);
-            $this->assertTrue($evidence->learningEligibility($run->fresh())['complete']);
+                'decision_trace' => [['event_type' => 'signal_evaluation', 'candle_index' => 200,
+                    'candle_time' => $candles[200]['time'], 'action' => 'WAIT', 'accepted' => false]],
+                'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1',
+                    'requested' => true, 'complete' => true, 'event_count' => 1, 'evaluated_candle_count' => 1]]]);
+            $eligibility = $evidence->learningEligibility($run->fresh());
+            $this->assertTrue($eligibility['complete'], json_encode($eligibility));
             $arms[$role] = $agent;
         }
         $controlMap = LabMutationResponseMap::create(['response_key' => hash('sha256', 'source-control-map'),

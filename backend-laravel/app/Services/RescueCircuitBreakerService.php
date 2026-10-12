@@ -75,13 +75,14 @@ class RescueCircuitBreakerService
         $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
         $minimumFreshCandles = $this->minimumFreshCandles((string) $lab->timeframe);
         $holdoutAlreadyConsumed = $holdout && $this->holdoutConsumedByFamily($family, $holdoutEvidence);
-        $chronologicalNewEvidence = $latestFamily !== null
+        $historicalSnapshot = $this->historicalSnapshot($snapshot);
+        $chronologicalNewEvidence = $historicalSnapshot && $latestFamily !== null
             && $freshCandles >= $minimumFreshCandles
             && (string) data_get($snapshot, 'data_fingerprint', '') !== (string) data_get($latestFamilySnapshot, 'data_fingerprint', '');
-        $independentNewEvidence = ($holdout && ! $holdoutAlreadyConsumed) || (
+        $independentNewEvidence = $historicalSnapshot && (($holdout && ! $holdoutAlreadyConsumed) || (
             $latestFamily !== null
             && $chronologicalNewEvidence
-        );
+        ));
         // A sealed holdout is a finite independent evidence artifact.  Its
         // hash can admit a new rescue family once, but changing only a repair
         // anchor must never make that same file appear new again. Consuming
@@ -108,10 +109,10 @@ class RescueCircuitBreakerService
         // tiny tail cannot open another cohort even before the larger sibling
         // circuit threshold is reached. This closes G39/G40-style audit loops.
         $sameDataGate = $latestFamily !== null && ! $independentNewEvidence;
-        $blocked = $circuitTripped || $sameDataGate || $hypothesisFrozen;
+        $blocked = ! $historicalSnapshot || $circuitTripped || $sameDataGate || $hypothesisFrozen;
         $reason = $circuitTripped
             ? self::BLOCKED_NEED_NEW_EVIDENCE
-            : (($sameDataGate || $hypothesisFrozen) ? self::BLOCKED_NEED_NEW_EVIDENCE : self::ADMITTED);
+            : ((! $historicalSnapshot || $sameDataGate || $hypothesisFrozen) ? self::BLOCKED_NEED_NEW_EVIDENCE : self::ADMITTED);
         $familyDataHashes = $familyRows
             ->pluck('data_fingerprint')
             ->filter(fn (mixed $hash): bool => filled($hash))
@@ -150,6 +151,9 @@ class RescueCircuitBreakerService
                 'meaningful_target_margin_progress' => $margin['meaningful_progress'],
                 'target_threshold_reached' => $margin['threshold_reached'],
                 'independent_new_evidence' => $independentNewEvidence,
+                'research_snapshot_pre_paper' => $historicalSnapshot,
+                'candidate_unused_demonstrated' => false,
+                'scientific_independent_validation_authority' => false,
                 'chronological_new_evidence' => $chronologicalNewEvidence,
                 'sealed_independent_holdout' => $holdout,
                 'sealed_holdout_evidence' => $holdoutEvidence,
@@ -218,7 +222,8 @@ class RescueCircuitBreakerService
                 'latest' => null,
             ];
         }
-        $query = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $lab->timeframe);
+        $query = Candle::query()->where('symbol_id', $symbolId)->where('timeframe', $lab->timeframe)
+            ->where('time', '<', \Carbon\CarbonImmutable::parse(ResearchPaperEpochContractService::PAPER_ONLY_START)->format('Y-m-d H:i:s'));
         $count = (int) $query->count();
         $latest = $query->max('time');
 
@@ -256,7 +261,8 @@ class RescueCircuitBreakerService
         $fingerprintChanged = (string) data_get($snapshot, 'data_fingerprint', '') !== (string) ($source?->data_fingerprint ?: data_get($source?->trigger_context, 'data_fingerprint', ''));
         $holdoutEvidence = $this->sealedIndependentHoldoutEvidence($profile, $source, $snapshot);
         $holdout = (bool) data_get($holdoutEvidence, 'allowed', false);
-        $allowed = $holdout || ($source !== null && $fresh >= $minimum && $latestAdvanced && $fingerprintChanged);
+        $historicalSnapshot = $this->historicalSnapshot($snapshot);
+        $allowed = $historicalSnapshot && ($holdout || ($source !== null && $fresh >= $minimum && $latestAdvanced && $fingerprintChanged));
 
         return [
             'protocol' => self::PROTOCOL,
@@ -270,6 +276,9 @@ class RescueCircuitBreakerService
             'minimum_fresh_candles' => $minimum,
             'latest_advanced' => $latestAdvanced,
             'data_fingerprint_changed' => $fingerprintChanged,
+            'research_snapshot_pre_paper' => $historicalSnapshot,
+            'candidate_unused_demonstrated' => false,
+            'scientific_independent_validation_authority' => false,
             'sealed_independent_holdout' => $holdout,
             'sealed_holdout_evidence' => $holdoutEvidence,
             'one_candle_is_insufficient' => true,
@@ -553,33 +562,7 @@ class RescueCircuitBreakerService
     /** @return array<string, mixed> */
     private function sealedIndependentHoldoutEvidence(array $profile, ?LabGeneration $source, array $snapshot): array
     {
-        $paths = [
-            'evidence_admission.independent_holdout.status',
-            'independent_holdout.status',
-            'sealed_holdout.status',
-        ];
-        foreach ($paths as $path) {
-            if (in_array((string) data_get($profile, $path), ['sealed', 'verified', 'ready'], true)) {
-                return [
-                    'allowed' => true,
-                    'source' => 'profile_attestation',
-                    'status' => (string) data_get($profile, $path),
-                    'promotion_evidence' => false,
-                ];
-            }
-        }
-        $context = (array) ($source?->trigger_context ?? []);
-        $status = (string) (data_get($context, 'sealed_holdout.status') ?: data_get($context, 'independent_holdout.status'));
-        if (in_array($status, ['sealed', 'verified', 'ready'], true)
-            && filled(data_get($snapshot, 'independent_data_hash'))) {
-            return [
-                'allowed' => true,
-                'source' => 'source_generation_attestation',
-                'status' => $status,
-                'data_hash' => data_get($snapshot, 'independent_data_hash'),
-                'promotion_evidence' => false,
-            ];
-        }
+        // Caller/source labels cannot replace the original file and its clock.
 
         // A valid temporal foundation is an already-sealed research artifact,
         // not a synthetic slice of the rolling canonical dataset.  Discover
@@ -635,12 +618,14 @@ class RescueCircuitBreakerService
         $fileMatchesManifest = $insideStorage
             && $datasetHash !== ''
             && hash_file('sha256', $resolvedDatasetPath) === $datasetHash;
+        $historicalFile = $fileMatchesManifest && $this->historicalHoldoutFile($resolvedDatasetPath,
+            $this->minimumFreshCandles($timeframe), (int) data_get($holdout, 'candle_count', 0));
         $valid = is_array($holdout)
             && (bool) data_get($holdout, 'sealed', false)
             && (bool) data_get($holdout, 'independent_from_rescue', false)
             && data_get($holdout, 'attestation') === 'derived_from_independent_source_non_overlap_v1'
             && (int) data_get($holdout, 'candle_count', 0) >= $this->minimumFreshCandles($timeframe)
-            && $fileMatchesManifest;
+            && $fileMatchesManifest && $historicalFile;
 
         return [
             'allowed' => $valid,
@@ -652,8 +637,52 @@ class RescueCircuitBreakerService
             'sealed' => (bool) data_get($holdout, 'sealed', false),
             'independent_from_rescue' => (bool) data_get($holdout, 'independent_from_rescue', false),
             'file_hash_matches_manifest' => $fileMatchesManifest,
+            'file_events_pre_paper' => $historicalFile,
+            'candidate_unused_demonstrated' => false,
+            'scientific_independent_validation_authority' => false,
             'reason' => $valid ? 'SEALED_INDEPENDENT_HOLDOUT_READY' : 'SEALED_HOLDOUT_ARTIFACT_INVALID',
             'promotion_evidence' => false,
         ];
+    }
+
+    private function historicalSnapshot(array $snapshot): bool
+    {
+        $latest = data_get($snapshot, 'latest_candle', data_get($snapshot, 'latest'));
+        if (! is_string($latest) || trim($latest) === '') return false;
+        try {
+            $time = \Carbon\CarbonImmutable::parse($latest, 'UTC')->utc();
+            return app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                $time->toIso8601String(), $time->addSecond()->toIso8601String());
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** Disjoint rescue input does not prove historical non-exposure. */
+    private function historicalHoldoutFile(string $path, int $minimumRows, int $expectedRows): bool
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) return false;
+        try {
+            $header = fgetcsv($handle, null, ',', '"', '');
+            if (! is_array($header)) return false;
+            $timeIndex = array_search('time', array_map(fn ($value) => strtolower(trim((string) $value)), $header), true);
+            if ($timeIndex === false) return false;
+            $count = 0; $previous = null;
+            $epochs = app(ResearchPaperEpochContractService::class);
+            while (($row = fgetcsv($handle, null, ',', '"', '')) !== false) {
+                if ($row === [null]) continue;
+                if (! isset($row[$timeIndex]) || trim($row[$timeIndex]) === '') return false;
+                $time = \Carbon\CarbonImmutable::parse($row[$timeIndex], 'UTC')->utc();
+                if (($previous !== null && ! $time->greaterThan($previous))
+                    || ! $epochs->researchIntervalDisjointFromPaper($time->toIso8601String(), $time->addSecond()->toIso8601String())) return false;
+                $previous = $time; $count++;
+            }
+            return $count >= $minimumRows && $count === $expectedRows;
+        } catch (\Throwable) {
+            return false;
+        } finally {
+            fclose($handle);
+        }
     }
 }

@@ -9,6 +9,7 @@ aliases:
   - continuity
   - gap-recovery
 paths:
+  - backend-laravel/app/Console/Commands/SyncCanonicalMarketVolume.php
   - backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php
   - backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php
   - backend-laravel/app/Services/MarketData
@@ -35,6 +36,7 @@ paths:
   - backend-laravel/scripts/verify-sparse-reopen-ticks.test.cjs
   - backend-laravel/scripts/audit-frozen-m5-gap-source.py
 entry_points:
+  - market-data:sync-volume
   - market-data:backfill-training
   - market-data:backfill-intraday-training
   - MarketDataContinuityService
@@ -87,6 +89,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
   - backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php
   - backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php
   - backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php

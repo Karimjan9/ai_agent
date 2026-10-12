@@ -3,83 +3,81 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
 class BackupDatabase extends Command
 {
-    protected $signature = 'ops:backup-database {--retain= : Number of daily backups to keep (defaults to DATABASE_BACKUP_RETENTION)}';
-    protected $description = 'Create the daily atomic MySQL backup on the configured G: drive and prune older backups';
+    protected $signature = 'ops:backup-database {--retain= : Number of backups to keep (defaults to DATABASE_BACKUP_RETENTION)}';
+    protected $description = 'Create a verified atomic compressed MySQL backup on G: and replace older backups';
 
     public function handle(): int
     {
         if (config('database.default') !== 'mysql') {
-            $this->components->error('This command currently supports the production MySQL connection only.');
+            $this->components->error('This command supports the production MySQL connection only.');
             return self::FAILURE;
         }
         $directory = (string) config('database.backup.directory', 'G:/NeuroTrader/backups');
-        if (! preg_match('#^G:[\\/]#i', $directory)) {
-            $this->components->error('Refusing to write a backup outside G:. Set DATABASE_BACKUP_PATH to a G:/ directory.');
+        if (! preg_match('#^G:/#i', str_replace('\\', '/', $directory))) {
+            $this->components->error('Set DATABASE_BACKUP_PATH to a writable G:/ directory.');
             return self::FAILURE;
         }
         File::ensureDirectoryExists($directory);
-        if (! is_dir($directory) || ! is_writable($directory)) {
-            $this->components->error("Backup directory is not writable: {$directory}");
+        if (! is_writable($directory)) return self::FAILURE;
+        $directory = realpath($directory);
+        $lock = Cache::lock('ops:database-backup', 4800);
+        if (! $lock->get()) {
+            $this->components->warn('A database backup is already running.');
             return self::FAILURE;
         }
-        // A killed mysqldump leaves only a non-evidence .partial artifact.
-        // Remove stale temporary files before starting the next atomic run;
-        // manifests and completed backups are never touched here.
-        foreach (File::glob($directory.'/neurotrader_*.sql.partial') as $partial) {
-            if (File::lastModified($partial) < now()->subMinutes(5)->timestamp) {
-                File::delete($partial);
+        try {
+            $root = dirname(base_path());
+            $privatePython = $root.'/ai-service-python/.venv/'.(PHP_OS_FAMILY === 'Windows' ? 'Scripts/python.exe' : 'bin/python');
+            $python = is_file($privatePython) ? $privatePython : (getenv('PYTHON_BINARY') ?: 'python3');
+            $process = new Process([$python, '-B', base_path('scripts/create-database-backup.py')]);
+            $process->setInput(json_encode([...config('database.connections.mysql'),
+                'directory' => $directory, 'mysqldump_binary' => config('database.backup.mysqldump_binary')], JSON_THROW_ON_ERROR));
+            // Leave time for final hash/prune inside the one-hour queue lease.
+            $process->setTimeout(3300);
+            $process->run();
+            $manifest = json_decode($process->getOutput(), true);
+            if (! $process->isSuccessful() || ! is_array($manifest) || ! isset($manifest['file'])) {
+                $this->components->error('Database backup failed; the previous completed backup is retained.');
+                return self::FAILURE;
             }
+            $final = $directory.'/'.$manifest['file'];
+            $this->pruneVerified($directory, $final, max(1, (int) ($this->option('retain') ?: config('database.backup.retention', 1))));
+            $this->components->info('Verified compressed database backup: '.$final);
+            return self::SUCCESS;
+        } finally {
+            $lock->release();
         }
-        $stamp = now('UTC')->format('Ymd_His');
-        $final = "{$directory}/neurotrader_{$stamp}.sql";
-        $temporary = $final.'.partial';
-        $connection = config('database.connections.mysql');
-        $binary = (string) config('database.backup.mysqldump_binary', 'mysqldump');
-        $process = new Process([
-            $binary, '--single-transaction', '--quick', '--routines', '--triggers',
-            '--host='.(string) $connection['host'], '--port='.(string) $connection['port'],
-            '--user='.(string) $connection['username'], '--default-character-set=utf8mb4',
-            (string) $connection['database'],
-        ]);
-        $process->setTimeout(3600);
-        $process->setEnv(array_merge($_ENV, ['MYSQL_PWD' => (string) $connection['password']]));
-        $handle = fopen($temporary, 'wb');
-        if (! $handle) throw new RuntimeException('Backup temp file cannot be opened.');
-        $errors = '';
-        $process->run(function (string $type, string $buffer) use ($handle, &$errors): void {
-            if ($type === Process::OUT) fwrite($handle, $buffer); else $errors .= $buffer;
-        });
-        fclose($handle);
-        if (! $process->isSuccessful() || ! is_file($temporary) || filesize($temporary) === 0) {
-            @unlink($temporary);
-            $this->components->error('mysqldump failed: '.trim($errors ?: $process->getErrorOutput()));
-            return self::FAILURE;
-        }
-        rename($temporary, $final);
-        $manifest = [
-            'schema' => 'neurotrader-db-backup/v1', 'database' => $connection['database'],
-            'created_at_utc' => now('UTC')->toIso8601String(), 'file' => basename($final),
-            'bytes' => filesize($final), 'sha256' => hash_file('sha256', $final),
-        ];
-        File::put($final.'.manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
-        $retention = max(1, (int) ($this->option('retain') ?: config('database.backup.retention', 3)));
-        $this->prune($directory, $retention);
-        $this->components->info('Backup verified: '.$final);
-        $this->components->info("Retention: {$retention} backup(s); old backups were pruned.");
-        return self::SUCCESS;
     }
 
-    private function prune(string $directory, int $retain): void
+    private function pruneVerified(string $directory, string $newest, int $retain): void
     {
-        $files = collect(File::glob($directory.'/neurotrader_*.sql'))->sortDesc()->values();
-        foreach ($files->slice($retain) as $file) {
-            File::delete([$file, $file.'.manifest.json']);
+        $directory = realpath($directory);
+        $newest = realpath($newest);
+        $manifestPath = $newest ? $newest.'.manifest.json' : '';
+        $manifest = is_file($manifestPath) ? json_decode(File::get($manifestPath), true) : null;
+        if (! $directory || ! $newest || dirname($newest) !== $directory || ! is_array($manifest)
+            || ($manifest['schema'] ?? null) !== 'neurotrader-db-backup/v1'
+            || ($manifest['file'] ?? null) !== basename($newest)
+            || (int) ($manifest['bytes'] ?? 0) !== filesize($newest)
+            || ! preg_match('/^[a-f0-9]{64}$/D', $manifest['sha256'] ?? '')
+            || ! hash_equals($manifest['sha256'], hash_file('sha256', $newest))) {
+            throw new RuntimeException('VERIFIED_NEW_BACKUP_REQUIRED_BEFORE_PRUNE');
+        }
+        // Every deletion resolves to an immediate child of the configured root.
+        $older = collect(array_merge(File::glob($directory.'/neurotrader_*.sql'), File::glob($directory.'/neurotrader_*.sql.gz')))
+            ->filter(fn ($path) => realpath($path) !== $newest)
+            ->sortByDesc(fn ($path) => File::lastModified($path))->values();
+        foreach ($older->slice(max(0, $retain - 1)) as $path) {
+            $resolved = realpath($path);
+            if (! $resolved || dirname($resolved) !== $directory) throw new RuntimeException('BACKUP_PRUNE_SCOPE_MISMATCH');
+            File::delete([$resolved, $resolved.'.manifest.json']);
         }
     }
 }

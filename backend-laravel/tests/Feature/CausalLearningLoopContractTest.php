@@ -2741,7 +2741,7 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertNull(data_get($model->fresh()->metadata, 'skill_tree'));
     }
 
-    public function test_canonical_pair_reconciliation_requires_and_binds_terminal_full_runs(): void
+    public function test_canonical_pair_reconciliation_binds_terminal_full_runs_but_requires_original_learning_evidence(): void
     {
         [$generation, $sourceLesson] = $this->canonicalSource();
         $guided = $this->agent($generation, $this->model('full-bind-guided', ['entry_threshold' => 2]), [
@@ -2794,25 +2794,26 @@ class CausalLearningLoopContractTest extends TestCase
         $this->assertSame('partially_settled', $pending['status']);
         $this->assertContains('memory_guided', $pending['pending_roles']);
         $this->assertSame($screenGuided->run_id, $guidedPair->fresh()->candidate_evidence_run_id);
-        $this->assertSame(1, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
+        $this->assertSame(0, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
             ->whereIn('source_id', [$guidedPair->id, $blindedPair->id])->count());
 
         $guidedRun->update(['phase' => 'full_validation']);
         $settled = $method->invoke($service, $experiment->fresh());
-        $this->assertSame('settled', $settled['status']);
-        $this->assertEqualsCanonicalizing([$guidedPair->id, $blindedPair->id], $settled['settled_pair_ids']);
+        $this->assertSame('partially_settled', $settled['status']);
+        $this->assertSame([], $settled['settled_pair_ids']);
+        $this->assertEqualsCanonicalizing(['memory_guided', 'blinded'], $settled['pending_roles']);
         $this->assertSame($guidedRun->run_id, $guidedPair->fresh()->candidate_evidence_run_id);
         $this->assertSame($controlRun->run_id, $guidedPair->fresh()->control_evidence_run_id);
         $this->assertSame($screenGuided->run_id, data_get(
             $guidedPair->fresh()->metadata,
             'causal_full_replay_bindings.'.array_key_first((array) data_get($guidedPair->fresh()->metadata, 'causal_full_replay_bindings')).'.previous_candidate_run_id',
         ));
-        $this->assertSame(2, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
+        $this->assertSame(0, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
             ->whereIn('source_id', [$guidedPair->id, $blindedPair->id])->count());
 
         $duplicate = $method->invoke($service, $experiment->fresh());
-        $this->assertSame('settled', $duplicate['status']);
-        $this->assertSame(2, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
+        $this->assertSame('partially_settled', $duplicate['status']);
+        $this->assertSame(0, AgentLearningSettlement::query()->where('source_type', LabLearningLanePair::class)
             ->whereIn('source_id', [$guidedPair->id, $blindedPair->id])->count());
     }
 
@@ -3183,11 +3184,15 @@ class CausalLearningLoopContractTest extends TestCase
 
     private function completeScreeningEvidence(LabAgent $agent, LabImmutableEvidenceService $evidence, string $requestId): LabEvaluationRun
     {
+        $candles = array_map(fn (int $index): array => [
+            'time' => \Carbon\CarbonImmutable::parse('2025-01-01T00:00:00Z')->addHours($index)->toIso8601String(),
+            'close' => 2000,
+        ], range(0, 200));
         $run = $evidence->beginRun($agent, 'screening', 'screen', ['source' => 'causal_admission_test']);
         $evidence->attachRequest($run, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
-            'candles' => [['time' => '2026-01-01T00:00:00Z', 'close' => 2000]],
+            'candles' => $candles,
         ], ['request_id' => $requestId]);
         $evidence->finishRun($run, 'completed', [
             'total_trades' => 0,
@@ -3196,14 +3201,17 @@ class CausalLearningLoopContractTest extends TestCase
             'trades' => [],
             'displayed_trade_count' => 0,
             'decision_trace' => [[
-                'candle_time' => '2026-01-01T00:00:00Z',
+                'candle_index' => 200,
+                'candle_time' => $candles[200]['time'],
                 'event_type' => 'signal_evaluation',
                 'action' => 'WAIT',
                 'accepted' => false,
             ]],
             'data_quality' => ['decision_trace' => [
+                'protocol' => 'candle_decision_trace_v1',
                 'requested' => true,
                 'complete' => true,
+                'event_count' => 1,
                 'evaluated_candle_count' => 1,
             ]],
         ]);

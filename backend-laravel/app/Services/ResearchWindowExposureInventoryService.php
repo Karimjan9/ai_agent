@@ -25,7 +25,7 @@ class ResearchWindowExposureInventoryService
 
     public function __construct(private ResearchPaperEpochContractService $epochs) {}
 
-    /** Called by the original certificate registration transaction, before any future source event. */
+    /** Called before the registered models consume input; market event time is a separate axis. */
     public function registerCapture(int $certificateId): array
     {
         if (! Schema::hasTable('research_exposure_capture_records')) {
@@ -63,8 +63,10 @@ class ResearchWindowExposureInventoryService
                 throw new LogicException('EXPOSURE_CAPTURE_CANNOT_COMPLETE_PREEXISTING_PARTIAL_FOLDS');
             }
             $clock = CarbonImmutable::now('UTC');
-            if (! $clock->lessThan(CarbonImmutable::parse($design['validation_start']))
-                || ! CarbonImmutable::parse($registration['preregistered_at'])->lessThan(CarbonImmutable::parse($design['validation_start']))) {
+            $firstExposure = ($design['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+            if (CarbonImmutable::parse($registration['preregistered_at'])->greaterThan($clock)
+                || (! $firstExposure && (! $clock->lessThan(CarbonImmutable::parse($design['validation_start']))
+                    || ! CarbonImmutable::parse($registration['preregistered_at'])->lessThan(CarbonImmutable::parse($design['validation_start']))))) {
                 throw new LogicException('EXPOSURE_CAPTURE_MUST_PRECEDE_FIRST_SOURCE_EVENT');
             }
             $payload = ['protocol' => self::PROTOCOL, 'certificate_id' => $certificateId,
@@ -82,7 +84,9 @@ class ResearchWindowExposureInventoryService
                 'evaluator_release_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
                 'completeness_scope' => 'frozen_original_candidate_models_and_selection_design_after_capture_start',
                 'historical_training_selection_inventory_complete' => false,
-                'absence_of_legacy_records_proves_unused' => false];
+                'absence_of_legacy_records_proves_unused' => false,
+                ...($firstExposure ? ['registration_time_policy' => ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY,
+                    'historical_event_time_is_not_first_exposure_time' => true] : [])];
             $this->append($certificateId, 'capture_start', null, $key, $payload);
 
             return $payload;
@@ -312,6 +316,16 @@ class ResearchWindowExposureInventoryService
                 throw new LogicException('EXPOSURE_CAPTURE_MIGRATION_REQUIRED');
             }
             $registration = $this->registration($certificateId);
+            if (($registration['design']['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY) {
+                // New ingress cannot retroactively attest all historical training,
+                // selection, MTF, warmup and holding exposure. The diagnostic
+                // inventory is exclusion evidence and must never become authority.
+                $history = app(ResearchWindowProvenanceAuditService::class)->audit(
+                    $window['start_inclusive'] ?? null, $window['end_exclusive'] ?? null);
+                if (($history['candidate_unused_demonstrated'] ?? false) !== true) {
+                    throw new LogicException('HISTORICAL_FIRST_EXPOSURE_PROVENANCE_NOT_ATTESTED');
+                }
+            }
             $capture = ResearchExposureCaptureRecord::where('certificate_id', $certificateId)->where('record_type', 'capture_start')->sole();
             $this->assertRecord($capture);
             $this->assertRegistrationMatches($registration, $capture->payload);
@@ -598,7 +612,9 @@ class ResearchWindowExposureInventoryService
             || $policy['holding_fence_seconds'] > 31536000 || ($policy['execution_timeframe'] ?? null) !== 'M5'
             || ($policy['context_timeframes'] ?? null) !== ['H4', 'H1', 'M15']
             || ($policy['warmup_policy'] ?? null) !== 'all_original_closed_source_rows_inside_registered_window'
-            || ($policy['selection_policy'] ?? null) !== 'frozen_before_first_event') {
+            || ($policy['selection_policy'] ?? null) !==
+                (($design['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY
+                    ? 'frozen_before_first_exposure' : 'frozen_before_first_event')) {
             throw new LogicException('EXPOSURE_FROZEN_POLICY_REQUIRED');
         }
 
@@ -619,7 +635,8 @@ class ResearchWindowExposureInventoryService
         foreach ($inventory['intervals'] as $interval) {
             if (CarbonImmutable::parse($interval['start_inclusive'])->lessThan($capture['coverage_start_inclusive'])
                 || CarbonImmutable::parse($interval['end_exclusive'])->greaterThan($capture['coverage_end_exclusive'])
-                || ! CarbonImmutable::parse($capture['capture_started_at'])->lessThan(CarbonImmutable::parse($interval['start_inclusive']))) {
+                || (($capture['registration_time_policy'] ?? null) !== ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY
+                    && ! CarbonImmutable::parse($capture['capture_started_at'])->lessThan(CarbonImmutable::parse($interval['start_inclusive'])))) {
                 throw new LogicException('EXPOSURE_WARMUP_CONTEXT_OR_HOLDING_OUTSIDE_CAPTURE_SCOPE');
             }
         }

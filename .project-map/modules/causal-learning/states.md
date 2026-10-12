@@ -447,3 +447,19 @@ neither state implies confirmed compounding or credit (ADR-017).
     `activation_future_research_window_v2` adds that route. Historical v1
     plans are validated against their original non-executable reservation
     contract and are not backfilled or upgraded into executable validation.
+
+14. Explicit `historical_first_exposure_v2` questions transition to registered
+    using the actual preregistration clock, with pre-2026 market events and
+    `frozen_before_first_exposure` selection. Legacy registrations retain their
+    original before-first-event guard and hash. A later capture binds run IDs
+    above its high-water mark and actual run start time; it does not attest
+    historical training, selection, context, warmup or holding exposure.
+    Certificate assessment remains blocked with
+    `HISTORICAL_FIRST_EXPOSURE_PROVENANCE_NOT_ATTESTED` unless the provenance
+    owner demonstrates unused original evidence. See ADR-038.
+
+Council feedback now requests an original unused pre-paper window; it never
+plans research in 2027 or later. Original signed arm consumption checks the
+continuous pre-paper epoch rather than a post-2026 minimum market date. Its
+signature, original release, consumed-file witnesses and run clock remain
+mandatory, and archived seals are not rewritten.

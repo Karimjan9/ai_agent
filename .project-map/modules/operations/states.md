@@ -175,3 +175,31 @@ selects historical exploration instead; it is independent of that live watermark
 The strict technical-integrity guard includes causal fold receipts with a
 retry-ready/error state or more than one execution attempt. A later successful
 fold retry does not erase that generation's historical technical failure.
+
+Scheduled market update/volume sync with the exact native provider
+`DUKASCOPY_NATIVE_HTTP_202_UNRESOLVED` response is recorded as
+`deferred_external_dependency` with its nonzero exit code. It does not create
+a failed queue job or declare the native evidence ready. Other command or
+authentication/schema errors retain the technical failure path.
+
+The isolated backup drill restores through a newly created account restricted
+to a newly created `codex_restore_` schema, verifies original G263 run facts,
+and removes only that invocation's schema/account. A stream or checksum failure
+remains an incomplete drill, never a successful restore receipt.
+The optional loopback scratch server must use a separate port and a verified
+dedicated data directory. Its durability settings cannot change the source
+server. Successful restore also requires the entire original table inventory
+to match; reading or restoring a prefix is insufficient.
+The original inventory belongs to the backup snapshot, not a later live schema.
+An explicit current-schema upgrade permits only the two named certificate/
+exposure tables absent from this pre-release snapshot, with zero original rows,
+using their original migrations on the restricted restore connection. The
+current inventory must then match too. Populated or unknown missing tables fail
+closed; no certificate or historical exposure record is synthesized.
+
+Database backup progresses through locked native dump, unpublished gzip,
+complete CRC/hash verification, published snapshot/manifest and older-pair
+pruning. Failed/timeout/interrupted dumps cannot authorize pruning. A current
+published pair retains one snapshot; a pending/reserved `scheduler-backup` job
+refuses source reload. Its one-hour job/3700-second worker leases stay below
+the existing 4500-second Redis visibility (ADR-039).

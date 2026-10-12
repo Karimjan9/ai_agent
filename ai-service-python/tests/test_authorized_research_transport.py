@@ -27,16 +27,16 @@ def resign(payload, mutate=lambda identity: None):
 @pytest.fixture
 def authorized(tmp_path, monkeypatch):
     monkeypatch.setattr(owner, "_research_data_roots", lambda: (tmp_path,))
-    monkeypatch.setattr(owner, "_research_transport_now", lambda: pd.Timestamp("2028-01-01", tz="UTC"))
+    monkeypatch.setattr(owner, "_research_transport_now", lambda: pd.Timestamp("2026-10-12", tz="UTC"))
     monkeypatch.setattr(main, "_internal_api_token", lambda: KEY)
-    path = tmp_path / "future.csv"
-    path.write_text("time,open,high,low,close,volume\n2025-02-01T00:00:00Z,100,101,99,100,10\n2025-02-01T00:05:00Z,100,101,99,100,10\n", encoding="utf-8")
+    path = tmp_path / "historical.csv"
+    path.write_text("time,open,high,low,close,volume\n2025-02-03T00:00:00Z,100,101,99,100,10\n2025-02-03T00:05:00Z,100,101,99,100,10\n", encoding="utf-8")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     release = {"protocol": "prospective_research_release_v1", "python_source_hash": owner.source_hash(),
         "source_hash": "b" * 64, "dataset_hash": digest, "agent_execution_hashes": {"1": "e" * 64}}
     release["release_hash"] = hashlib.sha256(owner._release_json(release).encode()).hexdigest()
     window = {"protocol": "instrument_research_window_v1", "authorization_id": "server-window-1",
-        "research_epoch_id": "research-2025", "start_inclusive": "2025-02-01T00:00:00+00:00",
+        "research_epoch_id": "research-2025", "start_inclusive": "2025-02-03T00:00:00+00:00",
         "end_exclusive": "2025-03-01T00:00:00+00:00", "dataset_sha256": digest}
     window["window_key"] = hashlib.sha256(json.dumps(window, separators=(",", ":")).encode()).hexdigest()
     payload = SimpleBacktestRequest(timeframe="M5", evaluation_mode="full", dataset_path=str(path),
@@ -45,7 +45,7 @@ def authorized(tmp_path, monkeypatch):
         "generation_id": 1, "release_hash": release["release_hash"], "dataset_hash": digest,
         "symbol": payload.symbol, "timeframe": payload.timeframe, "evaluation_mode": "full", "window": window,
         "files": {"M5": {"path": str(path), "sha256": digest, "rows": 2,
-            "start_inclusive": "2025-02-01T00:00:00+00:00", "last_candle_at": "2025-02-01T00:05:00+00:00"}},
+            "start_inclusive": "2025-02-03T00:00:00+00:00", "last_candle_at": "2025-02-03T00:05:00+00:00"}},
         "paper_exclusions": [{"start_inclusive": "2026-01-01T00:00:00+00:00", "end_exclusive": "2027-01-01T00:00:00+00:00"}],
         "independent_evidence": False, "promotion_evidence": False}
     payload.policy_context = {"authorized_research_transport": identity}
@@ -131,7 +131,7 @@ def test_all_real_mtf_and_related_streams_are_bound_and_paper_context_cannot_hid
     files = {"M5": authorized.policy_context["authorized_research_transport"]["files"]["M5"]}
     for name, final_time in [("H4", "04:00:00"), ("H1", "01:00:00"), ("M15", "00:15:00"), ("RELATED_M15", "00:15:00")]:
         path = tmp_path / (name + ".csv")
-        prefix = "2026-02-01" if name == bad_stream else "2025-02-01"
+        prefix = "2026-02-01" if name == bad_stream else "2025-02-03"
         path.write_text(f"time,open,high,low,close,volume\n{prefix}T00:00:00Z,100,101,99,100,10\n{prefix}T{final_time}Z,100,101,99,100,10\n", encoding="utf-8")
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         streams[name] = {"path": str(path), "sha256": digest}

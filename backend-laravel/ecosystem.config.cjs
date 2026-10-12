@@ -1,7 +1,9 @@
-const python = process.env.PYTHON_BINARY || 'python';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const isolatedPython = path.resolve(__dirname, '..', 'ai-service-python', '.venv',
+  process.platform === 'win32' ? 'Scripts/pythonw.exe' : 'bin/python');
+const python = fs.existsSync(isolatedPython) ? isolatedPython : (process.env.PYTHON_BINARY || 'python');
 const runtimeTokenFile = path.resolve(__dirname, '..', 'runtime', 'internal-api.token');
 const legacyTokenFile = path.join(__dirname, 'storage', 'app', 'secrets', 'internal-api.token');
 const tokenFile = process.env.INTERNAL_API_TOKEN_FILE
@@ -190,6 +192,9 @@ module.exports = {
     worker('scheduler-critical', 'scheduler-critical', 300),
     recyclingWorker('scheduler-ops-a', 'scheduler-ops', 900),
     recyclingWorker('scheduler-ops-b', 'scheduler-ops', 900),
+    // The verified full database dump takes more than the ordinary 15-minute
+    // operational lease. Keep it serial and below Redis's 4500s visibility.
+    recyclingWorker('scheduler-backup', 'scheduler-backup', 3700),
     // Every full-population entry point shares this one serial lane plus the
     // canonical constructor mutex. General research can no longer starve the
     // five-minute lifecycle cadence behind a long FIFO compiler backlog.

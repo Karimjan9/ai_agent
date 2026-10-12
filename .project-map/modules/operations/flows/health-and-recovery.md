@@ -13,6 +13,14 @@ prerequisite failure.
 
 ## Sequence
 
+Daily database backup dispatch uses the dedicated serial `scheduler-backup`
+queue with a one-hour job lease below Redis visibility. A shared lock owns the
+native dump, streamed gzip and complete CRC/raw/compressed SHA verification.
+Only publication of the verified new snapshot/manifest authorizes older-pair
+pruning; one newest snapshot is retained. SQL/gzip restore and backup health
+consume that same pair. Reload preflight checks the backup queue, and Windows
+PM2/fallback consumers remain hidden (ADR-039).
+
 A signed native depth owner can select `RESUME_NATIVE_DEPTH_AUDIT` only after
 the actual original cheap receipt and sample are sealed. The existing arbiter
 requires known-empty generation queues, running control and one original draft
@@ -135,6 +143,13 @@ still owns the lane; the same arbiter continues replay and settlement before
 its disabled-mode check. PAUSE blocks new settlement children too. Before any
 source edit, require the latest generation/owning trial and agents to be terminal and
 their queues, batches, active replays and constructor children to be drained.
+
+After that drain, Laravel transport `queue:pause redis:QUEUE` may prevent a
+fresh dequeue during maintenance. Record prior pause flags and resume only
+maintenance-owned flags with `queue:continue`. Transport pause preserves all
+payloads and lets a currently reserved job finish; it is separate from public
+autonomy PAUSE. Fresh durable preflight and authenticated replay-idle probes
+are still required before a source publication or cold restart.
 
 An explicit unsealed-draft cold-maintenance check is narrower than ignoring an
 active generation: it requires the sole fully constructed ordinary draft to

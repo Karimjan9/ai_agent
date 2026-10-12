@@ -740,7 +740,15 @@ as-of inputs and content-sealed primitive expansion; their response is a researc
 benchmark, not a strategy signal, trading receipt or measured synthesis benefit.
 Original request/model/response hashes are reverified at Foundry consumption.
 Fidelity audits, measurement value and policy challengers remain research-only;
-2026 paper data and old archives do not become independent validation.
+2026 and every later year's paper data, and old archives, do not become
+independent validation. Explicit historical first-exposure registration uses
+the actual preregistration/capture clock, not the timestamp of historical bars;
+the original exposure inventory remains required for certificate issuance.
+
+Authenticated original full replay quote calendars also reject every source
+whose first or last event is on or after 2026-01-01. A signed envelope cannot
+authorize paper data. Python production dependencies use requirements.lock.txt;
+the runtime selects the project private environment when present.
 
 Explicit secondary historical recovery consumes hash-bound Twelve Data
 responses as a separate mixed price archive. The MTF clean-discovery owner
@@ -749,3 +757,15 @@ Python verifies in full. Ordinary native full-validation and execution-cost
 boundaries remain unchanged; absent quote fields are omitted and volume stays
 unavailable. The original verified native discovery bundle anchors the
 Academy question budget (ADR-027).
+
+The effective Python `requirements.lock.txt` participates in the PHP aggregate
+fingerprint, archived source artifact, Python release hash and loaded runtime
+manifest. A lock change therefore cannot reuse a previously sealed release.
+
+Operational database backup invokes `backend-laravel/scripts/create-database-backup.py`
+from the project private Python environment. Configuration travels over stdin,
+the native database password only through the child environment, and native
+Windows dump children use `CREATE_NO_WINDOW`. Streamed gzip/CRC/raw SHA and
+compressed SHA verification precede publication and retention pruning. The
+dedicated backup queue uses the existing Redis connection/visibility, and
+reload preflight sees that queue. This boundary creates no scientific authority.

@@ -36,6 +36,31 @@ class NativeQualifiedSoloSelectionTest extends TestCase
     use RefreshDatabase;
     use OriginalCouncilPanelReservationFixture;
 
+    public function test_original_owner_proof_cannot_make_paper_event_time_a_research_constructor_window(): void
+    {
+        $proof = ['protocol' => LabPopulationService::AUTHORIZED_COUNCIL_PANEL_INTENT_PROTOCOL,
+            'symbol' => 'XAUUSD', 'storage_timeframe' => 'H1', 'work_item_id' => 1, 'work_key' => 'clock-guard',
+            'window_key' => str_repeat('f', 64), 'window_ordinal' => 1, 'arm_roots' => array_fill(0, 5, []),
+            'authority' => 'research_only', 'promotion_evidence' => false, 'independent_evidence_claimed' => false,
+            'reservation_hash' => str_repeat('a', 64),
+            'current_source_hash' => app(LabImmutableEvidenceService::class)->codeHash(),
+            'current_python_source_hash' => app(ResearchReleaseSealService::class)->pythonHash()];
+        $owner = $this->mock(\App\Services\SpecialistCouncilIndependentPanelService::class);
+        $method = new \ReflectionMethod(LabPopulationService::class, 'authorizedCouncilPanelProof');
+        foreach ([2026, 2027, 2028, 2035, 2098] as $year) {
+            $candidate = [...$proof, 'authorized_window' => ['window_key' => $proof['window_key'],
+                'dataset_sha256' => str_repeat('b', 64), 'start_inclusive' => "$year-01-01T00:00:00Z",
+                'end_exclusive' => "$year-02-01T00:00:00Z"]];
+            $owner->shouldReceive('assertConstructorIntent')->once()->with($candidate)->andReturn($candidate);
+            try {
+                $method->invoke(app(LabPopulationService::class), $candidate);
+                $this->fail('An owner proof cannot reopen a permanent paper interval: '.$year);
+            } catch (\LogicException $error) {
+                $this->assertSame('AUTHORIZED_COUNCIL_PANEL_PRE_PAPER_WINDOW_REQUIRED', $error->getMessage());
+            }
+        }
+    }
+
     private string $root;
     private string $originalStorage;
 

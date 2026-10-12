@@ -130,3 +130,7 @@ or non-finite HTF rows fail their stream guard instead of being silently dropped
 `computed` may emit `replay_decision_identity_v2`; only a complete, source-bound
 ordered candle domain with observed stage event hashes can carry stage mastery.
 Legacy count-only telemetry remains non-controlling.
+
+Authenticated original full quote/calendar admission rejects sources reaching
+2026-01-01 or later, regardless of a signature or caller-shaped calendar flag.
+Pre-2026 observed quotes retain hash-bound source and synchronization checks.

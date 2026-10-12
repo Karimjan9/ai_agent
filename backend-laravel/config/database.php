@@ -25,7 +25,7 @@ return [
         // Backups intentionally live outside the C: workspace. There is no
         // local fallback: a missing G: volume must fail loudly.
         'directory' => env('DATABASE_BACKUP_PATH', 'G:/NeuroTrader/backups'),
-        'retention' => max(1, (int) env('DATABASE_BACKUP_RETENTION', 3)),
+        'retention' => max(1, (int) env('DATABASE_BACKUP_RETENTION', 1)),
         'schedule_time' => env('DATABASE_BACKUP_SCHEDULE_TIME', '02:30'),
         'stale_after_seconds' => (int) env('DATABASE_BACKUP_STALE_AFTER_SECONDS', 172800),
         // BackupDatabase computes SHA-256 before writing the manifest. A

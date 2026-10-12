@@ -17,7 +17,7 @@ class RestoreDatabase extends Command
             return self::FAILURE;
         }
         $path = realpath((string) $this->argument('backup'));
-        if (! $path || ! is_file($path) || ! str_ends_with(strtolower($path), '.sql')) {
+        if (! $path || ! is_file($path) || ! (str_ends_with(strtolower($path), '.sql') || str_ends_with(strtolower($path), '.sql.gz'))) {
             $this->components->error('Backup SQL file not found.');
             return self::FAILURE;
         }
@@ -33,12 +33,13 @@ class RestoreDatabase extends Command
             '--port='.(string) $connection['port'], '--user='.(string) $connection['username'],
             '--default-character-set=utf8mb4', (string) $connection['database'],
         ]);
-        $process->setTimeout(3600);
+        $process->setTimeout(7200);
         $process->setEnv(array_merge($_ENV, ['MYSQL_PWD' => (string) $connection['password']]));
-        $handle = fopen($path, 'rb');
+        $compressed = str_ends_with(strtolower($path), '.gz');
+        $handle = $compressed ? gzopen($path, 'rb') : fopen($path, 'rb');
         $process->setInput($handle);
         $process->run();
-        fclose($handle);
+        if ($compressed) gzclose($handle); else fclose($handle);
         if (! $process->isSuccessful()) {
             $this->components->error('Restore failed: '.$process->getErrorOutput());
             return self::FAILURE;

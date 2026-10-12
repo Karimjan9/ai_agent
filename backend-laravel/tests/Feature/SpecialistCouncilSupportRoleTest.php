@@ -47,7 +47,7 @@ class SpecialistCouncilSupportRoleTest extends TestCase
         $parent = $owner->qualifiedOriginalResearchProof($version->fresh());
         $this->assertFalse($parent['allowed'], 'Real native risk correctness is not a qualified whole-council parent.');
         $this->assertFalse($parent['paper_authority_granted']);
-        $this->assertSame('ORIGINAL_RESEARCH_PARENT_PROOF_INVALID_OR_UNQUALIFIED', $parent['reason']);
+        $this->assertSame('COUNCIL_ORIGINAL_ARCHIVED_WORKER_RELEASE_REQUIRED', $parent['reason']);
         $nativeQuestion = $owner->nativePolicyQuestionOutcome(['version_id' => $version->id,
             'window_key' => array_key_first($this->windows), 'source_hash' => LabEvaluationRun::where('run_id', $runIds[0])->sole()->code_hash],
             now()->toIso8601String(), 'independent-examiner');
@@ -358,11 +358,11 @@ class SpecialistCouncilSupportRoleTest extends TestCase
 
     public function test_independent_authority_suffix_is_not_sent_as_a_new_authorization_receipt(): void
     {
-        $this->travelTo(CarbonImmutable::parse('2028-01-01T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse('2026-10-12T00:00:00Z'));
         config(['services.instrument_policy.authorized_research_windows' => [[
             'authorization_id' => 'window-a', 'research_epoch_id' => 'post-paper',
             'purpose' => 'instrument_independent_validation',
-            'start_inclusive' => '2027-01-01T00:00:00Z', 'end_exclusive' => '2027-02-01T00:00:00Z',
+            'start_inclusive' => '2025-01-01T00:00:00Z', 'end_exclusive' => '2025-02-01T00:00:00Z',
             'dataset_sha256' => str_repeat('a', 64),
         ]]]);
         $windows = app(InstrumentResearchWindowService::class);
@@ -428,8 +428,8 @@ class SpecialistCouncilSupportRoleTest extends TestCase
         $refs = []; $specs = []; $windows = []; $offset = 0;
         foreach ([1, 3, 5] as $month) {
             $window = ['window_key' => 'native-'.$month, 'authorization_id' => 'native-'.$month,
-                'start_inclusive' => '2027-'.sprintf('%02d', $month).'-01T00:00:00Z',
-                'end_exclusive' => '2027-'.sprintf('%02d', $month).'-10T00:00:00Z', 'dataset_sha256' => hash('sha256', 'native-'.$month)];
+                'start_inclusive' => '2025-'.sprintf('%02d', $month).'-01T00:00:00Z',
+                'end_exclusive' => '2025-'.sprintf('%02d', $month).'-10T00:00:00Z', 'dataset_sha256' => hash('sha256', 'native-'.$month)];
             $windows[$window['window_key']] = $window; $panel = [];
             foreach (['target_cases', 'retention_cases'] as $kind) {
                 // Conditional producer outcomes still use real persisted case

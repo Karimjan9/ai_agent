@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Http;
 use LogicException;
 use Tests\TestCase;
 
-/** Explicit synthetic bytes and a 2028 test clock validate guards, not actual future evidence. */
+/** Synthetic bytes test admission contracts; they are not original market evidence. */
 class ResearchWindowExposureInventoryTest extends TestCase
 {
     use RefreshDatabase;
@@ -93,6 +93,25 @@ class ResearchWindowExposureInventoryTest extends TestCase
             'created_at' => now(), 'updated_at' => now()]);
         $this->assertSame('CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE',
             app(ResearchWindowExposureInventoryService::class)->assessForCertificate($certificate, $window, $manifest, [])['reason_code']);
+    }
+
+    public function test_historical_question_can_register_at_today_clock_before_model_exposure(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-11T18:00:00Z'));
+        [$certificate] = $this->question(firstExposure: true);
+        $registration = app(ScopedResearchCertificateService::class)->verifiedRegistration($certificate);
+        $capture = ResearchExposureCaptureRecord::where('certificate_id', $certificate)->where('record_type', 'capture_start')->sole();
+
+        $this->assertSame('2026-10-11T18:00:00+00:00', $registration['preregistered_at']);
+        $this->assertSame('2012-01-01T00:00:00+00:00', $registration['design']['validation_start']);
+        $this->assertSame(ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY, $capture->payload['registration_time_policy']);
+        $this->assertFalse($capture->payload['historical_training_selection_inventory_complete']);
+        $this->assertFalse(app(ScopedResearchCertificateService::class)->inspect($certificate)['authority']);
+        $readiness = app(ResearchWindowExposureInventoryService::class)->assessForCertificate(
+            $certificate, $registration['design']['validation_windows'][0], [], []);
+        $this->assertFalse($readiness['ready']);
+        $this->assertFalse($readiness['candidate_unused_demonstrated']);
+        $this->assertSame('HISTORICAL_FIRST_EXPOSURE_PROVENANCE_NOT_ATTESTED', $readiness['reason_code']);
     }
 
     public function test_real_immutable_request_ingress_captures_every_stream_and_omitted_original_blocks(): void
@@ -290,7 +309,7 @@ class ResearchWindowExposureInventoryTest extends TestCase
         return [$experiment, $request, $response];
     }
 
-    private function question(int $holding = 600): array
+    private function question(int $holding = 600, bool $firstExposure = false): array
     {
         $lab = AiLaboratory::create(['name' => 'Synthetic exposure fixture', 'symbol' => 'XAUUSD',
             'timeframe' => 'M15', 'strategy_families' => ['hybrid'], 'is_active' => true]);
@@ -327,6 +346,10 @@ class ResearchWindowExposureInventoryTest extends TestCase
                 'execution_timeframe' => 'M5', 'context_timeframes' => ['H4', 'H1', 'M15'],
                 'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window',
                 'selection_policy' => 'frozen_before_first_event']];
+        if ($firstExposure) {
+            $design['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+            $design['exposure_policy']['selection_policy'] = 'frozen_before_first_exposure';
+        }
         $registered = app(ScopedResearchCertificateService::class)->register('component', $source, $design);
         return [$registered['certificate_id'], $agents];
     }

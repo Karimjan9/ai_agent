@@ -9,10 +9,24 @@ aliases:
   - backup
   - recovery
 paths:
+  - backend-laravel/routes/console.php
+  - backend-laravel/app/Console/Commands/BackupDatabase.php
+  - backend-laravel/app/Console/Commands/RestoreDatabase.php
+  - backend-laravel/app/Console/Commands/CleanupLegacyBackups.php
+  - backend-laravel/app/Services/PhaseTwoFoundationService.php
+  - backend-laravel/scripts/create-database-backup.py
+  - backend-laravel/scripts/test_create_database_backup.py
+  - backend-laravel/tests/Feature/PhaseTwoFoundationTest.php
+  - backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php
+  - backend-laravel/scripts/benchmark-research-provenance.php
+  - backend-laravel/scripts/restore-backup-drill.php
+  - backend-laravel/scripts/restore-backup-stream.py
+  - backend-laravel/scripts/browser-audit.cjs
   - backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php
   - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php
   - backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php
   - backend-laravel/app/Services/RuntimeMonitoringService.php
+  - backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php
   - backend-laravel/app/Services/LabLifecycleErrorLogger.php
   - backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php
   - backend-laravel/app/Services/RuntimeReloadPreflightService.php
@@ -130,6 +144,12 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/scripts/test_create_database_backup.py
+  - backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php
+  - backend-laravel/tests/Feature/PhaseTwoFoundationTest.php
+  - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
+  - backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php
+  - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
   - backend-laravel/scripts/pm2-refresh-display-env.test.cjs
   - backend-laravel/scripts/windows-hidden-shell.test.cjs
   - backend-laravel/scripts/headless-terminal.test.cjs

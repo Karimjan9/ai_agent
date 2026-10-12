@@ -13,6 +13,31 @@ use Tests\TestCase;
 
 class ResearchWindowProvenanceAuditTest extends TestCase
 {
+    public function test_request_history_is_read_once_in_bounded_chunks_without_repeated_json_scans(): void
+    {
+        for ($i = 0; $i < 70; $i++) {
+            $this->runReceipt(['mtf_bundle_manifest' => ['streams' => ['H4' => [
+                'first_candle_at' => '2010-01-01T00:00:00Z', 'last_candle_at' => '2010-01-01T04:00:00Z',
+                'sha256' => str_repeat('e', 64)]]],
+                'first_candle_at' => '2025-01-01T00:00:00Z', 'last_candle_at' => '2025-01-02T00:00:00Z']);
+        }
+        DB::enableQueryLog();
+        $audit = app(ResearchWindowProvenanceAuditService::class)->audit('2010-01-01T00:00:00Z', '2010-01-02T00:00:00Z');
+        $queries = collect(DB::getQueryLog())->pluck('query')->filter(fn ($sql) => str_contains($sql, 'request_meta'));
+        DB::disableQueryLog();
+
+        $this->assertCount(3, $queries);
+        foreach ($queries as $query) {
+            $this->assertStringNotContainsString('union', strtolower($query));
+            $this->assertStringNotContainsString('json_extract', strtolower($query));
+            $this->assertStringContainsString('limit 32', strtolower($query));
+        }
+        $this->assertSame(70, (int) $audit['run_phase_summary'][0]['total']);
+        $this->assertSame(70, collect($audit['research_input_reference_summary'])->firstWhere('stream', 'H4')['referenced_runs']);
+        $this->assertTrue(collect($audit['research_input_reference_ranges'])->firstWhere('stream', 'H4')['candidate_physical_time_overlap']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+    }
+
     use RefreshDatabase;
 
     protected function setUp(): void

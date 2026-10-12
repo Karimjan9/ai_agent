@@ -84,7 +84,7 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
         $this->assertFalse(data_get(ResearchExperimentReceipt::sole()->payload, 'evidence.confirmed_skill_credit'));
     }
 
-    public function test_promising_local_result_waits_for_authorized_unused_post_paper_data(): void
+    public function test_promising_local_result_waits_for_original_unused_pre_paper_data(): void
     {
         [$version] = $this->fixture(true, 'research_compared', 10);
         $result = app(SpecialistCouncilResearchFeedbackService::class)->recordAssessment($version);
@@ -94,7 +94,8 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
         $this->assertSame('blocked', $work->status);
         $this->assertFalse(data_get($work->payload, 'executable'));
         $this->assertFalse(data_get($work->payload, 'data_policy.paper_2026_is_research'));
-        $this->assertSame(2027, data_get($work->payload, 'data_policy.minimum_research_year'));
+        $this->assertSame('2026-01-01T00:00:00Z', data_get($work->payload, 'data_policy.research_end_exclusive'));
+        $this->assertTrue(data_get($work->payload, 'data_policy.all_future_data_paper_only'));
         $this->assertTrue(data_get($work->payload, 'same_evidence_replay_forbidden'));
         $this->assertSame([], app(ResearchExperimentConversionKernelService::class)->claimForOwner(ResearchLoopArbiterService::class));
         $this->assertFalse($version->assessment['qualified']);
@@ -225,8 +226,14 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
             $request = ['specialist_council_evaluation' => $binding, 'specialist_council_contract' => $runtime,
                 'symbol' => 'XAUUSD', 'timeframe' => 'M5', 'replay_dataset_hash' => str_repeat('d', 64),
                 'execution_hash' => $plan['execution_hash'], 'initial_balance' => $plan['initial_capital'],
-                'cost_model' => $plan['cost_model'], 'risk_policy' => $plan['risk_policy'], 'risk_per_trade' => .5,
-                'specialist_council_evaluation_policy' => ['synthetic_comparison_fixture' => true]];
+                'execution' => $plan['cost_model'],
+                'execution_contract' => app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'M5'),
+                'cost_model' => $plan['cost_model'], 'risk_policy' => $plan['risk_policy'], 'risk_per_trade' => .5];
+            $request['specialist_council_evaluation_policy'] = [
+                'initial_balance' => (float) $plan['initial_capital'], 'risk_per_trade' => .5,
+                'cost_model' => $plan['cost_model'], 'risk_policy' => $plan['risk_policy'],
+                'evaluation_scope' => $arm['evaluation_scope'],
+                'window_policy' => $plan['windows'][$arm['window_key']]['prospective_probe_window']];
             $metrics = ['net_profit' => $arm['kind'] === 'candidate' ? 10 : 0, 'total_costs' => 1,
                 'total_trades' => 8, 'matured_trades' => 8, 'censored_trades' => 0, 'max_drawdown_percent' => 1,
                 'max_daily_loss_percent' => 1, 'max_gross_exposure_percent' => 20, 'max_total_risk_percent' => 1];
@@ -236,6 +243,17 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
                 'contract_hash' => $runtime['contract_hash'], 'metrics' => $metrics, 'position_ledger' => $positions,
                 'members' => [['specialist_id' => 'hour-owner', 'stages' => ['decision:observed' => 10]],
                     ['specialist_id' => 'day-owner', 'stages' => ['decision:observed' => 10]]]]];
+            // This synthetic assessment fixture supplies the same preregistered
+            // physical clock for every arm; native production is tested separately.
+            $scope = $arm['evaluation_scope'];
+            $response['data_quality']['replay_executed_clock'] = [
+                'protocol' => 'replay_executed_clock_v1', 'semantics' => 'synthetic_assessment_fixture',
+                'index_basis' => 'original_loaded_rows', 'execution_timeframe' => 'M5', 'duration_seconds' => 300,
+                'decision_rows' => $scope['decision_rows'], 'first_evaluation_index' => 10, 'last_evaluation_index' => 208,
+                'signal_start' => $scope['start_inclusive'], 'signal_end' => $scope['end_exclusive'],
+                'execution_start' => $scope['start_inclusive'], 'execution_end' => $scope['end_exclusive'],
+                'index_set_hash' => hash('sha256', json_encode(range(10, 208))),
+                'schedule_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($scope)];
             $run = LabEvaluationRun::create(['run_id' => 'original-'.$key, 'model_version_id' => $arm['model_version_id'],
                 'phase' => 'screening', 'mode' => 'incremental', 'status' => 'completed', 'started_at' => now(), 'finished_at' => now(),
                 'request_hash' => str_repeat('b', 64), 'data_hash' => str_repeat('d', 64), 'parameter_hash' => str_repeat('f', 64), 'code_hash' => str_repeat('e', 64)]);
@@ -299,11 +317,25 @@ class SpecialistCouncilResearchFeedbackTest extends TestCase
             $armDefinitions[] = ['arm_key' => 'ablation-2025', 'kind' => 'ablation', 'window_key' => 'original-2025',
                 'model_version_id' => $model->id, 'removed_id' => 'hour-owner'];
         }
+        $execution = app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'M5');
+        $window = ['window_key' => 'original-2025', 'start_inclusive' => '2025-01-01T00:00:00Z',
+            'end_exclusive' => '2025-02-01T00:00:00Z', 'dataset_sha256' => str_repeat('d', 64)];
+        if ($completeResearchPlan) {
+            $rows = array_map(fn ($index) => ['time' => \Carbon\CarbonImmutable::parse('2025-01-01T00:00:00Z')
+                ->addMinutes($index * 5)->toIso8601String()], range(0, 209));
+            $probe = app(\App\Services\ProspectiveRepairProbeWindowService::class)->seal(
+                $rows, $window['dataset_sha256'], $execution['execution_hash'], 'synthetic-feedback-comparison', 200, 10);
+            $window['prospective_probe_window'] = $probe;
+            $window['evaluation_scope'] = ['start_inclusive' => $probe['evaluated_start'],
+                'end_exclusive' => \Carbon\CarbonImmutable::parse($probe['evaluated_end'])->addMinutes(5)->toIso8601String(),
+                'rows' => 200, 'decision_rows' => 199, 'warmup_rows' => 10,
+                'policy_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($probe)];
+        }
         $plan = $service->sealEvaluationPlan($version, 'independent-examiner', ['purpose' => 'research',
-            'execution_hash' => str_repeat('e', 64), 'execution_timeframe' => 'M5', 'initial_capital' => 10000,
-            'cost_model' => ['commission_percent' => .1], 'risk_policy' => ['max_risk' => 2, 'risk_per_trade_percent' => .5],
-            'windows' => [['window_key' => 'original-2025', 'start_inclusive' => '2025-01-01T00:00:00Z',
-                'end_exclusive' => '2025-02-01T00:00:00Z', 'dataset_sha256' => str_repeat('d', 64)]],
+            'execution_hash' => $execution['execution_hash'], 'execution_timeframe' => 'M5', 'initial_capital' => 10000,
+            'cost_model' => $execution['parameters'],
+            'risk_policy' => [...array_diff_key($version->manifest['execution'], ['id' => true, 'version' => true]), 'risk_per_trade_percent' => .5],
+            'windows' => [$window],
             'arms' => $armDefinitions]);
         if (! $withAssessment) return [$version, null];
         $run = LabEvaluationRun::create(['run_id' => 'synthetic-original-run', 'model_version_id' => $model->id,

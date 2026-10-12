@@ -96,6 +96,28 @@ class ScheduledCommandOutcomeClassifierService
 
         $normalized = strtolower(trim($output));
 
+        // Native archives may be accepted by Dukascopy without being ready.
+        // Keep the command's nonzero exit and unavailable-data gates, while
+        // allowing the ordinary bounded schedule to try again later.
+        if (in_array($command, ['market-data:update', 'market-data:sync-volume'], true)
+            && str_contains($normalized, 'dukascopy_native_http_202_unresolved:')) {
+            $lines = array_values(array_filter(array_map('trim', explode("\n", $normalized)), fn ($line) => $line !== ''));
+            $prefix = $command === 'market-data:update' ? '(?:[a-z0-9_.\/-]+:\s*)?' : '';
+            $allNativePending = $lines !== [];
+            foreach ($lines as $line) {
+                if (! preg_match('/^'.$prefix.'dukascopy_native_http_202_unresolved:\s*\S.*$/D', $line)) {
+                    $allNativePending = false;
+                    break;
+                }
+            }
+            if ($allNativePending) {
+                return $this->result('deferred_external_dependency', false, $exitCode, 'dukascopy_native_archive_pending');
+            }
+            // A native pending line cannot conceal another provider failure,
+            // including one that also mentions a generic transient condition.
+            return $this->result('technical_failure', true, $exitCode, 'mixed_or_malformed_native_archive_failure');
+        }
+
         if ($command === 'trading:run-lifecycle-cycle'
             && (str_contains($normalized, 'status=blocked') || str_contains($normalized, '"status":"blocked"'))) {
             return $this->result('safety_blocked', false, $exitCode, 'lifecycle_gate_withheld');

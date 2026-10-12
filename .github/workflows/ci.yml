@@ -44,13 +44,18 @@ jobs:
         run: composer audit --locked
       - name: Frontend dependencies and audit
         working-directory: backend-laravel
-        run: npm ci && npm audit --omit=dev --audit-level=high
+        run: npm ci && npm audit --audit-level=moderate
       - name: Python dependencies
         working-directory: ai-service-python
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.lock.txt -r requirements-dev.txt
+      - name: Python security audit
+        working-directory: ai-service-python
+        run: pip-audit -r requirements.lock.txt --no-deps --disable-pip
       - name: Python tests
         working-directory: ai-service-python
-        run: PYTHONPATH=. python -m unittest discover -s tests -v
+        run: PYTHONPATH=. python -m pytest -q --junitxml=python-test-results.xml
+      - name: Atomic compressed backup contracts
+        run: python -m unittest discover -s backend-laravel/scripts -p test_create_database_backup.py -v
       - name: Laravel tests
         working-directory: backend-laravel
         run: php artisan test

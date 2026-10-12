@@ -1149,7 +1149,9 @@ class AiLearningLaboratoryTest extends TestCase
             ['regime' => 'trend_up', 'state_cluster' => ['cluster_id' => 'cluster-test']],
             'monthly_survival',
         );
-        $this->assertContains($parameterKey, $contract['blocked_mutations']);
+        // A legacy card projection cannot become a global parameter ban.
+        // Exact contextual constraints require the retrieval owner's proof.
+        $this->assertNotContains($parameterKey, $contract['blocked_mutations']);
         $this->assertContains('retention', $contract['required_exams']);
         $this->assertFalse($contract['promotion_evidence']);
 
@@ -1895,9 +1897,12 @@ class AiLearningLaboratoryTest extends TestCase
         $fullMiddleware = collect($full->middleware());
         $screenBatchMiddleware = collect($screenBatch->middleware());
 
-        $this->assertInstanceOf(SkipIfBatchCancelled::class, $screenMiddleware->first());
-        $this->assertInstanceOf(SkipIfBatchCancelled::class, $fullMiddleware->first());
+        $this->assertInstanceOf(\Illuminate\Queue\Middleware\Skip::class, $screenMiddleware->first());
+        $this->assertInstanceOf(\Illuminate\Queue\Middleware\Skip::class, $fullMiddleware->first());
         $this->assertInstanceOf(SkipIfBatchCancelled::class, $screenBatchMiddleware->first());
+        foreach ([$screenMiddleware, $fullMiddleware, $screenBatchMiddleware] as $middleware) {
+            $this->assertTrue($middleware->contains(fn ($item): bool => $item instanceof SkipIfBatchCancelled));
+        }
         $this->assertTrue($screenMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
         $this->assertTrue($fullMiddleware->contains(fn ($middleware): bool => $middleware instanceof PreferFullValidationQueue));
     }
@@ -2068,8 +2073,8 @@ class AiLearningLaboratoryTest extends TestCase
         $evidenceRunId = $this->completeEvidenceRun($agent, [
             'total_trades' => 25,
             'trade_ledger_hash' => hash('sha256', 'outbox-ledger'),
-            'trade_ledger' => array_fill(0, 25, ['entry_time' => '2026-01-01T00:00:00Z']),
-            'trades' => array_fill(0, 25, ['entry_time' => '2026-01-01T00:00:00Z']),
+            'trade_ledger' => array_fill(0, 25, ['entry_time' => '2025-01-01T00:00:00Z']),
+            'trades' => array_fill(0, 25, ['entry_time' => '2025-01-01T00:00:00Z']),
             'displayed_trade_count' => 25,
         ]);
 
@@ -2115,7 +2120,7 @@ class AiLearningLaboratoryTest extends TestCase
         $this->assertSame(0, app(ScreeningLearningOutboxService::class)->process());
         $this->assertDatabaseHas('screening_learning_outbox', [
             'lab_agent_id' => $agent->id,
-            'status' => 'blocked',
+            'status' => 'blocked_dependency',
         ]);
         $this->assertDatabaseMissing('mutation_memories', ['lab_agent_id' => $agent->id]);
         $this->assertDatabaseMissing('agent_memories', ['source_id' => $agent->id]);
@@ -2124,11 +2129,15 @@ class AiLearningLaboratoryTest extends TestCase
     private function completeEvidenceRun(LabAgent $agent, array $overrides = []): string
     {
         $evidence = app(LabImmutableEvidenceService::class);
+        $candles = array_map(fn (int $index): array => [
+            'time' => \Carbon\CarbonImmutable::parse('2025-01-01T00:00:00Z')->addHours($index)->toIso8601String(),
+            'close' => 2000,
+        ], range(0, 200));
         $run = $evidence->beginRun($agent, 'screening', 'incremental', ['source' => 'feature_test']);
         $evidence->attachRequest($run, [
             'symbol' => $agent->symbol,
             'timeframe' => $agent->timeframe,
-            'candles' => [['time' => '2026-01-01T00:00:00Z', 'close' => 2000]],
+            'candles' => $candles,
         ], ['request_id' => 'feature-test-'.$agent->id]);
         $evidence->finishRun($run, 'completed', [
             'total_trades' => 0,
@@ -2137,15 +2146,18 @@ class AiLearningLaboratoryTest extends TestCase
             'trades' => [],
             'displayed_trade_count' => 0,
             'decision_trace' => [[
-                'candle_time' => '2026-01-01T00:00:00Z',
+                'candle_index' => 200,
+                'candle_time' => $candles[200]['time'],
                 'event_type' => 'signal_evaluation',
                 'action' => 'WAIT',
                 'accepted' => false,
             ]],
             'data_quality' => [
                 'decision_trace' => [
+                    'protocol' => 'candle_decision_trace_v1',
                     'requested' => true,
                     'complete' => true,
+                    'event_count' => 1,
                     'evaluated_candle_count' => 1,
                 ],
             ],

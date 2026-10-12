@@ -2207,7 +2207,8 @@ class SpecialistCouncilLifecycleService
             throw new LogicException('COUNCIL_ORIGINAL_WINDOW_RELEASE_IDENTITY_MISMATCH');
         }
         $start = $this->time($originalWindow['start_inclusive']); $end = $this->time($originalWindow['end_exclusive']);
-        if ($start->lessThan('2027-01-01T00:00:00Z') || ! $end->greaterThan($start) || ! $run->started_at || $end->greaterThan($run->started_at)) {
+        if (! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+            $start->toIso8601String(), $end->toIso8601String()) || ! $run->started_at || $end->greaterThan($run->started_at)) {
             throw new LogicException('COUNCIL_ORIGINAL_WINDOW_EPOCH_INVALID');
         }
         $papers = $identity['paper_exclusions'] ?? null; $legacy = false;

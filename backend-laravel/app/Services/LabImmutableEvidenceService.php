@@ -1894,7 +1894,7 @@ class LabImmutableEvidenceService
         $roots = [$backendRoot.'/app', $backendRoot.'/config', $pythonRoot.'/app'];
         $manifestFiles = [
             $backendRoot.'/composer.lock', $backendRoot.'/package-lock.json',
-            $pythonRoot.'/requirements.txt', $pythonRoot.'/pyproject.toml',
+            $pythonRoot.'/requirements.txt', $pythonRoot.'/requirements.lock.txt', $pythonRoot.'/pyproject.toml',
         ];
         $parts = [];
 

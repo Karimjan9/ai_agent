@@ -64,15 +64,16 @@ class CausalEdgeAccountingTest extends TestCase
         $this->assertSame('M5', $passport['components']['temporal_roles']['trigger']);
         $this->assertSame('M5', $passport['components']['temporal_roles']['execution']);
         $this->assertSame('M5', $passport['horizon_contract']['roles']['execution']);
-        $this->assertSame('M5', $passport['typed_program']['nodes'][4]['timeframe']);
+        $nodes = collect($passport['typed_program']['nodes'])->keyBy('module');
+        $this->assertSame('M5', $nodes['entry_model']['timeframe']);
         $this->assertFalse($passport['temporal_policy']['data_contract']['m1_execution']);
         $this->assertFalse($passport['location_thesis']['trigger_admissible']);
         $this->assertSame('structure_stop', $passport['invalidation_target_contract']['invalidation_model']);
         $this->assertSame('H1_liquidity_target', $passport['invalidation_target_contract']['target_model']);
         $this->assertSame('normal', $passport['news_state']);
         $this->assertSame('typed_program_compiled', $passport['typed_program']['status']);
-        $this->assertSame('RegimeEvidence', $passport['typed_program']['nodes'][0]['provides']);
-        $this->assertSame('ExitPolicy', $passport['typed_program']['nodes'][7]['provides']);
+        $this->assertSame('RegimeEvidence', $nodes['regime_detector']['provides']);
+        $this->assertSame('ManagementReceipt', $nodes['management_policy']['provides']);
     }
 
     public function test_news_reentry_risk_hysteresis_and_winner_only_adds_are_constrained(): void

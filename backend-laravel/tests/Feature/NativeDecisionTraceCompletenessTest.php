@@ -61,7 +61,8 @@ request.policy_context = {'full_replay_runtime_policy': {
     'protocol': 'specialist_council_original_full_source_v1',
     'evaluation_mode': 'full', 'selection': 'entire_source', 'warmup_rows': 0}}
 response = run_simple_ema_rsi_backtest_on_dataframe(request, frame.iloc[:2].copy())
-print(json.dumps({'request': request.model_dump(mode='json'),
+# The original contains supplied fields, without DTO-only diagnostic defaults.
+print(json.dumps({'request': request.model_dump(mode='json', exclude_none=True, exclude_unset=True),
                  'response': response.model_dump(mode='json')}, allow_nan=False))
 PYTHON;
         $process = new Process(['python', '-c', $script], base_path('../ai-service-python'), timeout: 45);

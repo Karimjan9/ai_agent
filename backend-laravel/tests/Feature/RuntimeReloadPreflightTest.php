@@ -29,6 +29,17 @@ class RuntimeReloadPreflightTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_an_inflight_backup_is_checked_before_source_reload(): void
+    {
+        $queues = Mockery::mock(LabQueueJobInspector::class);
+        $queues->shouldReceive('reservedQueueBacklog')->once()
+            ->with(Mockery::on(fn ($names) => in_array('scheduler-backup', $names, true)))
+            ->andReturn(['total'=>1, 'queues'=>['scheduler-backup'=>1], 'pending'=>0, 'delayed'=>0]);
+        $result = (new RuntimeReloadPreflightService($queues))->inspect();
+        $this->assertFalse($result['safe']);
+        $this->assertSame('RESERVED_WORKER_JOB_EXISTS', $result['reason']);
+    }
+
     public function test_delayed_research_is_visible_but_does_not_block_an_idle_reload(): void
     {
         $queues = Mockery::mock(LabQueueJobInspector::class);

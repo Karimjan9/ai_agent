@@ -47,6 +47,7 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
      */
     public static function scheduledLane(string $command, array $arguments = []): string
     {
+        if ($command === 'ops:backup-database') return 'scheduler-backup';
         $critical = [
             'trading:pump-learning-lane',
             'trading:process-canonical-learning-outbox',
@@ -123,9 +124,8 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
         public string $lane = 'scheduler-ops',
         public ?int $researchLoopDecisionId = null,
     ) {
-        $this->lane = in_array($lane, ['scheduler-critical', 'scheduler-constructor', 'scheduler-research'], true)
-            ? $lane
-            : 'scheduler-ops';
+        $this->lane = $this->command === 'ops:backup-database' ? 'scheduler-backup'
+            : (in_array($lane, ['scheduler-critical', 'scheduler-constructor', 'scheduler-research'], true) ? $lane : 'scheduler-ops');
         // Normal research commands remain bounded to 15 minutes. Commands
         // capable of compiling a full population receive the same longer
         // lease: twenty immutable seats can legitimately take 20-35 minutes
@@ -146,9 +146,9 @@ class RunScheduledArtisanCommandJob implements ShouldBeUnique, ShouldQueue
             'trading:lab-learn-from-history',
         ], true) || ($this->command === 'trading:dispatch-lab'
             && (bool) ($this->arguments['--learning-confirmation'] ?? false));
-        $this->timeout = $this->lane === 'scheduler-critical'
+        $this->timeout = $this->command === 'ops:backup-database' ? 3600 : ($this->lane === 'scheduler-critical'
             ? 180
-            : ($fullPopulationConstructor ? 2400 : 900);
+            : ($fullPopulationConstructor ? 2400 : 900));
         $connection = (string) config('queue.default', 'redis');
         $retryAfter = max(0, (int) config("queue.connections.{$connection}.retry_after", 0));
         // Keep the uniqueness lease beyond Redis visibility. Otherwise a

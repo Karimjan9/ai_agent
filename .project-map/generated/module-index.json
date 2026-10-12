@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-11T16:27:41.483Z",
-  "source_digest": "8c62e9fa4b072e0a7604e29aa0054fd8f78ba500c1317f43732156d9666681d1",
-  "source_file_count": 1612,
-  "git_head": "2df810b92d653c338927fa618c2664ca996b807f",
+  "generated_at": "2026-10-12T18:23:26.010Z",
+  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
+  "source_file_count": 1629,
+  "git_head": "606d999c3efe83311938a6c90206a02f3fd82692",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,6 +22,8 @@
         "research-paper-epoch"
       ],
       "paths": [
+        "backend-laravel/app/Services/ResearchRequestReferenceInventoryService.php",
+        ".project-map/decisions/ADR-038-historical-first-exposure-registration.md",
         "backend-laravel/app/Models/ScopedResearchCertificate.php",
         "backend-laravel/app/Models/DescendantValueTrial.php",
         "backend-laravel/app/Services/ScopedResearchCertificateService.php",
@@ -394,7 +396,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 130,
+      "source_file_count": 131,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -464,6 +466,14 @@
         "qualified-solo"
       ],
       "paths": [
+        "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
+        "backend-laravel/app/Services/LabPopulationReplacementTrait.php",
+        "backend-laravel/app/Services/LabPopulationPlanningTrait.php",
+        "backend-laravel/app/Services/LabPopulationCouncilPlanningTrait.php",
+        "backend-laravel/app/Services/LabPopulationAgentFactoryTrait.php",
+        "backend-laravel/app/Services/LabPopulationMutationTrait.php",
+        "backend-laravel/app/Services/LabPopulationLineageTrait.php",
+        "backend-laravel/app/Services/RootExperimentPortfolioPlannerService.php",
         "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
         "backend-laravel/app/Services/UnusedDraftPriceDiscoveryPreparationService.php",
         "backend-laravel/app/Services/UnusedDraftPriceDiscoveryReceiptService.php",
@@ -476,6 +486,7 @@
         "backend-laravel/app/Console/Commands/DispatchFullLabValidation.php",
         "backend-laravel/app/Http/Controllers/EvolutionLabController.php",
         "backend-laravel/app/Services/LabPopulationService.php",
+        "backend-laravel/app/Services/RescueCircuitBreakerService.php",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabImmutableEvidenceService.php",
         "backend-laravel/app/Jobs/ProjectLabCandleDecisionEvents.php",
@@ -685,6 +696,8 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/RescueCircuitBreakerTest.php",
+        "backend-laravel/tests/Feature/CausalEdgeAccountingTest.php",
         "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/tests/Feature/AuthorizedSpecialistCouncilConstructorTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPanelReservationTest.php",
@@ -730,7 +743,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 96,
+      "source_file_count": 105,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -746,6 +759,9 @@
         "attestation"
       ],
       "paths": [
+        "ai-service-python/requirements.lock.txt",
+        "ai-service-python/requirements-dev.txt",
+        "ai-service-python/tests/test_market_regime.py",
         "backend-laravel/ecosystem.config.cjs",
         "backend-laravel/app/Services/LabAgentEvaluationService.php",
         "backend-laravel/app/Services/LabImmutableEvidenceService.php",
@@ -824,7 +840,7 @@
       ],
       "dependencies": [],
       "invariants": [
-        "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Only an internal nonserialized witness permits the future closed-context and quote calendar route. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",
+        "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",
         "Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.",
         "unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).",
         "Chosen full-account native SOLO retains an exact hash-valid compiled source member; Python permits only its prospectively declared allocation delta to 1.0 before compute. PHP requires original account/cost/risk/program/horizon and actual trace/clock attestation. Chosen-unqualified is not best/eligible authority, and legacy or observed follow-ups cannot retrofit the declaration.",
@@ -862,6 +878,7 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_market_regime.py",
         "ai-service-python/tests/test_scoped_research_runtime.py",
         "ai-service-python/tests/test_scoped_position_maturity.py",
         "ai-service-python/tests/test_scoped_selector_partition.py",
@@ -909,7 +926,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 56,
+      "source_file_count": 57,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {
@@ -925,6 +942,7 @@
         "gap-recovery"
       ],
       "paths": [
+        "backend-laravel/app/Console/Commands/SyncCanonicalMarketVolume.php",
         "backend-laravel/app/Console/Commands/BackfillTrainingMarketData.php",
         "backend-laravel/app/Console/Commands/BackfillIntradayTrainingMarketData.php",
         "backend-laravel/app/Services/MarketData",
@@ -952,6 +970,7 @@
         "backend-laravel/scripts/audit-frozen-m5-gap-source.py"
       ],
       "entry_points": [
+        "market-data:sync-volume",
         "market-data:backfill-training",
         "market-data:backfill-intraday-training",
         "MarketDataContinuityService",
@@ -1001,6 +1020,7 @@
         "Historical quote spread is a separate pre-2026 research sidecar; executable liquidity requires one synchronized BID/ASK tick strictly before M5 close, maximum age 60 seconds, matching frozen M5 BID, source hashes and availability. Independently closing Jetta BID/ASK bars are diagnostic only. Neither artifact backfills an existing generation or gains authority merely by existing."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
         "backend-laravel/tests/Feature/FrozenM5CalendarAuditCacheTest.php",
         "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
         "backend-laravel/tests/Feature/TrainingBackfillProviderIdentityTest.php",
@@ -1021,7 +1041,7 @@
       "flows": [
         ".project-map/modules/market-data/flows/continuity-recovery.md"
       ],
-      "source_file_count": 39,
+      "source_file_count": 40,
       "map": ".project-map/modules/market-data/module.yaml"
     },
     {
@@ -1037,10 +1057,24 @@
         "recovery"
       ],
       "paths": [
+        "backend-laravel/routes/console.php",
+        "backend-laravel/app/Console/Commands/BackupDatabase.php",
+        "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+        "backend-laravel/app/Console/Commands/CleanupLegacyBackups.php",
+        "backend-laravel/app/Services/PhaseTwoFoundationService.php",
+        "backend-laravel/scripts/create-database-backup.py",
+        "backend-laravel/scripts/test_create_database_backup.py",
+        "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+        "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+        "backend-laravel/scripts/benchmark-research-provenance.php",
+        "backend-laravel/scripts/restore-backup-drill.php",
+        "backend-laravel/scripts/restore-backup-stream.py",
+        "backend-laravel/scripts/browser-audit.cjs",
         "backend-laravel/app/Console/Commands/PrepareUnusedDraftPriceDiscovery.php",
         "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
         "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
         "backend-laravel/app/Services/RuntimeMonitoringService.php",
+        "backend-laravel/app/Services/LighthouseVerticalLoopMonitoringService.php",
         "backend-laravel/app/Services/LabLifecycleErrorLogger.php",
         "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
         "backend-laravel/app/Services/RuntimeReloadPreflightService.php",
@@ -1157,6 +1191,12 @@
         "Actionable technical recovery at the terminal lineage head precedes drift or fresh-data generation writers; an exit-zero blocked generation command is not a completed writer."
       ],
       "tests": [
+        "backend-laravel/scripts/test_create_database_backup.py",
+        "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+        "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
+        "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
+        "backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php",
+        "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
         "backend-laravel/scripts/pm2-refresh-display-env.test.cjs",
         "backend-laravel/scripts/windows-hidden-shell.test.cjs",
         "backend-laravel/scripts/headless-terminal.test.cjs",
@@ -1187,7 +1227,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 60,
+      "source_file_count": 74,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {
@@ -1249,6 +1289,7 @@
         "Invalid process outcomes are quarantined from learning."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/ChampionChallengerCycleTest.php",
         "backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php",
         "backend-laravel/tests/Feature/SpecialistCouncilPaperAdoptionTest.php",
         "backend-laravel/tests/Feature/SpecialistPaperAccountTest.php",
