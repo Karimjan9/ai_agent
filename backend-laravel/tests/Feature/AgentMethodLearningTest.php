@@ -246,6 +246,83 @@ class AgentMethodLearningTest extends TestCase
         $this->assertDatabaseCount('agent_method_policy_revisions', 2);
     }
 
+    public function test_each_local_loop_reopens_one_original_for_many_facts_and_next_inspection_stays_fresh(): void
+    {
+        [$run, $request, $response] = $this->products();
+        $events = [];
+        foreach (['london', 'new_york', 'asia'] as $index => $session) {
+            $event = $response['decision_trace'][0]['method_learning'];
+            $event['decision_id'] = 'same-run-context-'.$index;
+            $event['context'] = ['regime' => 'trend_up', 'session' => $session];
+            $event['context_hash'] = $this->hash($event['context']);
+            $events[] = $this->seal($event, 'receipt_hash');
+        }
+        $response['decision_trace'] = array_map(fn ($event) => ['event_type' => 'instrument_method_decision', 'method_learning' => $event], $events);
+        $receipt = $response['data_quality']['instrument_method_learning_receipt'];
+        foreach (['event_count', 'used_count', 'in_scope_count', 'behavior_changed_count'] as $field) $receipt[$field] = 3;
+        $receipt['reason_counts'] = ['recipe_evaluated' => 3]; $receipt['samples'] = $events;
+        $framed = '';
+        foreach ($events as $event) { $encoded = $this->canonicalJson($event); $framed .= pack('N2', 0, strlen($encoded)).$encoded; }
+        $receipt['events_hash'] = hash('sha256', $framed);
+        $response['data_quality']['instrument_method_learning_receipt'] = $this->seal($receipt, 'receipt_hash', 'receipt_json');
+        $originalOwner = app(LabImmutableEvidenceService::class);
+        $run->update(['response_hash' => $originalOwner->hash($response)]);
+        $requestArtifact = $this->artifact($run, 'evaluation_request', $request, ['request_hash' => $run->request_hash]);
+        $this->artifact($run, 'evaluation_response', $response);
+        $reads = [];
+        $immutable = Mockery::mock(LabImmutableEvidenceService::class)->makePartial();
+        $immutable->shouldReceive('learningEligibility')->andReturn(['complete' => true]);
+        $immutable->shouldReceive('verifiedModelRuntimeIdentity')->andReturn(['request_artifact_hash' => $requestArtifact->sha256]);
+        $immutable->shouldReceive('readArtifactPayload')->andReturnUsing(function ($artifact) use ($originalOwner, &$reads) {
+            $reads[$artifact->artifact_type] = ($reads[$artifact->artifact_type] ?? 0) + 1;
+            return $originalOwner->readArtifactPayload($artifact);
+        });
+        $this->app->instance(LabImmutableEvidenceService::class, $immutable);
+        $owner = app(AgentMethodLearningService::class); $learned = $owner->learnFromRun($run);
+        $this->assertSame('learned_diagnostic', $learned['status'], json_encode($learned));
+        $this->assertCount(3, $learned['experience_keys']);
+        $rows = DB::table('agent_method_experiences')->orderBy('experience_key')->get();
+        $before = $rows->toJson(); $sources = []; $groups = [];
+        foreach ($rows as $row) {
+            $fact = json_decode($row->facts, true);
+            $sources[] = ['experience_key' => $row->experience_key, 'run_id' => $row->run_id,
+                'request_hash' => $fact['request_hash'], 'response_hash' => $fact['response_hash'], 'facts_hash' => $this->hash($fact)];
+            $groups[$row->context_key] = ['context' => $fact['context'], 'recipe_hash' => $fact['recipe_hash'],
+                'event_count' => 1, 'in_scope_count' => 1, 'used_count' => 1, 'behavior_changed_count' => 1, 'veto_count' => 1];
+        }
+        ksort($groups);
+        $expected = ['protocol' => AgentMethodLearningService::POLICY_PROTOCOL, 'agent_key' => 'agent-one', 'revision' => 2,
+            'library_hash' => $this->library['library_hash'], 'library_contract' => $this->library['library_contract'],
+            'rules' => array_values(array_map(fn ($item) => ['context_predicate' => $item['context'], 'preferred_recipes' => [$item['recipe_hash']]], $groups)),
+            'default_action' => 'BASELINE', 'learning_provenance' => ['protocol' => 'frozen_method_learning_exposure_v1',
+                'parent_policy_hash' => $learned['policy_hash'], 'sources' => $sources, 'selection' => 'observed_use_then_behavior_then_veto',
+                'max_recipes' => 3, 'contextual_statistics' => array_values(array_map(fn ($item) => [$item], $groups)),
+                'out_of_sample' => false, 'confirmation_proven' => false]];
+        $reads = []; $proposal = $owner->proposePolicy($learned['policy_hash'], 2);
+        $this->assertSame('frozen_diagnostic_proposal', $proposal['proposal_status'], json_encode($proposal));
+        $this->assertSame($this->hash($expected), $proposal['policy_hash']);
+        // Proposal and registration each own a fresh loop: two reads/run/loop, not two reads/fact.
+        $this->assertSame(['evaluation_request' => 2, 'evaluation_response' => 2], $reads);
+        foreach ([1, 2] as $inspection) {
+            $reads = [];
+            $this->assertSame($proposal['policy_hash'], $owner->policy($proposal['policy_hash'])['policy_hash']);
+            $this->assertSame(['evaluation_request' => 1, 'evaluation_response' => 1], $reads, 'Fresh inspection '.$inspection);
+        }
+        $last = $rows->last();
+        DB::table('agent_method_experiences')->where('id', $last->id)->update(['facts' => '{"caller_score":999999}']);
+        $this->assertSame('PRIOR_EXPERIENCE_CONTENT_MISMATCH', $owner->policy($proposal['policy_hash'])['reason']);
+        DB::table('agent_method_experiences')->where('id', $last->id)->update(['facts' => $last->facts]);
+        $requestArtifact->update(['payload' => [...$request, 'evaluation_mode' => 'paper']]);
+        $this->assertSame('ORIGINAL_REQUEST_ARTIFACT_HASH_MISMATCH', $owner->policy($proposal['policy_hash'])['reason']);
+        $requestArtifact->update(['payload' => $request]);
+        $reads = [];
+        $this->assertSame($proposal['policy_hash'], $owner->policy($proposal['policy_hash'])['policy_hash']);
+        $this->assertSame(['evaluation_request' => 1, 'evaluation_response' => 1], $reads);
+        $this->assertSame($before, DB::table('agent_method_experiences')->orderBy('experience_key')->get()->toJson());
+        $this->assertDatabaseCount('agent_method_policy_revisions', 2);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     private function products(string $agentKey = 'agent-one'): array
     {
         $owner = app(AgentMethodLearningService::class);

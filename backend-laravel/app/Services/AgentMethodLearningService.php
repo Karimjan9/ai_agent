@@ -406,9 +406,9 @@ class AgentMethodLearningService
             $this->require(($policy['status'] ?? null) !== 'blocked', $policy['reason'] ?? 'POLICY_REQUIRED');
             $this->require($revision > $policy['revision'] && $maxRecipes >= 1 && $maxRecipes <= 8, 'POLICY_PROPOSAL_BOUNDS_INVALID');
             $rows = DB::table('agent_method_experiences')->where('policy_hash', $policyHash)->orderBy('experience_key')->get();
-            $contextRecipes = []; $sources = [];
+            $contextRecipes = []; $sources = []; $runFacts = [];
             foreach ($rows as $row) {
-                $facts = $this->verifiedExperience($row);
+                $facts = $this->verifiedExperience($row, $runFacts);
                 $sources[] = ['experience_key' => $row->experience_key, 'run_id' => $row->run_id,
                     'request_hash' => $facts['request_hash'], 'response_hash' => $facts['response_hash'],
                     'facts_hash' => $this->hash($facts)];
@@ -477,20 +477,26 @@ class AgentMethodLearningService
             'request_artifact_hash' => $requestArtifact->sha256, 'response_artifact_hash' => $responseArtifact->sha256];
     }
 
-    private function verifiedExperience(object $row): array
+    /** One caller-owned verification loop only; subsequent inspections reopen every original again. */
+    private function verifiedExperience(object $row, array &$runFacts): array
     {
-        $proof = $this->originalProof($row->run_id);
-        $settled = $this->settleOriginalRun($proof['run'], $proof['request'], $proof['response']);
-        $this->require(($settled['status'] ?? null) === 'verified_diagnostic', 'PRIOR_ORIGINAL_EXPERIENCE_INVALID');
-        foreach ($settled['experiences'] as $experience) {
-            if ($experience['experience_key'] !== $row->experience_key) continue;
-            $facts = [...$experience['facts'], 'request_artifact_hash' => $proof['request_artifact_hash'], 'response_artifact_hash' => $proof['response_artifact_hash']];
-            $this->require($row->policy_hash === $experience['facts']['policy_hash'] && $row->context_key === $experience['context_key']
-                && $row->recipe_hash === $experience['recipe_hash'] && $this->hash(json_decode($row->facts, true)) === $this->hash($facts),
-                'PRIOR_EXPERIENCE_CONTENT_MISMATCH');
-            return $facts;
+        if (! isset($runFacts[$row->run_id])) {
+            $proof = $this->originalProof($row->run_id);
+            $settled = $this->settleOriginalRun($proof['run'], $proof['request'], $proof['response']);
+            $this->require(($settled['status'] ?? null) === 'verified_diagnostic', 'PRIOR_ORIGINAL_EXPERIENCE_INVALID');
+            $derived = [];
+            foreach ($settled['experiences'] as $experience) {
+                $derived[$experience['experience_key']] ??= [...$experience['facts'],
+                    'request_artifact_hash' => $proof['request_artifact_hash'], 'response_artifact_hash' => $proof['response_artifact_hash']];
+            }
+            $runFacts[$row->run_id] = $derived;
         }
-        throw new \LogicException('PRIOR_EXPERIENCE_NOT_ORIGINAL');
+        $facts = $runFacts[$row->run_id][$row->experience_key] ?? null;
+        $this->require(is_array($facts), 'PRIOR_EXPERIENCE_NOT_ORIGINAL');
+        $this->require($row->policy_hash === $facts['policy_hash'] && $row->context_key === $this->hash($facts['context'])
+            && $row->recipe_hash === $facts['recipe_hash'] && $this->hash(json_decode($row->facts, true)) === $this->hash($facts),
+            'PRIOR_EXPERIENCE_CONTENT_MISMATCH');
+        return $facts;
     }
 
     private function verifiedProvenance(array $provenance, array $body): bool
@@ -505,12 +511,12 @@ class AgentMethodLearningService
         $parent = $this->policy((string) ($provenance['parent_policy_hash'] ?? ''));
         if (($parent['status'] ?? null) === 'blocked' || $parent['agent_key'] !== $body['agent_key']
             || $parent['revision'] >= $body['revision'] || $parent['library_hash'] !== $body['library_hash']) return false;
-        $keys = []; $contextRecipes = [];
+        $keys = []; $contextRecipes = []; $runFacts = [];
         foreach ($provenance['sources'] as $source) {
             if (isset($keys[$source['experience_key'] ?? ''])) return false;
             $row = DB::table('agent_method_experiences')->where('experience_key', $source['experience_key'] ?? '')->first();
             if (! $row || $row->policy_hash !== $parent['policy_hash']) return false;
-            $facts = $this->verifiedExperience($row);
+            $facts = $this->verifiedExperience($row, $runFacts);
             if (($source['facts_hash'] ?? null) !== $this->hash($facts) || ($source['run_id'] ?? null) !== $row->run_id
                 || ($source['request_hash'] ?? null) !== $facts['request_hash'] || ($source['response_hash'] ?? null) !== $facts['response_hash']) return false;
             $keys[$source['experience_key']] = true;

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T15:42:49.043Z",
-  "source_digest": "4110dd1bc4792356d1e1a89c1e548abe56afdd109438480ac6be2b1ec4031644",
+  "generated_at": "2026-10-13T16:04:22.986Z",
+  "source_digest": "e5ab0b7b5f7de7374d22717059348e58b606efa214fd62a97ba4e9acd5cef29c",
   "source_file_count": 1675,
-  "git_head": "0f3d82729d58edb860483c1c1ad0e28a3a5a0f62",
+  "git_head": "6383fb5cc095fc220e5ea99d5900e1f76ffc14e7",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -3494,73 +3494,73 @@
       "symbol": "verifiedExperience",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 480
+      "line": 481
     },
     {
       "symbol": "verifiedProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 496
+      "line": 502
     },
     {
       "symbol": "events",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 540
+      "line": 546
     },
     {
       "symbol": "counts",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 595
+      "line": 601
     },
     {
       "symbol": "rules",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 608
+      "line": 614
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 630
+      "line": 636
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 632
+      "line": 638
     },
     {
       "symbol": "require",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 633
+      "line": 639
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 634
+      "line": 640
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 635
+      "line": 641
     },
     {
       "symbol": "eventHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 636
+      "line": 642
     },
     {
       "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 646
+      "line": 652
     },
     {
       "symbol": "registerGenerationPolicy",
@@ -13085,40 +13085,46 @@
       "line": 24
     },
     {
-      "symbol": "products",
+      "symbol": "test_each_local_loop_reopens_one_original_for_many_facts_and_next_inspection_stays_fresh",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
       "line": 249
     },
     {
+      "symbol": "products",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
+      "line": 326
+    },
+    {
       "symbol": "policyInput",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
-      "line": 295
+      "line": 372
     },
     {
       "symbol": "artifact",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
-      "line": 302
+      "line": 379
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
-      "line": 308
+      "line": 385
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
-      "line": 309
+      "line": 386
     },
     {
       "symbol": "canonicalJson",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
-      "line": 314
+      "line": 391
     },
     {
       "symbol": "test_policy_revision_is_frozen_and_cannot_accept_caller_authority",
