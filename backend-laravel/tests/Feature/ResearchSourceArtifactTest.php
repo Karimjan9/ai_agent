@@ -71,6 +71,7 @@ class ResearchSourceArtifactTest extends TestCase
             'ai-service-python/app/main.py' => '# actual python source',
             'ai-service-python/tests/test_research_release.py' => '# focused regression',
             'backend-laravel/resources/research/instrument-methods/curated-v1.json' => '{"catalog":"pinned research-only fixture"}',
+            'backend-laravel/resources/research/instrument-methods/curated-v2.json' => '{"catalog":"append-only alternative methods fixture"}',
             'backend-laravel/.env' => 'SECRET_DO_NOT_ARCHIVE=fake-test-secret',
             'backend-laravel/storage/secret.php' => '<?php // never source',
             'backend-laravel/vendor/secret.php' => '<?php // never source',
@@ -182,12 +183,25 @@ class ResearchSourceArtifactTest extends TestCase
         $this->assertArrayHasKey('backend-laravel/scripts/run-ai-service.py', $first['manifest']['files']);
         $this->assertArrayHasKey('ai-service-python/tests/test_research_release.py', $first['manifest']['files']);
         $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/curated-v1.json', $first['manifest']['files']);
+        $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/curated-v2.json', $first['manifest']['files']);
     }
 
     public function test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact(): void
     {
         $reference = $this->owner->buildSourceArtifact()['reference'];
         File::put($this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json', '{"catalog":"changed fixture"}');
+        $this->assertNull($this->owner->currentSourceArtifact());
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');
+        $this->owner->verifySourceArtifact($reference, true);
+    }
+
+    public function test_alternative_catalog_drift_is_a_new_release_not_a_rewrite_of_v1(): void
+    {
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        $originalV1 = hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json');
+        File::put($this->root.'/backend-laravel/resources/research/instrument-methods/curated-v2.json', '{"catalog":"changed alternative"}');
+        $this->assertSame($originalV1, hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json'));
         $this->assertNull($this->owner->currentSourceArtifact());
         $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
         $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');

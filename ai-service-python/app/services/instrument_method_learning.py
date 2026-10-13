@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 from collections import Counter
 
 import pandas as pd
@@ -30,6 +32,37 @@ CONTEXT_FIELDS = {
     "session_instance_id", "calendar_version",
 }
 PRE_2026_END = pd.Timestamp("2026-01-01T00:00:00Z")
+
+
+def actual_meta_evaluation_binding(payload) -> dict:
+    """Seven actual physical ports, not copied training/evaluation assertions.
+
+    Training source/data/policy identity belongs to the immutable original
+    exporter. The prospective method intervention may use a different library
+    and later data, but cannot silently alter its physical strategy/account.
+    """
+    if payload is None or not hasattr(payload, 'model_dump'):
+        raise ValueError('METHOD_META_ACTUAL_REQUEST_REQUIRED')
+    request = payload.model_dump(mode='python')
+    context = request.get('policy_context') or {}
+    ports = {key: request[key] for key in ('risk_governor', 'risk_policy', 'capital_policy', 'capital_allocation') if key in request}
+    policy_ports = {key: context[key] for key in ('risk_policy', 'risk_governor', 'capital_policy', 'capital_allocation', 'ood_assessment') if key in context}
+    # Empty PHP associative arrays retain their [] wire/canonical spelling.
+    def php_arrays(value):
+        if isinstance(value, dict):
+            return {key: php_arrays(item) for key, item in value.items()} if value else []
+        if isinstance(value, list):
+            return [php_arrays(item) for item in value]
+        return value
+    account = {'initial_balance': request['initial_balance'], 'risk_per_trade': request['risk_per_trade'],
+        'hard_limits': request.get('hard_limits', context.get('hard_limits')),
+        'risk_capital_ports': ports, 'policy_risk_capital_ports': policy_ports}
+    seconds = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800, 'H1': 3600, 'H4': 14400, 'D1': 86400}.get(payload.timeframe)
+    if seconds is None:
+        raise ValueError('METHOD_META_PHYSICAL_CLOCK_REQUIRED')
+    return {'symbol': payload.symbol, 'timeframe': payload.timeframe, 'strategy': payload.strategy,
+        'parameters_hash': canonical_hash(request['parameters']), 'account_risk_hash': canonical_hash(php_arrays(account)),
+        'execution_hash': execution_contract_metadata(payload)['execution_hash'], 'clock_seconds': seconds}
 
 
 def _sealed_body(value: object, hash_key: str, json_key: str, prefix: str) -> dict:
@@ -126,7 +159,8 @@ def _context(row: dict, symbol: str, timeframe: str, direction: str) -> dict:
 
 class InstrumentMethodLearning:
     def __init__(self, contract: dict, payload=None, *, expected_agent_key: str | None = None,
-                 dataset_hash: str | None = None, execution_hash: str | None = None):
+                 dataset_hash: str | None = None, execution_hash: str | None = None,
+                 execution_owner: str = 'ordinary_single_position_v1'):
         body = _sealed_body(contract, "contract_hash", "contract_json", "METHOD_LEARNING_CONTRACT")
         if body.get("protocol") != PROTOCOL:
             raise ValueError("METHOD_LEARNING_PROTOCOL_REQUIRED")
@@ -233,7 +267,7 @@ class InstrumentMethodLearning:
             operators = runtime.get("operators")
             if not isinstance(operators, list) or len(operators) > 3:
                 raise ValueError("METHOD_LEARNING_OPERATOR_BUDGET_INVALID")
-            programs = [BoundedDecisionProgram(operator) for operator in operators]
+            programs = [BoundedDecisionProgram(operator, allow_method_features=True) for operator in operators]
             if len({program.target for program in programs}) != len(programs):
                 raise ValueError("METHOD_LEARNING_OPERATOR_TARGET_DUPLICATE")
             typed_methods = [method['implementation'] for method in methods.values()
@@ -275,11 +309,45 @@ class InstrumentMethodLearning:
         self.events = self.used = self.in_scope = self.changed = 0
         self.reason_counts, self.samples = Counter(), []
         self.event_hasher = hashlib.sha256()
+        from app.services.instrument_method_features import FIELDS
+        self.needs_features = any(field in FIELDS for programs in self.programs.values()
+            for program in programs for field in program.bindings.values())
+        self.features = None
+        self.meta_model = None
+        if 'meta_model' in body:
+            if (execution_owner != 'ordinary_single_position_v1'
+                    or payload is not None and bool(payload.specialist_council_contract)):
+                raise ValueError('METHOD_META_ORDINARY_ORIGINAL_ACCOUNT_SCOPE_REQUIRED')
+            meta = body['meta_model']
+            if not isinstance(meta, dict) or set(meta) != {'artifact', 'expected_training_binding', 'evaluation_binding'}:
+                raise ValueError('METHOD_META_MODEL_REFERENCE_FIELDS_REQUIRED')
+            actual = actual_meta_evaluation_binding(payload)
+            if meta.get('evaluation_binding') != actual:
+                raise ValueError('METHOD_META_ACTUAL_EVALUATION_BASELINE_MISMATCH')
+            from app.services.instrument_method_meta_model import FiniteInstrumentMetaModel
+            self.meta_model = FiniteInstrumentMetaModel(meta['artifact'], meta['expected_training_binding'], actual)
 
-    def validate_frame(self, frame: pd.DataFrame) -> None:
+    def validate_frame(self, frame: pd.DataFrame, *, bind_features: bool = True) -> None:
         stamps = pd.to_datetime(frame["time"], errors="coerce", utc=True)
         if stamps.isna().any() or (stamps >= PRE_2026_END).any():
             raise ValueError("METHOD_LEARNING_POST_2026_INPUT_FORBIDDEN")
+        if bind_features:
+            self.bind_feature_frame(frame)
+
+    def bind_feature_frame(self, frame: pd.DataFrame) -> None:
+        if self.needs_features:
+            from app.services.instrument_method_features import ClosedInstrumentMethodFeatures
+            from app.services.backtester import _timeframe_duration_minutes
+            self.features = ClosedInstrumentMethodFeatures(frame,
+                bar_duration_seconds=int(_timeframe_duration_minutes(self.body['scope']['timeframe']) * 60))
+
+    def notify_mature_close(self, *, position_id: str, net_pnl: float,
+                            available_at: str, mature: bool = True) -> None:
+        if self.needs_features:
+            if self.features is None:
+                raise ValueError("METHOD_LEARNING_FEATURE_FRAME_REQUIRED")
+            self.features.notify_mature_close(position_id=position_id, net_pnl=net_pnl,
+                available_at=available_at, mature=mature)
 
     def evaluate(self, row: dict, *, decision_id: str, phase: str, decision_at: str,
                  observed_at: str, direction: str) -> dict:
@@ -290,7 +358,39 @@ class InstrumentMethodLearning:
             raise ValueError("METHOD_LEARNING_FUTURE_OBSERVATION_FORBIDDEN")
         if observed >= PRE_2026_END or decision >= PRE_2026_END:
             raise ValueError("METHOD_LEARNING_POST_2026_INPUT_FORBIDDEN")
+        feature_inputs = None
+        if self.needs_features:
+            if self.features is None:
+                raise ValueError("METHOD_LEARNING_FEATURE_FRAME_REQUIRED")
+            feature_inputs = self.features.inputs(row, direction=direction, observed_at=observed_at)
+            # A caller/CSV cannot inject method inputs, availability or a model
+            # score; only the original closed-frame/state owner publishes them.
+            row = {key: value for key, value in row.items() if not key.startswith("method_")}
+            row.update(feature_inputs)
         context = _context(row, self.body["scope"]["symbol"], self.body["scope"]["timeframe"], direction)
+        meta_status = None
+        if self.meta_model is not None and feature_inputs is not None:
+            meta_status = 'entry_target_unreached'
+            if phase == 'entry':
+                axes = ('regime', 'volatility', 'session', 'direction')
+                original_context = {key: context.get(key) for key in axes}
+                known_context = all(isinstance(value, str) and value.lower() not in {'', 'unknown', 'any', 'none'}
+                    and re.fullmatch(r'[A-Za-z0-9_:-]{1,64}', value) is not None for value in original_context.values())
+                confidence = row.get('signal_confidence')
+                known_confidence = type(confidence) in {int, float} and math.isfinite(confidence) and 0 <= confidence <= 1
+                if not known_context or original_context['direction'].lower() not in {'buy', 'sell'}:
+                    meta_status = 'closed_context_unavailable'
+                elif not known_confidence:
+                    meta_status = 'signal_confidence_unavailable'
+                elif observed <= pd.Timestamp(self.meta_model.calibration_cutoff) or observed <= pd.Timestamp(self.meta_model.last_label_available_at):
+                    meta_status = 'calibration_labels_not_yet_available'
+                else:
+                    score = self.meta_model.predict(original_context, confidence,
+                        observed_at=observed_at, decision_at=decision_at)
+                    meta_status = 'context_calibration_cell_unavailable' if score is None else 'diagnostic_calibrated_score_available'
+                    if score is not None:
+                        row['method_meta_score'] = feature_inputs['method_meta_score'] = score
+                        row['method_meta_model_available'] = feature_inputs['method_meta_model_available'] = True
         in_scope = self.start <= observed <= self.end and _matches(self.scope_predicate, context)
         chosen, outputs, used = None, {}, False
         reason = "outside_scope"
@@ -306,12 +406,38 @@ class InstrumentMethodLearning:
                 targets = {"confirmation", "risk_multiplier"} if phase == "entry" else {"exit"}
                 for program in self.programs[chosen]:
                     if program.target in targets:
-                        output = program.evaluate(row, decision_at=decision_at, observed_at=observed_at)
+                        try:
+                            output = program.evaluate(row, decision_at=decision_at, observed_at=observed_at)
+                        except ValueError as error:
+                            if (str(error) != 'DECISION_OPERATOR_INPUT_TYPE_REQUIRED'
+                                    or not any(field.startswith('method_') and field not in row
+                                        for field in program.bindings.values())):
+                                raise
+                            # Missing genuine observation/model is a typed
+                            # dependency and conservative decision, not an
+                            # invented feature or unrelated technical failure.
+                            output = {'confirmation': False, 'risk_multiplier': 0.0, 'exit': False}[program.target]
+                            reason = 'method_input_unavailable'
+                        if program.target == 'confirmation' and output is False and feature_inputs is not None:
+                            missing = [field for field in program.bindings.values()
+                                if field.endswith('_available') and row.get(field) is False]
+                            if 'method_meta_model_available' in missing:
+                                reason = 'method_meta_score_unavailable' if self.meta_model is not None else 'method_model_unavailable'
+                            elif 'method_volume_available' in missing:
+                                reason = 'method_observed_volume_unavailable'
+                            elif 'method_quote_available' in missing:
+                                reason = 'method_observed_quote_unavailable'
+                            elif missing:
+                                reason = 'method_context_underpowered'
                         outputs[program.target] = output
                         changed = not output if program.target == "confirmation" else output != 1 if program.target == "risk_multiplier" else bool(output)
                         program.changed_decisions += int(changed)
                         used = True
-                reason = "recipe_evaluated" if used else "recipe_target_unreached"
+                if reason not in {'method_input_unavailable', 'method_model_unavailable',
+                        'method_meta_score_unavailable',
+                        'method_observed_volume_unavailable', 'method_observed_quote_unavailable',
+                        'method_context_underpowered'}:
+                    reason = "recipe_evaluated" if used else "recipe_target_unreached"
             elif self.policy["default_action"] == "WAIT" and phase == "entry":
                 outputs["confirmation"] = False
         changed = (phase == "entry" and (outputs.get("confirmation") is False or outputs.get("risk_multiplier", 1) < 1)
@@ -325,6 +451,15 @@ class InstrumentMethodLearning:
             "in_scope": bool(in_scope), "used": used, "reason": reason, "outputs": outputs or [],
             "behavior_changed": bool(changed), "research_only": True,
             "promotion_evidence": False, "economic_authority": False}
+        if feature_inputs is not None:
+            from app.services.instrument_method_features import PROTOCOL as feature_protocol
+            event.update({"feature_protocol": feature_protocol,
+                "feature_inputs_hash": canonical_hash(feature_inputs),
+                "feature_availability": {key: value for key, value in feature_inputs.items() if key.endswith('_available')}})
+        if self.meta_model is not None:
+            event.update({'meta_model_hash': self.meta_model.artifact_hash,
+                'meta_training_binding_hash': canonical_hash(self.meta_model.body['binding']),
+                'meta_score_status': meta_status or 'method_feature_target_unreached'})
         event["receipt_hash"] = canonical_hash(event)
         encoded = canonical_json(event).encode("utf-8")
         self.event_hasher.update(len(encoded).to_bytes(8, "big"))
@@ -360,10 +495,12 @@ class InstrumentMethodLearning:
 
 
 def validate_contract(contract: dict, *, dataset_hash: str, execution_hash: str,
-                      expected_agent_key: str | None = None, payload=None) -> dict:
+                      expected_agent_key: str | None = None, payload=None,
+                      execution_owner: str = 'ordinary_single_position_v1') -> dict:
     """Pure pre-cache validation; it never evaluates or consumes a decision."""
     return InstrumentMethodLearning(contract, payload, dataset_hash=dataset_hash,
-        execution_hash=execution_hash, expected_agent_key=expected_agent_key).body
+        execution_hash=execution_hash, expected_agent_key=expected_agent_key,
+        execution_owner=execution_owner).body
 
 
 def receipt_current(result: dict, contract: dict) -> bool:

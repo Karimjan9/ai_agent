@@ -91,6 +91,10 @@ class AgentMethodCandidateService
     /** Plain schema strategies only; richer programme owners must construct their own original successor. */
     public function baseline(ModelVersion $model): array
     {
+        if (array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $model->metadata)
+            || array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $model->metadata)) {
+            throw new LogicException('METHOD_CANDIDATE_META_ASSET_TRANSFER_OWNER_REQUIRED');
+        }
         foreach (['specialist_council', 'specialist_council_evaluation', 'specialist_council_membership',
             'native_specialist_council_seed', 'authorized_specialist_council_panel_seed', 'prospective_scoped_composition_recipe',
             'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'runtime_ensemble',

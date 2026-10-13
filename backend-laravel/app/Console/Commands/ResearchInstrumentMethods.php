@@ -9,6 +9,8 @@ use App\Services\InstrumentMethodLibraryService;
 use App\Services\InstrumentMethodResearchBindingService;
 use App\Services\InstrumentMethodSourceService;
 use App\Services\InstrumentMethodStudyService;
+use App\Services\InstrumentMethodMetaModelService;
+use App\Services\InstrumentMethodMetaBindingService;
 use App\Services\CuratedInstrumentMethodCatalogService;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
@@ -18,7 +20,7 @@ use Throwable;
 class ResearchInstrumentMethods extends Command
 {
     protected $signature = 'trading:instrument-methods
-        {action=inventory : inventory, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-execute, settle or status}
+        {action=inventory : inventory, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach or status}
         {--input= : Local JSON object file, at most 1 MiB}
         {--fetch : Explicitly fetch a public HTTPS source reference; source action only}
         {--json : Print the bounded result with exact JSON numeric values}';
@@ -33,17 +35,17 @@ class ResearchInstrumentMethods extends Command
     ): int {
         try {
             $action = $this->argument('action');
-            if (! in_array($action, ['inventory', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-execute', 'settle', 'status'], true)) {
+            if (! in_array($action, ['inventory', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'status'], true)) {
                 throw new InvalidArgumentException('METHOD_COMMAND_ACTION_INVALID');
             }
             if ($this->option('fetch') && $action !== 'source') throw new InvalidArgumentException('METHOD_COMMAND_FETCH_SOURCE_ONLY');
             $path = $this->option('input');
-            if (in_array($action, ['inventory', 'catalog'], true) && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
+            if ($action === 'inventory' && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
             $input = filled($path) ? $this->readInput($path) : [];
             if (! in_array($action, ['inventory', 'catalog', 'install', 'status'], true) && $input === []) throw new InvalidArgumentException('METHOD_COMMAND_INPUT_REQUIRED');
             $result = match ($action) {
                 'inventory' => $library->inventory(),
-                'catalog' => app(CuratedInstrumentMethodCatalogService::class)->catalog(),
+                'catalog' => app(CuratedInstrumentMethodCatalogService::class)->catalog($input),
                 'install' => app(CuratedInstrumentMethodCatalogService::class)->install($input),
                 'source' => $this->option('fetch') ? $sources->fetchSource($input) : $sources->registerSource($input),
                 'method' => $library->registerMethod($input),
@@ -57,8 +59,13 @@ class ResearchInstrumentMethods extends Command
                 'evolve' => app(AgentMethodCandidateService::class)->evolve($this->hashField($input, 'policy_hash'), $this->integer($input, 'revision'),
                     isset($input['max_recipes']) ? $this->integer($input, 'max_recipes') : 3),
                 'study' => app(InstrumentMethodStudyService::class)->preregister($input),
+                'study-prepare' => app(\App\Services\AgentMethodStudyPreparationService::class)->prepare($input),
                 'study-execute' => $this->registerStudyExecution($input),
                 'settle' => $this->settleStudy($input),
+                'meta-register' => app(InstrumentMethodMetaModelService::class)->preregister($input),
+                'meta-fit' => app(InstrumentMethodMetaModelService::class)->fit($this->onlyHash($input, 'registration_hash')),
+                'meta-status' => app(InstrumentMethodMetaModelService::class)->inspect($this->onlyHash($input, 'registration_hash')),
+                'meta-attach' => $this->attachMetaModel($input),
                 'status' => $this->status($input, $library, $agents),
             };
             // Reference text is stored by the source owner, never echoed by this interface.
@@ -72,6 +79,23 @@ class ResearchInstrumentMethods extends Command
                 'qualification_granted' => false, 'promotion_evidence' => false, 'economic_authority' => false]);
             return self::FAILURE;
         }
+    }
+
+    private function onlyHash(array $input, string $field): string
+    {
+        if (count($input) !== 1 || ! array_key_exists($field, $input)) {
+            throw new InvalidArgumentException('METHOD_COMMAND_EXACT_META_REFERENCE_REQUIRED');
+        }
+        return $this->hashField($input, $field);
+    }
+
+    private function attachMetaModel(array $input): array
+    {
+        if (count($input) !== 2 || array_diff(array_keys($input), ['model_id', 'model_hash']) !== []) {
+            throw new InvalidArgumentException('METHOD_COMMAND_EXACT_META_ATTACHMENT_REQUIRED');
+        }
+        return app(InstrumentMethodMetaBindingService::class)->attachUnusedModel(
+            $this->integer($input, 'model_id'), $this->hashField($input, 'model_hash'));
     }
 
     private function settleStudy(array $input): array
@@ -201,7 +225,7 @@ class ResearchInstrumentMethods extends Command
         }
         $summary = (string) ($result['status'] ?? (isset($result['contract_hash']) ? 'compiled_research_contract' : 'read_only_status'));
         if (isset($result['reason'])) $summary .= ': '.$result['reason'];
-        foreach (['source_key', 'method_hash', 'recipe_hash', 'policy_hash', 'contract_hash', 'library_hash'] as $field) {
+        foreach (['source_key', 'method_hash', 'recipe_hash', 'policy_hash', 'contract_hash', 'library_hash', 'registration_hash', 'model_hash'] as $field) {
             if (isset($result[$field])) $summary .= '; '.$field.'='.$result[$field];
         }
         $this->line($summary.'; research_only=true; promotion_evidence=false');

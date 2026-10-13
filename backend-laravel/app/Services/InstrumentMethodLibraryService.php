@@ -9,6 +9,17 @@ use Illuminate\Support\Facades\Schema;
 class InstrumentMethodLibraryService
 {
     public const PROTOCOL = 'instrument_method_library_v1';
+    /** These values are produced by the closed replay owner, never by supplied CSV columns. */
+    public const FEATURE_OWNER = 'closed_instrument_method_features_v1';
+    public const FEATURE_BOOL_INPUTS = ['method_history_available', 'method_session_available', 'method_swing_available',
+        'method_bos', 'method_choch', 'method_sweep_reclaim', 'method_volume_available', 'method_loss_history_available',
+        'method_signal_available', 'method_meta_model_available', 'method_compression_expansion',
+        'method_dynamic_cooldown_ready', 'method_regime_aligned', 'method_regime_available', 'method_transition_available', 'method_quote_available'];
+    public const FEATURE_NUMBER_INPUTS = ['method_atr_ratio', 'method_range_atr', 'method_session_range_atr',
+        'method_session_distance_atr', 'method_swing_range_atr', 'method_fib_retracement', 'method_sr_distance_atr',
+        'method_sr_touch_count', 'method_sr_age', 'method_equal_level_count', 'method_volume_ratio',
+        'method_transition_age', 'method_loss_streak', 'method_bars_since_loss', 'method_signal_age',
+        'method_signal_survival', 'method_regime_code', 'method_meta_score', 'method_spread_atr'];
     private const CONTEXT_AXES = ['regime', 'session', 'volatility', 'venue_phase', 'spread_liquidity_state',
         'transition_state', 'direction', 'session_instance_id', 'calendar_version'];
 
@@ -249,6 +260,13 @@ class InstrumentMethodLibraryService
             'baseline_hash' => $this->hash(['strategy_family' => $this->parameterSchema->family($family),
                 'parameters' => $this->parameterSchema->canonicalizeForIdentity($family, $parameters)]),
             'context_hash' => $this->hash($context)];
+        foreach ($recipe['contract']['method_contracts'] as $method) {
+            if (array_intersect(array_values((array) ($method['implementation']['input_bindings'] ?? [])),
+                [...self::FEATURE_BOOL_INPUTS, ...self::FEATURE_NUMBER_INPUTS]) !== []) {
+                $scopeBindings['method_feature_owner'] = self::FEATURE_OWNER;
+                break;
+            }
+        }
         // Transaction prevents a refused hybrid from leaving partially compiled program rows.
         try {
             return DB::transaction(function () use ($recipe, $recipeHash, $family, $parameters, $compiledParameters, $scopeBindings, $context, $operators, $adapters): array {
@@ -330,8 +348,10 @@ class InstrumentMethodLibraryService
         if (($implementation['kind'] ?? null) !== 'typed_ast' || ! is_array($implementation['ast'] ?? null)
             || ! in_array($implementation['target'] ?? null, ['confirmation', 'risk_multiplier', 'exit'], true)
             || ! is_array($implementation['input_bindings'] ?? null) || ! is_array($implementation['budget'] ?? null)) return ['reason' => 'METHOD_BOUNDED_TYPED_AST_OR_ADAPTER_REQUIRED'];
+        if (array_diff(array_keys($implementation), ['kind', 'ast', 'target', 'input_bindings', 'budget']) !== []) return ['reason' => 'METHOD_TYPED_AST_UNSUPPORTED_OR_UNBOUND'];
         if (count($implementation['input_bindings']) > 16 || array_diff(array_values($implementation['input_bindings']),
-            ['close', '_management_atr', 'signal_confidence', 'volume', 'volume_available', 'risk_veto', 'news_veto']) !== []) return ['reason' => 'METHOD_TYPED_AST_UNSUPPORTED_OR_UNBOUND'];
+            ['close', '_management_atr', 'signal_confidence', 'volume', 'volume_available', 'risk_veto', 'news_veto',
+                ...self::FEATURE_BOOL_INPUTS, ...self::FEATURE_NUMBER_INPUTS]) !== []) return ['reason' => 'METHOD_TYPED_AST_UNSUPPORTED_OR_UNBOUND'];
         $budget = $implementation['budget'];
         if (! is_numeric($budget['cpu_seconds'] ?? null) || $budget['cpu_seconds'] <= 0 || $budget['cpu_seconds'] > 1
             || ! is_int($budget['max_calls'] ?? null) || $budget['max_calls'] < 1 || $budget['max_calls'] > 100000
@@ -361,7 +381,8 @@ class InstrumentMethodLibraryService
             if (array_diff(array_keys($node), ['op', 'available_at', 'input_key']) !== []) return null;
             $key = $node['input_key'] ?? strtolower($op);
             $typedBindings = ['PRICE_CLOSE' => ['close'], 'ATR' => ['_management_atr'],
-                'BOOL' => ['volume_available', 'risk_veto', 'news_veto'], 'NUMBER' => ['signal_confidence', 'volume']];
+                'BOOL' => ['volume_available', 'risk_veto', 'news_veto', ...self::FEATURE_BOOL_INPUTS],
+                'NUMBER' => ['signal_confidence', 'volume', ...self::FEATURE_NUMBER_INPUTS]];
             if (! is_string($key) || ! is_string($bindings[$key] ?? null)
                 || ! in_array($bindings[$key], $typedBindings[$op], true)
                 || ! is_string($node['available_at'] ?? null) || ! preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $node['available_at'])) return null;

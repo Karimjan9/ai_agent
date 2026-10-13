@@ -89,6 +89,9 @@ class AgentMethodGenerationService
                 }
                 $child = ModelVersion::whereKey($child->id)->lockForUpdate()->firstOrFail();
                 $this->need($this->unused($child), 'METHOD_GENERATION_UNUSED_CONSTRUCTOR_CHILD_REQUIRED');
+                $this->need($parent === null || (! array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $parent->metadata)
+                    && ! array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $parent->metadata)),
+                    'METHOD_GENERATION_META_ASSET_TRANSFER_OWNER_REQUIRED');
                 $this->need(! $this->protected($child), 'METHOD_GENERATION_EXISTING_TYPED_CONSTRUCTOR_REQUIRED');
                 $baseline = $this->physical($child);
                 $prior = data_get($child->metadata, self::METADATA);

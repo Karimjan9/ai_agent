@@ -9,6 +9,10 @@ library utility, selector behavior and independent market qualification apart.
 The pinned assistant-curated catalog, eligible pre-seal ordinary child handoff
 and explicit original four-carrier durable study route use existing owners.
 Method-study observations cannot leak into generic economic learning advice.
+The same ADR's extension defines closed method-only features, finite original
+ENTRY/close training assets and pre-policy target-specific attachment. A verified
+own-policy child can open one exact-class four-carrier comparison through the
+existing owner; neither asset training nor this comparison certifies economics.
 
 ## 2026-10-12 - Historical first-exposure registration
 

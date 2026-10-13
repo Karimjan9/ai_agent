@@ -25,6 +25,12 @@ DECISION_INPUTS = {
     "close", "_management_atr", "signal_confidence", "volume",
     "volume_available", "risk_veto", "news_veto",
 }
+from app.services.instrument_method_features import (
+    PROTOCOL as METHOD_FEATURE_PROTOCOL, FIELDS as METHOD_FEATURE_FIELDS,
+    BOOL_FIELDS as METHOD_FEATURE_BOOL_FIELDS,
+)
+DECISION_INPUTS |= METHOD_FEATURE_FIELDS
+DECISION_BOOL_INPUTS = {"volume_available", "risk_veto", "news_veto"} | METHOD_FEATURE_BOOL_FIELDS
 
 
 def preserved_contract_body(contract: dict, error_prefix: str, maximum_bytes: int = 1048576) -> dict:
@@ -377,7 +383,7 @@ class BoundedDecisionProgram:
     request an exit. Caller vectors and expected outputs are never consumed.
     """
 
-    def __init__(self, contract: dict):
+    def __init__(self, contract: dict, *, allow_method_features: bool = False):
         if not isinstance(contract, dict) or contract.get("protocol") != DECISION_PROTOCOL:
             raise ValueError("DECISION_OPERATOR_PROTOCOL_REQUIRED")
         body = preserved_contract_body(contract, "DECISION_OPERATOR", 131072)
@@ -417,6 +423,12 @@ class BoundedDecisionProgram:
         self.bindings = contract.get("input_bindings", {}) or {}
         if not isinstance(self.bindings, dict) or any(value not in DECISION_INPUTS for value in self.bindings.values()):
             raise ValueError("DECISION_OPERATOR_INPUT_BINDING_INVALID")
+        if any(value in METHOD_FEATURE_FIELDS for value in self.bindings.values()):
+            # This capability is a non-wire owner argument; copied source
+            # context cannot enable uncomputed caller feature values.
+            if (allow_method_features is not True
+                    or (contract.get("source_context") or {}).get("method_feature_owner") != METHOD_FEATURE_PROTOCOL):
+                raise ValueError("DECISION_OPERATOR_METHOD_FEATURE_OWNER_REQUIRED")
         def validate_bindings(node: dict) -> None:
             op = node["op"]
             if op in {"PRICE_CLOSE", "ATR", "NUMBER", "BOOL", "DURATION"}:
@@ -424,7 +436,7 @@ class BoundedDecisionProgram:
                 field = self.bindings.get(key)
                 if field is None:
                     raise ValueError("DECISION_OPERATOR_UNBOUND_INPUT")
-                if ((op == "BOOL") != (field in {"volume_available", "risk_veto", "news_veto"})
+                if ((op == "BOOL") != (field in DECISION_BOOL_INPUTS)
                     or (op == "PRICE_CLOSE" and field != "close")
                     or (op == "ATR" and field != "_management_atr")
                     or op == "DURATION"):
@@ -476,6 +488,12 @@ class BoundedDecisionProgram:
                     raise ValueError("DECISION_OPERATOR_INPUT_TYPE_REQUIRED")
                 inputs[key] = value
                 return value
+            # Unavailable observed inputs are never invented to satisfy a
+            # branch. A typed availability guard must short-circuit it.
+            if op in {"AND", "CONFIRMED_BY"}:
+                return all(evaluate(arg) for arg in node.get("args", []))
+            if op == "OR":
+                return any(evaluate(arg) for arg in node.get("args", []))
             values = [evaluate(arg) for arg in node.get("args", [])]
             if op == "GREATER_THAN": return values[0] > values[1]
             if op == "LESS_THAN": return values[0] < values[1]

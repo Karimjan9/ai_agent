@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T09:12:59.512Z",
-  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
-  "source_file_count": 1656,
-  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
+  "generated_at": "2026-10-13T11:38:09.473Z",
+  "source_digest": "a10506921c5188a71a25ec71045506297f6a6b29a7a666dff5361ecf71543da2",
+  "source_file_count": 1668,
+  "git_head": "b825e3007e9547a40f5436b5711f8c67bd115182",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [
@@ -166,37 +166,37 @@
       "symbol": "run_portfolio_backtest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1880
+      "line": 1881
     },
     {
       "symbol": "_run_portfolio_backtest_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1896
+      "line": 1897
     },
     {
       "symbol": "_verified_research_transport",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1942
+      "line": 1943
     },
     {
       "symbol": "_scoped_full_durable_confirmation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1948
+      "line": 1949
     },
     {
       "symbol": "_method_study_resource_cap",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1990
+      "line": 1991
     },
     {
       "symbol": "_bounded_replay_seconds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2019
+      "line": 2020
     },
     {
       "symbol": "_latest_replay_checkpoint",
@@ -208,31 +208,31 @@
       "symbol": "_bounded_env_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2204
+      "line": 2205
     },
     {
       "symbol": "_bounded_contract_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2212
+      "line": 2213
     },
     {
       "symbol": "_read_replay_capture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2228
+      "line": 2229
     },
     {
       "symbol": "_terminate_replay_tree",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2242
+      "line": 2243
     },
     {
       "symbol": "_run_bounded_replay",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2290
+      "line": 2291
     },
     {
       "symbol": "_utc_timestamp",
@@ -256,55 +256,55 @@
       "symbol": "_replay_cache_key",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2539
+      "line": 2540
     },
     {
       "symbol": "_runtime_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2563
+      "line": 2564
     },
     {
       "symbol": "_dataset_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2610
+      "line": 2611
     },
     {
       "symbol": "_replay_cache_path",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2680
+      "line": 2681
     },
     {
       "symbol": "_load_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2690
+      "line": 2691
     },
     {
       "symbol": "_store_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2713
+      "line": 2714
     },
     {
       "symbol": "_cleanup_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2740
+      "line": 2741
     },
     {
       "symbol": "_with_replay_compiler_metadata",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2786
+      "line": 2787
     },
     {
       "symbol": "_attach_behavioral_diversity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2811
+      "line": 2812
     },
     {
       "symbol": "_assert_non_paper_source_pre_2026",
@@ -316,37 +316,37 @@
       "symbol": "_minhash_similarity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2916
+      "line": 2917
     },
     {
       "symbol": "_correlation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2921
+      "line": 2922
     },
     {
       "symbol": "_prepare_paper_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2934
+      "line": 2935
     },
     {
       "symbol": "_twin_inference_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2970
+      "line": 2971
     },
     {
       "symbol": "_council_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3013
+      "line": 3014
     },
     {
       "symbol": "paper_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3051
+      "line": 3052
     },
     {
       "symbol": "_candidate_cache_payload",
@@ -358,49 +358,49 @@
       "symbol": "paper_twin_inference",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3318
+      "line": 3319
     },
     {
       "symbol": "_twin_lane_process_worker",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3361
+      "line": 3362
     },
     {
       "symbol": "_run_twin_lane_process",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3375
+      "line": 3376
     },
     {
       "symbol": "paper_twin_red_team",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3398
+      "line": 3399
     },
     {
       "symbol": "paper_twin_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3466
+      "line": 3467
     },
     {
       "symbol": "paper_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3524
+      "line": 3525
     },
     {
       "symbol": "advance_paper_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3645
+      "line": 3646
     },
     {
       "symbol": "paper_accounting",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3718
+      "line": 3719
     },
     {
       "symbol": "_candidate_scoped_contract",
@@ -412,31 +412,31 @@
       "symbol": "_mtf_variant_payloads",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3857
+      "line": 3858
     },
     {
       "symbol": "variant_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3878
+      "line": 3879
     },
     {
       "symbol": "_mtf_signal_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3917
+      "line": 3918
     },
     {
       "symbol": "_mtf_snapshot_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3938
+      "line": 3939
     },
     {
       "symbol": "frame_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3945
+      "line": 3946
     },
     {
       "symbol": "_candidate_cache_contract_is_current",
@@ -448,109 +448,109 @@
       "symbol": "_build_mtf_feature_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3971
+      "line": 3972
     },
     {
       "symbol": "_run_mtf_variants",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3984
+      "line": 3985
     },
     {
       "symbol": "_mtf_validation_lanes",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4101
+      "line": 4102
     },
     {
       "symbol": "_scaled_cost_execution",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4115
+      "line": 4116
     },
     {
       "symbol": "_exit_stress_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4141
+      "line": 4142
     },
     {
       "symbol": "_run_mtf_targeted_validation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4170
+      "line": 4171
     },
     {
       "symbol": "run_mtf_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4304
+      "line": 4305
     },
     {
       "symbol": "run_mtf_targeted_validation_endpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4389
+      "line": 4390
     },
     {
       "symbol": "run_mtf_hypothesis_batch",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4455
+      "line": 4456
     },
     {
       "symbol": "_mtf_lane_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4549
+      "line": 4550
     },
     {
       "symbol": "_run_single_mtf_lane",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4576
+      "line": 4577
     },
     {
       "symbol": "run_mtf_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4622
+      "line": 4623
     },
     {
       "symbol": "_coverage_permission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4786
+      "line": 4787
     },
     {
       "symbol": "_abstention_meta_decision",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4872
+      "line": 4873
     },
     {
       "symbol": "_regime_belief",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5065
+      "line": 5066
     },
     {
       "symbol": "_transition_mixture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5114
+      "line": 5115
     },
     {
       "symbol": "_typed_agent_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5153
+      "line": 5154
     },
     {
       "symbol": "_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5234
+      "line": 5235
     },
     {
       "symbol": "require_internal_token",
@@ -562,43 +562,43 @@
       "symbol": "_strategy_contract_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5338
+      "line": 5339
     },
     {
       "symbol": "_paper_management_audit",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5356
+      "line": 5357
     },
     {
       "symbol": "_tactical_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5414
+      "line": 5415
     },
     {
       "symbol": "_entry_contract_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5456
+      "line": 5457
     },
     {
       "symbol": "boolean",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5466
+      "line": 5467
     },
     {
       "symbol": "number",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5470
+      "line": 5471
     },
     {
       "symbol": "timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5479
+      "line": 5480
     },
     {
       "symbol": "_internal_api_token",
@@ -676,25 +676,25 @@
       "symbol": "_run_all_backtests_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 825
+      "line": 826
     },
     {
       "symbol": "add_timing",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 837
+      "line": 838
     },
     {
       "symbol": "run_timed",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 842
+      "line": 843
     },
     {
       "symbol": "shared_features",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 956
+      "line": 957
     },
     {
       "symbol": "run_backtest_endpoint",
@@ -916,49 +916,49 @@
       "symbol": "_close_trade",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10002
+      "line": 10013
     },
     {
       "symbol": "_metrics",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10017
+      "line": 10028
     },
     {
       "symbol": "_max_drawdown",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10036
+      "line": 10047
     },
     {
       "symbol": "_mistakes",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10052
+      "line": 10063
     },
     {
       "symbol": "_daily_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10077
+      "line": 10088
     },
     {
       "symbol": "_to_datetime",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10124
+      "line": 10135
     },
     {
       "symbol": "_rounded",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10128
+      "line": 10139
     },
     {
       "symbol": "_series_float",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 10134
+      "line": 10145
     },
     {
       "symbol": "tail_feature_snapshot",
@@ -1030,7 +1030,7 @@
       "symbol": "row_at",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 1457
+      "line": 1459
     },
     {
       "symbol": "_ordered_token_hash",
@@ -1042,19 +1042,19 @@
       "symbol": "record_event",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 1584
+      "line": 1586
     },
     {
       "symbol": "record_signal_decision",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 1589
+      "line": 1591
     },
     {
       "symbol": "record_composition_stage",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 1643
+      "line": 1645
     },
     {
       "symbol": "_ImmutableSourceRowIndex",
@@ -1138,7 +1138,7 @@
       "symbol": "_data_quality_diagnostics",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 3535
+      "line": 3546
     },
     {
       "symbol": "_decision_dependency_identity",
@@ -1150,37 +1150,37 @@
       "symbol": "_spread_quality",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 3605
+      "line": 3616
     },
     {
       "symbol": "_apply_signal_delay",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 3653
+      "line": 3664
     },
     {
       "symbol": "_apply_portfolio_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 3703
+      "line": 3714
     },
     {
       "symbol": "_apply_portfolio_strategy_vectorized",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 3891
+      "line": 3902
     },
     {
       "symbol": "_portfolio_member_key",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4145
+      "line": 4156
     },
     {
       "symbol": "_portfolio_payload_for_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4167
+      "line": 4178
     },
     {
       "symbol": "_semantic_event_value",
@@ -1192,13 +1192,13 @@
       "symbol": "_payload_for_position",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4221
+      "line": 4232
     },
     {
       "symbol": "_portfolio_evidence",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4245
+      "line": 4256
     },
     {
       "symbol": "_decision_identity_receipt",
@@ -1210,19 +1210,13 @@
       "symbol": "_original_position_maturity",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4510
+      "line": 4521
     },
     {
       "symbol": "_statistical_evidence",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4530
-    },
-    {
-      "symbol": "_entry_price",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/backtester.py",
-      "line": 4578
+      "line": 4541
     },
     {
       "symbol": "event_identity",
@@ -1231,262 +1225,268 @@
       "line": 458
     },
     {
-      "symbol": "_exit_price",
+      "symbol": "_entry_price",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
       "line": 4589
     },
     {
+      "symbol": "_exit_price",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/backtester.py",
+      "line": 4600
+    },
+    {
       "symbol": "_position_size_multiple",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4602
+      "line": 4613
     },
     {
       "symbol": "_initial_executable_risk_percent",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4621
+      "line": 4632
     },
     {
       "symbol": "_instrument_runtime_state",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4643
+      "line": 4654
     },
     {
       "symbol": "_record_instrument_runtime_event",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4692
+      "line": 4703
     },
     {
       "symbol": "_instrument_observed_value",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4778
+      "line": 4789
     },
     {
       "symbol": "_record_strategy_instrument_events",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4787
+      "line": 4798
     },
     {
       "symbol": "_strategy_owner_events",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4869
+      "line": 4880
     },
     {
       "symbol": "_instrument_owner_scope_allows",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4908
+      "line": 4919
     },
     {
       "symbol": "_instrument_runtime_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 4956
+      "line": 4967
     },
     {
       "symbol": "_instrument_contract_context_matches",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5016
+      "line": 5027
     },
     {
       "symbol": "_instrument_runtime_event_allowed",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5043
+      "line": 5054
     },
     {
       "symbol": "_entry_gate_reached",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5056
+      "line": 5067
     },
     {
       "symbol": "_canonical_instrument_context_value",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5098
+      "line": 5109
     },
     {
       "symbol": "_instrument_runtime_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5135
+      "line": 5146
     },
     {
       "symbol": "_risk_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5224
+      "line": 5235
     },
     {
       "symbol": "_edge_market_session",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5236
+      "line": 5247
     },
     {
       "symbol": "_edge_market_venue_phase",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5242
+      "line": 5253
     },
     {
       "symbol": "_edge_market_session_instance",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5248
+      "line": 5259
     },
     {
       "symbol": "_edge_market_session_offset",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5254
+      "line": 5265
     },
     {
       "symbol": "_edge_context_admission",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5267
+      "line": 5278
     },
     {
       "symbol": "_differential_target_regime",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5349
+      "line": 5360
     },
     {
       "symbol": "_is_differential_router",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5366
+      "line": 5377
     },
     {
       "symbol": "_effective_lane_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5374
+      "line": 5385
     },
     {
       "symbol": "_is_volume_policy_veto",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5410
+      "line": 5421
     },
     {
       "symbol": "_count_lane_signals",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5423
+      "line": 5434
     },
     {
       "symbol": "_volume_policy_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5436
+      "line": 5447
     },
     {
       "symbol": "_trade_ledger_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5515
+      "line": 5526
     },
     {
       "symbol": "_event_ledger_digest",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5532
+      "line": 5543
     },
     {
       "symbol": "_decision_trace_event",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5555
+      "line": 5566
     },
     {
       "symbol": "_trade_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5630
+      "line": 5641
     },
     {
       "symbol": "_response_trade_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5645
+      "line": 5656
     },
     {
       "symbol": "_differential_invariants",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5653
+      "line": 5664
     },
     {
       "symbol": "digest",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5673
+      "line": 5684
     },
     {
       "symbol": "_paired_differential_lane_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5694
+      "line": 5705
     },
     {
       "symbol": "_loss_streak_wait_duration",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5797
+      "line": 5808
     },
     {
       "symbol": "_recovery_probe_risk_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5805
+      "line": 5816
     },
     {
       "symbol": "_weak_regime_minimum_samples",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5816
+      "line": 5827
     },
     {
       "symbol": "_weak_regime_wait_duration",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5820
+      "line": 5831
     },
     {
       "symbol": "_advance_weak_regime_state",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5833
+      "line": 5844
     },
     {
       "symbol": "_record_weak_regime_outcome",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5860
+      "line": 5871
     },
     {
       "symbol": "_intrabar_exit",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5922
+      "line": 5933
     },
     {
       "symbol": "_exit_distances",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 5960
+      "line": 5971
     },
     {
       "symbol": "PreparedFeatureSnapshot",
@@ -1498,25 +1498,25 @@
       "symbol": "_volatility_risk_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6037
+      "line": 6048
     },
     {
       "symbol": "_regime_specific_risk_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6045
+      "line": 6056
     },
     {
       "symbol": "_volume_risk_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6071
+      "line": 6082
     },
     {
       "symbol": "_differential_router_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6082
+      "line": 6093
     },
     {
       "symbol": "PreparedSignalSnapshot",
@@ -1528,43 +1528,37 @@
       "symbol": "_regime_transition_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6137
+      "line": 6148
     },
     {
       "symbol": "_regime_transitioned",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6144
+      "line": 6155
     },
     {
       "symbol": "_transition_wait_duration",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6154
+      "line": 6165
     },
     {
       "symbol": "_temporal_survival_state",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6160
+      "line": 6171
     },
     {
       "symbol": "_temporal_enabled",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6173
+      "line": 6184
     },
     {
       "symbol": "_temporal_update_pending",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6180
-    },
-    {
-      "symbol": "_temporal_register_signal",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/backtester.py",
-      "line": 6230
+      "line": 6191
     },
     {
       "symbol": "PreparedReplayFeatureContext",
@@ -1573,10 +1567,16 @@
       "line": 624
     },
     {
+      "symbol": "_temporal_register_signal",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/backtester.py",
+      "line": 6241
+    },
+    {
       "symbol": "_temporal_context_metrics",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6261
+      "line": 6272
     },
     {
       "symbol": "_composition_runtime_authority",
@@ -1588,13 +1588,13 @@
       "symbol": "_temporal_commit_features",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6333
+      "line": 6344
     },
     {
       "symbol": "_temporal_survival_assessment",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6351
+      "line": 6362
     },
     {
       "symbol": "prepare_replay_feature_context",
@@ -1606,37 +1606,37 @@
       "symbol": "_is_numeric",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6455
+      "line": 6466
     },
     {
       "symbol": "_temporal_survival_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6463
+      "line": 6474
     },
     {
       "symbol": "_advance_trailing_stop",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6499
+      "line": 6510
     },
     {
       "symbol": "_scoped_maturity_entry_end",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6522
+      "line": 6533
     },
     {
       "symbol": "_entry_eligibility",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6551
+      "line": 6562
     },
     {
       "symbol": "_confirmation_fill_admission",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6689
+      "line": 6700
     },
     {
       "symbol": "_assert_closed_mtf_runtime",
@@ -1654,73 +1654,73 @@
       "symbol": "_is_liquid_entry",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6821
+      "line": 6832
     },
     {
       "symbol": "_meta_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6848
+      "line": 6859
     },
     {
       "symbol": "_meta_risk_multiplier",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6852
+      "line": 6863
     },
     {
       "symbol": "_confidence_assessment",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6869
+      "line": 6880
     },
     {
       "symbol": "_record_confidence_observation",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6951
+      "line": 6962
     },
     {
       "symbol": "_confidence_calibration_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 6966
+      "line": 6977
     },
     {
       "symbol": "_wilson_lower_bound",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7009
+      "line": 7020
     },
     {
       "symbol": "_open_shadow_position",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7023
+      "line": 7034
     },
     {
       "symbol": "_advance_shadow_positions",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7115
+      "line": 7126
     },
     {
       "symbol": "_advance_shadow_position",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7140
+      "line": 7151
     },
     {
       "symbol": "_force_close_shadow",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7167
+      "line": 7178
     },
     {
       "symbol": "_shadow_outcome",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7182
+      "line": 7193
     },
     {
       "symbol": "_timeframe_duration_minutes",
@@ -1732,43 +1732,37 @@
       "symbol": "_record_shadow_outcome",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7244
+      "line": 7255
     },
     {
       "symbol": "_dynamic_cooldown_duration",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7255
+      "line": 7266
     },
     {
       "symbol": "_veto_regret_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7296
+      "line": 7307
     },
     {
       "symbol": "summarize",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7297
+      "line": 7308
     },
     {
       "symbol": "summarize_month",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7364
+      "line": 7375
     },
     {
       "symbol": "_decision_blame_graph",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7404
-    },
-    {
-      "symbol": "_cooldown_policy_report",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/backtester.py",
-      "line": 7539
+      "line": 7415
     },
     {
       "symbol": "core_replay_gate",
@@ -1777,70 +1771,76 @@
       "line": 755
     },
     {
+      "symbol": "_cooldown_policy_report",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/backtester.py",
+      "line": 7550
+    },
+    {
       "symbol": "_window_survival",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7584
+      "line": 7595
     },
     {
       "symbol": "_opportunity_metrics",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7630
+      "line": 7641
     },
     {
       "symbol": "_regime_ensemble_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7649
+      "line": 7660
     },
     {
       "symbol": "_entry_funnel_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7673
+      "line": 7684
     },
     {
       "symbol": "_entry_contract_funnel_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7732
+      "line": 7743
     },
     {
       "symbol": "count",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7773
+      "line": 7784
     },
     {
       "symbol": "truth",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7788
+      "line": 7799
     },
     {
       "symbol": "average",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7829
+      "line": 7840
     },
     {
       "symbol": "optional_count",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7839
+      "line": 7850
     },
     {
       "symbol": "_edge_observability_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7961
+      "line": 7972
     },
     {
       "symbol": "stage",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 7986
+      "line": 7997
     },
     {
       "symbol": "assert_sealed_dataset_transport",
@@ -1858,37 +1858,31 @@
       "symbol": "_update_position_excursions",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8020
+      "line": 8031
     },
     {
       "symbol": "_management_evidence_report",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8045
+      "line": 8056
     },
     {
       "symbol": "average",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8064
+      "line": 8075
     },
     {
       "symbol": "_edge_formation_academy_diagnostic",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8123
+      "line": 8134
     },
     {
       "symbol": "_academy_setup_oracle_envelope",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8193
-    },
-    {
-      "symbol": "_diagnostic_telemetry",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/backtester.py",
-      "line": 8299
+      "line": 8204
     },
     {
       "symbol": "run_simple_ema_rsi_backtest",
@@ -1897,28 +1891,34 @@
       "line": 830
     },
     {
+      "symbol": "_diagnostic_telemetry",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/backtester.py",
+      "line": 8310
+    },
+    {
       "symbol": "_take_partial_profit",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8336
+      "line": 8347
     },
     {
       "symbol": "_profit_factor_for",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8369
+      "line": 8380
     },
     {
       "symbol": "_pf_attribution",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8377
+      "line": 8388
     },
     {
       "symbol": "breakdown",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8404
+      "line": 8415
     },
     {
       "symbol": "_prepare_simple_dataframe",
@@ -1930,91 +1930,91 @@
       "symbol": "grouped",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8453
+      "line": 8464
     },
     {
       "symbol": "grouped_context_month",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8459
+      "line": 8470
     },
     {
       "symbol": "grouped_context_dimension",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8470
+      "line": 8481
     },
     {
       "symbol": "temporal_chunk",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8502
+      "line": 8513
     },
     {
       "symbol": "_market_session_calendar_coverage",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8568
+      "line": 8579
     },
     {
       "symbol": "_robustness_matrix",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8677
+      "line": 8688
     },
     {
       "symbol": "summary",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8708
+      "line": 8719
     },
     {
       "symbol": "_certified_coverage_passport",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8776
+      "line": 8787
     },
     {
       "symbol": "context_for",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8799
+      "line": 8810
     },
     {
       "symbol": "key_for",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8809
+      "line": 8820
     },
     {
       "symbol": "hour_for",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8812
+      "line": 8823
     },
     {
       "symbol": "cell_for",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8816
+      "line": 8827
     },
     {
       "symbol": "summary",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8850
+      "line": 8861
     },
     {
       "symbol": "_opportunity_recall",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 8994
+      "line": 9005
     },
     {
       "symbol": "_router_evidence",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9051
+      "line": 9062
     },
     {
       "symbol": "run_simple_ema_rsi_backtest_on_dataframe",
@@ -2026,25 +2026,25 @@
       "symbol": "_proof_carrying_replay",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9154
+      "line": 9165
     },
     {
       "symbol": "_edge_quality_evidence",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9246
+      "line": 9257
     },
     {
       "symbol": "_confidence_calibration",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9265
+      "line": 9276
     },
     {
       "symbol": "_edge_claim",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9301
+      "line": 9312
     },
     {
       "symbol": "prepare_feature_snapshot",
@@ -2056,181 +2056,181 @@
       "symbol": "_behavioral_signature",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9337
+      "line": 9348
     },
     {
       "symbol": "_validate_data_gaps",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9361
+      "line": 9372
     },
     {
       "symbol": "_is_expected_market_candle",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9394
+      "line": 9405
     },
     {
       "symbol": "_is_scheduled_market_closure",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9409
+      "line": 9420
     },
     {
       "symbol": "_as_utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9446
+      "line": 9457
     },
     {
       "symbol": "_utc_month",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9455
+      "line": 9466
     },
     {
       "symbol": "_crosses_fx_christmas_closure",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9460
+      "line": 9471
     },
     {
       "symbol": "_crosses_xau_market_holiday",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9481
+      "line": 9492
     },
     {
       "symbol": "_xau_market_holidays",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9491
+      "line": 9502
     },
     {
       "symbol": "_observed_fixed_holiday",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9509
+      "line": 9520
     },
     {
       "symbol": "_nth_weekday_of_month",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9518
+      "line": 9529
     },
     {
       "symbol": "_last_weekday_of_month",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9525
+      "line": 9536
     },
     {
       "symbol": "classify_mistake",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9530
+      "line": 9541
     },
     {
       "symbol": "_top_simple_mistakes",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9614
+      "line": 9625
     },
     {
       "symbol": "calculate_max_drawdown",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9624
+      "line": 9635
     },
     {
       "symbol": "calculate_profit_factor",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9639
+      "line": 9650
     },
     {
       "symbol": "calculate_average_win",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9653
+      "line": 9664
     },
     {
       "symbol": "calculate_average_loss",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9661
+      "line": 9672
     },
     {
       "symbol": "calculate_risk_reward_ratio",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9669
+      "line": 9680
     },
     {
       "symbol": "calculate_max_consecutive_losses",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9676
+      "line": 9687
     },
     {
       "symbol": "calculate_stability_score",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9690
+      "line": 9701
     },
     {
       "symbol": "calculate_regime_performance",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9727
+      "line": 9738
     },
     {
       "symbol": "calculate_volatility_performance",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9755
+      "line": 9766
     },
     {
       "symbol": "_finalize_regime_performance",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9783
+      "line": 9794
     },
     {
       "symbol": "_resolve_dataset_path",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9795
+      "line": 9806
     },
     {
       "symbol": "_display_symbol",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9812
+      "line": 9823
     },
     {
       "symbol": "_simple_conclusion",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9819
+      "line": 9830
     },
     {
       "symbol": "_simulate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9874
+      "line": 9885
     },
     {
       "symbol": "_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9941
+      "line": 9952
     },
     {
       "symbol": "_try_close_trade",
       "kind": "python_function",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 9984
+      "line": 9995
     },
     {
       "symbol": "build_composition_execution_receipt",
@@ -2437,85 +2437,109 @@
       "line": 86
     },
     {
-      "symbol": "_context",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 106
-    },
-    {
-      "symbol": "InstrumentMethodLearning",
-      "kind": "python_class",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 127
-    },
-    {
-      "symbol": "__init__",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 128
-    },
-    {
-      "symbol": "validate_frame",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 279
-    },
-    {
-      "symbol": "evaluate",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 284
-    },
-    {
-      "symbol": "receipt",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 341
-    },
-    {
-      "symbol": "_sealed_body",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 35
-    },
-    {
-      "symbol": "transport",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 352
-    },
-    {
-      "symbol": "validate_contract",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 362
-    },
-    {
-      "symbol": "receipt_current",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 369
-    },
-    {
-      "symbol": "_utc",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 55
-    },
-    {
       "symbol": "_predicate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 67
+      "line": 100
     },
     {
       "symbol": "_matches",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 82
+      "line": 115
     },
     {
       "symbol": "_canonical",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 121
+    },
+    {
+      "symbol": "_context",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 139
+    },
+    {
+      "symbol": "InstrumentMethodLearning",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 160
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 161
+    },
+    {
+      "symbol": "validate_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 330
+    },
+    {
+      "symbol": "bind_feature_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 337
+    },
+    {
+      "symbol": "notify_mature_close",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 344
+    },
+    {
+      "symbol": "evaluate",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 352
+    },
+    {
+      "symbol": "actual_meta_evaluation_binding",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 37
+    },
+    {
+      "symbol": "receipt",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 476
+    },
+    {
+      "symbol": "transport",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 487
+    },
+    {
+      "symbol": "validate_contract",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 497
+    },
+    {
+      "symbol": "receipt_current",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 506
+    },
+    {
+      "symbol": "php_arrays",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 51
+    },
+    {
+      "symbol": "_sealed_body",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 68
+    },
+    {
+      "symbol": "_utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
       "line": 88
@@ -3193,130 +3217,130 @@
       "line": 59
     },
     {
+      "symbol": "_same_ast_copy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/research_program_tasks.py",
+      "line": 105
+    },
+    {
       "symbol": "_expand",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 113
+      "line": 119
     },
     {
       "symbol": "substitute",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 137
+      "line": 143
     },
     {
       "symbol": "_infer",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 160
+      "line": 166
     },
     {
       "symbol": "execute_task",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 186
+      "line": 192
     },
     {
       "symbol": "evaluate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 223
+      "line": 229
     },
     {
       "symbol": "finite_search_order",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 262
+      "line": 268
     },
     {
       "symbol": "execute_finite_search",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 272
-    },
-    {
-      "symbol": "preserved_contract_body",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 30
+      "line": 278
     },
     {
       "symbol": "representation_nodes",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 312
+      "line": 318
+    },
+    {
+      "symbol": "preserved_contract_body",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/research_program_tasks.py",
+      "line": 36
     },
     {
       "symbol": "BoundedDecisionProgram",
       "kind": "python_class",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 372
+      "line": 378
     },
     {
       "symbol": "__init__",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 380
+      "line": 386
     },
     {
       "symbol": "validate_bindings",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 420
+      "line": 432
     },
     {
       "symbol": "evaluate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 449
+      "line": 461
     },
     {
       "symbol": "evaluate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 459
+      "line": 471
     },
     {
       "symbol": "receipt",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 499
+      "line": 517
     },
     {
       "symbol": "canonical_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 51
+      "line": 57
     },
     {
       "symbol": "canonical_json",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 59
+      "line": 65
     },
     {
       "symbol": "_foundry_json",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 64
+      "line": 70
     },
     {
       "symbol": "_utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 81
+      "line": 87
     },
     {
       "symbol": "_number",
       "kind": "python_function",
       "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 90
-    },
-    {
-      "symbol": "_same_ast_copy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/research_program_tasks.py",
-      "line": 99
+      "line": 96
     },
     {
       "symbol": "verify_research_transport",
@@ -3550,13 +3574,13 @@
       "symbol": "_passport_scope_reason",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 360
+      "line": 361
     },
     {
       "symbol": "run_specialist_council",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 374
+      "line": 375
     },
     {
       "symbol": "_closed_trace_input",
@@ -3568,7 +3592,7 @@
       "symbol": "marked_equity",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 503
+      "line": 504
     },
     {
       "symbol": "seal_contract",
@@ -3580,13 +3604,13 @@
       "symbol": "event",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 514
+      "line": 515
     },
     {
       "symbol": "close_position",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 543
+      "line": 544
     },
     {
       "symbol": "_receipt_json_value",
@@ -4003,40 +4027,46 @@
       "line": 54
     },
     {
+      "symbol": "test_native_independent_policy_selects_distinct_recipe_with_real_effect_and_receipts",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_learning.py",
+      "line": 101
+    },
+    {
       "symbol": "test_native_hybrid_two_pinned_methods_reduces_actual_risk",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 120
+      "line": 122
     },
     {
       "symbol": "test_external_gate_still_rejects_and_never_fabricates_method_use",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 131
+      "line": 133
     },
     {
       "symbol": "test_wrong_library_policy_and_json_copies_fail_closed",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 149
+      "line": 151
     },
     {
       "symbol": "test_operator_rehash_cannot_relabel_original_method_source",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 162
+      "line": 164
     },
     {
       "symbol": "test_future_observation_and_post_2026_inputs_reject",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 174
+      "line": 176
     },
     {
       "symbol": "test_future_operator_input_and_risk_increase_reject_without_fallback",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 185
+      "line": 187
     },
     {
       "symbol": "pinned_recipe",
@@ -4048,61 +4078,55 @@
       "symbol": "test_native_exit_requests_existing_exit_and_preserves_gap_pricing",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 201
+      "line": 203
     },
     {
       "symbol": "test_wrong_policy_library_and_declared_post_2026_scope_reject",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 213
+      "line": 215
     },
     {
       "symbol": "test_sealed_full_runtime_vector_rejects_parameter_drift",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 230
+      "line": 232
     },
     {
       "symbol": "test_ordinary_actual_replay_consumes_veto_preserving_clock_and_baseline",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 246
+      "line": 248
     },
     {
       "symbol": "learning_contract",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 50
+      "line": 52
     },
     {
       "symbol": "strategy",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 71
+      "line": 73
     },
     {
       "symbol": "const",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 81
+      "line": 83
     },
     {
       "symbol": "InstrumentMethodLearningTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 85
+      "line": 87
     },
     {
       "symbol": "native",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 86
-    },
-    {
-      "symbol": "test_native_independent_policy_selects_distinct_recipe_with_real_effect_and_receipts",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_learning.py",
-      "line": 99
+      "line": 88
     },
     {
       "symbol": "test_underpower_and_interaction_are_diagnostic_and_never_authority",
@@ -4894,13 +4918,7 @@
       "symbol": "forModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 102
-    },
-    {
-      "symbol": "bindRequests",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 114
+      "line": 118
     },
     {
       "symbol": "InstrumentMethodResearchBindingService",
@@ -4909,34 +4927,40 @@
       "line": 13
     },
     {
+      "symbol": "bindRequests",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 130
+    },
+    {
       "symbol": "scopeFromRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 149
+      "line": 165
     },
     {
       "symbol": "utc",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 163
-    },
-    {
-      "symbol": "sha",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 170
-    },
-    {
-      "symbol": "json",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 171
+      "line": 179
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
       "line": 18
+    },
+    {
+      "symbol": "sha",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 186
+    },
+    {
+      "symbol": "json",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 187
     },
     {
       "symbol": "compilePolicy",
@@ -4948,7 +4972,7 @@
       "symbol": "attachToUnusedModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 81
+      "line": 97
     },
     {
       "symbol": "InstrumentResearchWindowService",
@@ -5518,67 +5542,67 @@
       "symbol": "verifiedModelRuntimeIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1866
+      "line": 1869
     },
     {
       "symbol": "codeHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1895
+      "line": 1898
     },
     {
       "symbol": "requestManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1934
+      "line": 1937
     },
     {
       "symbol": "responseManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1952
+      "line": 1955
     },
     {
       "symbol": "metricsManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1976
+      "line": 1979
     },
     {
       "symbol": "tradeLedgerComplete",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1993
+      "line": 1996
     },
     {
       "symbol": "candleCount",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2006
+      "line": 2009
     },
     {
       "symbol": "dataHashFromRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2011
+      "line": 2014
     },
     {
       "symbol": "requestHasDatasetHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2039
+      "line": 2042
     },
     {
       "symbol": "isSha256",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2056
+      "line": 2059
     },
     {
       "symbol": "phaseForStatus",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2061
+      "line": 2064
     },
     {
       "symbol": "markSkipped",
@@ -5590,37 +5614,37 @@
       "symbol": "encode",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2071
+      "line": 2074
     },
     {
       "symbol": "writeArtifactFile",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2080
+      "line": 2083
     },
     {
       "symbol": "artifactDisk",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2093
+      "line": 2096
     },
     {
       "symbol": "writeArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2098
+      "line": 2101
     },
     {
       "symbol": "readArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2111
+      "line": 2114
     },
     {
       "symbol": "deleteArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2129
+      "line": 2132
     },
     {
       "symbol": "attachRequest",
@@ -6592,163 +6616,163 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 147
+      "line": 154
     },
     {
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 219
+      "line": 226
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 309
+      "line": 316
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 339
+      "line": 346
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 351
+      "line": 358
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 367
+      "line": 374
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 382
+      "line": 389
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 384
+      "line": 391
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 397
+      "line": 404
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 405
+      "line": 412
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 416
+      "line": 423
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 434
+      "line": 441
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 444
+      "line": 451
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 465
+      "line": 472
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 479
+      "line": 486
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 500
+      "line": 507
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 512
+      "line": 519
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 523
+      "line": 530
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 530
+      "line": 537
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 552
+      "line": 559
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 558
+      "line": 565
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 575
+      "line": 582
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 612
+      "line": 619
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 642
+      "line": 649
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 650
+      "line": 657
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 672
+      "line": 679
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 681
+      "line": 688
     },
     {
       "symbol": "execute",

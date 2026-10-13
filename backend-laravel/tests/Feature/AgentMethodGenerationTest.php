@@ -11,6 +11,10 @@ use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Services\AgentMethodGenerationService;
 use App\Services\AgentMethodLearningService;
+use App\Services\AgentMethodStudyPreparationService;
+use App\Services\ExecutionContractService;
+use App\Services\InstrumentMethodStudyService;
+use App\Models\ResearchExperimentWorkItem;
 use App\Services\InstrumentMethodLibraryService;
 use App\Services\InstrumentMethodResearchBindingService;
 use App\Services\LabImmutableEvidenceService;
@@ -19,7 +23,9 @@ use App\Services\StrategyParameterSchemaService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Mockery;
 use Symfony\Component\Process\Process;
@@ -188,12 +194,207 @@ class AgentMethodGenerationTest extends TestCase
         $this->assertDatabaseCount('agent_method_policy_revisions', 1);
     }
 
-    private function model(array $deltas = []): ModelVersion
+    public function test_own_learned_child_registers_one_exact_four_carrier_work_without_mutating_parent_library_or_source(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        $childBefore = $child->fresh()->toArray(); $libraryBefore = DB::table('instrument_method_revisions')->get()->toJson();
+        $count = ModelVersion::count(); $policies = DB::table('agent_method_policy_revisions')->count();
+        $owner = app(AgentMethodStudyPreparationService::class);
+        $prepared = $owner->prepare($input);
+        $this->assertSame('own_policy_study_registered', $prepared['status'], json_encode($prepared));
+        $this->assertSame(4, $prepared['carriers_created']);
+        $this->assertFalse($prepared['mastery_proven']); $this->assertFalse($prepared['out_of_sample']);
+        $this->assertSame($count + 4, ModelVersion::count());
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
+        $this->assertDatabaseCount('lab_agents', 1); // Only the original synthetic parent fixture, no dispatch here.
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $design = app(InstrumentMethodStudyService::class)->originalDesign($prepared['study_hash']);
+        foreach ($prepared['arms'] as $arm => $identity) {
+            $model = ModelVersion::findOrFail($identity['model_id']);
+            $policy = app(AgentMethodLearningService::class)->policy($identity['policy_hash']);
+            $this->assertSame('model:'.$model->id, $policy['agent_key']);
+            $this->assertSame(AgentMethodStudyPreparationService::PROTOCOL, $policy['learning_provenance']['protocol']);
+            $this->assertSame($child->parameters, $model->parameters);
+            $this->assertSame($child->metadata['execution_contract'], $model->metadata['execution_contract']);
+            $this->assertSame($design['arms']['L1A1']['baseline_hash'], $design['arms'][$arm]['baseline_hash']);
+        }
+        $again = $owner->prepare($input);
+        $this->assertSame('original_policy_study_exists', $again['status'], json_encode($again));
+        $this->assertSame($prepared['study_hash'], $again['study_hash']);
+        $this->assertSame($count + 4, ModelVersion::count());
+        $this->assertSame($policies + 4, DB::table('agent_method_policy_revisions')->count());
+        $changed = $input; $changed['study']['resource_caps']['max_runtime_seconds'] = 121;
+        $this->assertSame('METHOD_POLICY_STUDY_ORIGINAL_PREPARATION_IS_IMMUTABLE', $owner->prepare($changed)['reason']);
+        $this->assertSame($childBefore, $child->fresh()->toArray());
+        $this->assertSame($libraryBefore, DB::table('instrument_method_revisions')->get()->toJson());
+        $work = ResearchExperimentWorkItem::findOrFail($prepared['work_id']);
+        $this->assertSame(\App\Services\InstrumentMethodStudyExecutionService::WORK_TYPE, $work->work_type);
+        $this->assertSame(0, (int) $work->attempts);
+    }
+
+    public function test_own_policy_study_rejects_copied_provenance_and_keeps_all_real_physical_metadata_in_comparison(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        $owner = app(AgentMethodStudyPreparationService::class);
+        $result = $owner->prepare($input);
+        $this->assertSame('own_policy_study_registered', $result['status'], json_encode($result));
+        $identity = $result['arms']['L2A2']; $model = ModelVersion::findOrFail($identity['model_id']);
+        $policy = app(AgentMethodLearningService::class)->policy($identity['policy_hash']);
+        $public = array_intersect_key($policy, array_flip(['agent_key', 'revision', 'library_hash', 'library_contract', 'rules', 'default_action', 'learning_provenance']));
+        $this->assertSame('POLICY_STUDY_REQUIRES_SERVER_DERIVATION', app(AgentMethodLearningService::class)->registerPolicy($public)['reason']);
+        $originalMetadata = $model->metadata; $parameters = $model->parameters;
+        $metadata = $originalMetadata; $metadata['risk_governor']['risk_per_trade'] = 2;
+        $model->update(['metadata' => $metadata]);
+        $this->assertSame('blocked', app(AgentMethodLearningService::class)->policy($identity['policy_hash'])['status']);
+        $this->assertSame('METHOD_POLICY_STUDY_ORIGINAL_PREPARATION_IS_IMMUTABLE', $owner->prepare($input)['reason']);
+        $model->update(['metadata' => $originalMetadata, 'parameters' => [...$parameters, 'lookback' => $parameters['lookback'] + 1]]);
+        $this->assertSame('blocked', app(AgentMethodLearningService::class)->policy($identity['policy_hash'])['status']);
+        $model->update(['parameters' => $parameters]);
+        $this->assertArrayHasKey('policy_hash', app(AgentMethodLearningService::class)->policy($identity['policy_hash']));
+        $sourceMetadata = $child->metadata; $sourceMetadata['execution_contract']['parameters']['spread_points'] += 1;
+        $child->update(['metadata' => $sourceMetadata]);
+        $this->assertSame('blocked', app(AgentMethodLearningService::class)->policy($identity['policy_hash'])['status']);
+        $this->assertSame('METHOD_POLICY_STUDY_VERIFIED_ORIGINAL_OWN_CHILD_REQUIRED', $owner->prepare($input)['reason']);
+        $this->assertDatabaseCount('research_experiment_work_items', 1);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_invalid_preparation_rolls_back_all_fresh_carriers_and_proposals_are_not_market_authority(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        $count = ModelVersion::count(); $policies = DB::table('agent_method_policy_revisions')->count();
+        $input['study']['scope']['evaluated_start'] = '2026-01-01T00:00:00Z';
+        $input['study']['scope']['evaluated_end'] = '2026-01-02T00:00:00Z';
+        $blocked = app(AgentMethodStudyPreparationService::class)->prepare($input);
+        $this->assertSame('blocked', $blocked['status'], json_encode($blocked));
+        $this->assertSame($count, ModelVersion::count());
+        $this->assertSame($policies, DB::table('agent_method_policy_revisions')->count());
+        $this->assertDatabaseCount('instrument_method_studies', 0);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertFalse($blocked['economic_authority']);
+    }
+
+    public function test_an_unselected_extra_recipe_cannot_silently_change_the_whole_library_treatment(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        $library = app(InstrumentMethodLibraryService::class);
+        $existing = $library->inspectRecipe($input['libraries']['L1'][0])['contract'];
+        $extra = $library->registerRecipe(['recipe_key' => 'different-unselected-recipe', 'revision' => 1,
+            'method_hashes' => $existing['method_hashes'], 'context_predicate' => $existing['context_predicate']]);
+        $this->assertSame('registered_research_only', $extra['status']);
+        $input['libraries']['L2'][] = $extra['recipe_hash'];
+        $count = ModelVersion::count();
+        $blocked = app(AgentMethodStudyPreparationService::class)->prepare($input);
+        $this->assertSame('METHOD_POLICY_STUDY_WHOLE_LIBRARY_CLASS_SET_CHANGED', $blocked['reason'], json_encode($blocked));
+        $this->assertSame($count, ModelVersion::count());
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('instrument_method_studies', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_typed_no_effect_preflight_does_not_create_carriers_work_or_a_generation(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        $count = ModelVersion::count(); $policies = DB::table('agent_method_policy_revisions')->count();
+        // Conditional guard fixture: hold the classifier at one verified selector
+        // class while retaining real owned parent/child original event provenance.
+        $study = Mockery::mock(InstrumentMethodStudyService::class)->makePartial();
+        $study->shouldReceive('selectorClass')->andReturn(['rules' => [], 'default_action' => 'BASELINE']);
+        $this->app->instance(InstrumentMethodStudyService::class, $study);
+        $result = app(AgentMethodStudyPreparationService::class)->prepare($input);
+        $this->assertSame('no_effect', $result['status'], json_encode($result));
+        $this->assertSame('METHOD_POLICY_STUDY_SELECTOR_CLASS_UNCHANGED', $result['reason']);
+        $this->assertSame(0, $result['carriers_created']);
+        $this->assertSame($count, ModelVersion::count());
+        $this->assertSame($policies, DB::table('agent_method_policy_revisions')->count());
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('instrument_method_studies', 0);
+        $this->assertDatabaseCount('lab_generations', 1);
+        $this->assertFalse($result['economic_authority']);
+    }
+
+    public function test_original_owned_policy_carriers_pass_existing_constructor_and_all_request_barrier_without_parallel_dispatch(): void
+    {
+        [$child, $input] = $this->policyStudyInput();
+        config()->set('services.autonomous_mode.default_enabled', true);
+        config()->set('queue.default', 'database');
+        Bus::fake();
+        $prepared = app(AgentMethodStudyPreparationService::class)->prepare($input);
+        $this->assertSame('own_policy_study_registered', $prepared['status'], json_encode($prepared));
+        $work = ResearchExperimentWorkItem::findOrFail($prepared['work_id']);
+        $owner = app(\App\Services\InstrumentMethodStudyExecutionService::class);
+        $proof = $owner->inspectWork($work);
+        $this->assertSame('ready', $proof['status'], json_encode($proof));
+        $claimed = app(\App\Services\ResearchExperimentConversionKernelService::class)
+            ->claimForOwner(\App\Services\ResearchLoopArbiterService::class, 1);
+        $currentWork = $work->fresh();
+        $registration = data_get($currentWork->payload, 'method_registration', []);
+        $safeError = is_string($currentWork->last_error) && preg_match('/^[A-Z][A-Z0-9_]+$/D', $currentWork->last_error)
+            ? $currentWork->last_error : null;
+        $this->assertCount(1, $claimed, json_encode(['work_status' => $currentWork->status, 'typed_last_error' => $safeError,
+            'php_source_equal' => ($registration['php_source_hash'] ?? null) === app(LabImmutableEvidenceService::class)->codeHash(),
+            'python_source_equal' => ($registration['python_source_hash'] ?? null) === app(\App\Services\ResearchReleaseSealService::class)->pythonHash()]));
+        $leased = $claimed[0];
+        $queued = app(\App\Services\ResearchExperimentWorkConsumerService::class)
+            ->execute($leased->id, $leased->lease_token, $leased->fence_version);
+        $reinspected = $owner->inspectWork($leased->fresh());
+        $this->assertSame('queued', $queued['status'], json_encode(['result' => $queued,
+            'fresh_status' => $reinspected['status'] ?? null, 'fresh_reason' => $reinspected['reason_code'] ?? null]));
+        $this->assertTrue(data_get($leased->fresh()->result, 'original_barrier.all_four_originals_ready'));
+        $this->assertCount(4, data_get($leased->fresh()->result, 'original_barrier.request_hashes'));
+        $this->assertSame('ready', $owner->inspectWork($leased->fresh())['status']);
+        $this->assertDatabaseCount('lab_generations', 2);
+        $this->assertDatabaseCount('lab_agents', 5);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); // Original parent fixture only; no job executed here.
+        Bus::assertDispatched(\App\Jobs\ExecuteScopedResearchArmJob::class, 1);
+        Bus::assertNotDispatched(\App\Jobs\EvaluateLabAgentJob::class);
+        $this->assertDatabaseCount('candidate_gate_decisions', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    private function policyStudyInput(): array
+    {
+        $execution = app(ExecutionContractService::class)->for('XAUUSD', 'M5');
+        [$parent, $initial, $run] = $this->originalParent(['execution_contract' => $execution]);
+        LabGeneration::query()->update(['status' => 'screened']);
+        $child = $this->model([], ['execution_contract' => $execution]);
+        $owner = app(AgentMethodGenerationService::class);
+        $this->assertSame('learned_diagnostic', app(AgentMethodLearningService::class)->learnFromRun($run)['status']);
+        $prepared = $owner->prepareFreshChild($child, $parent);
+        $this->assertSame('prospective_child_policy_attached', $prepared['status'], json_encode($prepared));
+        $original = $initial['library_contract']['recipe_hashes'][0];
+        $recipe = app(InstrumentMethodLibraryService::class)->inspectRecipe($original)['contract'];
+        $method = array_values($recipe['method_contracts'])[0];
+        $new = app(InstrumentMethodLibraryService::class)->registerMethod(array_intersect_key($method,
+            array_flip(['instrument_key', 'method_key', 'context_predicate', 'horizon', 'known_limitations', 'source_keys', 'implementation']))
+            + ['revision' => 2]);
+        $this->assertSame('registered_research_only', $new['status'], json_encode($new));
+        $revision = app(InstrumentMethodLibraryService::class)->registerRecipe(['recipe_key' => $recipe['recipe_key'],
+            'revision' => 2, 'method_hashes' => [$new['method_hash']], 'context_predicate' => $recipe['context_predicate']]);
+        $this->assertSame('registered_research_only', $revision['status'], json_encode($revision));
+        $root = storage_path('app/lab-datasets/own-policy-test-'.Str::uuid()); File::ensureDirectoryExists($root);
+        $csv = "time,open,high,low,close\n"; $start = CarbonImmutable::parse('2025-11-03T07:00:00Z');
+        for ($index = 0; $index < 512; $index++) $csv .= $start->addMinutes($index * 5)->format('Y-m-d\TH:i:s\Z').",2000,2002,1998,2001\n";
+        File::put($root.'/m5.csv', $csv);
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($root));
+        return [$child->fresh(), ['source_model_id' => (int) $child->id,
+            'libraries' => ['L1' => [$original], 'L2' => [$revision['recipe_hash']]],
+            'source' => ['dataset_path' => $root.'/m5.csv', 'dataset_sha256' => hash('sha256', $csv)],
+            'study' => ['data_hash' => hash('sha256', $csv), 'execution_hash' => $execution['execution_hash'],
+                'scope' => ['symbol' => 'XAUUSD', 'timeframe' => 'M5', 'context' => $this->context(),
+                    'evaluated_start' => $start->addMinutes(200 * 5)->format('Y-m-d\TH:i:s\Z'),
+                    'evaluated_end' => $start->addMinutes(511 * 5)->format('Y-m-d\TH:i:s\Z')],
+                'evaluated_rows' => 312, 'initial_balance' => 10000.0, 'risk_per_trade' => 1.0,
+                'execution_costs' => $execution['parameters'], 'hard_limits' => ['max_total_risk_percent' => 5.0],
+                'resource_caps' => ['max_rows' => 512, 'max_decision_events' => 4096, 'max_runtime_seconds' => 120], 'minimum_trades' => 10]]];
+    }
+
+    private function model(array $deltas = [], array $metadata = []): ModelVersion
     {
         return ModelVersion::create(['name' => 'method-generation-'.Str::uuid(), 'strategy' => 'breakout_v1',
             'status' => 'draft', 'parameters' => [...app(StrategyParameterSchemaService::class)->defaults('breakout'), ...$deltas],
             'metadata' => ['base_strategy' => 'breakout_v1', 'risk_governor' => ['risk_per_trade' => 1.0],
-                'trade_management' => ['time_stop_candles' => 2], 'lab_symbol' => 'XAUUSD', 'lab_timeframe' => 'H1']]);
+                'trade_management' => ['time_stop_candles' => 2], 'lab_symbol' => 'XAUUSD', 'lab_timeframe' => 'H1', ...$metadata]]);
     }
     private function recipe(): string
     {
@@ -215,10 +416,10 @@ class AgentMethodGenerationTest extends TestCase
         $lab = AiLaboratory::create(['name' => 'method generation fixture', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_families' => ['breakout']]);
         return LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'status' => 'draft']);
     }
-    private function originalParent(): array
+    private function originalParent(array $metadata = []): array
     {
         config()->set('services.instrument_methods.generation_recipe_hashes', [$this->recipe()]);
-        $parent = $this->model();
+        $parent = $this->model([], $metadata);
         $initial = app(AgentMethodGenerationService::class)->prepareFreshChild($parent, null);
         $this->assertSame('prospective_child_policy_attached', $initial['status'], json_encode($initial));
         $policy = app(AgentMethodLearningService::class)->policy($initial['policy_hash']); $parent->refresh();

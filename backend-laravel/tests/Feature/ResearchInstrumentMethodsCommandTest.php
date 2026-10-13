@@ -6,6 +6,8 @@ use App\Services\InstrumentMethodLibraryService;
 use App\Services\AgentMethodCandidateService;
 use App\Services\InstrumentMethodSourceService;
 use App\Services\InstrumentMethodStudyService;
+use App\Services\InstrumentMethodMetaModelService;
+use App\Services\InstrumentMethodMetaBindingService;
 use App\Services\StrategyParameterSchemaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -36,6 +38,21 @@ class ResearchInstrumentMethodsCommandTest extends TestCase
         $this->assertSame(0, $status['agent_learning']['contextual_experiences']);
         $this->assertDatabaseCount('trading_instruments', 0);
         $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertDatabaseCount('jobs', 0);
+    }
+
+    public function test_own_child_study_preparation_requires_bounded_owner_input_and_never_dispatches_from_invalid_ids(): void
+    {
+        [$exit, $missing] = $this->commandResult('study-prepare');
+        $this->assertSame(1, $exit);
+        $this->assertSame('METHOD_COMMAND_INPUT_REQUIRED', $missing['reason']);
+        [$exit, $bad] = $this->commandResult('study-prepare', ['source_model_id' => 99999,
+            'libraries' => ['L1' => [], 'L2' => []], 'study' => [], 'source' => []]);
+        $this->assertSame(1, $exit);
+        $this->assertSame('METHOD_POLICY_STUDY_UNUSED_OWN_CHILD_REQUIRED', $bad['reason']);
+        $this->assertDatabaseCount('model_versions', 0);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('lab_generations', 0);
         $this->assertDatabaseCount('jobs', 0);
     }
 
@@ -177,6 +194,37 @@ class ResearchInstrumentMethodsCommandTest extends TestCase
         $this->assertTrue($result['canonical_admission_required']);
         $this->assertFalse($result['queued']);
         $this->assertDatabaseCount('jobs', 0);
+    }
+
+    public function test_meta_training_and_attachment_delegate_exact_bounded_references_without_dispatch(): void
+    {
+        $design = ['model_key' => 'original-training', 'original_run_ids' => ['original-run']];
+        $hash = str_repeat('e', 64);
+        $models = $this->mock(InstrumentMethodMetaModelService::class);
+        $models->shouldReceive('preregister')->once()->with($design)->andReturn([
+            'status' => 'registered_training_only', 'registration_hash' => $hash]);
+        $models->shouldReceive('fit')->once()->with($hash)->andReturn([
+            'status' => 'underpowered', 'registration_hash' => $hash, 'economic_authority' => false]);
+        $models->shouldReceive('inspect')->once()->with($hash)->andReturn([
+            'status' => 'registered_training_only', 'registration_hash' => $hash]);
+        $binding = $this->mock(InstrumentMethodMetaBindingService::class);
+        $binding->shouldReceive('attachUnusedModel')->once()->with(123, $hash)->andReturn([
+            'status' => 'attached_training_asset', 'model_id' => 123, 'economic_authority' => false]);
+        foreach ([['meta-register', $design], ['meta-fit', ['registration_hash' => $hash]],
+            ['meta-status', ['registration_hash' => $hash]], ['meta-attach', ['model_id' => 123, 'model_hash' => $hash]]] as [$action, $input]) {
+            [$exit, $result] = $this->commandResult($action, $input);
+            $this->assertSame(0, $exit);
+            $this->assertArrayHasKey('status', $result);
+        }
+        [$exit, $blocked] = $this->commandResult('meta-fit', ['registration_hash' => $hash, 'weights' => [1.0]]);
+        $this->assertSame(1, $exit);
+        $this->assertSame('METHOD_COMMAND_EXACT_META_REFERENCE_REQUIRED', $blocked['reason']);
+        [$exit, $blocked] = $this->commandResult('meta-attach', ['model_id' => 123, 'model_hash' => $hash, 'force' => true]);
+        $this->assertSame(1, $exit);
+        $this->assertSame('METHOD_COMMAND_EXACT_META_ATTACHMENT_REQUIRED', $blocked['reason']);
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('lab_generations', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
     }
 
     private function commandResult(string $action, ?array $input = null, array $options = []): array

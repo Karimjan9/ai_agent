@@ -22,7 +22,7 @@ class InstrumentMethodResearchBindingService
         private ResearchPaperEpochContractService $hashes,
     ) {}
 
-    public function compilePolicy(string $policyHash, array $baseline, array $scope, string $agentKey): array
+    public function compilePolicy(string $policyHash, array $baseline, array $scope, string $agentKey, ?array $evaluationRequest = null): array
     {
         $registered = $this->agents->policy($policyHash);
         if (($registered['status'] ?? null) === 'blocked' || ($registered['agent_key'] ?? null) !== $agentKey) {
@@ -37,7 +37,22 @@ class InstrumentMethodResearchBindingService
         $data = $scope['data_hash'] ?? null;
         $execution = $scope['execution_hash'] ?? null;
         if (! $this->sha($data) || ! $this->sha($execution)) throw new LogicException('METHOD_RESEARCH_DATA_EXECUTION_REQUIRED');
-        return DB::transaction(function () use ($registered, $library, $baseline, $scope, $start, $end, $data, $execution, $agentKey) {
+        $meta = null;
+        if (preg_match('/^model:([1-9][0-9]*)$/D', $agentKey, $match)) {
+            $model = ModelVersion::find((int) $match[1]);
+            if ($model && (array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $model->metadata)
+                || array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $model->metadata))) {
+                if ($evaluationRequest === null) throw new LogicException('META_BINDING_ACTUAL_EVALUATION_REQUEST_REQUIRED');
+                if ($this->hashes->parameterHash((array) $model->parameters) !== $this->hashes->parameterHash((array) $baseline['parameters'])
+                    || $scope['symbol'] !== ($evaluationRequest['symbol'] ?? null) || $scope['timeframe'] !== ($evaluationRequest['timeframe'] ?? null)
+                    || $data !== ($evaluationRequest['replay_dataset_hash'] ?? null)
+                    || $execution !== data_get($evaluationRequest, 'execution_contract.execution_hash')) {
+                    throw new LogicException('META_BINDING_COMPILED_REQUEST_SCOPE_DRIFT');
+                }
+                $meta = app(InstrumentMethodMetaBindingService::class)->forModel($model, $evaluationRequest);
+            }
+        }
+        return DB::transaction(function () use ($registered, $library, $baseline, $scope, $start, $end, $data, $execution, $agentKey, $meta) {
             $recipes = [];
             foreach ($registered['library_contract']['recipe_hashes'] as $hash) {
                 $original = $this->library->inspectRecipe($hash);
@@ -73,6 +88,7 @@ class InstrumentMethodResearchBindingService
                 'recipes' => $recipes, 'policy' => [...$policyBody, 'policy_hash' => $registered['policy_hash'], 'policy_json' => $registered['policy_json']],
                 'research_only' => true, 'economic_authority' => false, 'promotion_evidence' => false,
                 'paper_authority' => false, 'live_authority' => false];
+            if ($meta !== null) $body['meta_model'] = $meta;
             return [...$body, 'contract_hash' => $this->hashes->parameterHash($body), 'contract_json' => $this->json($body)];
         });
     }
@@ -108,7 +124,7 @@ class InstrumentMethodResearchBindingService
         $scope = $this->scopeFromRequest($request);
         $family = $this->schemas->family((string) data_get($model->metadata, 'base_strategy', $model->strategy));
         return $this->compilePolicy($binding['policy_hash'], ['strategy_family' => $family,
-            'parameters' => (array) $model->parameters], $scope, 'model:'.$model->id);
+            'parameters' => (array) $model->parameters], $scope, 'model:'.$model->id, $request);
     }
 
     public function bindRequests(array $request, array $models): array

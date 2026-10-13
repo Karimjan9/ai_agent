@@ -19,9 +19,16 @@ paths:
   - backend-laravel/app/Services/AgentMethodLearningService.php
   - backend-laravel/app/Services/AgentMethodCandidateService.php
   - backend-laravel/app/Services/AgentMethodGenerationService.php
+  - backend-laravel/app/Services/AgentMethodStudyPreparationService.php
+  - backend-laravel/app/Services/InstrumentMethodMetaModelService.php
+  - backend-laravel/app/Services/InstrumentMethodMetaBindingService.php
+  - backend-laravel/database/migrations/2026_10_13_140000_create_instrument_method_meta_models.php
+  - backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php
   - backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php
   - backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php
   - backend-laravel/resources/research/instrument-methods/curated-v1.json
+  - backend-laravel/resources/research/instrument-methods/curated-v2.json
   - backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php
   - backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php
   - backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php
@@ -32,9 +39,15 @@ paths:
   - backend-laravel/tests/Feature/AgentMethodCandidateTest.php
   - backend-laravel/tests/Feature/AgentMethodGenerationTest.php
   - backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php
+  - backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php
   - backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php
   - backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php
   - ai-service-python/app/services/instrument_method_learning.py
+  - ai-service-python/app/services/instrument_method_features.py
+  - ai-service-python/app/services/instrument_method_meta_model.py
+  - ai-service-python/tests/test_instrument_method_meta_model.py
+  - ai-service-python/tests/test_instrument_method_meta_runtime.py
+  - ai-service-python/tests/test_instrument_method_features.py
   - ai-service-python/scripts/backtest-instrument-method-matrix.py
   - ai-service-python/tests/test_instrument_method_learning.py
   - ai-service-python/tests/test_instrument_method_matrix.py
@@ -195,6 +208,14 @@ entry_points:
   - InstrumentMethodStudyExecutionService::inspectWork
   - InstrumentMethodStudyExecutionService::execute
   - InstrumentMethodStudyExecutionService::executeQueuedArm
+  - AgentMethodStudyPreparationService::prepare
+  - AgentMethodStudyPreparationService::verifyProvenance
+  - InstrumentMethodMetaModelService::preregister
+  - InstrumentMethodMetaModelService::fit
+  - InstrumentMethodMetaModelService::exportOriginalModel
+  - InstrumentMethodMetaBindingService::attachUnusedModel
+  - InstrumentMethodMetaBindingService::forModel
+  - AgentMethodLearningService::registerStudyPolicy
   - ScopedResearchCertificateService::register
   - ScopedResearchCertificateService::inspect
   - ScopedResearchCertificateService::bindOriginalData
@@ -365,6 +386,12 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php
+  - ai-service-python/tests/test_instrument_method_features.py
+  - ai-service-python/tests/test_instrument_method_meta_model.py
+  - ai-service-python/tests/test_instrument_method_meta_runtime.py
   - backend-laravel/tests/Feature/ContinuousPaperOnlyPolicyTest.php
   - backend-laravel/tests/Unit/ProspectiveCompositionRecipeTest.php
   - backend-laravel/tests/Feature/ResearchWindowExposureInventoryTest.php

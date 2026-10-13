@@ -347,7 +347,8 @@ def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member:
     runtime = MemberRuntime(member, version, child, snapshot.frame.to_dict("records"), snapshot.data_quality,
         BoundedDecisionProgram(member["operator_contract"]) if member.get("operator_contract") else None)
     if "method_learning" in member:
-        runtime.method_learning = InstrumentMethodLearning(member["method_learning"], child)
+        runtime.method_learning = InstrumentMethodLearning(member["method_learning"], child,
+            execution_owner='native_specialist_council_v1')
         runtime.method_learning.validate_frame(snapshot.frame)
     runtime.temporal_state = kernel._temporal_survival_state()
     runtime.instrument_state = kernel._instrument_runtime_state(child.instrument_research_assignment)
@@ -617,6 +618,10 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
             "gap_overrun_seconds": max(0.0, (_utc(timestamp) - pos["management_deadline"]).total_seconds()) if pos["management_deadline"] is not None else 0.0,
         }
         position_ledger.append(ledger)
+        if runtime.method_learning is not None:
+            runtime.method_learning.notify_mature_close(position_id=pos["position_id"],
+                net_pnl=net_pnl, available_at=_stamp(_utc(timestamp) + duration),
+                mature=reason != "end_of_data")
         event(runtime, timestamp, "execution", "closed", position_id=pos["position_id"], exit_reason=reason, net_pnl=net_pnl)
 
     for index in range(evaluation_start_index + 1, execution_input_rows):

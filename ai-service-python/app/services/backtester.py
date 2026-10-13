@@ -1387,10 +1387,12 @@ def _run_prepared_simple_backtest(
     if "instrument_method_learning" in (payload.policy_context or {}):
         from app.services.instrument_method_learning import InstrumentMethodLearning
         method_learning = InstrumentMethodLearning(payload.policy_context["instrument_method_learning"], payload)
-        method_learning.validate_frame(df)
+        method_learning.validate_frame(df, bind_features=False)
     snapshot = prepared_snapshot or prepare_signal_snapshot(payload, df)
     source_df = snapshot.source_frame.copy()
     df = snapshot.frame.copy()
+    if method_learning is not None:
+        method_learning.bind_feature_frame(df)
     unexpected_gap_count = snapshot.unexpected_gap_count
     df.attrs["unexpected_gap_count"] = unexpected_gap_count
     df.attrs["data_quality"] = dict(snapshot.data_quality)
@@ -2856,6 +2858,15 @@ def _run_prepared_simple_backtest(
             "partial_exit_price": position.get("partial_exit_price"),
             "partial_fraction": position.get("partial_fraction"),
         })
+        if method_learning is not None:
+            # Intrabar results become observable only once this execution bar
+            # has closed, never in an earlier same-bar decision.
+            method_learning.notify_mature_close(
+                position_id="ordinary:" + str(position["entry_index"]),
+                net_pnl=float(profit_percent),
+                available_at=(pd.Timestamp(candle["time"])
+                    + pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))).isoformat(),
+                mature=exit_reason != "end_of_data")
         trades.append(
             SimpleTrade(
                 direction=direction,

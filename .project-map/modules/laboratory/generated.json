@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T09:12:59.512Z",
-  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
-  "source_file_count": 1656,
-  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
+  "generated_at": "2026-10-13T11:38:09.473Z",
+  "source_digest": "a10506921c5188a71a25ec71045506297f6a6b29a7a666dff5361ecf71543da2",
+  "source_file_count": 1668,
+  "git_head": "b825e3007e9547a40f5436b5711f8c67bd115182",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
@@ -2629,67 +2629,67 @@
       "symbol": "verifiedModelRuntimeIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1866
+      "line": 1869
     },
     {
       "symbol": "codeHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1895
+      "line": 1898
     },
     {
       "symbol": "requestManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1934
+      "line": 1937
     },
     {
       "symbol": "responseManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1952
+      "line": 1955
     },
     {
       "symbol": "metricsManifest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1976
+      "line": 1979
     },
     {
       "symbol": "tradeLedgerComplete",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 1993
+      "line": 1996
     },
     {
       "symbol": "candleCount",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2006
+      "line": 2009
     },
     {
       "symbol": "dataHashFromRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2011
+      "line": 2014
     },
     {
       "symbol": "requestHasDatasetHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2039
+      "line": 2042
     },
     {
       "symbol": "isSha256",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2056
+      "line": 2059
     },
     {
       "symbol": "phaseForStatus",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2061
+      "line": 2064
     },
     {
       "symbol": "markSkipped",
@@ -2701,37 +2701,37 @@
       "symbol": "encode",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2071
+      "line": 2074
     },
     {
       "symbol": "writeArtifactFile",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2080
+      "line": 2083
     },
     {
       "symbol": "artifactDisk",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2093
+      "line": 2096
     },
     {
       "symbol": "writeArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2098
+      "line": 2101
     },
     {
       "symbol": "readArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2111
+      "line": 2114
     },
     {
       "symbol": "deleteArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabImmutableEvidenceService.php",
-      "line": 2129
+      "line": 2132
     },
     {
       "symbol": "attachRequest",
@@ -5635,163 +5635,163 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 147
+      "line": 154
     },
     {
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 219
+      "line": 226
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 309
+      "line": 316
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 339
+      "line": 346
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 351
+      "line": 358
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 367
+      "line": 374
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 382
+      "line": 389
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 384
+      "line": 391
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 397
+      "line": 404
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 405
+      "line": 412
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 416
+      "line": 423
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 434
+      "line": 441
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 444
+      "line": 451
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 465
+      "line": 472
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 479
+      "line": 486
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 500
+      "line": 507
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 512
+      "line": 519
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 523
+      "line": 530
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 530
+      "line": 537
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 552
+      "line": 559
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 558
+      "line": 565
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 575
+      "line": 582
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 612
+      "line": 619
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 642
+      "line": 649
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 650
+      "line": 657
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 672
+      "line": 679
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 681
+      "line": 688
     },
     {
       "symbol": "rootHypothesisForSeat",

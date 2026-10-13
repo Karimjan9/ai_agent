@@ -1,5 +1,17 @@
 # Integrations and runtime boundaries
 
+## Finite instrument meta-model boundary
+
+The original Laravel training owner reopens immutable request/response/event and
+mature close products before issuing a finite numeric JSON artifact. A separate
+unused-model attachment owner signs the target and exact physical identity;
+optional compiled `meta_model` carries artifact, original eleven-field training
+binding and independently rederived seven-field evaluation binding. Python never
+trusts CSV/caller scores, unclosed observations or future weights. A source/data
+change does not turn seen calibration into independent evidence. Ordinary
+account/risk guards remain exact; native shared-account meta evaluation refuses.
+No artifact, registration or attachment grants economic, Master or paper rights.
+
 Optional `instrument_method_learning_v1` is compiled by the PHP method binding
 owner, per exact model/LabAgent or native council member. Intrinsic library,
 compiled-pool, recipe, selection-policy, data, execution and runtime-parameter
@@ -14,6 +26,21 @@ The original model-runtime treatment seal sparsely includes an explicit method
 binding; every undeclared legacy hash is unchanged. A post-seal policy metadata
 edit invalidates that original identity. Fresh policy rebasing excludes only
 this deliberate policy delta when checking the unchanged source baseline.
+
+`closed_instrument_method_features_v1` computes prefix-causal OHLC topology,
+closed session and signal state, and exact member-owned mature loss history.
+Confirmed pivots become visible only after their right bars close. The method
+owner overwrites reserved input fields; CSV/caller values are not accepted as
+computed observations. Generic typed operators cannot enable these inputs via
+a copied wire marker: only the checked method runtime grants the non-wire
+capability. Missing observed volume/quotes or a trained meta model remains a
+typed conservative WAIT. OHLC liquidity proxies are not observed order flow.
+
+`own_policy_study_rebase_v1` prospectively maps verified original parent/child
+selector rules to fixed library recipe classes. Four new own-policy carriers
+retain the same physical vector and costs; their signed derivations are checked
+before comparison normalization. Unchanged selectors return no_effect without
+dispatch. One original proposal root cannot be replenished by changing labels.
 
 The existing immutable screening projection consumes method experiences only
 after original eligibility checks. External source text is not evaluated.

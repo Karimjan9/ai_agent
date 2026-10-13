@@ -21,6 +21,13 @@ class ResearchReleaseSealService
     private const SOURCE_ARTIFACT_MAX_FILES = 5000;
     private const SOURCE_ARTIFACT_FILES = [
         'backend-laravel/resources/research/instrument-methods/curated-v1.json',
+        'backend-laravel/resources/research/instrument-methods/curated-v2.json',
+        'backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php',
+        'ai-service-python/tests/test_instrument_method_features.py',
+        'ai-service-python/tests/test_instrument_method_meta_model.py',
+        'ai-service-python/tests/test_instrument_method_meta_runtime.py',
+        'backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php',
+        'backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php',
         'backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php',
         'backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php',
         'backend-laravel/tests/Feature/InstrumentMethodStudyTest.php',

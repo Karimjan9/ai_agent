@@ -1848,6 +1848,9 @@ class LabImmutableEvidenceService
             // Every undeclared legacy identity remains byte-for-byte unchanged.
             $components['instrument_method_learning'] = $metadata['instrument_method_learning'];
         }
+        foreach ([InstrumentMethodMetaBindingService::METADATA, InstrumentMethodMetaBindingService::PROOF_METADATA] as $field) {
+            if (array_key_exists($field, $metadata)) $components[$field] = $metadata[$field];
+        }
         $components['smart_composition_treatment'] = Arr::only(
             (array) data_get($model->metadata, 'smart_composition.composition_passport', []),
             ['protocol', 'symbol', 'laboratory_storage_timeframe', 'execution_timeframe',

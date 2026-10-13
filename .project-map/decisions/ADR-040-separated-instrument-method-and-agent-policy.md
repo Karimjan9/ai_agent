@@ -50,3 +50,21 @@ passport and council owners remain unchanged; they require their own declared
 treatment. This opt-in is not evidence that every ordinary seat consumes methods.
 The active deployment remains protected until separately verified release,
 migrations, actual loaded-worker hashes and canonical admission are complete.
+
+## Closed inputs and original-outcome model extension
+
+The append-only v2 catalog adds closed OHLC proxy and mature-owned-journal
+methods without editing v1. Method-only feature capability is non-wire; copied
+input fields cannot enable it. Missing quote/volume/model facts remain typed
+dependencies, not inferred observations.
+
+An original-outcome finite model is an independently signed numeric asset with
+fixed bins, source roster and seen chronological calibration, not a copied
+generic performance score or independent certificate. Target-specific attachment
+precedes policy/runtime seals; original training and actual physical evaluation
+identities are separate. Cash/risk numeric wire normalization is explicit while
+hard limits and other ports remain exact. Native shared-account reuse and silent
+candidate inheritance refuse until their physical transfer is owned explicitly.
+Own-policy comparison rebases four fresh signed carriers from one original
+proposal root through the existing canonical study dispatcher; unchanged
+selectors close no_effect without compute. Old originals remain immutable.

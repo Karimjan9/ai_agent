@@ -57,11 +57,7 @@ class InstrumentMethodStudyService
                 $this->need($model !== null && ! LabEvaluationRun::where('model_version_id', $model->id)->exists(), 'STUDY_MUST_PRECEDE_ANY_MODEL_RUN');
                 $policy = app(AgentMethodLearningService::class)->policy($arm['policy_hash']);
                 $this->need(($policy['status'] ?? null) !== 'blocked' && $policy['agent_key'] === 'model:'.$model->id, 'STUDY_ARM_POLICY_OWNER_INVALID');
-                $metadata = (array) $model->metadata;
-                // The existing lifecycle observer changes only this operational
-                // projection on enrolment. It is not a treatment/programme delta.
-                unset($metadata['instrument_method_learning'], $metadata['lifecycle_sync']);
-                $modelBaseline = ['strategy' => $model->strategy, 'parameters' => (array) $model->parameters, 'metadata' => $metadata];
+                $modelBaseline = $this->modelBaseline($model, $policy);
                 $baseline ??= $modelBaseline;
                 $this->need($this->hash($modelBaseline) === $this->hash($baseline), 'STUDY_BASELINE_PARAMETERS_OR_METADATA_DIFFER');
                 $arms[$key] = [...$arm, 'library_hash' => $policy['library_hash'], 'policy_class' => $this->policyClass($policy),
@@ -123,10 +119,10 @@ class InstrumentMethodStudyService
                 $this->need(($owner->learningEligibility($run)['complete'] ?? false) === true, 'STUDY_COMPLETE_IMMUTABLE_REPLAY_REQUIRED');
                 $identity = $owner->verifiedModelRuntimeIdentity($run);
                 $arm = $design['arms'][$matches[0]];
-                $model = ModelVersion::find($arm['model_id']); $metadata = (array) $model?->metadata;
-                unset($metadata['instrument_method_learning'], $metadata['lifecycle_sync']);
-                $this->need($model && $this->hash(['strategy' => $model->strategy, 'parameters' => (array) $model->parameters,
-                    'metadata' => $metadata]) === $arm['baseline_hash'], 'STUDY_REGISTERED_MODEL_BASELINE_DRIFT');
+                $model = ModelVersion::find($arm['model_id']);
+                $policy = app(AgentMethodLearningService::class)->policy($arm['policy_hash']);
+                $this->need($model && ($policy['status'] ?? null) !== 'blocked'
+                    && $this->hash($this->modelBaseline($model, $policy)) === $arm['baseline_hash'], 'STUDY_REGISTERED_MODEL_BASELINE_DRIFT');
                 $this->need(is_array($identity) && ($identity['model_version_id'] ?? null) === $arm['model_id']
                     && ($identity['parameter_hash'] ?? null) === $arm['parameter_hash']
                     && $this->hash($identity['runtime_basis'] ?? []) === $arm['model_runtime_basis_hash'], 'STUDY_ORIGINAL_MODEL_BASELINE_DRIFT');
@@ -192,6 +188,23 @@ class InstrumentMethodStudyService
         $this->need(! LabEvaluationRun::where('model_version_id', $modelId)->where('started_at', '<', $row->created_at)->exists(),
             'STUDY_MODEL_OBSERVED_BEFORE_PREREGISTRATION');
         return ['study_hash' => $row->study_hash, 'arm' => $arms[0], 'resource_caps' => $design['resource_caps']];
+    }
+
+    public function selectorClass(array $policy): array
+    {
+        return $this->policyClass($policy);
+    }
+
+    private function modelBaseline(ModelVersion $model, array $policy): array
+    {
+        foreach ([AgentMethodGenerationService::METADATA, 'instrument_method_candidate', AgentMethodStudyPreparationService::METADATA] as $field) {
+            if (array_key_exists($field, (array) $model->metadata)) {
+                return app(AgentMethodStudyPreparationService::class)->baseline($model, $policy);
+            }
+        }
+        $metadata = (array) $model->metadata;
+        unset($metadata[InstrumentMethodResearchBindingService::METADATA], $metadata['lifecycle_sync']);
+        return ['strategy' => $model->strategy, 'parameters' => (array) $model->parameters, 'metadata' => $metadata];
     }
 
     private function policyClass(array $policy): array

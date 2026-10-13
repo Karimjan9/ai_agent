@@ -819,7 +819,8 @@ def _validate_method_learning_before_cache(payload: SimpleBacktestRequest) -> No
                 "base_strategy": member.get("base_strategy"), "parameters": member.get("parameters") or {},
                 "specialist_council_contract": {}})
             validate_contract(contract, dataset_hash=payload.replay_dataset_hash,
-                execution_hash=execution_hash, payload=current)
+                execution_hash=execution_hash, payload=current,
+                execution_owner='native_specialist_council_v1')
 
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:

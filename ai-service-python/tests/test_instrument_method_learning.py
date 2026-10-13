@@ -22,6 +22,8 @@ def pinned_recipe(request, key, targets, input_bindings=None):
         'data_hash': request.replay_dataset_hash,
         'execution_hash': execution_contract_metadata(request)['execution_hash'],
         'pre_2026_only': True, 'baseline_hash': 'b' * 64, 'context_hash': canonical_hash(context)}
+    if any(field.startswith('method_') for field in (input_bindings or {}).values()):
+        bindings['method_feature_owner'] = 'closed_instrument_method_features_v1'
     methods, operators = {}, []
     for target, ast in targets.items():
         implementation = {'kind': 'typed_ast', 'target': target, 'ast': ast,

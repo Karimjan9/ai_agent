@@ -18,6 +18,17 @@ executable skills. Eight primary references include original paraphrases,
 licensing and unknown prior-exposure disclosures. Thresholds are lab hypotheses,
 not claims attributed to those publishers.
 
+An explicit append-only v2 catalog extends, rather than replaces, v1. It adds
+closed-price/session/structure and owned mature-history methods, plus typed
+half-risk and owned-position exit recipes. The combined declaration covers
+26 cards, 28 method classes / 30 revisions and 38 recipes, including 8 hybrids.
+Use `catalog` or `install` with an input object containing the exact
+`catalog_key=internet_instrument_methods_20261013_v2` and checksum
+`2a62f3d69e223b1cd4cc180c10f3f0628949a9af6ca02645abd92c5e23090ae7`.
+Default calls still select v1; installation never rebinds an active model.
+OHLC liquidity/structure observations are explicitly proxies. Observed quotes,
+canonical volume and a trained meta model are not supplied by catalog text.
+
 Registration is explicit: `source`, `method`, `recipe`, `policy`,
 `compile`, `attach`, `study`, `learn`, `propose`, `evolve`, `settle`, `status`.
 Use `--input=absolute-json-file --json`. Inputs are bounded regular JSON files;
@@ -56,6 +67,24 @@ max_recipes. It is observational prioritization, not profitability-based Master.
 `evolve` makes a fresh, same-baseline research model from the original proposal
 and experience lineage. It does not dispatch a generation or promote a council.
 The original library, models, exposure history and receipts are unchanged.
+
+`study-prepare` accepts an unused original own-policy child, exact L1/L2 recipe
+hashes, an explicit physical study contract and canonical source declaration.
+The server reopens its original parent/proposal facts and maps the old/learned
+rules by stable recipe class. Four fresh signed own-policy carriers are created
+atomically with the existing study/work registration. The original child and
+parent are not rebound or replayed. The original proposal root owns a single
+question allowance; changed labels/budgets cannot renew it. Identical selectors
+return no_effect with no carriers or replay. Only verified policy derivation is
+excluded from baseline comparison, never unknown trading/cost/risk metadata.
+
+Closed method inputs come from an as-of feature owner, not caller/CSV fields.
+Pivots are delayed until right bars close, session extrema are prefix-only and
+loss state changes only after mature owned closes become observable. Fresh
+accounts start with a known empty own journal; no parent performance is copied.
+Generic typed operators cannot gain the method-input capability by copying its
+wire marker. Missing observations/model produce explicit conservative dependency
+reasons and retain their original receipt hashes.
 
 With `services.instrument_methods.generation_learning_enabled`, only newly
 constructed ordinary generations pin the configured exact recipe hashes.
@@ -116,6 +145,32 @@ source snapshot and summary. Source/transport/timeout failures are technical;
 small samples are underpowered. All outputs have false independent/economic/
 credit/paper/live authority. Feature warmup, actual execution warmup and evaluated
 clock are reported separately, not inferred from declared row counts.
+
+## Finite original-outcome meta model
+
+`meta-register` freezes one original run roster and fixed confidence/probability
+bins, chronological training/calibration UTC bounds and compute/sample caps.
+`meta-fit` and `meta-status` accept only registration_hash. The producer reopens
+the original entry context/confidence and mature uncensored owned net close;
+different effective library/selector policies cannot be pooled. The floor is
+20 training plus 10 calibration examples, both classes and reachable cells.
+This finite empirical model is research training, not an independent certificate.
+
+`meta-attach` accepts only model_id and model_hash. The server first reopens its
+original signed JSON asset, then signs attachment to an unused ordinary model
+before any policy/generation/study/runtime seal. Evaluation must retain its
+physical parameters/account/risk/execution/clock. Original source/library/data
+identity remains separately recorded as training provenance. Prediction uses
+only closed observations strictly after calibration and the last label becomes
+observable. Missing context or a model not yet available remains an explicit
+dependency; CSV fields cannot supply a score. Generic/native shared-account
+transfer is refused, not silently stripped or grandfathered. Old models without
+this optional asset keep the same contracts and event hashes.
+
+The immutable v2 meta-sentinel recipe is an availability probe, not a profitable
+classifier. An actual score-consuming recipe must be a separate new revision.
+No training asset or attachment alone creates Master, credit, confirmed skill,
+paper admission or proof of useful child inheritance.
 
 ## Delivery and qualification
 

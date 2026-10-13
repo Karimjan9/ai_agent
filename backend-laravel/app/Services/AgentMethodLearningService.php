@@ -22,7 +22,7 @@ class AgentMethodLearningService
         return $this->registerPolicyBody($input);
     }
 
-    private function registerPolicyBody(array $input, bool $serverDerivedRebase = false, bool $serverDerivedGeneration = false): array
+    private function registerPolicyBody(array $input, bool $serverDerivedRebase = false, bool $serverDerivedGeneration = false, bool $serverDerivedStudy = false): array
     {
         try {
             $allowed = ['protocol', 'agent_key', 'revision', 'library_hash', 'library_contract',
@@ -53,12 +53,14 @@ class AgentMethodLearningService
             if (isset($input['learning_provenance'])) {
                 $rebase = ($input['learning_provenance']['protocol'] ?? null) === 'fresh_model_method_learning_rebase_v1';
                 $generation = ($input['learning_provenance']['protocol'] ?? null) === AgentMethodGenerationService::PROTOCOL;
+                $study = ($input['learning_provenance']['protocol'] ?? null) === AgentMethodStudyPreparationService::PROTOCOL;
                 $this->require(! $rebase || $serverDerivedRebase, 'POLICY_REBASE_REQUIRES_SERVER_DERIVATION');
                 $this->require(! $generation || $serverDerivedGeneration, 'POLICY_GENERATION_REQUIRES_SERVER_DERIVATION');
-                $this->require($generation
+                $this->require(! $study || $serverDerivedStudy, 'POLICY_STUDY_REQUIRES_SERVER_DERIVATION');
+                $this->require($study ? app(AgentMethodStudyPreparationService::class)->verifyProvenance($input['learning_provenance'], $body) : ($generation
                     ? app(AgentMethodGenerationService::class)->verifyProvenance($input['learning_provenance'], $body)
                     : ($rebase ? app(AgentMethodCandidateService::class)->verifyRebasedProvenance($input['learning_provenance'], $body)
-                    : $this->verifiedProvenance($input['learning_provenance'], $body)), 'POLICY_LEARNING_PROVENANCE_INVALID');
+                    : $this->verifiedProvenance($input['learning_provenance'], $body))), 'POLICY_LEARNING_PROVENANCE_INVALID');
                 $body['learning_provenance'] = $input['learning_provenance'];
             }
             $hash = $this->hash($body);
@@ -85,6 +87,14 @@ class AgentMethodLearningService
         try {
             $input = app(AgentMethodGenerationService::class)->registrationInput($targetModelId);
             return $this->registerPolicyBody($input, false, true);
+        } catch (Throwable $error) { return $this->blocked($error->getMessage()); }
+    }
+
+    /** Existing immutable original own-child facts determine every prospective study carrier. */
+    public function registerStudyPolicy(int $targetModelId): array
+    {
+        try {
+            return $this->registerPolicyBody(app(AgentMethodStudyPreparationService::class)->registrationInput($targetModelId), false, false, true);
         } catch (Throwable $error) { return $this->blocked($error->getMessage()); }
     }
 
@@ -143,11 +153,13 @@ class AgentMethodLearningService
             $this->require(($library['valid'] ?? false) === true, 'POLICY_LIBRARY_NOT_VERIFIED');
             $this->require($this->rules($body['rules'], $body['library_contract']['recipe_hashes']) === $body['rules'], 'POLICY_RULES_INVALID');
             if (isset($body['learning_provenance'])) {
-                $this->require(($body['learning_provenance']['protocol'] ?? null) === AgentMethodGenerationService::PROTOCOL
+                $this->require(($body['learning_provenance']['protocol'] ?? null) === AgentMethodStudyPreparationService::PROTOCOL
+                    ? app(AgentMethodStudyPreparationService::class)->verifyProvenance($body['learning_provenance'], $body)
+                    : (($body['learning_provenance']['protocol'] ?? null) === AgentMethodGenerationService::PROTOCOL
                     ? app(AgentMethodGenerationService::class)->verifyProvenance($body['learning_provenance'], $body)
                     : (($body['learning_provenance']['protocol'] ?? null) === 'fresh_model_method_learning_rebase_v1'
                     ? app(AgentMethodCandidateService::class)->verifyRebasedProvenance($body['learning_provenance'], $body)
-                    : $this->verifiedProvenance($body['learning_provenance'], $body)), 'POLICY_LEARNING_PROVENANCE_INVALID');
+                    : $this->verifiedProvenance($body['learning_provenance'], $body))), 'POLICY_LEARNING_PROVENANCE_INVALID');
             }
             return [...$body, 'policy_hash' => $policyHash, 'policy_json' => $this->json($body)];
         } catch (Throwable $error) {

@@ -33,6 +33,21 @@ economic projections exclude this purpose. New eligible ordinary children may
 consume rederived parent proposals before seals; exact protected owners are not
 unilaterally modified.
 
+An explicitly prepared own-policy follow-up maps the unchanged original parent
+and observational child policies to fixed L1/L2 recipe classes -> atomically
+creates four signed unused carriers -> registers existing original work ->
+the same canonical barrier/dispatcher/comparison. An unchanged policy class
+returns no_effect without consuming replay resources. Source facts and proposal
+root are retained; reused archive data does not become independent validation.
+
+Original mature ENTRY/close products may separately feed a preregistered finite
+meta training owner -> fixed-bin training plus chronological seen calibration
+-> signed numeric asset -> unused ordinary-model attachment before seals ->
+exact physical evaluation binding -> closed/as-of ENTRY score. Underpowered
+sources issue no asset. This diagnostic path neither creates independent
+confirmation nor transfers an asset silently across changed child parameters
+or native shared accounts.
+
 - `causal-learning`: experiment interpretation, receipt and next-work routing.
 - `laboratory`: cohort lifecycle, provenance and research gates.
 - `laravel-python-contract`: deterministic computation/attestation boundary.

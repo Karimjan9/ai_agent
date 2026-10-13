@@ -119,7 +119,75 @@ not evidence of a stronger child or an independently confirmed inherited skill.
 The internet library and agent policy remain independently versioned. Source
 corpus updates do not rewrite these original observations or qualify consumers.
 
-## Honest boundary
+## Expanded method panel: twenty new methods and unchanged baseline
+
+A separate software-owner discovery panel preregistered all 21 PHP-compiled
+requests before its original outcomes. It retained the same exact raw-byte
+512-row prefix, 200 execution warmup rows and 312 decision rows. Each method
+had one fixed 120-second subprocess allowance. The baseline's same-scope G264
+result had already been seen; neither this data nor its new method results
+are described as untouched or independent qualification.
+
+All **21/21** originals completed. Reinspection verified original response
+bytes, method event/receipt hashes and one common loop-emitted index/schedule
+clock. The baseline remains 10 trades / -495.85 cash. The twenty method results
+range from -495.85 to -284.57; all lose money. Topology/persistence/risk methods
+show reached uses rather than assignment-only counts. Session methods report
+underpowered context; volume and the unavailable trained-model sentinel report
+their explicit dependencies. WAIT outside a method's context retains the
+predeclared BASELINE fallback, so a missing-input method need not imply zero
+trades for the entire agent. These effects do not demonstrate profitability,
+statistical power, a smart selector or a qualified skill.
+
+Original spec SHA256:
+`f757fb5b465ab8c372aa6a3f2f782d08d65a9d919f4141132e77698fe30ecca1`.
+Original summary SHA256:
+`db4cc77ec7184cebbcdbfd96a188a774f114d578fbf4a5600dbbef581138afc5`.
+Products remain in the isolated worktree under
+`.runtime/expanded-method-panel-20261013/products/`; none replaces G264.
+
+## Original-outcome finite model and own-child follow-up preparation
+
+A separate finite numeric model producer now freezes its original run roster,
+fixed confidence/probability bins and chronological training/calibration bounds.
+It reopens exact entry context/confidence, actual account/costs and mature owned
+net closes; differently treated library/selector products cannot be pooled.
+At least 20 training and 10 calibration examples plus both classes/cell coverage
+are required. Seen calibration is not untouched validation. Source-only or
+underpowered products cannot produce a fitted model.
+
+The actual PHP-original-product software fixture passes through fit/calibration,
+original issuer export, pre-policy target-HMAC attachment and full Python method
+consumption. A separately registered score-consuming confirmation method uses
+its own score and ignores caller score .99. This is conditional synthetic
+software proof, not a model learned or qualified on the actual market archive.
+The v2 availability-only meta-sentinel stays unchanged. Plain physical evaluation
+binding and strictly past label availability are enforced; native shared-account
+reuse and silent asset transfer refuse rather than guess physical equivalence.
+
+Before any new outcome, the original unused child 3527's policy follow-up was
+declared on the exact raw first 2048 rows of the same original parent archive.
+Prefix SHA256 `980f1a8a41001958b7ebc69e3dd58ebd291776a9143e27a5cc779b06022e2f98`:
+200 warmup rows, 1848 decision rows, 2025-10-14 00:50 UTC through
+2025-10-22 16:45 UTC. Four original arms have one fixed 600-second cap each;
+the physical model, old L1/L2 recipe classes, costs and risk remain unchanged.
+The parent and child selector rules, not caller outcome rankings, define A1/A2.
+The first-512-row scope and another vector's earlier 2048 attempt were already
+seen: the new question is reused discovery, not independent evidence. Original
+3527 is preserved; the existing canonical owner creates four fresh carriers.
+This paragraph records preparation only; actual deployment/dispatch/closure
+must be verified separately. Future model training has prospectively named
+L2A1 as its source treatment, not whichever arm looks best afterward.
+
+## Qualification boundary
+
+Final frozen-source verification: 145 focused Laravel test executions / 1788
+assertions, 93 Python tests, changed PHP lint, Python compilation and Project Map
+check passed. The inherited producer tests intentionally execute again in the
+binding class; these counts are software executions, not independent experiments.
+An earlier combined check during fixture preparation was red and is not used as
+release acceptance. No market result, original deadline or old receipt was changed
+to obtain the final software pass.
 
 SQLite integration tests verify actual compressed original artifact eligibility,
 agent experience, policy proposal and fresh same-baseline research candidate

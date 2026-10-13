@@ -75,7 +75,7 @@ class TypedInstrumentFoundryService
         if (($gates['admission'] ?? null) === 'bounded_research_candidate'
             && (isset($context['baseline_hash']) || isset($context['context_hash']))) {
             $key = hash('sha256', $key.'|'.$this->hash(array_intersect_key($context,
-                array_flip(['baseline_hash', 'context_hash']))));
+                array_flip(['baseline_hash', 'context_hash', 'method_feature_owner']))));
         }
         // A new frozen research window needs its own data-bound program. This
         // does not mint independent evidence or change legacy library admission.
@@ -690,6 +690,13 @@ class TypedInstrumentFoundryService
             return $this->blocked('DECISION_OPERATOR_TYPED_PROGRAM_IDENTITY_INVALID');
         }
         $allowed = ['close', '_management_atr', 'signal_confidence', 'volume', 'volume_available', 'risk_veto', 'news_veto'];
+        $methodInputs = [...InstrumentMethodLibraryService::FEATURE_BOOL_INPUTS, ...InstrumentMethodLibraryService::FEATURE_NUMBER_INPUTS];
+        if (array_intersect(array_values($inputBindings), $methodInputs) !== []) {
+            if (($context['method_feature_owner'] ?? null) !== InstrumentMethodLibraryService::FEATURE_OWNER) {
+                return $this->blocked('DECISION_OPERATOR_METHOD_FEATURE_OWNER_REQUIRED');
+            }
+            $allowed = [...$allowed, ...$methodInputs];
+        }
         if (array_diff(array_values($inputBindings), $allowed) !== []) return $this->blocked('DECISION_OPERATOR_INPUT_BINDING_INVALID');
         $stack = [$expanded];
         while ($stack !== []) {
@@ -698,6 +705,13 @@ class TypedInstrumentFoundryService
             if (in_array($op, ['PRICE_CLOSE', 'ATR', 'NUMBER', 'BOOL', 'DURATION'], true)) {
                 $key = (string) ($node['input_key'] ?? strtolower($op));
                 if (! array_key_exists($key, $inputBindings)) return $this->blocked('DECISION_OPERATOR_UNBOUND_INPUT');
+                $field = $inputBindings[$key];
+                if (in_array($field, $methodInputs, true)
+                    && ($op === 'BOOL' && ! in_array($field, InstrumentMethodLibraryService::FEATURE_BOOL_INPUTS, true)
+                        || $op === 'NUMBER' && ! in_array($field, InstrumentMethodLibraryService::FEATURE_NUMBER_INPUTS, true)
+                        || ! in_array($op, ['BOOL', 'NUMBER'], true))) {
+                    return $this->blocked('DECISION_OPERATOR_METHOD_FEATURE_TYPE_INVALID');
+                }
                 if ($this->utcSeconds($node['available_at'] ?? null) === null) return $this->blocked('DECISION_OPERATOR_EXPLICIT_ASOF_REQUIRED');
             }
             foreach ((array) ($node['args'] ?? []) as $argument) $stack[] = $argument;

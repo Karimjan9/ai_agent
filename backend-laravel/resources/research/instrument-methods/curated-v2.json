@@ -1,0 +1,1637 @@
+{
+  "protocol": "curated_instrument_method_catalog_v1",
+  "catalog_key": "internet_instrument_methods_20261013_v2",
+  "revision": 2,
+  "curated_on": "2026-10-13",
+  "curator": "coding_assistant",
+  "evidence_status": "unvalidated_research_hypotheses",
+  "extends": {
+    "catalog_key": "internet_instrument_methods_20261013_v1",
+    "catalog_sha256": "ef8e53d5549ccbb55800dc4ec2f25e3d7d466b8eb64faf325d4202314e497e20"
+  },
+  "policy": {
+    "research_market_data_before": "2026-01-01T00:00:00Z",
+    "all_2026_and_later_market_data": "paper_only",
+    "source_text_execution": "forbidden",
+    "agent_policy_mutation": "forbidden",
+    "automatic_qualification": "forbidden",
+    "parameter_adapters": "construction_time_only",
+    "closed_feature_owner": "closed_instrument_method_features_v1",
+    "absent_numeric_feature": "unavailable_not_zero",
+    "meta_model": "not_supplied_wait_only"
+  },
+  "sources": [
+    {
+      "source_id": "v2_fibonacci",
+      "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/fibonacci-retracement",
+      "title": "Fibonacci Retracement",
+      "publisher": "Fidelity",
+      "summary": "Retracement percentages interpolate the range between selected extremes. Anchor choice determines levels. Our delayed confirmed pivots and admission thresholds are lab hypotheses, not a claim that publisher examples qualify these methods.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_closed_pivots",
+      "reference": "https://www.tradingview.com/pine-script-docs/faq/techniques/",
+      "title": "Confirmed Pivots and Historical State",
+      "publisher": "TradingView",
+      "summary": "Pivot confirmation occurs after the selected right-side bars have closed. An anchor's price time and knowledge time differ. Counters and stored state can track closed events without retroactively making them available.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_sessions",
+      "reference": "https://www.tradingview.com/pine-script-docs/concepts/sessions/",
+      "title": "Sessions",
+      "publisher": "TradingView",
+      "summary": "Session membership depends on time ranges, timezone and bar closure. Developing session extrema must include only observed closed bars. Our fixed UTC/session grouping is explicitly not an exchange or broker calendar qualification.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_closed_volatility",
+      "reference": "https://help.ctrader.com/indicators/built-in/volatility/average-true-range/",
+      "title": "Average True Range",
+      "publisher": "Spotware cTrader",
+      "summary": "Range-based volatility describes price movement, not direction. Comparison of separate closed range windows is a reproducible volatility hypothesis; expansion after compression does not guarantee a profitable breakout.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_tick_volume",
+      "reference": "https://help.ctrader.com/indicators/built-in/volume/tick-volume/",
+      "title": "Tick Volume",
+      "publisher": "Spotware cTrader",
+      "summary": "Tick volume counts observed price changes rather than traded shares or contracts. Relative activity rules must preserve provider semantics. Missing volume is not zero-cost execution or demonstrated market participation.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_state_counters",
+      "reference": "https://www.tradingview.com/pine-script-docs/faq/techniques/",
+      "title": "Historical Event Counters",
+      "publisher": "TradingView",
+      "summary": "State counters can record elapsed bars since an observed event. Our loss recovery, transition wait and signal persistence rules use mature local history; their lengths and utility remain experimental.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_repainting",
+      "reference": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+      "title": "Repainting and Confirmed Data",
+      "publisher": "TradingView",
+      "summary": "Unconfirmed observations, later pivot labels and future context can make history appear better than executable decisions. Our feature owner uses only closed data and retains delayed availability.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_calibration",
+      "reference": "https://scikit-learn.org/stable/modules/calibration.html",
+      "title": "Probability Calibration",
+      "publisher": "scikit-learn developers",
+      "summary": "Scores are not automatically calibrated probabilities. Training and calibration evidence are necessary before a model-based admission filter is trusted; this catalog supplies an availability guard, not a trained classifier.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    },
+    {
+      "source_id": "v2_leakage",
+      "reference": "https://scikit-learn.org/stable/common_pitfalls.html",
+      "title": "Data Leakage",
+      "publisher": "scikit-learn developers",
+      "summary": "Model selection and transformations must not use final test outcomes. Exposure provenance and original artifact availability are distinct from a method's source citation or new revision hash.",
+      "license": "Original curator paraphrase; linked publisher material retains its rights; no publisher code, chart outcomes or transcript copied."
+    }
+  ],
+  "methods": [
+    {
+      "instrument_key": "compression_expansion",
+      "method_key": "internet_closed_compression_expansion_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "fidelity_bollinger",
+        "v2_closed_volatility"
+      ],
+      "exact_rule": "Use the owner-confirmed prior compressed window followed by a distinct closed expansion event; a low ATR level alone does not qualify.",
+      "parameter_rationale": "Disjoint-window sizes and expansion thresholds are frozen implementation hypotheses, not profitable settings.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Disjoint-window sizes and expansion thresholds are frozen implementation hypotheses, not profitable settings."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_compression_expansion"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_compression_expansion": "method_compression_expansion",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "session_breakout",
+      "method_key": "internet_closed_session_break_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_sessions",
+        "cme_support_resistance"
+      ],
+      "exact_rule": "After twenty closed bars in the same declared UTC/session group, admit only a close beyond the PRIOR session extreme in the existing signal direction and 0.25 < closed session range/ATR < 4.",
+      "parameter_rationale": "This is a fixed UTC session-group proxy, not exchange/DST calendar qualification or observed-quote scalp proof.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "This is a fixed UTC session-group proxy, not exchange/DST calendar qualification or observed-quote scalp proof."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_session_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_session_distance_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0
+                }
+              ]
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_session_range_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.25
+                }
+              ]
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_session_range_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 4
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_session_range_atr": "method_session_range_atr",
+          "method_session_distance_atr": "method_session_distance_atr",
+          "method_session_available": "method_session_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "adaptive_entry_topology",
+      "method_key": "internet_closed_break_or_reclaim_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_closed_pivots",
+        "cme_support_resistance"
+      ],
+      "exact_rule": "A fresh baseline signal must reach one of two explicitly closed confirmation routes: confirmed structure break OR confirmed excursion-and-reclaim. Neither route creates a signal direction.",
+      "parameter_rationale": "The two-stage closed confirmation union is a bounded topology choice, not a learned universal topology selector.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "The two-stage closed confirmation union is a bounded topology choice, not a learned universal topology selector."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "OR",
+              "args": [
+                {
+                  "op": "BOOL",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_bos"
+                },
+                {
+                  "op": "BOOL",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_sweep_reclaim"
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_sweep_reclaim": "method_sweep_reclaim",
+          "method_bos": "method_bos",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "dynamic_fibonacci_zone",
+      "method_key": "internet_confirmed_fib_pullback_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_fibonacci",
+        "v2_closed_pivots"
+      ],
+      "exact_rule": "Use the last fully confirmed opposite pivot pair; admit an existing direction only while its retracement fraction is strictly between 0.382 and 0.618.",
+      "parameter_rationale": "Fibonacci levels are arithmetic location hypotheses; two-right-bar confirmation delays anchor availability and no institutional-flow claim follows.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Fibonacci levels are arithmetic location hypotheses; two-right-bar confirmation delays anchor availability and no institutional-flow claim follows."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_swing_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_fib_retracement"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.382
+                }
+              ]
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_fib_retracement"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.618
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_fib_retracement": "method_fib_retracement",
+          "method_swing_available": "method_swing_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "confirmed_swing",
+      "method_key": "internet_confirmed_swing_range_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_closed_pivots",
+        "fidelity_atr"
+      ],
+      "exact_rule": "Require an opposite pivot pair whose two-left/two-right confirmation has completed by the decision clock and whose closed range exceeds one current ATR.",
+      "parameter_rationale": "The range threshold is a lab adequacy hypothesis, not profitability evidence.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "The range threshold is a lab adequacy hypothesis, not profitability evidence."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_swing_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_swing_range_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_swing_range_atr": "method_swing_range_atr",
+          "method_swing_available": "method_swing_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "bos_event",
+      "method_key": "internet_confirmed_structure_break_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_closed_pivots",
+        "cme_support_resistance"
+      ],
+      "exact_rule": "Require a closed direction-consistent break of an already confirmed swing level, after its confirmation time.",
+      "parameter_rationale": "OHLC break-of-structure proxy only; no order-book, institutional intent or profitable retest claim.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "OHLC break-of-structure proxy only; no order-book, institutional intent or profitable retest claim."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_bos"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_bos": "method_bos",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "choch_event",
+      "method_key": "internet_confirmed_opposite_structure_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_closed_pivots",
+        "cme_support_resistance"
+      ],
+      "exact_rule": "Require the owner-defined closed break opposite to the prior confirmed price structure; actual signal direction is unchanged.",
+      "parameter_rationale": "Price-based change-of-character proxy only; a transition observation is not causally confirmed reversal skill.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Price-based change-of-character proxy only; a transition observation is not causally confirmed reversal skill."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_choch"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_choch": "method_choch",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "support_resistance_zone",
+      "method_key": "internet_confirmed_touched_zone_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "cme_support_resistance",
+        "v2_closed_pivots"
+      ],
+      "exact_rule": "Require distance to an already confirmed support/resistance level below half an ATR, at least two closed touches and confirmed age below 64 bars.",
+      "parameter_rationale": "The width, touch count and expiry are prospectively fixed lab hypotheses; levels are not guaranteed barriers.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "The width, touch count and expiry are prospectively fixed lab hypotheses; levels are not guaranteed barriers."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_sr_distance_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.5
+                }
+              ]
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_sr_touch_count"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_sr_age"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 64
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_sr_age": "method_sr_age",
+          "method_sr_touch_count": "method_sr_touch_count",
+          "method_sr_distance_atr": "method_sr_distance_atr",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "liquidity_pool",
+      "method_key": "internet_closed_equal_level_proxy_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "cme_support_resistance",
+        "v2_closed_pivots"
+      ],
+      "exact_rule": "Require at least two prior closed equal-level touches inside the owner's ATR-scaled tolerance.",
+      "parameter_rationale": "Equal OHLC levels are an explicitly labeled proxy. No resting orders or true liquidity quantity are supplied.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Equal OHLC levels are an explicitly labeled proxy. No resting orders or true liquidity quantity are supplied."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_equal_level_count"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_equal_level_count": "method_equal_level_count",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "liquidity_sweep",
+      "method_key": "internet_closed_excursion_reclaim_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "cme_support_resistance",
+        "v2_closed_pivots"
+      ],
+      "exact_rule": "Require a completed candle excursion beyond a prior confirmed level and a reclaim close in the existing signal direction.",
+      "parameter_rationale": "OHLC excursion/reclaim proxy only; intrabar ordering, real liquidity and stop hunting are not established.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "OHLC excursion/reclaim proxy only; intrabar ordering, real liquidity and stop hunting are not established."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_history_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_sweep_reclaim"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_sweep_reclaim": "method_sweep_reclaim",
+          "method_history_available": "method_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "session_range",
+      "method_key": "internet_closed_session_width_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_sessions",
+        "fidelity_atr"
+      ],
+      "exact_rule": "Require at least twenty completed bars in the declared UTC/session group and a closed range between half and five ATR.",
+      "parameter_rationale": "Current future session extrema are forbidden; fixed UTC grouping is not a broker/exchange session-calendar certificate.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Current future session extrema are forbidden; fixed UTC grouping is not a broker/exchange session-calendar certificate."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_session_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_session_range_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.5
+                }
+              ]
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_session_range_atr"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 5
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_session_range_atr": "method_session_range_atr",
+          "method_session_available": "method_session_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "volume_confirmation",
+      "method_key": "internet_observed_relative_volume_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_tick_volume"
+      ],
+      "exact_rule": "Require canonical available observed volume and compare current closed volume to the prior twenty closed observations; ratio must exceed 1.2.",
+      "parameter_rationale": "Volume zero/missing/placeholder is not participation. Provider volume semantics stay distinct; tick count is not exchange traded volume.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Volume zero/missing/placeholder is not participation. Provider volume semantics stay distinct; tick count is not exchange traded volume."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_volume_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_volume_ratio"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 1.2
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_volume_ratio": "method_volume_ratio",
+          "method_volume_available": "method_volume_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "transition_protection",
+      "method_key": "internet_closed_transition_wait_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_state_counters",
+        "v2_repainting"
+      ],
+      "exact_rule": "Count only elapsed closed candles since a genuinely observed regime boundary; admit after more than four such bars.",
+      "parameter_rationale": "The four-bar wait is a lab hypothesis. Missing transition ownership cannot be converted to a fabricated safe age.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "The four-bar wait is a lab hypothesis. Missing transition ownership cannot be converted to a fabricated safe age."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_transition_available"
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_transition_age"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 4
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_transition_age": "method_transition_age",
+          "method_transition_available": "method_transition_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "loss_streak_cooldown",
+      "method_key": "internet_mature_loss_streak_wait_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_state_counters",
+        "v2_leakage"
+      ],
+      "exact_rule": "Use only this agent's completed, uncensored trades. Fewer than three consecutive losses may pass; otherwise require more than twelve closed bars since the last mature loss.",
+      "parameter_rationale": "End-of-data censored exits and future outcomes never populate the past cooldown counter.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "End-of-data censored exits and future outcomes never populate the past cooldown counter."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_loss_history_available"
+            },
+            {
+              "op": "OR",
+              "args": [
+                {
+                  "op": "LESS_THAN",
+                  "args": [
+                    {
+                      "op": "NUMBER",
+                      "available_at": "1900-01-01T00:00:00Z",
+                      "input_key": "method_loss_streak"
+                    },
+                    {
+                      "op": "CONST",
+                      "type": "number",
+                      "value": 3
+                    }
+                  ]
+                },
+                {
+                  "op": "GREATER_THAN",
+                  "args": [
+                    {
+                      "op": "NUMBER",
+                      "available_at": "1900-01-01T00:00:00Z",
+                      "input_key": "method_bars_since_loss"
+                    },
+                    {
+                      "op": "CONST",
+                      "type": "number",
+                      "value": 12
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_bars_since_loss": "method_bars_since_loss",
+          "method_loss_streak": "method_loss_streak",
+          "method_loss_history_available": "method_loss_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "temporal_survival_filter",
+      "method_key": "internet_closed_signal_persistence_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_state_counters",
+        "v2_repainting"
+      ],
+      "exact_rule": "Require an observed same-direction signal state, closed age below three bars and persistence score 1/(1+age/4) above 0.5.",
+      "parameter_rationale": "This deterministic age score is a persistence heuristic, NOT a calibrated survival probability or expected return.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "This deterministic age score is a persistence heuristic, NOT a calibrated survival probability or expected return."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_signal_available"
+            },
+            {
+              "op": "LESS_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_signal_age"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 3
+                }
+              ]
+            },
+            {
+              "op": "GREATER_THAN",
+              "args": [
+                {
+                  "op": "NUMBER",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_signal_survival"
+                },
+                {
+                  "op": "CONST",
+                  "type": "number",
+                  "value": 0.5
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_signal_survival": "method_signal_survival",
+          "method_signal_age": "method_signal_age",
+          "method_signal_available": "method_signal_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "dynamic_cooldown",
+      "method_key": "internet_mature_dynamic_recovery_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_state_counters",
+        "v2_leakage"
+      ],
+      "exact_rule": "Apply the owner's capped streak-dependent wait min(24,4*consecutive mature losses) using only this agent's completed closes.",
+      "parameter_rationale": "This is deterministic recovery scheduling, not trained optimal recovery. External account-risk limits stay fixed.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "This is deterministic recovery scheduling, not trained optimal recovery. External account-risk limits stay fixed."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_loss_history_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_dynamic_cooldown_ready"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_dynamic_cooldown_ready": "method_dynamic_cooldown_ready",
+          "method_loss_history_available": "method_loss_history_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "regime_router",
+      "method_key": "internet_closed_regime_alignment_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "fidelity_ema",
+        "v2_repainting"
+      ],
+      "exact_rule": "Require an available past-only price regime and alignment with the already-created BUY/SELL signal; neither a label nor an injected column may generate direction.",
+      "parameter_rationale": "Closed-price regime heuristic only; classification accuracy and specialist-transfer value require their own trials.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Closed-price regime heuristic only; classification accuracy and specialist-transfer value require their own trials."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_regime_available"
+            },
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_regime_aligned"
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_regime_aligned": "method_regime_aligned",
+          "method_regime_available": "method_regime_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "meta_label_filter",
+      "method_key": "internet_await_verified_meta_model_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "v2_calibration",
+        "v2_leakage"
+      ],
+      "exact_rule": "WAIT unless the replay owner has an original, scoped, trained-model and calibration artifact with causal availability. This release supplies no such artifact and owner availability remains false.",
+      "parameter_rationale": "Executable availability firewall only, NOT a trained meta-label classifier; no generated probability or claimed model skill.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "Executable availability firewall only, NOT a trained meta-label classifier; no generated probability or claimed model skill."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "confirmation",
+        "ast": {
+          "op": "BOOL",
+          "available_at": "1900-01-01T00:00:00Z",
+          "input_key": "method_meta_model_available"
+        },
+        "input_bindings": {
+          "method_meta_model_available": "method_meta_model_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "atr_risk_envelope",
+      "method_key": "internet_fixed_half_risk_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "fidelity_atr"
+      ],
+      "exact_rule": "Reduce the existing computed position-risk multiplier by a fixed factor 0.5; never increase size, disable protection or change account limits.",
+      "parameter_rationale": "A fixed half-risk treatment is a controlled hypothesis. Lower risk is not automatically better utility.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "A fixed half-risk treatment is a controlled hypothesis. Lower risk is not automatically better utility."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "risk_multiplier",
+        "ast": {
+          "op": "CONST",
+          "type": "number",
+          "value": 0.5
+        },
+        "input_bindings": {},
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    },
+    {
+      "instrument_key": "cost_aware_exit",
+      "method_key": "internet_owned_adverse_regime_exit_v2",
+      "revision": 1,
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "fidelity_ema",
+        "v2_repainting"
+      ],
+      "exact_rule": "For an already owned position, request an exit when the past-only available price regime is adverse to that position's existing direction.",
+      "parameter_rationale": "This is an owned-position closed-regime exit, not tick-perfect fill or cheaper execution evidence; execution costs stay unchanged.",
+      "known_limitations": [
+        "Unvalidated pre-2026 research hypothesis; no independent, economic, Master, paper or live authority.",
+        "Only owner-computed closed inputs and mature owned state; source text and supplied method_* columns are never executed.",
+        "This is an owned-position closed-regime exit, not tick-perfect fill or cheaper execution evidence; execution costs stay unchanged."
+      ],
+      "implementation": {
+        "kind": "typed_ast",
+        "target": "exit",
+        "ast": {
+          "op": "AND",
+          "args": [
+            {
+              "op": "BOOL",
+              "available_at": "1900-01-01T00:00:00Z",
+              "input_key": "method_regime_available"
+            },
+            {
+              "op": "NOT",
+              "args": [
+                {
+                  "op": "BOOL",
+                  "available_at": "1900-01-01T00:00:00Z",
+                  "input_key": "method_regime_aligned"
+                }
+              ]
+            }
+          ]
+        },
+        "input_bindings": {
+          "method_regime_aligned": "method_regime_aligned",
+          "method_regime_available": "method_regime_available"
+        },
+        "budget": {
+          "cpu_seconds": 0.1,
+          "max_calls": 2000,
+          "max_node_evaluations": 96000
+        }
+      }
+    }
+  ],
+  "hybrids": [
+    {
+      "recipe_key": "internet_closed_structure_half_risk_exit_v2",
+      "revision": 1,
+      "method_refs": [
+        "internet_confirmed_structure_break_v2",
+        "internet_fixed_half_risk_v2",
+        "internet_owned_adverse_regime_exit_v2"
+      ],
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      }
+    },
+    {
+      "recipe_key": "internet_session_half_risk_exit_v2",
+      "revision": 1,
+      "method_refs": [
+        "internet_closed_session_break_v2",
+        "internet_fixed_half_risk_v2",
+        "internet_owned_adverse_regime_exit_v2"
+      ],
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      }
+    },
+    {
+      "recipe_key": "internet_fib_half_risk_exit_v2",
+      "revision": 1,
+      "method_refs": [
+        "internet_confirmed_fib_pullback_v2",
+        "internet_fixed_half_risk_v2",
+        "internet_owned_adverse_regime_exit_v2"
+      ],
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      }
+    },
+    {
+      "recipe_key": "internet_recovery_half_risk_v2",
+      "revision": 1,
+      "method_refs": [
+        "internet_mature_dynamic_recovery_v2",
+        "internet_fixed_half_risk_v2"
+      ],
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      }
+    },
+    {
+      "recipe_key": "internet_observed_volume_half_risk_v2",
+      "revision": 1,
+      "method_refs": [
+        "internet_observed_relative_volume_v2",
+        "internet_fixed_half_risk_v2"
+      ],
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      }
+    }
+  ],
+  "coverage": {
+    "compression_expansion": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_compression_expansion_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Disjoint-window sizes and expansion thresholds are frozen implementation hypotheses, not profitable settings."
+    },
+    "session_breakout": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_session_break_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "This is a fixed UTC session-group proxy, not exchange/DST calendar qualification or observed-quote scalp proof."
+    },
+    "adaptive_entry_topology": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_break_or_reclaim_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "The two-stage closed confirmation union is a bounded topology choice, not a learned universal topology selector."
+    },
+    "dynamic_fibonacci_zone": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_confirmed_fib_pullback_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Fibonacci levels are arithmetic location hypotheses; two-right-bar confirmation delays anchor availability and no institutional-flow claim follows."
+    },
+    "confirmed_swing": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_confirmed_swing_range_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "The range threshold is a lab adequacy hypothesis, not profitability evidence."
+    },
+    "bos_event": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_confirmed_structure_break_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "OHLC break-of-structure proxy only; no order-book, institutional intent or profitable retest claim."
+    },
+    "choch_event": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_confirmed_opposite_structure_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Price-based change-of-character proxy only; a transition observation is not causally confirmed reversal skill."
+    },
+    "support_resistance_zone": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_confirmed_touched_zone_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "The width, touch count and expiry are prospectively fixed lab hypotheses; levels are not guaranteed barriers."
+    },
+    "liquidity_pool": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_equal_level_proxy_v2"
+      ],
+      "data_dependencies": [
+        "Observed order-book data required for any actual resting-liquidity claim."
+      ],
+      "next_proof": "Equal OHLC levels are an explicitly labeled proxy. No resting orders or true liquidity quantity are supplied."
+    },
+    "liquidity_sweep": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_excursion_reclaim_v2"
+      ],
+      "data_dependencies": [
+        "Tick data required for intrabar ordering or fill-fidelity qualification."
+      ],
+      "next_proof": "OHLC excursion/reclaim proxy only; intrabar ordering, real liquidity and stop hunting are not established."
+    },
+    "session_range": {
+      "role": "market_lens",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_session_width_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Current future session extrema are forbidden; fixed UTC grouping is not a broker/exchange session-calendar certificate."
+    },
+    "volume_confirmation": {
+      "role": "market_lens",
+      "status": "data_conditional_research_method",
+      "method_refs": [
+        "internet_observed_relative_volume_v2"
+      ],
+      "data_dependencies": [
+        "Canonical observed volume with compatible provider semantics and twenty closed nonzero baseline observations."
+      ],
+      "next_proof": "Volume zero/missing/placeholder is not participation. Provider volume semantics stay distinct; tick count is not exchange traded volume."
+    },
+    "transition_protection": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_transition_wait_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "The four-bar wait is a lab hypothesis. Missing transition ownership cannot be converted to a fabricated safe age."
+    },
+    "loss_streak_cooldown": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_mature_loss_streak_wait_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "End-of-data censored exits and future outcomes never populate the past cooldown counter."
+    },
+    "temporal_survival_filter": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_signal_persistence_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "This deterministic age score is a persistence heuristic, NOT a calibrated survival probability or expected return."
+    },
+    "dynamic_cooldown": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_mature_dynamic_recovery_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "This is deterministic recovery scheduling, not trained optimal recovery. External account-risk limits stay fixed."
+    },
+    "regime_router": {
+      "role": "model",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_regime_alignment_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Closed-price regime heuristic only; classification accuracy and specialist-transfer value require their own trials."
+    },
+    "meta_label_filter": {
+      "role": "model",
+      "status": "data_conditional_research_method",
+      "method_refs": [
+        "internet_await_verified_meta_model_v2"
+      ],
+      "data_dependencies": [
+        "Genuine original trained primary/meta-label model, separate training/calibration provenance and authorized held-out evaluation."
+      ],
+      "next_proof": "Executable availability firewall only, NOT a trained meta-label classifier; no generated probability or claimed model skill."
+    },
+    "atr_risk_envelope": {
+      "role": "execution",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_atr_stop_1_5_target_3_v1",
+        "internet_fixed_half_risk_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Entry-size and stop/target parity with unchanged account-risk cap."
+    },
+    "cost_aware_exit": {
+      "role": "execution",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_atr_trailing_time_exit_v1",
+        "internet_owned_adverse_regime_exit_v2"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Actual owned-position close and unchanged cost ledger."
+    },
+    "trend_pullback": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_ema_21_55_trend_v1"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Closed trend signal and independent behavior/cost contrast."
+    },
+    "breakout_retest": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_breakout_retest_v1"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Past-only range/retest and actual decision receipt."
+    },
+    "range_reentry": {
+      "role": "tactic",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_band_reentry_20_2_v1"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Closed reentry under range conditions; separate contextual qualification."
+    },
+    "cost_firewall": {
+      "role": "risk",
+      "status": "data_conditional_research_method",
+      "method_refs": [
+        "internet_observed_spread_atr_cap_v1"
+      ],
+      "data_dependencies": [
+        "Observed bid/ask or canonical measured spread; missing quotes remain unavailable."
+      ],
+      "next_proof": "Actual quote coverage, immutable cost/decision contrast."
+    },
+    "high_volatility_firewall": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_closed_atr_absolute_ceiling_v1"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Declared closed ATR cutoff and exact counterfactual use."
+    },
+    "confidence_firewall": {
+      "role": "risk",
+      "status": "executable_research_method",
+      "method_refs": [
+        "internet_signal_score_veto_0_7_v1"
+      ],
+      "data_dependencies": [],
+      "next_proof": "Actual score-veto receipt; score remains uncalibrated."
+    }
+  }
+}

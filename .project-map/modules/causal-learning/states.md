@@ -40,6 +40,35 @@ cohorts remain active for control/status and reload refusal between original
 arms. A canonical exact cost envelope is not model authority; tampered costs
 or extra authority fields still refuse candidate rebasing.
 
+The explicit append-only alternative-method catalog never changes v1 recipes
+or an active policy snapshot. Closed-feature confirmation/risk/exit recipes
+retain missing-input WAIT and false economic/independent authority. Conditional
+volume and meta-model adapters are not qualified data or trained classifiers.
+
+Own-child study preparation follows `verified unused own child -> exact parent
+and learned selector classes -> no_effect OR four fresh signed carriers ->
+existing original study/work registration`. Physical baseline, exact recipe
+mapping, original proposal root and source facts are rechecked. Failed atomic
+preparation rolls back all carriers/work; changed inputs cannot reopen the same
+question. Generation creation and replay remain existing arbiter operations.
+
+Finite meta training follows `explicit original training registration ->
+reopened closed source products -> underpowered OR fixed-bin training and
+chronological seen calibration -> signed finite JSON asset`. Actual entry and
+uncensored mature close labels retain physical cost/account identity. Calibration
+is diagnostic seen data, not independent evaluation. Libraries/selectors with
+different effective policy identities cannot be pooled. No credit is issued.
+
+Optional asset attachment precedes any policy/cohort/run seal on an unused
+ordinary model. Its target-specific HMAC proof and two-field model reference are
+part of runtime identity only when present. Compiler and Python revalidate
+physical parameters/account/risk/execution/clock. Prediction requires closed
+observations strictly after training/calibration labels; unavailable inputs stay
+unavailable. Native shared-account execution is unsupported, not inferred from
+an ordinary model. Existing candidate/study transfer refuses meta assets until
+an explicit fresh reattachment owner exists; old models without assets retain
+their previous behavior and identity.
+
 ## Separately scoped prospective questions (ADR-036)
 
 `preregistered_diagnostic -> data_bound_diagnostic -> assessed_diagnostic`
