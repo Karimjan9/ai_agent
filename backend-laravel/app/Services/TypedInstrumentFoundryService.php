@@ -71,7 +71,17 @@ class TypedInstrumentFoundryService
         $astHash = $this->hash($normalized);
         $symbol = strtoupper((string) ($context['symbol'] ?? 'XAUUSD'));
         $timeframe = strtoupper((string) ($context['timeframe'] ?? 'H1'));
-        $existing = DB::table('research_instrument_programs')->where('symbol', $symbol)->where('timeframe', $timeframe)->where('ast_hash', $astHash)->first();
+        $key = hash('sha256', implode('|', [self::PROTOCOL, $symbol, $timeframe, $astHash, $context['data_hash'], $context['execution_hash']]));
+        if (($gates['admission'] ?? null) === 'bounded_research_candidate'
+            && (isset($context['baseline_hash']) || isset($context['context_hash']))) {
+            $key = hash('sha256', $key.'|'.$this->hash(array_intersect_key($context,
+                array_flip(['baseline_hash', 'context_hash']))));
+        }
+        // A new frozen research window needs its own data-bound program. This
+        // does not mint independent evidence or change legacy library admission.
+        $existing = DB::table('research_instrument_programs')->where('symbol', $symbol)->where('timeframe', $timeframe)->where('ast_hash', $astHash)
+            ->when(($gates['admission'] ?? null) === 'bounded_research_candidate',
+                fn ($query) => $query->where('program_key', $key))->first();
         if ($existing) return ['protocol' => self::PROTOCOL, 'status' => 'semantic_duplicate', 'program_key' => $existing->program_key,
             'promotion_evidence' => false];
         $compiled = ['protocol' => self::PROTOCOL, 'version' => 'typed_dsl_v1', 'result_type' => $validation['type'],
@@ -85,7 +95,6 @@ class TypedInstrumentFoundryService
         $executorPath = dirname(base_path()).'/ai-service-python/app/services/research_program_tasks.py';
         $compiled['task_executor_hash'] = is_file($executorPath) ? hash_file('sha256', $executorPath) : null;
         $compiled['library_utility_is_not_economic_authority'] = true;
-        $key = hash('sha256', implode('|', [self::PROTOCOL, $symbol, $timeframe, $astHash, $context['data_hash'], $context['execution_hash']]));
         DB::table('research_instrument_programs')->insert([
             'program_key' => $key, 'symbol' => $symbol, 'timeframe' => $timeframe, 'status' => 'compiled_research_only',
             'complexity' => $validation['node_count'], 'ast_hash' => $astHash, 'ast' => $this->encode($normalized),

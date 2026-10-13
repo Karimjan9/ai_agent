@@ -18,6 +18,14 @@ Laboratory diagnosis / Academy plan
 
 ## Modules
 
+Optional separated method research (ADR-039): untrusted source reference ->
+immutable instrument method/recipe -> intrinsic library + agent-owned policy ->
+prospective model/request binding -> actual ordinary/native decisions ->
+original eligibility-checked experience -> bounded policy proposal/fresh
+same-baseline candidate. A preregistered L1/L2 x A1/A2 diagnostic study separates
+library and selector effects; its local outcomes cannot borrow confirmation,
+credit or paper admission. Candidate preparation is not automatic dispatch.
+
 - `causal-learning`: experiment interpretation, receipt and next-work routing.
 - `laboratory`: cohort lifecycle, provenance and research gates.
 - `laravel-python-contract`: deterministic computation/attestation boundary.

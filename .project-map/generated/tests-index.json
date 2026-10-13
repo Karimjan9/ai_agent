@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-12T18:36:23.031Z",
-  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
-  "source_file_count": 1629,
-  "git_head": "35d1eb7ec2ab0df7b0b2cc41a3de9710646d2fa8",
+  "generated_at": "2026-10-13T05:56:20.219Z",
+  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
+  "source_file_count": 1650,
+  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -254,6 +254,52 @@
         "test_unavailable_quote_cannot_be_liquid_even_if_placeholder_is_zero",
         "test_quote_tampering_and_future_or_stale_observation_fail_closed",
         "test_autonomous_quote_requires_sealed_provenance_and_paper_boundary"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_context_contract.py",
+      "tests": [
+        "test_exact_observed_session_instance_and_calendar_version_select_and_veto",
+        "test_missing_or_different_coordinates_never_manufacture_a_matching_recipe"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_learning.py",
+      "tests": [
+        "test_native_independent_policy_selects_distinct_recipe_with_real_effect_and_receipts",
+        "test_native_hybrid_two_pinned_methods_reduces_actual_risk",
+        "test_external_gate_still_rejects_and_never_fabricates_method_use",
+        "test_wrong_library_policy_and_json_copies_fail_closed",
+        "test_operator_rehash_cannot_relabel_original_method_source",
+        "test_future_observation_and_post_2026_inputs_reject",
+        "test_future_operator_input_and_risk_increase_reject_without_fallback",
+        "test_native_exit_requests_existing_exit_and_preserves_gap_pricing",
+        "test_wrong_policy_library_and_declared_post_2026_scope_reject",
+        "test_sealed_full_runtime_vector_rejects_parameter_drift",
+        "test_ordinary_actual_replay_consumes_veto_preserving_clock_and_baseline"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_matrix.py",
+      "tests": [
+        "test_archive_reopens_exact_bounded_original_rows_and_rejects_hash_drift",
+        "test_source_post_2026_and_unsealed_or_drifted_requests_reject",
+        "test_partial_or_unequal_clocks_never_produce_a_comparison",
+        "test_underpower_and_interaction_are_diagnostic_and_never_authority",
+        "test_four_independent_real_executor_processes_retain_original_software_fixture_products"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_transport.py",
+      "tests": [
+        "test_study_caps_bound_existing_deadline_and_reject_unowned_or_oversized_budgets",
+        "test_invalid_ordinary_binding_rejects_before_any_cache_lookup",
+        "test_batch_guard_collapses_the_exact_per_strategy_bindings",
+        "test_candidate_cache_payload_keeps_candidate_method_and_study_identity",
+        "test_cache_requires_current_actual_method_receipt_and_refuses_legacy_or_sibling",
+        "test_native_member_guard_validates_actual_member_parameters_and_policy",
+        "test_false_scope_and_parameter_drift_reject_before_cache",
+        "test_explicit_falsy_bindings_never_bypass_guard_or_reuse_legacy_cache"
       ]
     },
     {
@@ -1008,6 +1054,41 @@
         "generation",
         "agent",
         "check"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
+      "tests": [
+        "test_verified_own_learning_creates_exact_fresh_model_and_server_owned_policy_without_inherited_authority",
+        "test_retries_and_changed_revision_labels_do_not_construct_another_candidate_and_poisoned_originals_revoke_reinspection",
+        "test_unlearned_or_changed_runtime_cannot_create_a_candidate_and_public_rebase_claims_are_refused",
+        "test_copying_a_real_candidate_proof_to_another_model_cannot_create_a_second_target_policy",
+        "test_post_run_bound_policy_metadata_drift_invalidates_original_identity_and_rebased_policy",
+        "learnedSource",
+        "context",
+        "scope"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
+      "tests": [
+        "setUp",
+        "test_policy_revision_is_frozen_and_cannot_accept_caller_authority",
+        "test_original_trace_yields_contextual_diagnostics_and_not_supplied_scores",
+        "test_self_rehashed_counters_without_actual_trace_are_rejected",
+        "test_trace_duplicates_future_observation_and_forged_behavior_are_rejected",
+        "test_post_2026_scope_changed_recipe_and_late_registration_cannot_learn",
+        "test_durable_learning_reopens_originals_is_idempotent_and_freezes_proposal_sources",
+        "test_actual_policy_context_and_exact_strategy_owner_paths_are_used",
+        "test_native_members_learn_independent_policies_and_cannot_borrow_sibling_owner",
+        "test_rebase_provenance_requires_dedicated_server_derivation_and_verified_learning",
+        "test_inspection_and_rebasing_reopen_frozen_original_experiences_after_poison_or_source_drift",
+        "products",
+        "policyInput",
+        "artifact",
+        "hash",
+        "seal",
+        "canonicalJson"
       ]
     },
     {
@@ -2181,6 +2262,66 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php",
+      "tests": [
+        "test_inventory_covers_every_card_without_seeding_trading_or_qualification_state",
+        "test_untrusted_imports_and_video_provenance_are_content_addressed_and_reinspected",
+        "test_fetch_rejects_credentials_ports_plain_http_ip_and_local_hosts_before_network_access",
+        "test_method_and_recipe_labels_cannot_overwrite_original_revisions",
+        "test_registration_refuses_stateful_dsl_unbound_inputs_guard_disabling_and_conflicting_hybrids",
+        "test_hybrid_compilation_exports_two_real_pinned_operators_and_all_original_seals",
+        "test_adapter_compilation_preserves_risk_and_does_not_forge_a_typed_operator",
+        "test_library_snapshot_retains_exact_original_membership_when_new_methods_are_added",
+        "test_actual_php_hybrid_export_survives_default_json_transport_and_native_pinned_validation",
+        "sourceInput",
+        "context",
+        "methodInput",
+        "adapterInput",
+        "recipeInput",
+        "baseline",
+        "scope"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+      "tests": [
+        "setUp",
+        "test_actual_library_policy_and_model_binding_execute_in_python_with_exact_owner",
+        "test_attach_requires_exact_unused_owner_and_is_immutable_before_construction",
+        "test_attempted_constructed_promoted_invalidated_and_live_models_refuse_attachment",
+        "test_batch_uses_exact_lab_agent_and_rejects_missing_duplicate_or_single_ambiguous_owners",
+        "test_pre2026_scope_and_source_clock_guards_refuse_before_compilation",
+        "test_new_scope_programs_and_unselected_library_revision_do_not_change_frozen_policy_library",
+        "test_real_study_binding_emits_exact_arm_caps_and_full_trace_requests",
+        "test_sparse_original_model_seal_preserves_legacy_basis_and_rejects_post_seal_policy_edits",
+        "registeredRecipe",
+        "model",
+        "policy",
+        "boundModel",
+        "agent",
+        "request",
+        "context",
+        "refuses"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
+      "tests": [
+        "setUp",
+        "test_preregistration_freezes_separate_library_and_agent_axes_and_prospective_binding",
+        "test_original_mature_ledger_computes_conditional_effects_and_interaction_once",
+        "test_missing_originals_wait_and_censored_trades_are_underpowered_not_losses",
+        "test_actual_cost_or_cap_drift_is_technical_and_cannot_publish_assessment",
+        "test_preexisting_model_runs_baseline_drift_and_repeat_attempts_are_rejected",
+        "test_powered_negative_and_null_effects_remain_local_diagnostics",
+        "test_native_position_ledger_reconciles_account_and_excludes_censored_profit",
+        "runs",
+        "replaceRequest",
+        "artifact",
+        "hash"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/InstrumentPolicyConsumptionTest.php",
       "tests": [
         "test_legacy_gene_only_policy_and_hash_labels_are_not_delta_consumption",
@@ -3263,6 +3404,27 @@
       "tests": [
         "test_identity_includes_context_block_design_and_stopping_rule",
         "test_design_match_requires_exact_type_context_and_real_bounded_intervention"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php",
+      "tests": [
+        "tearDown",
+        "test_default_inventory_and_status_are_read_only_and_command_is_discovered",
+        "test_source_method_recipe_policy_and_both_compile_routes_preserve_original_contracts",
+        "test_fetch_is_explicit_source_only_and_never_prints_fetched_content",
+        "test_bounded_local_object_input_rejects_remote_streams_lists_invalid_json_and_oversized_files",
+        "test_missing_original_learning_and_unearned_proposals_fail_without_dispatch_or_credit",
+        "test_unexpected_exceptions_and_blocked_service_messages_do_not_expose_sql_or_secrets",
+        "test_study_and_settlement_delegate_exact_declared_inputs_without_scheduling_work",
+        "test_explicit_evolve_action_delegates_only_original_policy_identity_and_bounded_proposal_options",
+        "commandResult",
+        "inputFile",
+        "source",
+        "context",
+        "method",
+        "baseline",
+        "scope"
       ]
     },
     {

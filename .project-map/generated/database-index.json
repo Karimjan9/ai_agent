@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-12T18:36:23.031Z",
-  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
-  "source_file_count": 1629,
-  "git_head": "35d1eb7ec2ab0df7b0b2cc41a3de9710646d2fa8",
+  "generated_at": "2026-10-13T05:56:20.219Z",
+  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
+  "source_file_count": 1650,
+  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tables": [
     {
@@ -117,6 +117,16 @@
       "table": "agent_memory_matches",
       "migration": "backend-laravel/database/migrations/2026_06_24_291000_create_phase_two_foundation_tables.php",
       "line": 73
+    },
+    {
+      "table": "agent_method_experiences",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 52
+    },
+    {
+      "table": "agent_method_policy_revisions",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 42
     },
     {
       "table": "agent_professional_exams",
@@ -997,6 +1007,26 @@
       "table": "instrument_invocation_ledger",
       "migration": "backend-laravel/database/migrations/2026_08_20_202000_create_instrument_invocation_ledger.php",
       "line": 11
+    },
+    {
+      "table": "instrument_method_revisions",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 22
+    },
+    {
+      "table": "instrument_method_sources",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 11
+    },
+    {
+      "table": "instrument_method_studies",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 62
+    },
+    {
+      "table": "instrument_recipe_revisions",
+      "migration": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 33
     },
     {
       "table": "instrument_value_posteriors",
@@ -2002,6 +2032,16 @@
       "table": "research_instrument_programs",
       "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
       "line": 54
+    },
+    {
+      "table": "research_instrument_programs",
+      "migration": "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
+      "line": 14
+    },
+    {
+      "table": "research_instrument_programs",
+      "migration": "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
+      "line": 26
     },
     {
       "table": "research_knowledge_entries",

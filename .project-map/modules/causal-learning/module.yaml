@@ -10,6 +10,28 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - .project-map/decisions/ADR-039-separated-instrument-method-and-agent-policy.md
+  - docs/operations/instrument-method-learning.md
+  - backend-laravel/app/Services/InstrumentMethodSourceService.php
+  - backend-laravel/app/Services/InstrumentMethodLibraryService.php
+  - backend-laravel/app/Services/InstrumentMethodResearchBindingService.php
+  - backend-laravel/app/Services/InstrumentMethodStudyService.php
+  - backend-laravel/app/Services/AgentMethodLearningService.php
+  - backend-laravel/app/Services/AgentMethodCandidateService.php
+  - backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php
+  - backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php
+  - backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php
+  - backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodStudyTest.php
+  - backend-laravel/tests/Feature/AgentMethodLearningTest.php
+  - backend-laravel/tests/Feature/AgentMethodCandidateTest.php
+  - backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php
+  - ai-service-python/app/services/instrument_method_learning.py
+  - ai-service-python/scripts/backtest-instrument-method-matrix.py
+  - ai-service-python/tests/test_instrument_method_learning.py
+  - ai-service-python/tests/test_instrument_method_matrix.py
+  - ai-service-python/tests/test_instrument_method_transport.py
   - backend-laravel/app/Services/ResearchRequestReferenceInventoryService.php
   - .project-map/decisions/ADR-038-historical-first-exposure-registration.md
   - backend-laravel/app/Models/ScopedResearchCertificate.php
@@ -146,6 +168,18 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - trading:instrument-methods
+  - InstrumentMethodLibraryService::inventory
+  - InstrumentMethodLibraryService::registerMethod
+  - InstrumentMethodLibraryService::registerRecipe
+  - InstrumentMethodLibraryService::compileRecipe
+  - InstrumentMethodResearchBindingService::attachToUnusedModel
+  - InstrumentMethodResearchBindingService::bindRequests
+  - InstrumentMethodStudyService::preregister
+  - InstrumentMethodStudyService::settle
+  - AgentMethodLearningService::learnFromRun
+  - AgentMethodLearningService::proposePolicy
+  - AgentMethodCandidateService::evolve
   - ScopedResearchCertificateService::register
   - ScopedResearchCertificateService::inspect
   - ScopedResearchCertificateService::bindOriginalData
@@ -230,6 +264,12 @@ entry_points:
   - trading:causal-golden-worlds
   - trading:reconcile-instrument-pairs
 data_tables:
+  - instrument_method_sources
+  - instrument_method_revisions
+  - instrument_recipe_revisions
+  - agent_method_policy_revisions
+  - agent_method_experiences
+  - instrument_method_studies
   - scoped_research_certificates
   - research_exposure_capture_records
   - descendant_value_trials

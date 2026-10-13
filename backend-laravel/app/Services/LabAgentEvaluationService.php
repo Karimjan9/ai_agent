@@ -3190,7 +3190,8 @@ class LabAgentEvaluationService
             }
         }
         $request = app(NativeSpreadContextStudyService::class)->bindRequest($request, $models);
-        return app(NativeReachabilityDepthAuditService::class)->bindRequest($request, $models);
+        $request = app(NativeReachabilityDepthAuditService::class)->bindRequest($request, $models);
+        return app(InstrumentMethodResearchBindingService::class)->bindRequests($request, $models);
     }
 
     /** An explicit execution view closes diagnostic evidence only, never ordinary learning. */
@@ -3315,6 +3316,12 @@ class LabAgentEvaluationService
             'parameters' => $model->parameters ?? [],
             'instrument_research_assignment' => $assignment,
             'liquidity_atr_binding' => app(SpecialistCouncilContractService::class)->liquidityAtrBindingForModel($model, $runtimeTimeframe),
+            'method_learning' => data_get($model->metadata, InstrumentMethodResearchBindingService::METADATA) === null ? null
+                : app(InstrumentMethodResearchBindingService::class)->forModel($model, [
+                    'symbol' => $symbol, 'timeframe' => $runtimeTimeframe, 'replay_dataset_hash' => $replayDatasetHash,
+                    'execution_contract' => app(ExecutionContractService::class)->for($symbol, $runtimeTimeframe),
+                    'mtf_snapshot_manifest' => (array) data_get($mtfBundle, 'manifest', []),
+                ]),
             'composition_runtime_contract' => $agent === null ? new \stdClass : $this->compositionRuntimeContract(
                 $agent, $assignment, $runtimeTimeframe, $mtfBundle, $replayDatasetHash,
             ),

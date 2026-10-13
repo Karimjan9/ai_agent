@@ -1,5 +1,30 @@
 # Integrations and runtime boundaries
 
+Optional `instrument_method_learning_v1` is compiled by the PHP method binding
+owner, per exact model/LabAgent or native council member. Intrinsic library,
+compiled-pool, recipe, selection-policy, data, execution and runtime-parameter
+hashes are distinct. Typed AST ports can veto existing entries, reduce risk or
+request an owned exit, never invent direction or weaken external limits.
+Parameter adapters are prospective construction variants, not per-candle
+genome rewrites. The Python ordinary/native loops publish actual contextual
+decision events and a count/framed-event-hash-bound receipt. Empty explicit
+declarations and stale cache receipts are rejected before cache consumption;
+batch cache identities retain the exact selected candidate binding.
+The original model-runtime treatment seal sparsely includes an explicit method
+binding; every undeclared legacy hash is unchanged. A post-seal policy metadata
+edit invalidates that original identity. Fresh policy rebasing excludes only
+this deliberate policy delta when checking the unchanged source baseline.
+
+The existing immutable screening projection consumes method experiences only
+after original eligibility checks. External source text is not evaluated.
+Public HTTPS fetches are bounded and DNS-pinned with no redirect/proxy/private
+address; supplied video captions require a timestamp and source permissions.
+Automatic caption download and unrestricted web harvesting are not supplied.
+The four-arm offline runner reopens exact archive bytes and seals all source
+files before child execution, uses hidden bounded subprocesses, and preserves
+zero/negative/timeout outcomes. Its products grant no production or market
+authority and are not a parallel runtime scheduler.
+
 PHP queue workers publish their existing boot source binding to the configured
 cache under `runtime:research-worker-boot:<PID>`. Cold deployment checks join
 those observations to actual live PM2 worker PIDs and the current source hash;

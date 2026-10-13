@@ -340,7 +340,7 @@ def _candidate_cache_payload(
     sibling timed out or was already resolved, so retain only this strategy's
     contract while preserving every other policy input.
     """
-    candidate_policy = dict(cohort_payload.policy_context or {})
+    candidate_policy = dict(strategy_payload.policy_context or {})
     repair_contracts = candidate_policy.get("repair_contracts")
     if isinstance(repair_contracts, dict):
         candidate_contract = repair_contracts.get(candidate_label)
@@ -409,6 +409,17 @@ def _candidate_cache_contract_is_current(
     result = cached_item.get("result")
     if not isinstance(result, dict):
         return False
+    method_contracts = []
+    declared_method = (payload.policy_context or {}).get("instrument_method_learning")
+    if "instrument_method_learning" in (payload.policy_context or {}):
+        method_contracts.append(declared_method)
+    for member in (payload.specialist_council_contract or {}).get("members", []):
+        if "method_learning" in member:
+            method_contracts.append(member["method_learning"])
+    if method_contracts:
+        from app.services.instrument_method_learning import receipt_current
+        if any(not receipt_current(result, contract) for contract in method_contracts):
+            return False
     transport = _verified_research_transport(payload)
     # A candidate cache payload has collapsed strategies; the original batch
     # identity was verified before cache lookup. Scope still must be current.
@@ -762,6 +773,7 @@ def _screening_insufficient_robustness_profile(
 
 def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest) -> None:
     """Authenticate optional diagnostic declarations before any API cache return."""
+    _validate_method_learning_before_cache(payload)
     if payload.native_reachability_depth_audit_contract or payload.native_standalone_qualification:
         from app.services.specialist_council import validate_contract
         validate_contract(payload)
@@ -776,6 +788,38 @@ def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest) ->
                 'native_spread_context_study_contract': config.get('native_spread_context_study_contract') or payload.native_spread_context_study_contract,
                 'native_reachability_depth_audit_contract': depth, 'native_standalone_qualification': standalone})
             validate_contract(candidate)
+
+
+def _validate_method_learning_before_cache(payload: SimpleBacktestRequest) -> None:
+    """A declared method/policy cannot escape validation through a cache hit."""
+    from app.services.instrument_method_learning import validate_contract
+    _method_study_resource_cap(payload)
+    execution_hash = execution_contract_metadata(payload)["execution_hash"]
+    candidates = [payload]
+    for config in payload.strategies:
+        config = config.model_dump() if hasattr(config, "model_dump") else dict(config)
+        policy = dict(payload.policy_context or {})
+        if config.get("instrument_method_learning"):
+            policy["instrument_method_learning"] = config["instrument_method_learning"]
+        candidates.append(payload.model_copy(update={
+            "strategy": config["strategy"], "base_strategy": config.get("base_strategy"),
+            "parameters": config.get("parameters") or {}, "policy_context": policy,
+            "specialist_council_contract": config.get("specialist_council_contract") or payload.specialist_council_contract,
+        }))
+    for candidate in candidates:
+        contract = (candidate.policy_context or {}).get("instrument_method_learning")
+        if "instrument_method_learning" in (candidate.policy_context or {}):
+            validate_contract(contract, dataset_hash=payload.replay_dataset_hash,
+                execution_hash=execution_hash, payload=candidate)
+        for member in (candidate.specialist_council_contract or {}).get("members", []):
+            contract = member.get("method_learning")
+            if "method_learning" not in member:
+                continue
+            current = candidate.model_copy(update={"strategy": member["strategy"],
+                "base_strategy": member.get("base_strategy"), "parameters": member.get("parameters") or {},
+                "specialist_council_contract": {}})
+            validate_contract(contract, dataset_hash=payload.replay_dataset_hash,
+                execution_hash=execution_hash, payload=current)
 
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:
@@ -1019,6 +1063,13 @@ def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]
                 },
             )
             candidate_policy = dict(payload.policy_context or {})
+            # Collapse the exact candidate binding before cache/evaluation;
+            # a sibling's library or policy must never select this agent's recipe.
+            method_binding = config.get("instrument_method_learning")
+            if method_binding:
+                candidate_policy["instrument_method_learning"] = method_binding
+            if config.get("instrument_method_study"):
+                candidate_policy["instrument_method_study"] = config["instrument_method_study"]
             repair_contracts = candidate_policy.get("repair_contracts")
             if isinstance(repair_contracts, dict):
                 repair_contract = repair_contracts.get(candidate_label)
@@ -1936,8 +1987,48 @@ def _scoped_full_durable_confirmation(payload: SimpleBacktestRequest) -> bool:
     return True
 
 
+def _method_study_resource_cap(payload: SimpleBacktestRequest) -> dict | None:
+    """Diagnostic study caps reduce execution budget; they grant no admission."""
+    policy = payload.policy_context or {}
+    caps = policy.get("instrument_method_study_resource_cap")
+    bindings = []
+    if "instrument_method_study" in policy:
+        bindings.append(policy["instrument_method_study"])
+    for candidate in payload.strategies:
+        candidate = candidate.model_dump() if hasattr(candidate, "model_dump") else candidate
+        if candidate.get("instrument_method_study"):
+            bindings.append(candidate["instrument_method_study"])
+    if caps is None and not bindings:
+        return None
+    if not isinstance(caps, dict) or set(caps) != {"max_rows", "max_decision_events", "max_runtime_seconds"}:
+        raise ValueError("METHOD_STUDY_RESOURCE_CAPS_REQUIRED")
+    for key, ceiling in (("max_rows", 200000), ("max_decision_events", 1000000), ("max_runtime_seconds", 1680)):
+        if type(caps[key]) is not int or not 1 <= caps[key] <= ceiling:
+            raise ValueError("METHOD_STUDY_RESOURCE_CAP_CEILING_EXCEEDED")
+    if not bindings:
+        raise ValueError("METHOD_STUDY_RESOURCE_OWNER_REQUIRED")
+    for binding in bindings:
+        if (not isinstance(binding, dict) or binding.get("resource_caps") != caps
+                or binding.get("arm") not in {"L1A1", "L2A1", "L1A2", "L2A2"}
+                or not isinstance(binding.get("study_hash"), str)
+                or len(binding["study_hash"]) != 64):
+            raise ValueError("METHOD_STUDY_RESOURCE_BINDING_DRIFT")
+    return caps
+
+
 def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
     """Return a deadline that is shorter than the Laravel transport budget."""
+    method_caps = _method_study_resource_cap(payload)
+    if method_caps is not None:
+        # The diagnostic owner cannot buy a longer replay or borrow an
+        # independent/full authorization by declaring a study.
+        ordinary = payload.model_copy(deep=True)
+        ordinary.policy_context.pop("instrument_method_study_resource_cap", None)
+        ordinary.policy_context.pop("instrument_method_study", None)
+        for config in ordinary.strategies:
+            if hasattr(config, "instrument_method_study"):
+                config.instrument_method_study = {}
+        return min(method_caps["max_runtime_seconds"], _bounded_replay_seconds(ordinary, operation))
     declaration = (payload.policy_context or {}).get("scoped_research_certificate")
     if isinstance(declaration, dict) and declaration.get("purpose") in {
             "independent_scoped_component_research", "independent_scoped_descendant_research"}:

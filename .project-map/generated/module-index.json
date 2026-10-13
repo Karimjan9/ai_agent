@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-12T18:36:23.031Z",
-  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
-  "source_file_count": 1629,
-  "git_head": "35d1eb7ec2ab0df7b0b2cc41a3de9710646d2fa8",
+  "generated_at": "2026-10-13T05:56:20.219Z",
+  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
+  "source_file_count": 1650,
+  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,6 +22,28 @@
         "research-paper-epoch"
       ],
       "paths": [
+        ".project-map/decisions/ADR-039-separated-instrument-method-and-agent-policy.md",
+        "docs/operations/instrument-method-learning.md",
+        "backend-laravel/app/Services/InstrumentMethodSourceService.php",
+        "backend-laravel/app/Services/InstrumentMethodLibraryService.php",
+        "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+        "backend-laravel/app/Services/InstrumentMethodStudyService.php",
+        "backend-laravel/app/Services/AgentMethodLearningService.php",
+        "backend-laravel/app/Services/AgentMethodCandidateService.php",
+        "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
+        "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+        "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
+        "backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php",
+        "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+        "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
+        "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
+        "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
+        "backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php",
+        "ai-service-python/app/services/instrument_method_learning.py",
+        "ai-service-python/scripts/backtest-instrument-method-matrix.py",
+        "ai-service-python/tests/test_instrument_method_learning.py",
+        "ai-service-python/tests/test_instrument_method_matrix.py",
+        "ai-service-python/tests/test_instrument_method_transport.py",
         "backend-laravel/app/Services/ResearchRequestReferenceInventoryService.php",
         ".project-map/decisions/ADR-038-historical-first-exposure-registration.md",
         "backend-laravel/app/Models/ScopedResearchCertificate.php",
@@ -159,6 +181,18 @@
         "ai-service-python/app/services/prospective_probe_window.py"
       ],
       "entry_points": [
+        "trading:instrument-methods",
+        "InstrumentMethodLibraryService::inventory",
+        "InstrumentMethodLibraryService::registerMethod",
+        "InstrumentMethodLibraryService::registerRecipe",
+        "InstrumentMethodLibraryService::compileRecipe",
+        "InstrumentMethodResearchBindingService::attachToUnusedModel",
+        "InstrumentMethodResearchBindingService::bindRequests",
+        "InstrumentMethodStudyService::preregister",
+        "InstrumentMethodStudyService::settle",
+        "AgentMethodLearningService::learnFromRun",
+        "AgentMethodLearningService::proposePolicy",
+        "AgentMethodCandidateService::evolve",
         "ScopedResearchCertificateService::register",
         "ScopedResearchCertificateService::inspect",
         "ScopedResearchCertificateService::bindOriginalData",
@@ -244,6 +278,12 @@
         "trading:reconcile-instrument-pairs"
       ],
       "data_tables": [
+        "instrument_method_sources",
+        "instrument_method_revisions",
+        "instrument_recipe_revisions",
+        "agent_method_policy_revisions",
+        "agent_method_experiences",
+        "instrument_method_studies",
         "scoped_research_certificates",
         "research_exposure_capture_records",
         "descendant_value_trials",
@@ -396,7 +436,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 131,
+      "source_file_count": 151,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -759,6 +799,14 @@
         "attestation"
       ],
       "paths": [
+        "ai-service-python/app/services/instrument_method_learning.py",
+        "ai-service-python/scripts/backtest-instrument-method-matrix.py",
+        "ai-service-python/tests/test_instrument_method_learning.py",
+        "ai-service-python/tests/test_instrument_method_matrix.py",
+        "ai-service-python/tests/test_instrument_method_transport.py",
+        "ai-service-python/tests/test_instrument_method_context_contract.py",
+        "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+        "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
         "ai-service-python/requirements.lock.txt",
         "ai-service-python/requirements-dev.txt",
         "ai-service-python/tests/test_market_regime.py",
@@ -819,6 +867,10 @@
         "docs/ai-service-contract.md"
       ],
       "entry_points": [
+        "InstrumentMethodResearchBindingService::compilePolicy",
+        "InstrumentMethodResearchBindingService::bindRequests",
+        "InstrumentMethodLearning::evaluate",
+        "_validate_method_learning_before_cache",
         "LabImmutableEvidenceService::recordDecisionTrace",
         "LabImmutableEvidenceService::projectDecisionTrace",
         "ProjectLabCandleDecisionEvents::handle",
@@ -840,6 +892,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "Optional instrument_method_learning_v1 binds intrinsic method/recipe library and independent agent policy revisions to exact parameters, data, execution and observed closed context. Per-candidate cache retains its exact binding and cannot reuse missing/stale method receipts; explicit empty declarations fail closed. Actual decision events measure target reach/use separately, and diagnostic study caps can only reduce existing execution deadlines.",
         "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",
         "Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.",
         "unused_draft_price_discovery_preparation_v1 adds only a typed research header to unchanged source-release transport and Python parameters/gates. Actual compressed original request/response/trace bytes distinguish 15000 selected evaluated rows, 512 feature warmup, 200 ordinary execution warmup and 14800 unique decision candles; event counts are distinct and grant no economics or authority (ADR-035).",
@@ -926,7 +979,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 57,
+      "source_file_count": 65,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {

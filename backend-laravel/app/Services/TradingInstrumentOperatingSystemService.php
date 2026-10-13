@@ -27,6 +27,21 @@ class TradingInstrumentOperatingSystemService
 
     public const RESEARCH_READINESS_PROTOCOL = 'instrument_research_readiness_v2';
 
+    /** Inspect code-owned cards without seeding or reading mutable trading state. */
+    public function inventory(): array
+    {
+        $cards = [];
+        $groups = [];
+        foreach ($this->instrumentDefinitions() as $key => $definition) {
+            $cards[$key] = $this->toolCard($key, $definition);
+            $groups[$definition['role']][] = $key;
+        }
+        ksort($groups);
+
+        return ['protocol' => self::PROTOCOL, 'instruments' => $cards, 'groups' => $groups,
+            'playbooks' => $this->playbookDefinitions(), 'promotion_evidence' => false];
+    }
+
     /** Code-owned capability, not an assertion that a replay activated it. */
     public function runtimeCapability(string $key): array
     {

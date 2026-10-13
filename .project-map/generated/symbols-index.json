@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-12T18:36:23.031Z",
-  "source_digest": "9b13097c0f743456824ecf3eccd6b9dcbb516122fc8a4030415a287057656ea5",
-  "source_file_count": 1629,
-  "git_head": "35d1eb7ec2ab0df7b0b2cc41a3de9710646d2fa8",
+  "generated_at": "2026-10-13T05:56:20.219Z",
+  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
+  "source_file_count": 1650,
+  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -13,7 +13,7 @@
       "symbol": "ExecutionConfig",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 101
+      "line": 104
     },
     {
       "symbol": "Candle",
@@ -25,13 +25,13 @@
       "symbol": "SimpleBacktestRequest",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 117
+      "line": 120
     },
     {
       "symbol": "Metrics",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 225
+      "line": 228
     },
     {
       "symbol": "StrategyConfig",
@@ -43,43 +43,43 @@
       "symbol": "Trade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 235
+      "line": 238
     },
     {
       "symbol": "MistakeJournalEntry",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 248
+      "line": 251
     },
     {
       "symbol": "DailyReportDay",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 254
+      "line": 257
     },
     {
       "symbol": "DailyReport",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 265
+      "line": 268
     },
     {
       "symbol": "BacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 270
+      "line": 273
     },
     {
       "symbol": "SimpleTrade",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 279
+      "line": 282
     },
     {
       "symbol": "SimpleBacktestResponse",
       "kind": "python_class",
       "path": "ai-service-python/app/schemas.py",
-      "line": 322
+      "line": 325
     },
     {
       "symbol": "BacktestRequest",
@@ -134,6 +134,12 @@
       "kind": "python_class",
       "path": "ai-service-python/app/services/historical_quotes.py",
       "line": 12
+    },
+    {
+      "symbol": "InstrumentMethodLearning",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 127
     },
     {
       "symbol": "MarketAdaptiveReplayService",
@@ -199,7 +205,7 @@
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 288
+      "line": 291
     },
     {
       "symbol": "StrategyDnaService",
@@ -247,6 +253,30 @@
       "symbol": "FiniteProgramSearchTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_finite_program_search.py",
+      "line": 43
+    },
+    {
+      "symbol": "InstrumentMethodContextContractTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_context_contract.py",
+      "line": 37
+    },
+    {
+      "symbol": "InstrumentMethodLearningTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_learning.py",
+      "line": 85
+    },
+    {
+      "symbol": "InstrumentMethodMatrixTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_matrix.py",
+      "line": 58
+    },
+    {
+      "symbol": "InstrumentMethodTransportTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_transport.py",
       "line": 43
     },
     {
@@ -1352,6 +1382,12 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RescreenLabGeneration.php",
       "line": 12
+    },
+    {
+      "symbol": "ResearchInstrumentMethods",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
+      "line": 17
     },
     {
       "symbol": "RestoreDatabase",
@@ -3772,6 +3808,18 @@
       "line": 29
     },
     {
+      "symbol": "AgentMethodCandidateService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
+      "line": 13
+    },
+    {
+      "symbol": "AgentMethodLearningService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
+      "line": 14
+    },
+    {
       "symbol": "AgentMindService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/AgentMindService.php",
@@ -4850,6 +4898,30 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Services/InstrumentLearningMonitorService.php",
       "line": 19
+    },
+    {
+      "symbol": "InstrumentMethodLibraryService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodLibraryService.php",
+      "line": 9
+    },
+    {
+      "symbol": "InstrumentMethodResearchBindingService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 13
+    },
+    {
+      "symbol": "InstrumentMethodSourceService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodSourceService.php",
+      "line": 9
+    },
+    {
+      "symbol": "InstrumentMethodStudyService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyService.php",
+      "line": 13
     },
     {
       "symbol": "InstrumentPolicyConsumptionService",
@@ -7480,6 +7552,18 @@
       "line": 7
     },
     {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
+      "line": 7
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
+      "line": 8
+    },
+    {
       "symbol": "ResearchWindowProvenanceAuditService",
       "kind": "php_type",
       "path": "backend-laravel/scripts/benchmark-research-provenance.php",
@@ -7646,6 +7730,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AgentLifecycleAuditTest.php",
       "line": 16
+    },
+    {
+      "symbol": "AgentMethodCandidateTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
+      "line": 24
+    },
+    {
+      "symbol": "AgentMethodLearningTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
+      "line": 17
     },
     {
       "symbol": "AgentMindTest",
@@ -8170,6 +8266,24 @@
       "line": 17
     },
     {
+      "symbol": "InstrumentMethodLibraryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php",
+      "line": 15
+    },
+    {
+      "symbol": "InstrumentMethodResearchBindingTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+      "line": 26
+    },
+    {
+      "symbol": "InstrumentMethodStudyTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
+      "line": 21
+    },
+    {
       "symbol": "InstrumentPolicyConsumptionTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentPolicyConsumptionTest.php",
@@ -8690,6 +8804,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ResearchIdeaDesignTest.php",
       "line": 9
+    },
+    {
+      "symbol": "ResearchInstrumentMethodsCommandTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php",
+      "line": 14
     },
     {
       "symbol": "ResearchKnowledgePortfolioServiceTest",

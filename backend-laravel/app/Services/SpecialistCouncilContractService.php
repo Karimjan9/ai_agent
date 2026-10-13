@@ -507,10 +507,13 @@ class SpecialistCouncilContractService
                 }
                 $runtimeMember['symbol'] = $symbol;
                 $runtimeMember['base_strategy'] = $native['base_strategy'] ?? $runtimeMember['base_strategy'];
-                foreach (['specialist_context_contract', 'composition_runtime_contract', 'instrument_research_assignment', 'mtf_pilot'] as $key) {
+                foreach (['specialist_context_contract', 'composition_runtime_contract', 'instrument_research_assignment', 'mtf_pilot', 'method_learning'] as $key) {
                     if (is_array($native[$key] ?? null) && $native[$key] !== []) $runtimeMember[$key] = $native[$key];
                 }
             } else {
+                if (data_get($model->metadata, InstrumentMethodResearchBindingService::METADATA) !== null) {
+                    throw new InvalidArgumentException('COUNCIL_MEMBER_METHOD_POLICY_REQUIRES_NATIVE_COMPILATION');
+                }
                 foreach (['specialist_context_contract', 'composition_runtime_contract', 'instrument_research_assignment', 'mtf_pilot'] as $key) {
                     $contract = data_get($model->metadata, $key);
                     if (is_array($contract) && $contract !== []) $runtimeMember[$key] = $contract;

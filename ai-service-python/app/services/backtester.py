@@ -1383,6 +1383,11 @@ def _run_prepared_simple_backtest(
         runtime_authority=_composition_runtime_authority(payload),
     )
     policy_boundary = enforce_policy_boundary(payload)
+    method_learning = None
+    if "instrument_method_learning" in (payload.policy_context or {}):
+        from app.services.instrument_method_learning import InstrumentMethodLearning
+        method_learning = InstrumentMethodLearning(payload.policy_context["instrument_method_learning"], payload)
+        method_learning.validate_frame(df)
     snapshot = prepared_snapshot or prepare_signal_snapshot(payload, df)
     source_df = snapshot.source_frame.copy()
     df = snapshot.frame.copy()
@@ -1676,6 +1681,7 @@ def _run_prepared_simple_backtest(
     for index in range(1 if original_account is not None else 200, len(df)):
         candle = row_at(index)
         signal_row = row_at(index - 1)
+        method_risk_multiplier = 1.0
         executed_clock.observe(index, signal_row["time"], candle["time"])
         if original_account is not None:
             original_account.decision(signal_row['time'], candle['time'])
@@ -2160,6 +2166,25 @@ def _run_prepared_simple_backtest(
             }:
                 liquid = False
                 rejection_reason = f"state_machine_{state_machine_state}"
+            if liquid and method_learning is not None:
+                from app.services.research_program_tasks import canonical_hash
+                observed_at = (pd.Timestamp(signal_row['time'])
+                    + pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))).isoformat()
+                method_row = signal_row.to_dict() if hasattr(signal_row, 'to_dict') else dict(signal_row)
+                method = method_learning.evaluate(method_row, decision_id=canonical_hash({
+                    'owner': 'ordinary_single_position_v1', 'data_hash': payload.replay_dataset_hash,
+                    'candle_index': index, 'observed_at': observed_at, 'phase': 'entry', 'direction': signal}),
+                    phase='entry', decision_at=observed_at, observed_at=observed_at, direction=signal)
+                outputs = method['outputs'] if isinstance(method['outputs'], dict) else {}
+                if emit_decision_trace:
+                    decision_trace.append({'event_type': 'instrument_method_decision', 'candle_index': index,
+                        'method_learning': method})
+                record_event('method_learning', method['reason'], index, method['context_hash'])
+                if outputs.get('confirmation') is False:
+                    liquid, rejection_reason = False, 'method_learning_confirmation_veto'
+                method_risk_multiplier = float(outputs.get('risk_multiplier', 1.0))
+                if method_risk_multiplier == 0:
+                    liquid, rejection_reason = False, 'method_learning_zero_risk'
             if liquid:
                 entry_funnel["risk_governor_approvals"] += 1
             else:
@@ -2380,6 +2405,7 @@ def _run_prepared_simple_backtest(
                 * _regime_specific_risk_multiplier(signal_row, execution_payload)
                 * _volume_risk_multiplier(signal_row)
                 * float(mtf_policy.get("risk_multiplier", 1.0) or 1.0)
+                * method_risk_multiplier
                 * (
                     _recovery_probe_risk_multiplier(execution_payload)
                     if probe_active
@@ -2497,9 +2523,31 @@ def _run_prepared_simple_backtest(
                 "time_stop",
             )
         else:
-            exit_price, exit_reason = _intrabar_exit(
-                direction, position, candle, position_payload
-            )
+            method_exit = False
+            if method_learning is not None and index > int(position['entry_index']):
+                from app.services.research_program_tasks import canonical_hash
+                observed_at = (pd.Timestamp(signal_row['time'])
+                    + pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))).isoformat()
+                method_row = signal_row.to_dict() if hasattr(signal_row, 'to_dict') else dict(signal_row)
+                method = method_learning.evaluate(method_row, decision_id=canonical_hash({
+                    'owner': 'ordinary_single_position_v1', 'data_hash': payload.replay_dataset_hash,
+                    'candle_index': index, 'observed_at': observed_at, 'phase': 'exit',
+                    'entry_index': int(position['entry_index'])}), phase='exit',
+                    decision_at=observed_at, observed_at=observed_at, direction=direction)
+                method_exit = isinstance(method['outputs'], dict) and method['outputs'].get('exit') is True
+                if emit_decision_trace:
+                    decision_trace.append({'event_type': 'instrument_method_decision', 'candle_index': index,
+                        'method_learning': method})
+                record_event('method_learning', method['reason'], index, method['context_hash'])
+            if method_exit:
+                # The existing gap guard has first claim on execution pricing.
+                open_price = float(candle['open'])
+                exit_price, exit_reason = _intrabar_exit(direction, position,
+                    {**dict(candle), 'high': open_price, 'low': open_price}, position_payload)
+                if exit_reason is None:
+                    exit_price, exit_reason = _exit_price(open_price, direction, position_payload), 'method_learning_exit'
+            else:
+                exit_price, exit_reason = _intrabar_exit(direction, position, candle, position_payload)
 
         if exit_reason is None and _take_partial_profit(
             position, candle, position_payload
@@ -3401,6 +3449,8 @@ def _run_prepared_simple_backtest(
     response.proof_carrying_replay = _proof_carrying_replay(
         response.model_dump(), trades, payload
     )
+    if method_learning is not None:
+        response.data_quality['instrument_method_learning_receipt'] = method_learning.receipt()
     if emit_decision_trace:
         response.decision_trace = decision_trace
     if emit_decision_trace or bool(payload.emit_trade_ledger):

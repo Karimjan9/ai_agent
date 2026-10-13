@@ -1,5 +1,29 @@
 # Causal learning states
 
+## Instrument methods and agent-owned policies (ADR-039)
+
+Source `registered_reference_only` is untrusted provenance, not an executable
+instruction or economic evidence. Methods and recipes become
+`registered_research_only`; each revision is append-only and binds source,
+context, horizon, limitations and bounded typed AST or construction adapter.
+Library snapshots are intrinsic. Dataset/baseline-bound compiled pools have a
+different hash, so compiling a fresh scope does not rewrite the method version.
+
+Agent policy `registered_research_only -> original observed experience ->
+prospective proposed policy` is separate from library revisions. The original
+model, policy, actual in-loop events and immutable response are rechecked before
+experience persistence. Proposal is bounded observational advice, not skill
+confirmation. A fresh model can receive a server-derived, reverified lineage;
+attempted/admitted models cannot be rebound. Standalone candidate preparation
+does not create a generation, dispatch work or change an active council.
+
+Study `preregistered -> awaiting_original_products -> assessed_diagnostic`
+freezes the exact four L1A1/L2A1/L1A2/L2A2 owners, data, account, costs, limits and
+compute caps before outcomes. Technical, underpowered, null, positive and
+negative classifications are distinct. Conditional effects and interaction are
+diagnostic, not independent confirmation, Master status or credit. Existing
+independent authority and paper gates are unchanged; all 2026+ data remains paper.
+
 ## Separately scoped prospective questions (ADR-036)
 
 `preregistered_diagnostic -> data_bound_diagnostic -> assessed_diagnostic`

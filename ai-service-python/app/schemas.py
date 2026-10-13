@@ -85,6 +85,9 @@ class StrategyRuntimeConfig(BaseModel):
     # only bindings it actually received and consumed; the declaration grants
     # neither paper authority nor promotion evidence.
     instrument_research_assignment: dict[str, Any] = Field(default_factory=dict)
+    # Frozen recipe library and independent research selection policy.
+    instrument_method_learning: dict[str, Any] = Field(default_factory=dict)
+    instrument_method_study: dict[str, Any] = Field(default_factory=dict)
     # Frozen Laravel composition declaration. Runtime consumption is reported
     # separately; receiving this contract grants no component credit.
     composition_runtime_contract: dict[str, Any] = Field(default_factory=dict)

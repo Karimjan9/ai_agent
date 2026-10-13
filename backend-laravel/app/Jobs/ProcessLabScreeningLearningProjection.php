@@ -152,6 +152,9 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         // gate path sees its own run as `running`, so it may only record a
         // waiting state. Re-evaluate after the immutable response, trace and
         // trade ledger are closed, then refresh the mutable decision view.
+        // Independent method-selection memory reopens the original producer
+        // artifacts. It is diagnostic, idempotent and grants no credit/mastery.
+        app(\App\Services\AgentMethodLearningService::class)->learnFromRun($run);
         $cooperativeSettlement = $cooperativeSettlements->observe($agent);
         $decisionMetrics = (array) $decision->metrics;
         $decisionMetrics['cooperative_experiment_settlement'] = $cooperativeSettlement;

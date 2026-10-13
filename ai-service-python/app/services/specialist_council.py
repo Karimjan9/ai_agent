@@ -20,6 +20,7 @@ from app.schemas import SimpleBacktestRequest, SimpleBacktestResponse, SimpleTra
 from app.services.execution_contract import enforce_policy_boundary, execution_contract_metadata
 from app.services.research_program_tasks import BoundedDecisionProgram, canonical_hash, canonical_json, preserved_contract_body, _same_ast_copy
 from app.services.prospective_probe_window import assert_clean_discovery_boundary, select_probe_window
+from app.services.instrument_method_learning import InstrumentMethodLearning
 
 PROTOCOL = "specialist_council_runtime_v1"
 RECEIPT_PROTOCOL = "specialist_council_receipt_v1"
@@ -146,6 +147,8 @@ def _members(members: object) -> list[dict]:
             raise ValueError("SPECIALIST_COUNCIL_RISK_BUDGET_INVALID")
         if member.get("operator_contract"):
             BoundedDecisionProgram(member["operator_contract"])
+        if "method_learning" in member and not isinstance(member["method_learning"], dict):
+            raise ValueError("METHOD_LEARNING_CONTRACT_OBJECT_REQUIRED")
     if total_weight > 1 + 1e-12:
         raise ValueError("SPECIALIST_COUNCIL_ALLOCATION_WEIGHT_EXCEEDED")
     return copy.deepcopy(members)
@@ -292,6 +295,7 @@ class MemberRuntime:
     rows: list[dict]
     data_quality: dict
     operator: BoundedDecisionProgram | None = None
+    method_learning: InstrumentMethodLearning | None = None
     stages: Counter = field(default_factory=Counter)
     closed_returns: dict = field(default_factory=lambda: defaultdict(list))
     cooldown_until: int = -1
@@ -342,6 +346,9 @@ def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member:
         raise ValueError("SPECIALIST_COUNCIL_MEMBER_CANDLE_DOMAIN_MISMATCH")
     runtime = MemberRuntime(member, version, child, snapshot.frame.to_dict("records"), snapshot.data_quality,
         BoundedDecisionProgram(member["operator_contract"]) if member.get("operator_contract") else None)
+    if "method_learning" in member:
+        runtime.method_learning = InstrumentMethodLearning(member["method_learning"], child)
+        runtime.method_learning.validate_frame(snapshot.frame)
     runtime.temporal_state = kernel._temporal_survival_state()
     runtime.instrument_state = kernel._instrument_runtime_state(child.instrument_research_assignment)
     if 'liquidity_atr_binding' in member:
@@ -514,11 +521,13 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                          "council_version": runtime.council_version,
                          "member_version_hash": runtime.version_hash})
         receipts.append(item)
+        if trace_clock is not None and stage == 'method_learning':
+            trace_clock.setdefault('method_learning_events', []).append(detail['method_learning'])
         # Observe the actual pre-entry branch. Intrabar exits and outcomes
         # retain their separate execution ledger and cannot leak into inputs.
         if trace_clock is not None and runtime is not None:
             observed = trace_members.get(runtime.version_hash)
-            if observed is not None and (stage in {'intent', 'risk', 'operator'}
+            if observed is not None and (stage in {'intent', 'risk', 'operator', 'method_learning'}
                     or (stage == 'execution' and reason in {'filled', 'duplicate_intent'})):
                 observed['stage_receipts'].append({'stage': stage, 'reason': reason,
                     'detail': {key: kernel._semantic_event_value(value) for key, value in detail.items()}})
@@ -698,6 +707,14 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                     if decision:
                         runtime.operator.changed_decisions += 1
                         reason = "operator_exit"
+                if runtime.method_learning is not None:
+                    method = runtime.method_learning.evaluate(prior, decision_id=canonical_hash({
+                        'member_version_hash': runtime.version_hash, 'observed_at': _stamp(signal_at),
+                        'phase': 'exit', 'position_id': pos['position_id']}), phase='exit',
+                        decision_at=_stamp(signal_at), observed_at=_stamp(signal_at), direction=pos['direction'])
+                    event(runtime, timestamp, 'method_learning', method['reason'], method_learning=method)
+                    if isinstance(method['outputs'], dict) and method['outputs'].get('exit') is True:
+                        reason = 'method_learning_exit'
                 if bool(runtime.declaration.get("exit_on_opposite_signal", False)) and prior.get("signal") in {"BUY", "SELL"} and prior["signal"] != pos["direction"]:
                     reason = "opposite_signal"
             # Gaps are known at the open; canonical kernel must prefer them
@@ -828,6 +845,20 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                 event(runtime, timestamp, "risk", str(veto or "member_veto"))
                 continue
             multiplier = 1.0
+            if runtime.method_learning is not None:
+                method = runtime.method_learning.evaluate(prior, decision_id=canonical_hash({
+                    'member_version_hash': runtime.version_hash, 'observed_at': _stamp(signal_at),
+                    'phase': 'entry', 'direction': signal}), phase='entry',
+                    decision_at=_stamp(signal_at), observed_at=_stamp(signal_at), direction=signal)
+                event(runtime, timestamp, 'method_learning', method['reason'], method_learning=method)
+                outputs = method['outputs'] if isinstance(method['outputs'], dict) else {}
+                if outputs.get('confirmation') is False:
+                    event(runtime, timestamp, 'risk', 'method_learning_confirmation_veto')
+                    continue
+                multiplier = float(outputs.get('risk_multiplier', 1.0))
+                if multiplier == 0:
+                    event(runtime, timestamp, 'risk', 'method_learning_zero_risk')
+                    continue
             if runtime.operator and runtime.operator.target in {"confirmation", "risk_multiplier"}:
                 output = runtime.operator.evaluate(prior, decision_at=_stamp(signal_at), observed_at=_stamp(signal_at))
                 event(runtime, timestamp, "operator", "evaluated", target=runtime.operator.target, output=output)
@@ -836,8 +867,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                     event(runtime, timestamp, "risk", "operator_confirmation_veto")
                     continue
                 if runtime.operator.target == "risk_multiplier":
-                    multiplier = float(output)
-                    if multiplier != 1.0:
+                    multiplier *= float(output)
+                    if float(output) != 1.0:
                         runtime.operator.changed_decisions += 1
                     if not multiplier:
                         event(runtime, timestamp, "risk", "operator_zero_risk")
@@ -1015,7 +1046,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                 "effective_parameters_hash": canonical_hash(runtime.payload.parameters),
                 "source_attestation": runtime.data_quality.get("dataset_attestation", {}),
                 "context_source_attestations": runtime.data_quality.get("context_source_attestations", {}),
-                "operator_receipt": runtime.operator.receipt() if runtime.operator else {"status": "not_bound"}})
+                "operator_receipt": runtime.operator.receipt() if runtime.operator else {"status": "not_bound"},
+                **({"method_learning_receipt": runtime.method_learning.receipt()} if runtime.method_learning else {})})
     if dependencies:
         for version, declarations in versions:
             for declaration in declarations:

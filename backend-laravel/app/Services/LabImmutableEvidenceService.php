@@ -1843,6 +1843,11 @@ class LabImmutableEvidenceService
             // identity byte-for-byte unchanged, including its existing nulls.
             $components['prospective_scoped_composition_recipe'] = $metadata['prospective_scoped_composition_recipe'];
         }
+        if (array_key_exists('instrument_method_learning', $metadata)) {
+            // Only prospective method consumers gain this new treatment port.
+            // Every undeclared legacy identity remains byte-for-byte unchanged.
+            $components['instrument_method_learning'] = $metadata['instrument_method_learning'];
+        }
         $components['smart_composition_treatment'] = Arr::only(
             (array) data_get($model->metadata, 'smart_composition.composition_passport', []),
             ['protocol', 'symbol', 'laboratory_storage_timeframe', 'execution_timeframe',
