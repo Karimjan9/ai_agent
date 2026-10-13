@@ -1,0 +1,151 @@
+{
+  "protocol": "curated_instrument_method_catalog_v1",
+  "catalog_key": "internet_instrument_methods_20261013_v1",
+  "revision": 1,
+  "curated_on": "2026-10-13",
+  "curator": "coding_assistant",
+  "evidence_status": "unvalidated_research_hypotheses",
+  "policy": {
+    "research_market_data_before": "2026-01-01T00:00:00Z",
+    "all_2026_and_later_market_data": "paper_only",
+    "source_text_execution": "forbidden",
+    "agent_policy_mutation": "forbidden",
+    "automatic_qualification": "forbidden",
+    "parameter_adapters": "construction_time_only"
+  },
+  "sources": [
+    {"source_id": "fidelity_ema", "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema", "title": "Exponential Moving Average", "publisher": "Fidelity", "summary": "EMA weights recent prices more heavily and can describe trend direction. It lags price and does not identify exact market tops or bottoms.", "license": "Original curator paraphrase; linked publisher material retains its copyright; no publisher code or transcript copied."},
+    {"source_id": "fidelity_atr", "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr", "title": "Average True Range", "publisher": "Fidelity", "summary": "ATR estimates range-based volatility, including gaps. It does not indicate direction. ATR multiples can inform stop distances, but they do not establish profitable entries.", "license": "Original curator paraphrase; linked publisher material retains its copyright; no publisher code or transcript copied."},
+    {"source_id": "cme_support_resistance", "reference": "https://www.cmegroup.com/education/courses/technical-analysis/support-and-resistance", "title": "Support and Resistance", "publisher": "CME Group", "summary": "Previous highs and lows, moving averages and price levels can define possible support and resistance. A level is a hypothesis, not a guaranteed barrier.", "license": "Original curator paraphrase; linked publisher material retains its copyright; no publisher video or transcript copied."},
+    {"source_id": "fidelity_bollinger", "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/bollinger-bands", "title": "Bollinger Bands", "publisher": "Fidelity", "summary": "Bollinger bands place volatility-sensitive envelopes around a moving average. Twenty periods and two standard deviations are common settings. Band contact alone is not a reversal signal.", "license": "Original curator paraphrase; linked publisher material retains its copyright; no publisher code or transcript copied."},
+    {"source_id": "fidelity_adx", "reference": "https://www.fidelity.com/viewpoints/active-investor/average-directional-index-ADX", "title": "Average Directional Index", "publisher": "Fidelity", "summary": "ADX describes trend strength rather than direction. Readings below twenty are commonly treated as weak trend. No contemporary market example from the page is incorporated here.", "license": "Original curator paraphrase; linked publisher material retains its copyright; no publisher code or market chart copied."},
+    {"source_id": "ctrader_symbol", "reference": "https://help.ctrader.com/ctrader-algo/references/MarketData/Symbols/Symbol/", "title": "Symbol API: Bid, Ask and Spread", "publisher": "Spotware cTrader", "summary": "The Symbol API exposes bid, ask and spread observations. A spread-based rule needs the corresponding observed quotes and cannot infer zero cost from missing quotes.", "license": "Original curator paraphrase of public API documentation; linked publisher material retains its license; no sample code copied."},
+    {"source_id": "sklearn_calibration", "reference": "https://scikit-learn.org/stable/modules/calibration.html", "title": "Probability Calibration", "publisher": "scikit-learn developers", "summary": "Classifier confidence is not necessarily a calibrated probability. Calibration and its evaluation require separate data; a high score alone does not prove positive expected trading value.", "license": "Original curator paraphrase of public documentation; no documentation code copied."},
+    {"source_id": "tradingview_repainting", "reference": "https://www.tradingview.com/pine-script-docs/concepts/repainting/", "title": "Repainting", "publisher": "TradingView", "summary": "Historical and realtime indicator behavior can differ. Unconfirmed higher-timeframe values and hindsight pivot placement require explicit as-of handling before a historical signal is trusted.", "license": "Original curator paraphrase of public documentation; no publisher code copied."}
+  ],
+  "methods": [
+    {
+      "instrument_key": "trend_pullback", "method_key": "internet_ema_21_55_trend_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_ema", "cme_support_resistance"],
+      "exact_rule": "Before model construction set EMA fast=21 and slow=55; retain the existing EMA/RSI strategy signal, pullback behavior and every external risk limit.",
+      "parameter_rationale": "21/55 is a preregistered lab hypothesis, not a publisher-proven optimum or a new standalone pullback implementation.",
+      "known_limitations": ["Construction adapter only; selecting this recipe mid-replay cannot change a sealed EMA vector.", "Existing EMA/RSI signal semantics remain authoritative; this adapter does not add a new pullback state machine.", "London trend-up scope is a proposed context, not confirmed transfer or profitability."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "ema_rsi", "parameters": {"ema_fast": 21, "ema_slow": 55}}
+    },
+    {
+      "instrument_key": "breakout_retest", "method_key": "internet_closed_breakout_retest_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["cme_support_resistance", "fidelity_atr"],
+      "exact_rule": "Before model construction set breakout lookback=20, ATR period=14, displacement multiplier=0.5, two confirmation candles and retest_required=true; execute the existing closed-candle breakout adapter.",
+      "parameter_rationale": "The exact channel, displacement and confirmation settings are lab-authored research parameters. Sources motivate levels and volatility, not this combined rule's success.",
+      "known_limitations": ["Construction-time breakout-family adapter; a different family is refused.", "Native retest semantics and closed-candle availability must be verified in actual replay.", "A false break remains possible; no entry is manufactured when the strategy has no signal."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "breakout", "parameters": {"lookback": 20, "atr_period": 14, "atr_multiplier": 0.5, "confirmation_candles": 2, "retest_required": true}}
+    },
+    {
+      "instrument_key": "range_reentry", "method_key": "internet_band_reentry_20_2_v1", "revision": 1,
+      "context_predicate": {"regime": "range", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_bollinger", "fidelity_adx"],
+      "exact_rule": "Before model construction set mean-reversion lookback=20, band deviation=2.0 and ADX maximum=20.0. Native range reentry and existing strategy semantics remain unchanged.",
+      "parameter_rationale": "Band settings and the weak-trend threshold follow conventional documented definitions; a profitable reentry recipe is still a lab hypothesis.",
+      "known_limitations": ["Band contact alone is not a trade signal.", "ADX indicates strength, not direction; no institutional order-flow inference is made.", "Construction-time mean-reversion adapter, not a new stateful reversal engine."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "mean_reversion", "parameters": {"lookback": 20, "deviation": 2.0, "adx_max": 20.0}}
+    },
+    {
+      "instrument_key": "atr_risk_envelope", "method_key": "internet_atr_stop_1_5_target_3_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_atr"],
+      "exact_rule": "Before model construction set stop distance=1.5 ATR and target distance=3.0 ATR; existing sizing, account and external risk caps remain in force.",
+      "parameter_rationale": "ATR-based stop distance is documented; the 3.0-ATR target and combined risk/reward hypothesis are lab choices, not publisher evidence.",
+      "known_limitations": ["ATR is not directional and is not an expected-return estimate.", "A wider stop must not increase the account risk budget.", "Needs actual entry/risk-sizing activation and comparable transaction costs."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "ema_rsi", "parameters": {"atr_stop_multiplier": 1.5, "atr_target_multiplier": 3.0}}
+    },
+    {
+      "instrument_key": "cost_aware_exit", "method_key": "internet_atr_trailing_time_exit_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_atr", "ctrader_symbol"],
+      "exact_rule": "Before model construction set trailing distance=2.0 ATR and maximum holding=24 execution candles; preserve the existing owned-position exit and cost accounting.",
+      "parameter_rationale": "The exact trailing distance and holding bound are lab hypotheses. Quote documentation establishes cost inputs, not economic benefit.",
+      "known_limitations": ["Twenty-four candles is not twenty-four hours; execution timeframe defines elapsed holding.", "This configures an existing exit owner; it cannot close another specialist's position.", "Execution costs remain charged even if a decision observation is masked."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "ema_rsi", "parameters": {"trailing_atr_multiplier": 2.0, "time_stop_candles": 24}}
+    },
+    {
+      "instrument_key": "cost_firewall", "method_key": "internet_observed_spread_atr_cap_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["ctrader_symbol", "fidelity_atr"],
+      "exact_rule": "Before model construction set max_spread_atr_ratio=0.1. Existing cost gate vetoes an entry above this ratio using actual bid/ask and its sealed missing-quote policy.",
+      "parameter_rationale": "0.1 is a lab-chosen conservative normalized cost cap, not a broker or publisher recommendation.",
+      "known_limitations": ["Requires observed bid/ask; modeled costs or absent quotes do not prove this gate activated correctly.", "Compilation refuses to raise a stricter existing spread cap.", "No safety gate is disabled and veto opportunity cost requires later control comparison."],
+      "implementation": {"kind": "parameter_adapter", "strategy_family": "ema_rsi", "parameters": {"max_spread_atr_ratio": 0.1}}
+    },
+    {
+      "instrument_key": "high_volatility_firewall", "method_key": "internet_closed_atr_absolute_ceiling_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_atr", "tradingview_repainting"],
+      "exact_rule": "For an existing permission-reached entry, permit this additional confirmation only when the closed management ATR is strictly less than 30.0 price units; otherwise WAIT.",
+      "parameter_rationale": "30.0 is an explicit XAUUSD-style price-unit ceiling for a research probe, not a normalized threshold or a portable calibrated limit.",
+      "known_limitations": ["Absolute price-unit threshold must be prospectively reconfigured for another symbol or timeframe.", "The current closed management-ATR smoothing is the native evaluator's algorithm; it is not asserted identical to Wilder ATR.", "A missing/nonfinite ATR must fail closed; no directional signal or risk-limit relaxation is allowed."],
+      "implementation": {"kind": "typed_ast", "target": "confirmation", "ast": {"op": "LESS_THAN", "args": [{"op": "ATR", "input_key": "closed_atr", "available_at": "2000-01-01T00:00:00Z"}, {"op": "CONST", "type": "number", "value": 30.0}]}, "input_bindings": {"closed_atr": "_management_atr"}, "budget": {"cpu_seconds": 1.0, "max_calls": 100000, "max_node_evaluations": 4800000}}
+    },
+    {
+      "instrument_key": "confidence_firewall", "method_key": "internet_signal_score_veto_0_7_v1", "revision": 1,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["sklearn_calibration"],
+      "exact_rule": "For an existing permission-reached entry, require the native signal_confidence score strictly greater than 0.7; a lower or missing score cannot create an entry.",
+      "parameter_rationale": "0.7 is an uncalibrated lab score cutoff. It is deliberately not called a 70-percent success probability or positive expected value.",
+      "known_limitations": ["Native score is not independently calibrated probability.", "High confidence can still lose after costs; control, ablation and data-separated evaluation remain necessary.", "This is only an additional veto of an existing strategy signal, never a BUY/SELL generator."],
+      "implementation": {"kind": "typed_ast", "target": "confirmation", "ast": {"op": "GREATER_THAN", "args": [{"op": "NUMBER", "input_key": "native_score", "available_at": "2000-01-01T00:00:00Z"}, {"op": "CONST", "type": "number", "value": 0.7}]}, "input_bindings": {"native_score": "signal_confidence"}, "budget": {"cpu_seconds": 1.0, "max_calls": 100000, "max_node_evaluations": 4800000}}
+    },
+    {
+      "instrument_key": "high_volatility_firewall", "method_key": "internet_closed_atr_absolute_ceiling_v1", "revision": 2,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["fidelity_atr", "tradingview_repainting"],
+      "exact_rule": "For an existing permission-reached entry, permit this additional confirmation only when the closed management ATR is strictly less than 20.0 price units; otherwise WAIT.",
+      "parameter_rationale": "20.0 is a prospectively declared stricter alternative to revision 1, chosen before this catalog's backtests. It is not an outcome-selected optimum.",
+      "known_limitations": ["Absolute price-unit threshold is not portable to another symbol or timeframe.", "This tighter veto can lose profitable opportunities; the stricter number is not evidence of superiority.", "Closed management ATR is the native algorithm, not asserted equivalent to Wilder smoothing; no direction or external risk change follows."],
+      "implementation": {"kind": "typed_ast", "target": "confirmation", "ast": {"op": "LESS_THAN", "args": [{"op": "ATR", "input_key": "closed_atr", "available_at": "2000-01-01T00:00:00Z"}, {"op": "CONST", "type": "number", "value": 20.0}]}, "input_bindings": {"closed_atr": "_management_atr"}, "budget": {"cpu_seconds": 1.0, "max_calls": 100000, "max_node_evaluations": 4800000}}
+    },
+    {
+      "instrument_key": "confidence_firewall", "method_key": "internet_signal_score_veto_0_7_v1", "revision": 2,
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}, "horizon": "hour",
+      "source_refs": ["sklearn_calibration"],
+      "exact_rule": "For an existing permission-reached entry, require the native signal_confidence score strictly greater than 0.8; a lower or missing score cannot create an entry.",
+      "parameter_rationale": "0.8 is a prospectively declared stricter score alternative to revision 1. It is uncalibrated and not an 80-percent success probability.",
+      "known_limitations": ["The stable method key retains historical naming; revision 2, not its label, pins the exact 0.8 threshold.", "A stricter score can reduce useful trades and does not prove better expected value.", "Only existing-signal entry veto is allowed; no BUY/SELL generator or independent qualification is created."],
+      "implementation": {"kind": "typed_ast", "target": "confirmation", "ast": {"op": "GREATER_THAN", "args": [{"op": "NUMBER", "input_key": "native_score", "available_at": "2000-01-01T00:00:00Z"}, {"op": "CONST", "type": "number", "value": 0.8}]}, "input_bindings": {"native_score": "signal_confidence"}, "budget": {"cpu_seconds": 1.0, "max_calls": 100000, "max_node_evaluations": 4800000}}
+    }
+  ],
+  "hybrids": [
+    {"recipe_key": "internet_trend_atr_cost_hybrid_v1", "revision": 1, "method_refs": ["internet_ema_21_55_trend_v1", "internet_atr_stop_1_5_target_3_v1", "internet_observed_spread_atr_cap_v1"], "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}},
+    {"recipe_key": "internet_trend_volatility_exit_hybrid_v1", "revision": 1, "method_refs": ["internet_ema_21_55_trend_v1", "internet_closed_atr_absolute_ceiling_v1", "internet_atr_trailing_time_exit_v1"], "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}},
+    {"recipe_key": "internet_trend_score_atr_hybrid_v1", "revision": 1, "method_refs": ["internet_ema_21_55_trend_v1", "internet_signal_score_veto_0_7_v1", "internet_atr_stop_1_5_target_3_v1"], "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}}
+  ],
+  "coverage": {
+    "trend_pullback": {"role": "tactic", "status": "executable_research_method", "method_refs": ["internet_ema_21_55_trend_v1"], "next_proof": "Closed trend signal, exact construction delta and behavior contrast."},
+    "breakout_retest": {"role": "tactic", "status": "executable_research_method", "method_refs": ["internet_closed_breakout_retest_v1"], "next_proof": "As-of range, displacement, retest and unchanged cost/risk receipts."},
+    "compression_expansion": {"role": "tactic", "status": "planned_dependency", "method_refs": [], "next_proof": "Seal two disjoint closed volatility windows and an executable compression-to-expansion state transition; ATR level alone is not a squeeze algorithm."},
+    "session_breakout": {"role": "tactic", "status": "planned_dependency", "method_refs": [], "next_proof": "Versioned UTC/session calendar, closed opening range and observed quotes before constructing a session-specific variant."},
+    "range_reentry": {"role": "tactic", "status": "executable_research_method", "method_refs": ["internet_band_reentry_20_2_v1"], "next_proof": "Native band reentry under a low-ADX range, not band-touch alone."},
+    "adaptive_entry_topology": {"role": "tactic", "status": "planned_dependency", "method_refs": [], "next_proof": "Select one existing topology prospectively; demonstrate stage/clock differences before treating topology names as separate skills."},
+    "dynamic_fibonacci_zone": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Closed causal swing anchors, fixed retracement convention and ATR distance. OHLC proxy only; no hindsight anchor or institutional-flow claim."},
+    "confirmed_swing": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Past-only pivot confirmation and actual available_at time; no isolated parameter surface currently exists."},
+    "bos_event": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Define a closed swing break and displacement; shared structural feature hooks cannot establish an independent BOS algorithm."},
+    "choch_event": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Prospectively define prior structure and closed opposite break; distinguish transition proxy from observed institutional intent."},
+    "support_resistance_zone": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "As-of touch count, zone age and width with a new isolated adapter; do not invent a price-threshold placeholder."},
+    "liquidity_pool": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Retain equal-level OHLC proxy labeling; actual resting liquidity requires independent order-book data."},
+    "liquidity_sweep": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Seal observed level excursion and reclaim using past-only anchors; OHLC sweep remains a structural proxy."},
+    "session_range": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Closed session clock and range extrema; incomplete current-session highs cannot borrow future extrema."},
+    "volume_confirmation": {"role": "market_lens", "status": "planned_dependency", "method_refs": [], "next_proof": "Canonical observed volume and a closed relative-volume baseline. Zero/missing or broker tick counts must not become exchange participation."},
+    "cost_firewall": {"role": "risk", "status": "executable_research_method", "method_refs": ["internet_observed_spread_atr_cap_v1"], "next_proof": "Actual bid/ask coverage, normalized cost gate receipt and lost-opportunity control comparison."},
+    "high_volatility_firewall": {"role": "risk", "status": "executable_research_method", "method_refs": ["internet_closed_atr_absolute_ceiling_v1"], "next_proof": "Measured closed ATR, actual entry-veto events and symbol/timeframe compatibility."},
+    "transition_protection": {"role": "risk", "status": "planned_dependency", "method_refs": [], "next_proof": "Actual transition boundary event, elapsed candle state and exact wait-length contrast; an arbitrary cooldown is not a learned transition detector."},
+    "loss_streak_cooldown": {"role": "risk", "status": "planned_dependency", "method_refs": [], "next_proof": "Mature owned trade history, deterministic loss counter and opportunity cost; no future outcome may trigger a past cooldown."},
+    "confidence_firewall": {"role": "risk", "status": "executable_research_method", "method_refs": ["internet_signal_score_veto_0_7_v1"], "next_proof": "Native score-veto events, future-safe calibration and expected-value evaluation."},
+    "temporal_survival_filter": {"role": "risk", "status": "planned_dependency", "method_refs": [], "next_proof": "Observed signal age, expiry and past-only followthrough; missing stateful inputs forbid invented survival probabilities."},
+    "dynamic_cooldown": {"role": "risk", "status": "planned_dependency", "method_refs": [], "next_proof": "Closed loss history and shadow-opportunity sample before changing recovery policy; no repeated outcome-based tuning."},
+    "atr_risk_envelope": {"role": "execution", "status": "executable_research_method", "method_refs": ["internet_atr_stop_1_5_target_3_v1"], "next_proof": "Entry sizing, unchanged account-risk cap and exact stop/target control contrast."},
+    "cost_aware_exit": {"role": "execution", "status": "executable_research_method", "method_refs": ["internet_atr_trailing_time_exit_v1"], "next_proof": "Owned-position management, mature exits and spread/slippage/carry parity."},
+    "regime_router": {"role": "model", "status": "planned_dependency", "method_refs": [], "next_proof": "Past-only classifier, exact regime ownership and behavior shifts; a label is not a proven master specialist."},
+    "meta_label_filter": {"role": "model", "status": "planned_dependency", "method_refs": [], "next_proof": "Separate primary signal and outcome label, past-only training and held-out calibration; no classifier is supplied by this catalog."}
+  }
+}

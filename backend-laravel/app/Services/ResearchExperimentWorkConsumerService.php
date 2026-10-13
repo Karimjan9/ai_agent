@@ -37,6 +37,9 @@ class ResearchExperimentWorkConsumerService
         if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
             return app(ScopedDescendantCandidatePreparationService::class)->execute($item);
         }
+        if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
+            return app(InstrumentMethodStudyExecutionService::class)->execute($item);
+        }
         if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
             return app(DescendantScopedExecutionService::class)->execute($item);
         }

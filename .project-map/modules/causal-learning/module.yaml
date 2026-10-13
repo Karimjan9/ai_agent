@@ -10,7 +10,7 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
-  - .project-map/decisions/ADR-039-separated-instrument-method-and-agent-policy.md
+  - .project-map/decisions/ADR-040-separated-instrument-method-and-agent-policy.md
   - docs/operations/instrument-method-learning.md
   - backend-laravel/app/Services/InstrumentMethodSourceService.php
   - backend-laravel/app/Services/InstrumentMethodLibraryService.php
@@ -18,6 +18,10 @@ paths:
   - backend-laravel/app/Services/InstrumentMethodStudyService.php
   - backend-laravel/app/Services/AgentMethodLearningService.php
   - backend-laravel/app/Services/AgentMethodCandidateService.php
+  - backend-laravel/app/Services/AgentMethodGenerationService.php
+  - backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php
+  - backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php
+  - backend-laravel/resources/research/instrument-methods/curated-v1.json
   - backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php
   - backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php
   - backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php
@@ -26,6 +30,9 @@ paths:
   - backend-laravel/tests/Feature/InstrumentMethodStudyTest.php
   - backend-laravel/tests/Feature/AgentMethodLearningTest.php
   - backend-laravel/tests/Feature/AgentMethodCandidateTest.php
+  - backend-laravel/tests/Feature/AgentMethodGenerationTest.php
+  - backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php
   - backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php
   - ai-service-python/app/services/instrument_method_learning.py
   - ai-service-python/scripts/backtest-instrument-method-matrix.py
@@ -180,6 +187,14 @@ entry_points:
   - AgentMethodLearningService::learnFromRun
   - AgentMethodLearningService::proposePolicy
   - AgentMethodCandidateService::evolve
+  - CuratedInstrumentMethodCatalogService::catalog
+  - CuratedInstrumentMethodCatalogService::install
+  - AgentMethodGenerationService::prepareConstructorChild
+  - AgentMethodGenerationService::proposeFromOriginalRun
+  - InstrumentMethodStudyExecutionService::registerWork
+  - InstrumentMethodStudyExecutionService::inspectWork
+  - InstrumentMethodStudyExecutionService::execute
+  - InstrumentMethodStudyExecutionService::executeQueuedArm
   - ScopedResearchCertificateService::register
   - ScopedResearchCertificateService::inspect
   - ScopedResearchCertificateService::bindOriginalData

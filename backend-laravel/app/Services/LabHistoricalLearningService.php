@@ -725,6 +725,7 @@ class LabHistoricalLearningService
                 ->orWhereNotNull('metadata->native_reachability_depth_audit')
                 ->orWhereNotNull('metadata->native_reachability_depth_audit_contract')
                 ->orWhereNotNull('metadata->scoped_research_certificate')
+                ->orWhereNotNull('metadata->instrument_method_study_execution')
                 ->orWhereNotNull('metadata->unused_draft_price_discovery_seal'))
             ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
                 ->whereIn('run_id', $this->studyRunIds())));
@@ -737,6 +738,7 @@ class LabHistoricalLearningService
             ->orWhereNotNull('trigger_context->native_spread_context_study')
             ->orWhereNotNull('trigger_context->native_reachability_depth_audit')
             ->orWhereNotNull('trigger_context->scoped_descendant_execution')
+            ->orWhereNotNull('trigger_context->instrument_method_study_execution')
             ->orWhereNotNull('trigger_context->unused_draft_price_discovery_intent')
             ->orWhereNotNull('trigger_context->unused_draft_price_discovery'));
     }
@@ -759,6 +761,10 @@ class LabHistoricalLearningService
             ->orWhereNotNull('metadata->scoped_research')
             ->orWhereNotNull('metadata->scoped_certificate_id')
             ->orWhereNotNull('metadata->scoped_native_purpose')
+            ->orWhereNotNull('metadata->instrument_method_study_execution')
+            ->orWhereNotNull('metadata->instrument_method_study')
+            ->orWhereNotNull('request_meta->payload->policy_context->instrument_method_study')
+            ->orWhereNotNull('request_meta->payload->strategies[0]->instrument_method_study')
             ->orWhereNotNull('request_meta->payload->policy_context->scoped_research_certificate')
             ->orWhereNotNull('request_meta->payload->policy_context->unused_draft_price_discovery')
             ->orWhere('metadata->reason_code', UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY));

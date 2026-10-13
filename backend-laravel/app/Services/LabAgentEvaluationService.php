@@ -23,6 +23,10 @@ class LabAgentEvaluationService
     public function evaluate(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
         $agent->loadMissing('generation');
+        if (data_get($agent->generation?->trigger_context, InstrumentMethodStudyExecutionService::MARKER) !== null) {
+            throw new \LogicException('METHOD_STUDY_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        $agent->loadMissing('generation');
         if (data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
             throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
         }
@@ -1144,6 +1148,10 @@ class LabAgentEvaluationService
     public function screen(LabAgent $agent, ?LabEvaluationRun $run = null): void
     {
         $agent->loadMissing('generation');
+        if (data_get($agent->generation?->trigger_context, InstrumentMethodStudyExecutionService::MARKER) !== null) {
+            throw new \LogicException('METHOD_STUDY_ORIGINAL_EXECUTOR_REQUIRED');
+        }
+        $agent->loadMissing('generation');
         if (data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
             throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
         }
@@ -1559,6 +1567,10 @@ class LabAgentEvaluationService
      */
     public function screenBatch(array $agentIds, string $symbol): void
     {
+        if (LabAgent::whereIn('id', $agentIds)->whereHas('generation', fn ($query) => $query
+            ->whereNotNull('trigger_context->'.InstrumentMethodStudyExecutionService::MARKER))->exists()) {
+            throw new \LogicException('METHOD_STUDY_ORIGINAL_EXECUTOR_REQUIRED');
+        }
         if (LabAgent::whereIn('id', $agentIds)->whereHas('generation', fn ($query) => $query
             ->whereNotNull('trigger_context->scoped_descendant_execution'))->exists()) {
             throw new RuntimeException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');

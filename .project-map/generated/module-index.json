@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T05:56:20.219Z",
-  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
-  "source_file_count": 1650,
-  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
+  "generated_at": "2026-10-13T08:10:36.185Z",
+  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "source_file_count": 1656,
+  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,7 +22,7 @@
         "research-paper-epoch"
       ],
       "paths": [
-        ".project-map/decisions/ADR-039-separated-instrument-method-and-agent-policy.md",
+        ".project-map/decisions/ADR-040-separated-instrument-method-and-agent-policy.md",
         "docs/operations/instrument-method-learning.md",
         "backend-laravel/app/Services/InstrumentMethodSourceService.php",
         "backend-laravel/app/Services/InstrumentMethodLibraryService.php",
@@ -30,6 +30,10 @@
         "backend-laravel/app/Services/InstrumentMethodStudyService.php",
         "backend-laravel/app/Services/AgentMethodLearningService.php",
         "backend-laravel/app/Services/AgentMethodCandidateService.php",
+        "backend-laravel/app/Services/AgentMethodGenerationService.php",
+        "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
+        "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+        "backend-laravel/resources/research/instrument-methods/curated-v1.json",
         "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
         "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
         "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
@@ -38,6 +42,9 @@
         "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
         "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
         "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
+        "backend-laravel/tests/Feature/AgentMethodGenerationTest.php",
+        "backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php",
+        "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
         "backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php",
         "ai-service-python/app/services/instrument_method_learning.py",
         "ai-service-python/scripts/backtest-instrument-method-matrix.py",
@@ -193,6 +200,14 @@
         "AgentMethodLearningService::learnFromRun",
         "AgentMethodLearningService::proposePolicy",
         "AgentMethodCandidateService::evolve",
+        "CuratedInstrumentMethodCatalogService::catalog",
+        "CuratedInstrumentMethodCatalogService::install",
+        "AgentMethodGenerationService::prepareConstructorChild",
+        "AgentMethodGenerationService::proposeFromOriginalRun",
+        "InstrumentMethodStudyExecutionService::registerWork",
+        "InstrumentMethodStudyExecutionService::inspectWork",
+        "InstrumentMethodStudyExecutionService::execute",
+        "InstrumentMethodStudyExecutionService::executeQueuedArm",
         "ScopedResearchCertificateService::register",
         "ScopedResearchCertificateService::inspect",
         "ScopedResearchCertificateService::bindOriginalData",
@@ -436,7 +451,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 151,
+      "source_file_count": 157,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {

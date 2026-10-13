@@ -210,13 +210,16 @@ class ResearchLoopArbiterService
         $pendingCouncilWorkId = $latest ? (int) data_get($latest->trigger_context,
             'native_specialist_council_intent.followup_work_item_id',
             data_get($latest->trigger_context, 'specialist_council_authorized_panel.work_item_id',
-                data_get($latest->trigger_context, 'scoped_descendant_execution.work_item_id', 0))) : 0;
+                data_get($latest->trigger_context, 'scoped_descendant_execution.work_item_id',
+                    data_get($latest->trigger_context, InstrumentMethodStudyExecutionService::MARKER.'.work_item_id', 0)))) : 0;
         $authorizedPanelPending = $latest && data_get($latest->trigger_context, 'specialist_council_authorized_panel') !== null
             && in_array((string) $latest->status, ['draft', 'research_reserved', 'full_validation'], true);
         $scopedDescendantPending = $latest && data_get($latest->trigger_context, 'scoped_descendant_execution') !== null
             && in_array((string) $latest->status, ['draft', 'research_reserved', 'full_validation'], true);
+        $methodStudyPending = $latest && data_get($latest->trigger_context, InstrumentMethodStudyExecutionService::MARKER) !== null
+            && in_array((string) $latest->status, ['draft', 'research_reserved', 'screening'], true);
         if ($latest && $pendingCouncilWorkId > 0
-            && ((string) $latest->status === 'draft' || $authorizedPanelPending || $scopedDescendantPending || LabPopulationService::constructionIncomplete($latest))) {
+            && ((string) $latest->status === 'draft' || $authorizedPanelPending || $scopedDescendantPending || $methodStudyPending || LabPopulationService::constructionIncomplete($latest))) {
             $work = $dryRun || ! $this->autonomy->enabled($symbol, $timeframe)
                 ? null : $this->conversion->claimCouncilContinuationForGeneration($latest);
             if ($work) {

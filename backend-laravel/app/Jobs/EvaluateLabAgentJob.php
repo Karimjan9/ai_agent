@@ -110,6 +110,9 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         if (data_get($scope?->generation?->trigger_context, 'scoped_descendant_execution') !== null) {
             throw new \LogicException('SCOPED_DESCENDANT_ORIGINAL_EXECUTOR_REQUIRED');
         }
+        if (data_get($scope?->generation?->trigger_context, \App\Services\InstrumentMethodStudyExecutionService::MARKER) !== null) {
+            throw new \LogicException('METHOD_STUDY_ORIGINAL_EXECUTOR_REQUIRED');
+        }
         if ($scope && app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($scope)) {
             throw new \LogicException('SCOPED_SELECTOR_ORIGINAL_EXECUTOR_REQUIRED');
         }
@@ -649,6 +652,7 @@ class EvaluateLabAgentJob implements ShouldBeUnique, ShouldQueue
         if (! $agent) return false;
         $agent->loadMissing('generation');
         return data_get($agent->generation?->trigger_context, 'scoped_descendant_execution') !== null
+            || data_get($agent->generation?->trigger_context, \App\Services\InstrumentMethodStudyExecutionService::MARKER) !== null
             || app(ScopedSelectorPanelService::class)->reservesOrdinaryEvaluation($agent);
     }
 

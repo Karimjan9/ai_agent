@@ -3026,6 +3026,16 @@ trait LabPopulationAgentFactoryTrait
             );
             $model->update(['metadata' => $exactControlMetadata]);
         }
+        // This opt-in constructor hook cannot intervene in protected/exact comparative seats.
+        // New policy ownership is attached before parameter, intent and passport sealing.
+        $methodDisposition = app(AgentMethodGenerationService::class)->prepareConstructorChild(
+            $model->fresh(), $parentA, $generation, $slot, $niche,
+        );
+        if (($methodDisposition['status'] ?? null) !== 'not_requested') {
+            $model->refresh();
+            $model->update(['metadata' => [...(array) $model->metadata,
+                'instrument_method_generation_disposition' => $methodDisposition]]);
+        }
         // Reconcile the persisted model identity before it can enter any
         // queue.  Parameters are the source of truth; a stale fingerprint or
         // universal-genome hash makes a child impossible to audit even when

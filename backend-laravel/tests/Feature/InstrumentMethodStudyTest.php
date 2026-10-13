@@ -193,6 +193,18 @@ class InstrumentMethodStudyTest extends TestCase
         $this->assertFalse($assessment['paper_authority']);
     }
 
+    public function test_nonempty_malformed_native_receipt_cannot_fall_back_to_ordinary_ledger(): void
+    {
+        $owner = app(InstrumentMethodStudyService::class); $study = $owner->preregister($this->design);
+        $runs = $this->runs($study['study_hash'], ['L1A1' => 10, 'L2A1' => 30, 'L1A2' => 25, 'L2A2' => 60]);
+        $run = LabEvaluationRun::where('run_id', $runs[0])->first();
+        $response = $this->products[$runs[0]]['response']; $response['specialist_council_receipt'] = 'invalid';
+        $run->update(['response_hash' => app(LabImmutableEvidenceService::class)->hash($response)]);
+        $this->artifact($run, 'evaluation_response', $response);
+        $this->assertSame('STUDY_NATIVE_ORIGINAL_ACCOUNT_RECEIPT_INVALID', $owner->settle($study['study_hash'], $runs)['reason']);
+        $this->assertNull(DB::table('instrument_method_studies')->value('assessment'));
+    }
+
     private function runs(string $studyHash, array $profits, bool $censored = false): array
     {
         $owner = app(LabImmutableEvidenceService::class); $ids = [];
@@ -203,6 +215,8 @@ class InstrumentMethodStudyTest extends TestCase
                 'hard_limits' => $this->design['hard_limits'], 'policy_context' => ['instrument_method_study' => [
                     'study_hash' => $studyHash, 'arm' => $key, 'resource_caps' => $this->design['resource_caps']]]];
             $response = ['initial_balance' => 1000.0, 'final_balance' => 1000.0 + $profits[$key], 'total_trades' => 2,
+                // Actual Python SimpleBacktestResponse defaults this port to {}.
+                'specialist_council_receipt' => [],
                 'trade_ledger' => [['entry_time' => '2025-12-20T12:00:00Z', 'exit_time' => '2025-12-20T12:04:00Z',
                     'balance' => 1005.0, 'exit_reason' => 'target', 'execution_cost_percent' => 0.02],
                     ['entry_time' => '2025-12-20T12:05:00Z', 'exit_time' => '2025-12-20T12:10:00Z',

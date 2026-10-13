@@ -31,6 +31,73 @@ use Symfony\Component\Process\Process;
 /** Internal method group composed exclusively into LabPopulationService. */
 trait LabPopulationConstructionTrait
 {
+    /** Policy is the treatment; ordinary parameter mutation invariants remain unchanged. */
+    public function buildInstrumentMethodStudy(\App\Models\ResearchExperimentWorkItem $work, array $proof): LabGeneration
+    {
+        $owner = app(InstrumentMethodStudyExecutionService::class);
+        $owner->assertLease($work);
+        $fresh = $owner->inspectWork($work->fresh('receipt'));
+        if (($fresh['executable'] ?? false) !== true || $fresh['study_hash'] !== ($proof['study_hash'] ?? null)
+            || $fresh['source'] !== ($proof['source'] ?? null)) throw new \LogicException('METHOD_STUDY_FRESH_CONSTRUCTOR_PROOF_REQUIRED');
+        $lock = Cache::lock($this->constructorLockKey($work->symbol, $work->timeframe), self::CONSTRUCTOR_LOCK_TTL_SECONDS);
+        if (! $lock->get()) throw new \LogicException('METHOD_STUDY_CANONICAL_CONSTRUCTOR_BUSY');
+        try {
+            return DB::transaction(function () use ($work, $proof, $owner): LabGeneration {
+                $owner->assertLease($work);
+                $lab = AiLaboratory::where('symbol', $work->symbol)->where('timeframe', $work->timeframe)->lockForUpdate()->first();
+                if (! $lab) throw new \LogicException('METHOD_STUDY_EXISTING_LABORATORY_REQUIRED');
+                $existing = $lab->generations()->where('trigger_context->'.InstrumentMethodStudyExecutionService::MARKER.'->work_item_id', $work->id)->first();
+                if ($existing) {
+                    $actual = $existing->agents()->pluck('model_version_id')->map('intval')->sort()->values()->all();
+                    $expected = array_column($proof['design']['arms'], 'model_id'); sort($expected);
+                    if ($actual !== $expected || $existing->population_size !== 4
+                        || data_get($existing->trigger_context, InstrumentMethodStudyExecutionService::MARKER.'.study_hash') !== $proof['study_hash']
+                        || ! (app(ImmutableGenerationContractService::class)->validate($existing)['valid'] ?? false)) {
+                        throw new \LogicException('METHOD_STUDY_ORIGINAL_COHORT_DRIFT');
+                    }
+                    app(ResearchReleaseSealService::class)->assertCurrent($existing);
+                    return $existing->fresh(['agents.modelVersion']);
+                }
+                if ($lab->generations()->whereIn('status', self::ACTIVE_GENERATION_STATUSES)->exists()) {
+                    throw new \LogicException('METHOD_STUDY_ANOTHER_GENERATION_OWNS_STREAM');
+                }
+                $plan = []; $design = $proof['design'];
+                foreach (InstrumentMethodStudyExecutionService::ARMS as $arm) {
+                    $model = ModelVersion::whereKey($design['arms'][$arm]['model_id'])->lockForUpdate()->firstOrFail();
+                    if (LabAgent::where('model_version_id', $model->id)->exists()
+                        || \App\Models\LabEvaluationRun::where('model_version_id', $model->id)->exists()) {
+                        throw new \LogicException('METHOD_STUDY_UNUSED_ORIGINAL_MODELS_REQUIRED');
+                    }
+                    $plan[] = ['family' => app(StrategyParameterSchemaService::class)->family($model->strategy),
+                        'origin' => 'method_study_original', 'target' => 'method_policy_comparison', 'arm' => $arm,
+                        'model_version_id' => (int) $model->id, 'policy_hash' => $design['arms'][$arm]['policy_hash'],
+                        'parameter_hash' => $design['arms'][$arm]['parameter_hash'],
+                        'model_runtime_basis_hash' => $design['arms'][$arm]['model_runtime_basis_hash']];
+                }
+                $marker = ['protocol' => InstrumentMethodStudyExecutionService::PROTOCOL, 'work_item_id' => (int) $work->id,
+                    'work_key' => $work->work_key, 'study_hash' => $proof['study_hash'], 'source_receipt_id' => (int) $work->research_experiment_receipt_id,
+                    'research_only' => true, 'projection_withheld' => true, 'promotion_evidence' => false];
+                $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+                    'generation' => ((int) $lab->generations()->max('generation')) + 1, 'trigger_type' => InstrumentMethodStudyExecutionService::WORK_TYPE,
+                    'trigger_context' => [InstrumentMethodStudyExecutionService::MARKER => $marker, 'generation_plan' => $plan,
+                        'canonical_dataset_snapshots' => ['price' => ['sha256' => $design['data_hash'], 'path' => $proof['source']['dataset_path']]],
+                        'research_only' => true, 'promotion_evidence' => false],
+                    'data_fingerprint' => $design['data_hash'], 'population_size' => 4, 'status' => 'research_reserved']);
+                foreach ($plan as $seat) LabAgent::create(['lab_generation_id' => $generation->id,
+                    'model_version_id' => $seat['model_version_id'], 'symbol' => $work->symbol, 'timeframe' => $work->timeframe,
+                    'strategy_family' => $seat['family'], 'origin' => 'method_study_original', 'lifecycle_status' => 'draft',
+                    'decision_reason' => 'Original four-arm method-policy study; no ordinary economic projection or mutation.']);
+                $context = (array) $generation->trigger_context;
+                $context['immutable_generation_contract'] = app(ImmutableGenerationContractService::class)->compile($generation, $plan,
+                    ['data_hash' => $design['data_hash'], 'execution_hash' => $design['execution_hash'], 'normal_population' => 4,
+                        'new_work_owner' => ResearchLoopArbiterService::class]);
+                $generation->update(['trigger_context' => $context]);
+                app(LearningProtocolEpochService::class)->openForNewGeneration($generation, $work->symbol, $work->timeframe);
+                return app(ResearchReleaseSealService::class)->seal($generation)->fresh(['agents.modelVersion']);
+            });
+        } finally { $lock->release(); }
+    }
+
     /** Exact four persisted models, under the same canonical constructor mutex. */
     public function buildScopedDescendant(\App\Models\ResearchExperimentWorkItem $work, array $proof): LabGeneration
     {
@@ -657,6 +724,15 @@ trait LabPopulationConstructionTrait
                 $generation = $lockedLab->generations()->create([
                     'generation' => $number, 'trigger_type' => $trigger,
                     'trigger_context' => ['previous_generation' => $latestInTransaction?->generation, 'created_by' => 'learning_trigger',
+                        // This is prospective and pins the approved curated defaults once.
+                        // Existing/resumed generation plans never follow an ambient latest library.
+                        'instrument_method_generation_learning' => config('services.instrument_methods.generation_learning_enabled', false) ? [
+                            'protocol' => AgentMethodGenerationService::PROTOCOL,
+                            'enabled' => true,
+                            'recipe_hashes' => config('services.instrument_methods.generation_recipe_hashes', []),
+                            'protected_comparative_seats_unchanged' => true,
+                            'research_only' => true, 'promotion_evidence' => false,
+                        ] : null,
                         'data_count' => $snapshot['count'], 'latest_candle' => $snapshot['latest'], 'new_candles' => $newCandles,
                         'generation_protocol' => self::GENERATION_PROTOCOL,
                         'council_protocol' => $roleComplete ? self::ROLE_COMPLETE_COUNCIL_PROTOCOL : null,

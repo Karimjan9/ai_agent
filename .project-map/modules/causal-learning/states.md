@@ -1,6 +1,6 @@
 # Causal learning states
 
-## Instrument methods and agent-owned policies (ADR-039)
+## Instrument methods and agent-owned policies (ADR-040)
 
 Source `registered_reference_only` is untrusted provenance, not an executable
 instruction or economic evidence. Methods and recipes become
@@ -23,6 +23,17 @@ compute caps before outcomes. Technical, underpowered, null, positive and
 negative classifications are distinct. Conditional effects and interaction are
 diagnostic, not independent confirmation, Master status or credit. Existing
 independent authority and paper gates are unchanged; all 2026+ data remains paper.
+
+Explicit method work follows `registered -> fresh readiness -> leased ->
+research_reserved four-carrier cohort -> all-four request barrier -> one queued
+original arm -> checkpoint -> diagnostic assessment -> terminal cohort/work`.
+Every publication rechecks current lease, source, model, policy, data and costs.
+An original technical attempt closes without replay selection; completed arms
+are immutable. Only method-owned observations/proposals are produced. The
+purpose is excluded from ordinary historical advice and economic projections.
+Eligible unused ordinary children may receive a verified own policy before
+seals from pinned curated defaults or original parent experience. Protected
+comparative/passport/council seats remain unchanged, not silently treated.
 
 ## Separately scoped prospective questions (ADR-036)
 

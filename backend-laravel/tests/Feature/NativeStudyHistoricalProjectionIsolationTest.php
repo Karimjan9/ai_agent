@@ -97,6 +97,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'batch_request_owner', 'response_owner'];
         $keys = [...$base, ...array_map(fn ($key) => 'depth_'.$key, $base),
             'scoped_generation', 'scoped_generation_malformed', 'scoped_carrier', 'scoped_request',
+            'method_generation', 'method_generation_malformed', 'method_carrier', 'method_request', 'method_run',
             'scoped_run', 'scoped_run_scalar_id', 'scoped_run_scalar_purpose'];
         return array_combine($keys, array_map(fn ($key): array => [$key], $keys));
     }
@@ -147,6 +148,8 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'malformed_generation_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
             'scoped_generation' => ['scoped_descendant_execution' => ['purpose' => 'independent_scoped_descendant_research']],
             'scoped_generation_malformed' => ['scoped_descendant_execution' => 'UNATTESTED_RESERVED_OWNER'],
+            'method_generation' => ['instrument_method_study_execution' => ['study_hash' => str_repeat('a', 64)]],
+            'method_generation_malformed' => ['instrument_method_study_execution' => 'UNATTESTED_RESERVED_OWNER'],
             default => [],
         };
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
@@ -157,6 +160,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
             'carrier_owner' => [$marker => ['protocol' => $protocol, 'arm' => $arm]],
             'malformed_carrier_owner' => [$marker => 'UNATTESTED_RESERVED_OWNER'],
             'scoped_carrier' => ['scoped_research_certificate' => 'UNATTESTED_RESERVED_OWNER'],
+            'method_carrier' => ['instrument_method_study_execution' => 'UNATTESTED_RESERVED_OWNER'],
             default => ['audit_note' => 'The prose native_spread_context_study must not exclude ordinary evidence.'],
         };
         $model = ModelVersion::create(['name' => 'Projection fixture-'.$generation->id, 'strategy' => 'hybrid',
@@ -172,6 +176,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
         if ($declaration === 'request_owner') $request[$field] = ['protocol' => 'UNATTESTED_RESERVED_OWNER'];
         if ($declaration === 'batch_request_owner') $request['strategies'] = [[$field => ['protocol' => 'UNATTESTED_RESERVED_OWNER']]];
         if ($declaration === 'scoped_request') $request['policy_context']['scoped_research_certificate'] = 'UNATTESTED_RESERVED_OWNER';
+        if ($declaration === 'method_request') $request['policy_context']['instrument_method_study'] = 'UNATTESTED_RESERVED_OWNER';
         $evidence->attachRequest($run, $request);
         $trace = [];
         for ($index = 0; $index < 2; $index++) $trace[] = ['candle_index' => 200 + $index,
@@ -186,6 +191,7 @@ class NativeStudyHistoricalProjectionIsolationTest extends TestCase
         $runMetadata = match ($declaration) {
             'run_reason' => ['reason_code' => $depth ? 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY' : 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY'],
             'scoped_run' => ['scoped_research' => 'UNATTESTED_RESERVED_OWNER'],
+            'method_run' => ['instrument_method_study_execution' => 'UNATTESTED_RESERVED_OWNER'],
             'scoped_run_scalar_id' => ['scoped_certificate_id' => 1],
             'scoped_run_scalar_purpose' => ['scoped_native_purpose' => 'independent_scoped_component_research'],
             default => [],

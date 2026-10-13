@@ -1,4 +1,4 @@
-# ADR-039: Separate instrument methods from agent selection learning
+# ADR-040: Separate instrument methods from agent selection learning
 
 Date: 2026-10-13
 
@@ -40,5 +40,13 @@ programme key remains, allowing fresh bound research exports. Rollback refuses
 duplicate semantic scopes instead of deleting research history.
 
 Standalone fresh candidate creation alone is not autonomous canonical dispatch.
+The explicit method-study work type uses the existing arbiter, constructor and
+fenced scoped-arm job, with a four-request atomic preparation barrier and one
+original attempt per arm. Its final observations feed only model-owned method
+experience and bounded proposals, never ordinary economic learning fan-out.
+New ordinary generations may pin approved curated recipes and attach a rederived
+own policy to an eligible unused child before seals. Protected exact/comparative,
+passport and council owners remain unchanged; they require their own declared
+treatment. This opt-in is not evidence that every ordinary seat consumes methods.
 The active deployment remains protected until separately verified release,
 migrations, actual loaded-worker hashes and canonical admission are complete.

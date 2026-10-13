@@ -24,6 +24,14 @@ The four-arm offline runner reopens exact archive bytes and seals all source
 files before child execution, uses hidden bounded subprocesses, and preserves
 zero/negative/timeout outcomes. Its products grant no production or market
 authority and are not a parallel runtime scheduler.
+Explicit production method studies reuse canonical durable work and the scoped
+arm job; PHP binds the full four-request barrier before queue publication, then
+the same simple Python replay returns original account/clock/method receipts.
+Its entire bounded CSV includes separately counted warmup, not a hidden tail.
+Checkpointed originals feed only method learning; generic screening/history
+consumers withhold this purpose even when its declaration is malformed. Pinned
+catalog resource bytes and prospective-generation settings are included in the
+release artifact. Loaded-worker attestation remains separate from artifact proof.
 
 PHP queue workers publish their existing boot source binding to the configured
 cache under `runtime:research-worker-boot:<PID>`. Cold deployment checks join

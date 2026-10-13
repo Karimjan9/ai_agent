@@ -22,7 +22,7 @@ class AgentMethodLearningService
         return $this->registerPolicyBody($input);
     }
 
-    private function registerPolicyBody(array $input, bool $serverDerivedRebase = false): array
+    private function registerPolicyBody(array $input, bool $serverDerivedRebase = false, bool $serverDerivedGeneration = false): array
     {
         try {
             $allowed = ['protocol', 'agent_key', 'revision', 'library_hash', 'library_contract',
@@ -52,10 +52,13 @@ class AgentMethodLearningService
             // Provenance is produced by this owner, rather than accepting caller scores or authority flags.
             if (isset($input['learning_provenance'])) {
                 $rebase = ($input['learning_provenance']['protocol'] ?? null) === 'fresh_model_method_learning_rebase_v1';
+                $generation = ($input['learning_provenance']['protocol'] ?? null) === AgentMethodGenerationService::PROTOCOL;
                 $this->require(! $rebase || $serverDerivedRebase, 'POLICY_REBASE_REQUIRES_SERVER_DERIVATION');
-                $this->require($rebase
-                    ? app(AgentMethodCandidateService::class)->verifyRebasedProvenance($input['learning_provenance'], $body)
-                    : $this->verifiedProvenance($input['learning_provenance'], $body), 'POLICY_LEARNING_PROVENANCE_INVALID');
+                $this->require(! $generation || $serverDerivedGeneration, 'POLICY_GENERATION_REQUIRES_SERVER_DERIVATION');
+                $this->require($generation
+                    ? app(AgentMethodGenerationService::class)->verifyProvenance($input['learning_provenance'], $body)
+                    : ($rebase ? app(AgentMethodCandidateService::class)->verifyRebasedProvenance($input['learning_provenance'], $body)
+                    : $this->verifiedProvenance($input['learning_provenance'], $body)), 'POLICY_LEARNING_PROVENANCE_INVALID');
                 $body['learning_provenance'] = $input['learning_provenance'];
             }
             $hash = $this->hash($body);
@@ -74,6 +77,15 @@ class AgentMethodLearningService
         } catch (Throwable $error) {
             return $this->blocked($error->getMessage());
         }
+    }
+
+    /** The constructor owns the target/proof; a caller cannot register a copied parent policy. */
+    public function registerGenerationPolicy(int $targetModelId): array
+    {
+        try {
+            $input = app(AgentMethodGenerationService::class)->registrationInput($targetModelId);
+            return $this->registerPolicyBody($input, false, true);
+        } catch (Throwable $error) { return $this->blocked($error->getMessage()); }
     }
 
     /** Carry an original learned proposal to a fresh, exact-baseline owned model once. */
@@ -131,9 +143,11 @@ class AgentMethodLearningService
             $this->require(($library['valid'] ?? false) === true, 'POLICY_LIBRARY_NOT_VERIFIED');
             $this->require($this->rules($body['rules'], $body['library_contract']['recipe_hashes']) === $body['rules'], 'POLICY_RULES_INVALID');
             if (isset($body['learning_provenance'])) {
-                $this->require(($body['learning_provenance']['protocol'] ?? null) === 'fresh_model_method_learning_rebase_v1'
+                $this->require(($body['learning_provenance']['protocol'] ?? null) === AgentMethodGenerationService::PROTOCOL
+                    ? app(AgentMethodGenerationService::class)->verifyProvenance($body['learning_provenance'], $body)
+                    : (($body['learning_provenance']['protocol'] ?? null) === 'fresh_model_method_learning_rebase_v1'
                     ? app(AgentMethodCandidateService::class)->verifyRebasedProvenance($body['learning_provenance'], $body)
-                    : $this->verifiedProvenance($body['learning_provenance'], $body), 'POLICY_LEARNING_PROVENANCE_INVALID');
+                    : $this->verifiedProvenance($body['learning_provenance'], $body)), 'POLICY_LEARNING_PROVENANCE_INVALID');
             }
             return [...$body, 'policy_hash' => $policyHash, 'policy_json' => $this->json($body)];
         } catch (Throwable $error) {

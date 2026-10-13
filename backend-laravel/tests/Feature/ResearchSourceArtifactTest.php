@@ -70,6 +70,7 @@ class ResearchSourceArtifactTest extends TestCase
             'backend-laravel/package-lock.json' => '{}', 'ai-service-python/requirements.txt' => 'pandas==2.2.3',
             'ai-service-python/app/main.py' => '# actual python source',
             'ai-service-python/tests/test_research_release.py' => '# focused regression',
+            'backend-laravel/resources/research/instrument-methods/curated-v1.json' => '{"catalog":"pinned research-only fixture"}',
             'backend-laravel/.env' => 'SECRET_DO_NOT_ARCHIVE=fake-test-secret',
             'backend-laravel/storage/secret.php' => '<?php // never source',
             'backend-laravel/vendor/secret.php' => '<?php // never source',
@@ -180,6 +181,32 @@ class ResearchSourceArtifactTest extends TestCase
         }
         $this->assertArrayHasKey('backend-laravel/scripts/run-ai-service.py', $first['manifest']['files']);
         $this->assertArrayHasKey('ai-service-python/tests/test_research_release.py', $first['manifest']['files']);
+        $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/curated-v1.json', $first['manifest']['files']);
+    }
+
+    public function test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact(): void
+    {
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        File::put($this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json', '{"catalog":"changed fixture"}');
+        $this->assertNull($this->owner->currentSourceArtifact());
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');
+        $this->owner->verifySourceArtifact($reference, true);
+    }
+
+    public function test_prospective_method_generation_settings_are_sealed_without_exposing_secrets(): void
+    {
+        config()->set('services.instrument_methods', ['generation_learning_enabled' => false, 'generation_recipe_hashes' => []]);
+        $original = $this->owner->buildSourceArtifact();
+        $settings = $original['manifest']['effective_non_secret_settings'];
+        $this->assertArrayHasKey('services.instrument_methods_sha256', $settings);
+        $this->assertArrayNotHasKey('services.instrument_methods', $settings);
+        config()->set('services.instrument_methods', ['generation_learning_enabled' => true,
+            'generation_recipe_hashes' => [str_repeat('c', 64)]]);
+        $this->assertNull($this->owner->currentSourceArtifact());
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($original['reference'])['status']);
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');
+        $this->owner->verifySourceArtifact($original['reference'], true);
     }
 
     public function test_archive_hash_rejects_changed_bytes_even_when_the_address_and_labels_match(): void

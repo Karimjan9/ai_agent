@@ -938,4 +938,13 @@ return [
         'manifest_path' => env('RELEASE_SEAL_MANIFEST_PATH') ?: storage_path('app/release/release-manifest.json'),
     ],
 
+    // Optional prospective exploration. Exact/causal/guard seats remain under
+    // their original owners; this is never a method-library auto-promotion.
+    'instrument_methods' => [
+        'generation_learning_enabled' => (bool) env('INSTRUMENT_METHOD_GENERATION_LEARNING_ENABLED', false),
+        'generation_recipe_hashes' => array_values(array_filter(array_map('trim',
+            explode(',', (string) env('INSTRUMENT_METHOD_GENERATION_RECIPES', ''))),
+            fn (string $hash): bool => $hash !== '')),
+    ],
+
 ];

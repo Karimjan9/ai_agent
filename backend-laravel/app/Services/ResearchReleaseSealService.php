@@ -20,6 +20,21 @@ class ResearchReleaseSealService
     private const SOURCE_ARTIFACT_MAX_BYTES = 268435456;
     private const SOURCE_ARTIFACT_MAX_FILES = 5000;
     private const SOURCE_ARTIFACT_FILES = [
+        'backend-laravel/resources/research/instrument-methods/curated-v1.json',
+        'backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php',
+        'backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php',
+        'backend-laravel/tests/Feature/InstrumentMethodStudyTest.php',
+        'backend-laravel/tests/Feature/AgentMethodLearningTest.php',
+        'backend-laravel/tests/Feature/AgentMethodCandidateTest.php',
+        'backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php',
+        'backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php',
+        'backend-laravel/tests/Feature/AgentMethodGenerationTest.php',
+        'backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php',
+        'ai-service-python/scripts/backtest-instrument-method-matrix.py',
+        'ai-service-python/tests/test_instrument_method_learning.py',
+        'ai-service-python/tests/test_instrument_method_matrix.py',
+        'ai-service-python/tests/test_instrument_method_transport.py',
+        'ai-service-python/tests/test_instrument_method_context_contract.py',
         'backend-laravel/artisan', 'backend-laravel/bootstrap/app.php', 'backend-laravel/bootstrap/providers.php',
         'backend-laravel/composer.json', 'backend-laravel/composer.lock', 'backend-laravel/package.json',
         'backend-laravel/package-lock.json', 'backend-laravel/phpunit.xml', 'backend-laravel/ecosystem.config.cjs',
@@ -474,7 +489,8 @@ class ResearchReleaseSealService
         // Bind the non-secret authority-policy registries as digests too:
         // source bytes alone cannot attest a later environment policy change.
         foreach (['services.research_paper_epochs.authorized_paper_epochs',
-            'services.instrument_policy.authorized_research_windows'] as $key) {
+            'services.instrument_policy.authorized_research_windows',
+            'services.instrument_methods'] as $key) {
             $values[$key.'_sha256'] = hash('sha256', $this->artifactJson((array) config($key, [])));
         }
         ksort($values);

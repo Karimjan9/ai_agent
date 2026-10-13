@@ -40,6 +40,12 @@ class ExecuteScopedResearchArmJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(DescendantScopedExecutionService $executor): void
     {
+        $work = \App\Models\ResearchExperimentWorkItem::find($this->workItemId);
+        if ($work?->work_type === \App\Services\InstrumentMethodStudyExecutionService::WORK_TYPE) {
+            app(\App\Services\InstrumentMethodStudyExecutionService::class)->executeQueuedArm($this->workItemId,
+                $this->leaseToken, $this->fenceVersion, $this->unitKey, $this->requestHash, $this->producerBudgetSeconds);
+            return;
+        }
         $executor->executeQueuedArm($this->workItemId, $this->leaseToken, $this->fenceVersion,
             $this->unitKey, $this->requestHash, $this->producerBudgetSeconds);
     }

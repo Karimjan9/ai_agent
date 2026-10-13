@@ -51,6 +51,46 @@ Observed quote/spread is absent; the unchanged modeled execution contract is
 explicit. The ATR concept source is the public [cTrader API reference](https://help.ctrader.com/ctrader-algo/references/Indicators/AverageTrueRange/);
 thresholds/risk fractions are lab hypotheses, not copied profitable settings.
 
+## New curated catalog: original bounded owner execution
+
+A separate, predeclared catalog question used fresh schema defaults for
+`differential_router`, not a stripped 3503 passport or a tuned successful vector.
+L1/L2 contain the two pinned typed ATR/confidence recipe classes at their exact
+revisions. A1/A2 reverse their stable recipe-key preference before outcomes.
+The exact original raw-byte first-512-row prefix is preserved, with original
+parent SHA, provider cells and UTC custody. This is reused discovery data,
+not untouched validation. All four PHP-compiled original requests passed the
+canonical four-carrier constructor/barrier and original publication owner.
+Python used the existing bounded matrix engine with auxiliary differential
+reports suppressed; this is conditional software owner acceptance, not a test
+of the running HTTP service or native MTF qualification.
+
+| Arm | Trades | Net cash | Actual method uses |
+| --- | ---: | ---: | ---: |
+| L1A1 | 10 | -495.85 | 1 |
+| L2A1 | 10 | -495.85 | 1 |
+| L1A2 | 10 | -495.85 | 1 |
+| L2A2 | 12 | -381.77 | 2 |
+
+All original products completed within their fixed 120-second caps. Each actual
+clock reports 512 loaded rows, 200 execution warmup rows and 312 decision rows.
+The raw-account contrast is +114.08 only for the joint L2/A2 combination; every
+variant loses money. This does not prove an individually useful instrument,
+smart selector, independently confirmed skill or profitable council.
+
+The first formal comparison remained blocked: the ordinary Python response
+defaults `specialist_council_receipt` to an empty dictionary; PHP incorrectly
+treated it as a native account and demanded nonexistent native rows. Future
+consumer logic distinguishes that empty default from a real/malformed native
+receipt, with a focused regression. Four completed but unassessable products
+now terminally close as technical history rather than stranding the stream.
+The original attempts/report were not rewritten or replayed to select success.
+Separate isolated consumer-reinspection preparation failures also remain
+retained; they are not a production closure or independent skill receipt.
+
+Original products and before-outcome barrier are retained under
+`.runtime/curated-actual-acceptance-20261013/` in the isolated worktree.
+
 ## Honest boundary
 
 SQLite integration tests verify actual compressed original artifact eligibility,

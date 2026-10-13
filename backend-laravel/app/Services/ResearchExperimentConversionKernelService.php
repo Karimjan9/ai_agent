@@ -171,7 +171,8 @@ class ResearchExperimentConversionKernelService
     {
         $id = (int) data_get($generation->trigger_context, 'native_specialist_council_intent.followup_work_item_id',
             data_get($generation->trigger_context, 'specialist_council_authorized_panel.work_item_id',
-                data_get($generation->trigger_context, 'scoped_descendant_execution.work_item_id', 0)));
+                data_get($generation->trigger_context, 'scoped_descendant_execution.work_item_id',
+                    data_get($generation->trigger_context, InstrumentMethodStudyExecutionService::MARKER.'.work_item_id', 0))));
         if ($id <= 0 || ! $this->available()) return null;
         $this->reconcileOwnershipAndDependencies();
         return $this->claimMatching(1, ResearchLoopArbiterService::class, $id)[0] ?? null;
@@ -213,6 +214,12 @@ class ResearchExperimentConversionKernelService
                         if ($before !== (array) $item->payload) $normalized++;
                         $payload = (array) $item->payload;
                         $councilProof = null;
+                        if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
+                            $proof = app(InstrumentMethodStudyExecutionService::class)->inspectWork($item);
+                            $payload['executable'] = ($proof['executable'] ?? false) === true;
+                            $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'METHOD_STUDY_ORIGINAL_READINESS_REQUIRED');
+                            if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
+                        }
                         if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
                             $proof = app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item);
                             $payload['executable'] = ($proof['executable'] ?? false) === true;
@@ -325,6 +332,14 @@ class ResearchExperimentConversionKernelService
             $claimed = [];
             foreach ($items as $item) {
                 $leaseSeconds = self::LEASE_SECONDS;
+                if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
+                    $proof = app(InstrumentMethodStudyExecutionService::class)->inspectWork($item);
+                    if (($proof['executable'] ?? false) !== true) {
+                        $item->update(['status' => 'blocked', 'last_error' => $proof['reason_code'] ?? 'METHOD_STUDY_ORIGINAL_READINESS_REQUIRED']);
+                        continue;
+                    }
+                    $leaseSeconds = InstrumentMethodStudyExecutionService::WORK_LEASE_SECONDS;
+                }
                 if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
                     $proof = app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item);
                     if (($proof['executable'] ?? false) !== true) {
@@ -513,6 +528,7 @@ class ResearchExperimentConversionKernelService
     {
         $type = (string) ($nextWork['type'] ?? '');
         $profiles = [
+            InstrumentMethodStudyExecutionService::WORK_TYPE => [false, 'METHOD_STUDY_FRESH_ORIGINAL_READINESS_REQUIRED', 1],
             'cartridge_confirmation' => [true, 'CANONICAL_CARTRIDGE_AND_BASELINE_READY', 3],
             DescendantScopedExecutionService::WORK_TYPE => [false, 'DESCENDANT_ACTUAL_AUTHORIZED_ORIGINAL_WINDOW_REQUIRED', 1],
             DescendantScopedExecutionService::COMPONENT_WORK_TYPE => [false, 'SCOPED_COMPONENT_ACTUAL_AUTHORIZED_ORIGINAL_WINDOW_REQUIRED', 1],
@@ -578,6 +594,9 @@ class ResearchExperimentConversionKernelService
 
     private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null): bool
     {
+        if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
+            return (app(InstrumentMethodStudyExecutionService::class)->inspectWork($item)['executable'] ?? false) === true;
+        }
         if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
             return (app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item)['executable'] ?? false) === true;
         }

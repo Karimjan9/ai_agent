@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T05:56:20.219Z",
-  "source_digest": "8191c1b6ef54dcfcef89c5aeb9e51199b5600ce155efae68ffb16beb021e94f6",
-  "source_file_count": 1650,
-  "git_head": "cb7d6681e5e0fde091dda7c8c7852d69f5a4272f",
+  "generated_at": "2026-10-13T08:10:36.185Z",
+  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "source_file_count": 1656,
+  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1070,6 +1070,24 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/AgentMethodGenerationTest.php",
+      "tests": [
+        "setUp",
+        "test_curated_defaults_freeze_new_own_policy_and_remain_valid_after_default_config_changes",
+        "test_real_original_experience_is_proposed_once_and_rebased_to_legal_new_child_before_any_seal",
+        "test_protected_seats_and_unrequested_generation_do_not_receive_unilateral_methods",
+        "test_method_study_marker_excludes_all_generic_learning_and_credit_projection_before_outbox",
+        "test_unsupported_or_attempted_child_and_unlearned_parent_remain_explicit_dependencies",
+        "test_caller_cannot_copy_or_forge_generation_proof_or_edit_bound_risk",
+        "model",
+        "recipe",
+        "generation",
+        "originalParent",
+        "context",
+        "scope"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
       "tests": [
         "setUp",
@@ -1597,6 +1615,20 @@
         "test_council_keeps_a_rejected_failure_source_as_context_but_uses_a_validated_family_parent",
         "test_eligible_coverage_rescue_can_open_at_the_screened_handoff_boundary",
         "grantParentAuthority"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php",
+      "tests": [
+        "test_catalog_covers_all_cards_but_names_real_readiness_and_never_agent_mastery",
+        "test_explicit_install_is_atomic_idempotent_and_does_not_write_agent_or_authority_state",
+        "test_fixed_selection_reopens_exact_revisions_without_using_ambient_latest_registry",
+        "test_collision_rolls_back_new_install_rows_and_keeps_existing_immutable_history",
+        "test_first_revision_collision_cannot_leave_a_partially_installed_source_catalog",
+        "test_all_declared_adapters_and_hybrids_compile_under_exact_compatible_baselines",
+        "test_real_php_to_python_typed_revisions_change_veto_at_declared_boundaries",
+        "test_catalog_and_install_commands_are_discovered_without_input_or_network_fetch",
+        "baselineParameters"
       ]
     },
     {
@@ -2305,6 +2337,22 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
+      "tests": [
+        "setUp",
+        "tearDown",
+        "test_original_registration_is_sealed_then_claimed_by_existing_owner_not_by_flags",
+        "test_canonical_constructor_owns_exact_four_models_and_all_requests_before_first_queue",
+        "test_existing_stream_and_model_or_source_drift_block_without_constructor_writes",
+        "test_stale_worker_and_ordinary_evaluation_cannot_enter_prospective_study",
+        "test_four_completed_originals_with_unassessable_comparison_close_technical_without_replay_or_credit",
+        "test_paper_source_and_bad_clock_do_not_create_canonical_work",
+        "test_bounded_view_reopens_exact_origin_cells_and_retains_separate_original_hash",
+        "claim",
+        "context"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
       "tests": [
         "setUp",
@@ -2315,6 +2363,7 @@
         "test_preexisting_model_runs_baseline_drift_and_repeat_attempts_are_rejected",
         "test_powered_negative_and_null_effects_remain_local_diagnostics",
         "test_native_position_ledger_reconciles_account_and_excludes_censored_profit",
+        "test_nonempty_malformed_native_receipt_cannot_fall_back_to_ordinary_ledger",
         "runs",
         "replaceRequest",
         "artifact",
@@ -3549,6 +3598,8 @@
         "test_retained_address_is_not_trusted_without_original_archive_validation",
         "test_retained_lookup_cannot_raise_its_code_owned_budget",
         "test_actual_source_bytes_have_a_reproducible_idempotent_content_address_not_fake_git_or_worker_proof",
+        "test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact",
+        "test_prospective_method_generation_settings_are_sealed_without_exposing_secrets",
         "test_archive_hash_rejects_changed_bytes_even_when_the_address_and_labels_match",
         "test_changed_source_entry_rejects_even_with_a_rehashed_transport_label",
         "test_missing_source_entry_rejects_with_rehashed_archive_and_original_manifest",

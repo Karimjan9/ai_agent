@@ -2,10 +2,13 @@
 
 ## 2026-10-13 - Separated instrument methods and agent policies
 
-ADR-039 separates immutable source/method/recipe library revisions from
+ADR-040 separates immutable source/method/recipe library revisions from
 agent-owned selection-policy revisions and original experience. Exact runtime
 binding, diagnostic 2x2 studies and bounded fresh candidate lineage keep
 library utility, selector behavior and independent market qualification apart.
+The pinned assistant-curated catalog, eligible pre-seal ordinary child handoff
+and explicit original four-carrier durable study route use existing owners.
+Method-study observations cannot leak into generic economic learning advice.
 
 ## 2026-10-12 - Historical first-exposure registration
 

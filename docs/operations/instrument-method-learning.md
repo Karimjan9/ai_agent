@@ -7,7 +7,18 @@ Champion Council. Sources, library versions and agent skill have separate owners
 
 `php artisan trading:instrument-methods inventory --json` reads all 26
 instrument usage cards in five groups and 13 playbooks without seeding trading
-authority. Registration is explicit: `source`, `method`, `recipe`, `policy`,
+authority. `catalog` reads the checksum-pinned assistant-curated source plan;
+`install` transactionally installs its exact immutable source/method/recipe
+revisions, idempotently and without creating agent policies or qualification.
+The delivered catalog covers eight method classes / ten revisions and three
+hybrids. Six classes are existing prospective construction adapters; two classes
+are genuine typed entry-veto methods with separate L1/L2 revisions. The remaining
+18 instrument cards expose explicit implementation/data dependencies, not fake
+executable skills. Eight primary references include original paraphrases,
+licensing and unknown prior-exposure disclosures. Thresholds are lab hypotheses,
+not claims attributed to those publishers.
+
+Registration is explicit: `source`, `method`, `recipe`, `policy`,
 `compile`, `attach`, `study`, `learn`, `propose`, `evolve`, `settle`, `status`.
 Use `--input=absolute-json-file --json`. Inputs are bounded regular JSON files;
 successful output does not echo source text. `source --fetch` is an explicit
@@ -46,6 +57,18 @@ max_recipes. It is observational prioritization, not profitability-based Master.
 and experience lineage. It does not dispatch a generation or promote a council.
 The original library, models, exposure history and receipts are unchanged.
 
+With `services.instrument_methods.generation_learning_enabled`, only newly
+constructed ordinary generations pin the configured exact recipe hashes.
+An eligible unused child receives its own new policy before any parameter/run
+seal. Original parent experiences yield at most one bounded frozen proposal,
+recompiled for the child's actual legal vector and new data scope. Server-owned
+handoff provenance is verified again on use. Exact comparative/cooperative,
+native council, passport and protected abstain/adversarial seats are unchanged;
+their own experiment owner must explicitly declare an intervention. A generation
+marker therefore does not imply that every seat received a method. Missing parent
+evidence, unsupported adapters or scopes remain typed dependencies. Neither
+proposals nor this observational inheritance confer economic/causal authority.
+
 ## Separated four-arm backtest
 
 Before dispatch, `study` freezes study_key and four models/policies labeled
@@ -54,6 +77,18 @@ initial_balance, risk_per_trade, execution_costs, hard_limits, resource_caps
 and minimum_trades. `settle` accepts study_hash plus exact original run IDs.
 Neither late best-attempt selection nor incomplete/censored products certify
 improvement. Library, selector conditional effects and interaction are separate.
+
+`study-execute` registers the study hash and its exact canonical local CSV source
+with the existing durable work kernel. The existing arbiter, canonical constructor
+and `ExecuteScopedResearchArmJob` remain the only dispatch path. All four original
+request hashes must pass preparation before the first arm is queued. The cohort
+owns four declared carriers, not an alteration of an existing twenty-seat cohort.
+Completed original arms are checkpointed and never replayed; source drift or an
+original technical failure cannot be repaired by selecting another attempt.
+Original comparison closes into local method experiences/proposals only. Study
+observations are fenced out of ordinary historical advice, credit, paper and
+generic screening fan-out. Bounded resource and current lease/source guards apply
+at registration, claim, queue and publication.
 
 For local diagnostic software acceptance, the offline runner is:
 

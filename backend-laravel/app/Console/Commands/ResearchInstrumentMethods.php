@@ -9,15 +9,16 @@ use App\Services\InstrumentMethodLibraryService;
 use App\Services\InstrumentMethodResearchBindingService;
 use App\Services\InstrumentMethodSourceService;
 use App\Services\InstrumentMethodStudyService;
+use App\Services\CuratedInstrumentMethodCatalogService;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use Throwable;
 
-/** Explicit research operations; this command does not dispatch or trade. */
+/** Explicit research registration; only the existing arbiter dispatches registered original work. */
 class ResearchInstrumentMethods extends Command
 {
     protected $signature = 'trading:instrument-methods
-        {action=inventory : inventory, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, settle or status}
+        {action=inventory : inventory, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-execute, settle or status}
         {--input= : Local JSON object file, at most 1 MiB}
         {--fetch : Explicitly fetch a public HTTPS source reference; source action only}
         {--json : Print the bounded result with exact JSON numeric values}';
@@ -32,16 +33,18 @@ class ResearchInstrumentMethods extends Command
     ): int {
         try {
             $action = $this->argument('action');
-            if (! in_array($action, ['inventory', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'settle', 'status'], true)) {
+            if (! in_array($action, ['inventory', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-execute', 'settle', 'status'], true)) {
                 throw new InvalidArgumentException('METHOD_COMMAND_ACTION_INVALID');
             }
             if ($this->option('fetch') && $action !== 'source') throw new InvalidArgumentException('METHOD_COMMAND_FETCH_SOURCE_ONLY');
             $path = $this->option('input');
-            if ($action === 'inventory' && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
+            if (in_array($action, ['inventory', 'catalog'], true) && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
             $input = filled($path) ? $this->readInput($path) : [];
-            if (! in_array($action, ['inventory', 'status'], true) && $input === []) throw new InvalidArgumentException('METHOD_COMMAND_INPUT_REQUIRED');
+            if (! in_array($action, ['inventory', 'catalog', 'install', 'status'], true) && $input === []) throw new InvalidArgumentException('METHOD_COMMAND_INPUT_REQUIRED');
             $result = match ($action) {
                 'inventory' => $library->inventory(),
+                'catalog' => app(CuratedInstrumentMethodCatalogService::class)->catalog(),
+                'install' => app(CuratedInstrumentMethodCatalogService::class)->install($input),
                 'source' => $this->option('fetch') ? $sources->fetchSource($input) : $sources->registerSource($input),
                 'method' => $library->registerMethod($input),
                 'recipe' => $library->registerRecipe($input),
@@ -54,6 +57,7 @@ class ResearchInstrumentMethods extends Command
                 'evolve' => app(AgentMethodCandidateService::class)->evolve($this->hashField($input, 'policy_hash'), $this->integer($input, 'revision'),
                     isset($input['max_recipes']) ? $this->integer($input, 'max_recipes') : 3),
                 'study' => app(InstrumentMethodStudyService::class)->preregister($input),
+                'study-execute' => $this->registerStudyExecution($input),
                 'settle' => $this->settleStudy($input),
                 'status' => $this->status($input, $library, $agents),
             };
@@ -78,6 +82,16 @@ class ResearchInstrumentMethods extends Command
             if (! is_string($runId) || ! preg_match('/^[A-Za-z0-9_.:-]{1,128}$/D', $runId)) throw new InvalidArgumentException('METHOD_COMMAND_ORIGINAL_RUN_ID_REQUIRED');
         }
         return app(InstrumentMethodStudyService::class)->settle($this->hashField($input, 'study_hash'), $input['run_ids']);
+    }
+
+    private function registerStudyExecution(array $input): array
+    {
+        if (count($input) !== 2 || ! is_array($input['source'] ?? null)
+            || array_diff(array_keys($input), ['study_hash', 'source']) !== []) {
+            throw new InvalidArgumentException('METHOD_COMMAND_ORIGINAL_STUDY_EXECUTION_REQUIRED');
+        }
+        return app(\App\Services\InstrumentMethodStudyExecutionService::class)->registerWork(
+            $this->hashField($input, 'study_hash'), $input['source']);
     }
 
     private function compile(array $input, InstrumentMethodLibraryService $library, InstrumentMethodResearchBindingService $bindings): array

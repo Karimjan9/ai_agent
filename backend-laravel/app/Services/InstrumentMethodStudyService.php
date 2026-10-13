@@ -15,6 +15,18 @@ class InstrumentMethodStudyService
     public const PROTOCOL = 'instrument_method_factorial_study_v1';
     private const ARMS = ['L1A1', 'L2A1', 'L1A2', 'L2A2'];
 
+    /** Reopen the original design; execution owners cannot supply a replacement design. */
+    public function originalDesign(string $studyHash): array
+    {
+        $row = DB::table('instrument_method_studies')->where('study_hash', $studyHash)->first();
+        $this->need($row !== null, 'STUDY_NOT_FOUND');
+        $design = json_decode($row->design, true, 64, JSON_THROW_ON_ERROR);
+        $this->need($this->hash($design) === $studyHash && ($design['protocol'] ?? null) === self::PROTOCOL,
+            'STUDY_DESIGN_CONTENT_MISMATCH');
+        foreach ($this->ceiling() as $key => $value) $this->need(($design[$key] ?? null) === $value, 'STUDY_DESIGN_AUTHORITY_FORBIDDEN');
+        return $design;
+    }
+
     public function preregister(array $input): array
     {
         try {
@@ -45,7 +57,10 @@ class InstrumentMethodStudyService
                 $this->need($model !== null && ! LabEvaluationRun::where('model_version_id', $model->id)->exists(), 'STUDY_MUST_PRECEDE_ANY_MODEL_RUN');
                 $policy = app(AgentMethodLearningService::class)->policy($arm['policy_hash']);
                 $this->need(($policy['status'] ?? null) !== 'blocked' && $policy['agent_key'] === 'model:'.$model->id, 'STUDY_ARM_POLICY_OWNER_INVALID');
-                $metadata = (array) $model->metadata; unset($metadata['instrument_method_learning']);
+                $metadata = (array) $model->metadata;
+                // The existing lifecycle observer changes only this operational
+                // projection on enrolment. It is not a treatment/programme delta.
+                unset($metadata['instrument_method_learning'], $metadata['lifecycle_sync']);
                 $modelBaseline = ['strategy' => $model->strategy, 'parameters' => (array) $model->parameters, 'metadata' => $metadata];
                 $baseline ??= $modelBaseline;
                 $this->need($this->hash($modelBaseline) === $this->hash($baseline), 'STUDY_BASELINE_PARAMETERS_OR_METADATA_DIFFER');
@@ -109,7 +124,7 @@ class InstrumentMethodStudyService
                 $identity = $owner->verifiedModelRuntimeIdentity($run);
                 $arm = $design['arms'][$matches[0]];
                 $model = ModelVersion::find($arm['model_id']); $metadata = (array) $model?->metadata;
-                unset($metadata['instrument_method_learning']);
+                unset($metadata['instrument_method_learning'], $metadata['lifecycle_sync']);
                 $this->need($model && $this->hash(['strategy' => $model->strategy, 'parameters' => (array) $model->parameters,
                     'metadata' => $metadata]) === $arm['baseline_hash'], 'STUDY_REGISTERED_MODEL_BASELINE_DRIFT');
                 $this->need(is_array($identity) && ($identity['model_version_id'] ?? null) === $arm['model_id']
@@ -232,7 +247,8 @@ class InstrumentMethodStudyService
         $this->need(is_array($limits) && $this->hash($limits) === $this->hash($design['hard_limits']), 'STUDY_HARD_LIMITS_DIFFER');
         $caps = $binding['resource_caps'] ?? null;
         $this->need(is_array($caps) && $this->hash($caps) === $this->hash($design['resource_caps']), 'STUDY_REQUEST_RESOURCE_CAPS_DIFFER');
-        $native = $response['specialist_council_receipt'] ?? data_get($response, 'data_quality.specialist_council_receipt');
+        $native = $this->nativeReceipt($response);
+        $this->need(empty($request['specialist_council_contract']) || $native !== null, 'STUDY_NATIVE_ORIGINAL_ACCOUNT_RECEIPT_REQUIRED');
         $rows = is_array($native) ? data_get($native, 'decision_trace_identity.decision_rows')
             : data_get($response, 'data_quality.decision_trace.evaluated_candle_count');
         $this->need(is_int($rows) && $rows === $design['evaluated_rows'] && $rows <= $caps['max_rows'], 'STUDY_OBSERVED_ROWS_DIFFER');
@@ -242,7 +258,7 @@ class InstrumentMethodStudyService
 
     private function tradeFacts(array $response, array $design): array
     {
-        $native = $response['specialist_council_receipt'] ?? data_get($response, 'data_quality.specialist_council_receipt');
+        $native = $this->nativeReceipt($response);
         $matured = 0; $censored = 0; $maturedNet = 0.0; $net = 0.0; $costs = 0.0;
         if (is_array($native)) {
             $body = array_diff_key($native, array_flip(['receipt_hash', 'receipt_json']));
@@ -277,6 +293,19 @@ class InstrumentMethodStudyService
         }
         return ['matured_trades' => $matured, 'censored_trades' => $censored, 'matured_net_profit' => $maturedNet,
             'total_net_profit' => $net, 'observed_costs' => $costs, 'cost_unit' => is_array($native) ? 'cash' : 'sum_execution_cost_percent'];
+    }
+
+    /** SimpleBacktestResponse emits an empty native dict even for ordinary execution. */
+    private function nativeReceipt(array $response): ?array
+    {
+        $original = null;
+        foreach ([$response['specialist_council_receipt'] ?? null, data_get($response, 'data_quality.specialist_council_receipt')] as $candidate) {
+            if ($candidate === null || $candidate === []) continue;
+            $this->need(is_array($candidate) && ! array_is_list($candidate), 'STUDY_NATIVE_ORIGINAL_ACCOUNT_RECEIPT_INVALID');
+            $this->need($original === null || $this->hash($original) === $this->hash($candidate), 'STUDY_NATIVE_ACCOUNT_RECEIPTS_DIFFER');
+            $original = $candidate;
+        }
+        return $original;
     }
 
     private function tradeTime(array $trade, array $scope): void

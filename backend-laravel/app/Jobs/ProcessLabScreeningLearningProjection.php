@@ -114,6 +114,11 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
             // mutation/compiler lane. It remains recoverable evidence only.
             return;
         }
+        if (data_get($agent->generation?->trigger_context, 'instrument_method_study_execution') !== null) {
+            // Exact method-study originals belong to the diagnostic study owner.
+            // No ordinary credit, posterior, outbox, mutation advice or authority fan-out.
+            return;
+        }
         $eligibility = $evidence->learningEligibility($run);
         if ((int) $run->lab_agent_id !== (int) $agent->id
             || (int) $run->model_version_id !== (int) $agent->model_version_id
@@ -154,7 +159,11 @@ class ProcessLabScreeningLearningProjection implements ShouldBeUnique, ShouldQue
         // trade ledger are closed, then refresh the mutable decision view.
         // Independent method-selection memory reopens the original producer
         // artifacts. It is diagnostic, idempotent and grants no credit/mastery.
-        app(\App\Services\AgentMethodLearningService::class)->learnFromRun($run);
+        $methodLearning = app(\App\Services\AgentMethodLearningService::class)->learnFromRun($run);
+        if (($methodLearning['status'] ?? null) === 'learned_diagnostic') {
+            // A bounded append-only proposal, not a library edit, new scheduler, or authority.
+            app(\App\Services\AgentMethodGenerationService::class)->proposeFromOriginalRun($run, $methodLearning);
+        }
         $cooperativeSettlement = $cooperativeSettlements->observe($agent);
         $decisionMetrics = (array) $decision->metrics;
         $decisionMetrics['cooperative_experiment_settlement'] = $cooperativeSettlement;
