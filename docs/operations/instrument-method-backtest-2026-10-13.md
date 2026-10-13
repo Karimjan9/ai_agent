@@ -91,6 +91,34 @@ retained; they are not a production closure or independent skill receipt.
 Original products and before-outcome barrier are retained under
 `.runtime/curated-actual-acceptance-20261013/` in the isolated worktree.
 
+## Production canonical integration: G264
+
+The separately declared integration purpose explicitly recorded that the same
+scope's diagnostic results had already been seen. It was not represented as a
+fresh independent experiment. Under main release `d7f3dee`, the normal arbiter
+claimed work 12 and the canonical constructor created G264/DB358 with four
+original carriers, models 3523–3526. No manual generation/tick or twenty-seat
+rewrite was used. Original request hashes preceded all queue publication.
+
+All four actual HTTP service originals completed: 98.562 / 108.136 / 69.358 /
+83.034 seconds, within their unchanged 120-second per-arm budgets. Counts/net
+cash match the curated table above. The fifth normal owner delivery closed work
+12 as `original_method_matrix_completed` and G264 as `screened`, with
+`assessed_local_diagnostic`. Library effect under A1 and selector effect under
+L1 were null; the conditional L2/A2 effects and interaction were +114.08 cash.
+All absolute returns remained negative; independent/economic/paper authority
+was false. Reinspection refuses another original attempt.
+
+The method-only owner persisted 94 contextual observational experiences and
+four frozen policy proposals. A separate unused child, model 3527, received a
+server-derived own policy from parent 3526's original observations: lineage
+depth 1, unchanged physical parameters/library/source methods, no replay,
+generation or trading authority. This is an actual diagnostic policy handoff,
+not evidence of a stronger child or an independently confirmed inherited skill.
+
+The internet library and agent policy remain independently versioned. Source
+corpus updates do not rewrite these original observations or qualify consumers.
+
 ## Honest boundary
 
 SQLite integration tests verify actual compressed original artifact eligibility,
