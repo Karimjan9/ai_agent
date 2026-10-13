@@ -1,5 +1,37 @@
 # Integrations and runtime boundaries
 
+## Original method outcomes, deadline and historical advice
+
+PHP owned-outcome v2 consumes original accepted-entry/method trace and exact own
+position ledger, not invocation counts as outcome labels. Executed clock, costs
+and full account reconcile; mature labels available in 2026+ and censored closes
+are excluded. Physical episode aliases deduplicate, conflicts refuse, and five
+unique mature samples per exact context are only a diagnostic preference floor.
+WAIT/veto remains unknown without exact counterfactuals. Server-derived proposals
+attach only to unused prospective children; v1 facts, library versions and source
+policies remain immutable. No credit or independently qualified skill is emitted.
+
+Only the existing original method-study owner signs a future simple incremental
+`instrument_method_original_deadline_v2` with private issuer HMAC. Python checks
+exact model/account/risk/cost/method/release/runtime controls and reopens the
+canonical raw CSV (at most 4096 rows, 200 warmup) before granting a declared >300
+and <=600-second deadline. No native/full/window authority or global cap changes;
+old originals retain their budgets. The finite timeout envelope records only
+sanitized technical budget mismatch facts, not arbitrary response text.
+
+Ordinary historical advice uses one validated repeatable-read transaction and
+ephemeral positive/exclusion rosters, with a 50000-ID per-roster ceiling. Exact
+purpose predicates remain unchanged, including malformed study declarations.
+Frozen source IDs and watermarks fence all family/candle/prior readers; targeted
+same-transaction purpose retags refuse before commit. Light source tuples and
+exclusion digest fence revision caches, published only after commit. Next-call
+freshness and immutable eligibility guards remain separate from this optimization.
+
+The method-learning migration owns `agent_method_owned_outcomes` only; nonempty
+history prevents rollback. Meta registration's nullable assessment means no final
+assessment yet, not a successful fit. These additive namespaces do not rewrite
+existing observations, accounts, credit or authority rows.
+
 ## Finite instrument meta-model boundary
 
 The original Laravel training owner reopens immutable request/response/event and
@@ -11,6 +43,12 @@ trusts CSV/caller scores, unclosed observations or future weights. A source/data
 change does not turn seen calibration into independent evidence. Ordinary
 account/risk guards remain exact; native shared-account meta evaluation refuses.
 No artifact, registration or attachment grants economic, Master or paper rights.
+
+Optional `instrument_method_schema_numeric_projection_v1` reopens raw original
+parameters and keeps their artifact hash unchanged. Both owners independently
+derive only schema-declared numeric API float spelling, with exact integer,
+boolean, string and family guards; the actual evaluation still proves all
+other physical ports. Legacy projection-less products are not rehashed.
 
 Optional `instrument_method_learning_v1` is compiled by the PHP method binding
 owner, per exact model/LabAgent or native council member. Intrinsic library,

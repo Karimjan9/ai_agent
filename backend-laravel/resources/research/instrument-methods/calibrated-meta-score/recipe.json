@@ -1,0 +1,12 @@
+{
+  "recipe_key": "internet_calibrated_meta_score_recipe",
+  "revision": 1,
+  "method_hashes": [
+    "e4c355b43ee008d7373fb427dec5ce70b7efd951663a387501ba06513127628b"
+  ],
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

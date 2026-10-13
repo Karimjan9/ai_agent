@@ -35,7 +35,7 @@ class InstrumentMethodMetaBindingService
                     'META_BINDING_MUST_PRECEDE_OWN_POLICY_SEAL');
                 $this->physical($target);
                 $export = $this->export($modelHash);
-                $this->sameModel($target, $export['artifact']['binding']);
+                $this->sameModel($target, $export);
                 $ref = ['protocol' => self::PROTOCOL, 'model_hash' => $modelHash];
                 if (array_key_exists(self::METADATA, $metadata) || array_key_exists(self::PROOF_METADATA, $metadata)) {
                     $existing = $metadata[self::METADATA] ?? null;
@@ -79,10 +79,18 @@ class InstrumentMethodMetaBindingService
         }
         $this->need(! $this->hashes->researchInputHasPaperData($request), 'META_BINDING_PRE2026_EVALUATION_REQUIRED');
         $training = $export['artifact']['binding'];
-        $this->sameModel($model, $training);
+        $this->sameModel($model, $export);
+        try {
+            $requestParameterHash = is_array($request['parameters'] ?? null) && is_string($request['strategy'] ?? null)
+                ? $this->projectedHash($request['strategy'], $request['parameters'], $request['base_strategy'] ?? null) : null;
+            $sameFamily = $this->models->physicalParameterFamily($request['strategy'], $request['base_strategy'] ?? null)
+                === $this->models->physicalParameterFamily($model->strategy, data_get($model->metadata, 'base_strategy'));
+        } catch (Throwable) { throw new LogicException('META_BINDING_ACTUAL_MODEL_PARAMETERS_REQUIRED'); }
         $this->need(($request['strategy'] ?? null) === $model->strategy
-            && is_array($request['parameters'] ?? null)
-            && $this->hash($request['parameters']) === $this->hash((array) $model->parameters), 'META_BINDING_ACTUAL_MODEL_PARAMETERS_REQUIRED');
+            && is_array($request['parameters'] ?? null) && $sameFamily
+            && $requestParameterHash
+                === $this->projectedHash($model->strategy, (array) $model->parameters, data_get($model->metadata, 'base_strategy')),
+            'META_BINDING_ACTUAL_MODEL_PARAMETERS_REQUIRED');
         $execution = $request['execution_contract'] ?? null;
         $this->need(is_array($execution) && ($execution['protocol'] ?? null) === ExecutionContractService::PROTOCOL
             && ($execution['version'] ?? null) === ExecutionContractService::VERSION
@@ -99,12 +107,13 @@ class InstrumentMethodMetaBindingService
             'D1' => 86400][$request['timeframe'] ?? ''] ?? null;
         $this->need($duration !== null, 'META_BINDING_ACTUAL_CLOCK_REQUIRED');
         $evaluation = ['symbol' => $request['symbol'] ?? null, 'timeframe' => $request['timeframe'] ?? null,
-            'strategy' => $request['strategy'], 'parameters_hash' => $this->hash($request['parameters']),
+            'strategy' => $request['strategy'], 'parameters_hash' => $requestParameterHash,
             'account_risk_hash' => $this->models->physicalAccountRiskHash($request),
             'execution_hash' => $execution['execution_hash'], 'clock_seconds' => $duration];
-        foreach (self::PHYSICAL_FIELDS as $field) $this->need($evaluation[$field] === ($training[$field] ?? null), 'META_BINDING_PHYSICAL_EVALUATION_DRIFT');
+        foreach (self::PHYSICAL_FIELDS as $field) $this->need($evaluation[$field] === ($field === 'parameters_hash'
+            ? $export['parameter_projection']['projected_parameters_hash'] : ($training[$field] ?? null)), 'META_BINDING_PHYSICAL_EVALUATION_DRIFT');
         return ['artifact' => $export['artifact'], 'expected_training_binding' => $export['expected_binding'],
-            'evaluation_binding' => $evaluation];
+            'evaluation_binding' => $evaluation, 'parameter_projection' => $export['parameter_projection']];
     }
 
     /** Sparse asset ownership is separately attested before every future compiled request. */
@@ -128,14 +137,23 @@ class InstrumentMethodMetaBindingService
     private function export(string $hash): array
     {
         $this->need(preg_match('/^[a-f0-9]{64}$/D', $hash) === 1, 'META_BINDING_ORIGINAL_MODEL_HASH_REQUIRED');
-        $export = $this->models->exportOriginalModel($hash);
+        $export = $this->models->exportOriginalModel($hash, true);
         $this->need(($export['status'] ?? null) === 'exported_diagnostic', $export['reason'] ?? 'META_BINDING_ORIGINAL_FITTED_MODEL_REQUIRED');
         return $export;
     }
-    private function sameModel(ModelVersion $model, array $training): void
+    private function sameModel(ModelVersion $model, array $export): void
     {
+        $training = $export['artifact']['binding'];
         $this->need(($training['strategy'] ?? null) === $model->strategy
-            && ($training['parameters_hash'] ?? null) === $this->hash((array) $model->parameters), 'META_BINDING_ORIGINAL_PHYSICAL_MODEL_REQUIRED');
+            && $this->models->physicalParameterFamily($model->strategy, data_get($model->metadata, 'base_strategy'))
+                === $this->models->physicalParameterFamily($export['parameter_projection']['strategy'], $export['parameter_projection']['base_strategy'])
+            && ($export['parameter_projection']['projected_parameters_hash'] ?? null)
+                === $this->projectedHash($model->strategy, (array) $model->parameters, data_get($model->metadata, 'base_strategy')),
+            'META_BINDING_ORIGINAL_PHYSICAL_MODEL_REQUIRED');
+    }
+    private function projectedHash(string $strategy, array $parameters, ?string $baseStrategy): string
+    {
+        return $this->hash($this->models->projectPhysicalParameters($strategy, $parameters, $baseStrategy));
     }
     private function physical(ModelVersion $model): array
     {

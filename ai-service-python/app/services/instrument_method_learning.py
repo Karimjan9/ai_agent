@@ -34,7 +34,7 @@ CONTEXT_FIELDS = {
 PRE_2026_END = pd.Timestamp("2026-01-01T00:00:00Z")
 
 
-def actual_meta_evaluation_binding(payload) -> dict:
+def actual_meta_evaluation_binding(payload, *, project_numeric: bool = False) -> dict:
     """Seven actual physical ports, not copied training/evaluation assertions.
 
     Training source/data/policy identity belongs to the immutable original
@@ -60,8 +60,12 @@ def actual_meta_evaluation_binding(payload) -> dict:
     seconds = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800, 'H1': 3600, 'H4': 14400, 'D1': 86400}.get(payload.timeframe)
     if seconds is None:
         raise ValueError('METHOD_META_PHYSICAL_CLOCK_REQUIRED')
+    parameters = request['parameters']
+    if project_numeric:
+        from app.services.instrument_method_meta_model import project_physical_parameters
+        parameters = project_physical_parameters(payload.strategy, parameters, request.get('base_strategy'))
     return {'symbol': payload.symbol, 'timeframe': payload.timeframe, 'strategy': payload.strategy,
-        'parameters_hash': canonical_hash(request['parameters']), 'account_risk_hash': canonical_hash(php_arrays(account)),
+        'parameters_hash': canonical_hash(parameters), 'account_risk_hash': canonical_hash(php_arrays(account)),
         'execution_hash': execution_contract_metadata(payload)['execution_hash'], 'clock_seconds': seconds}
 
 
@@ -319,13 +323,24 @@ class InstrumentMethodLearning:
                     or payload is not None and bool(payload.specialist_council_contract)):
                 raise ValueError('METHOD_META_ORDINARY_ORIGINAL_ACCOUNT_SCOPE_REQUIRED')
             meta = body['meta_model']
-            if not isinstance(meta, dict) or set(meta) != {'artifact', 'expected_training_binding', 'evaluation_binding'}:
+            legacy_fields = {'artifact', 'expected_training_binding', 'evaluation_binding'}
+            if not isinstance(meta, dict) or set(meta) not in (legacy_fields, legacy_fields | {'parameter_projection'}):
                 raise ValueError('METHOD_META_MODEL_REFERENCE_FIELDS_REQUIRED')
-            actual = actual_meta_evaluation_binding(payload)
+            if payload is None or not hasattr(payload, 'model_dump'):
+                raise ValueError('METHOD_META_ACTUAL_REQUEST_REQUIRED')
+            if 'parameter_projection' in meta:
+                from app.services.parameter_schema import strategy_family
+                projection = meta['parameter_projection']
+                if (not isinstance(projection, dict) or not isinstance(projection.get('strategy'), str)
+                        or projection.get('base_strategy') is not None and not isinstance(projection['base_strategy'], str)
+                        or strategy_family(projection['strategy'], projection.get('base_strategy'))
+                            != strategy_family(payload.strategy, payload.base_strategy)):
+                    raise ValueError('METHOD_META_PARAMETER_PROJECTION_FAMILY_MISMATCH')
+            actual = actual_meta_evaluation_binding(payload, project_numeric='parameter_projection' in meta)
             if meta.get('evaluation_binding') != actual:
                 raise ValueError('METHOD_META_ACTUAL_EVALUATION_BASELINE_MISMATCH')
             from app.services.instrument_method_meta_model import FiniteInstrumentMetaModel
-            self.meta_model = FiniteInstrumentMetaModel(meta['artifact'], meta['expected_training_binding'], actual)
+            self.meta_model = FiniteInstrumentMetaModel(meta['artifact'], meta['expected_training_binding'], actual, meta.get('parameter_projection'))
 
     def validate_frame(self, frame: pd.DataFrame, *, bind_features: bool = True) -> None:
         stamps = pd.to_datetime(frame["time"], errors="coerce", utc=True)

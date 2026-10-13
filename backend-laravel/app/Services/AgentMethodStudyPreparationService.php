@@ -183,7 +183,7 @@ class AgentMethodStudyPreparationService
         $proof = (array) data_get($source->metadata, AgentMethodGenerationService::METADATA, []);
         $this->need(($own['status'] ?? null) !== 'blocked' && ($own['agent_key'] ?? null) === 'model:'.$source->id
             && data_get($own, 'learning_provenance.protocol') === AgentMethodGenerationService::PROTOCOL
-            && ($proof['mode'] ?? null) === 'original_parent_observation'
+            && in_array($proof['mode'] ?? null, ['original_parent_observation', 'original_parent_owned_outcome'], true)
             && app(AgentMethodGenerationService::class)->verifyProvenance($proof, $own),
             'METHOD_POLICY_STUDY_VERIFIED_ORIGINAL_OWN_CHILD_REQUIRED');
         $baseline = $this->learning->policy($proof['source_policy_hash']);

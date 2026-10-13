@@ -1,5 +1,18 @@
 # Laboratory cohort lifecycle
 
+## One-call historical advice source snapshot
+
+Before ordinary population construction, the existing historical owner acquires
+its refresh lock and validates repeatable-read isolation. One transaction freezes
+the exact reserved-purpose exclusion roster, positive eligible agent/run IDs and
+event/rollup/gate/credit horizons. All family readers reuse that finite snapshot,
+including confirmed-prior consumers. Targeted own-transaction purpose rechecks
+precede insight publication; revision/derived caches publish after commit only.
+Finally all per-call memo state is discarded. The next refresh rereads sources;
+later study agents, run completions and retags cannot become ordinary evidence
+through a stale negative list. This is advisory execution optimization, not a
+new scheduler, persistent eligibility proof or scientific authority.
+
 ## Explicit unused-draft mixed-price question
 
 An approved intent registers only the exact unchanged G263 twenty-model snapshot

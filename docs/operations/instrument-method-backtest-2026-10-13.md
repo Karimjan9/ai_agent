@@ -175,13 +175,77 @@ The parent and child selector rules, not caller outcome rankings, define A1/A2.
 The first-512-row scope and another vector's earlier 2048 attempt were already
 seen: the new question is reused discovery, not independent evidence. Original
 3527 is preserved; the existing canonical owner creates four fresh carriers.
-This paragraph records preparation only; actual deployment/dispatch/closure
-must be verified separately. Future model training has prospectively named
-L2A1 as its source treatment, not whichever arm looks best afterward.
+The preparation prospectively named L2A1 as the future model-training source,
+not whichever arm looked best afterward.
+
+## Actual own-child continuation: G265 technical history
+
+Release `0f3d82729d58edb860483c1c1ad0e28a3a5a0f62` was committed, pushed,
+archived and boot-attested before resuming the normal scheduler. The v2 catalog
+was installed explicitly without rebinding old consumers. One genuinely unused
+child-source preparation registered work 13 / study
+`3159abbc91b7479e1f20c3811c6b3f13ee3f64d4a68b43812a3e68ec48e6a8b0`.
+The ordinary arbiter constructed G265/DB361 with models 3528--3531 and sealed
+all four original request hashes before queue publication. Original 3527 was
+not modified, replayed or inserted into a generation.
+
+L1A1 original `df482305-e7ce-4989-a745-ffa5d3174865` completed in 303.020
+seconds: 77 mature trades, no censored trades, -377.97 net cash. Response SHA
+`d4b4f0c0ddbca5b867613c0329f8a924b3a1bf6e8927ef3904c0eee9e47336e6`.
+L2A1 original `ddc164fd-c260-4e83-8d2e-de8df2f7dfca` instead received HTTP
+504 and closed as technical_error. Authenticated original service diagnostics
+reported `hard_timeout:simple:300s`: the actual HTTP simple route applied its
+ordinary 300-second limit although PHP had declared a 600-second maximum.
+The earlier direct differential-budget calculation did not test that route.
+
+The owner closed work 13 as original_method_matrix_unassessable and G265 as
+technical_quarantine. L1A2/L2A2 were not executed. There is no valid four-arm
+effect, child-benefit result, feedback settlement, independent skill or credit.
+The failed predeclared L2A1 source cannot be replaced with L1A1 to select a
+successful meta model. G264's separate original training attempt remains
+underpowered (9 training / 2 calibration labels), with no model artifact.
+Old requests, technical envelopes, originals and terminal classifications stay
+unchanged; no renamed G265 completion or deadline retry is authorized.
+
+The subsequently prepared signed simple-deadline protocol applies only to new
+bounded original questions. It does not retrospectively complete this study.
+
+## Owned-outcome candidate preparation
+
+A read-only candidate-owner extraction of unchanged G265 L1A1 originals joined
+all 77 mature trades to accepted ENTRY and reconciled -377.97 net cash. Only six
+episodes had a single rankable consumed recipe: three exact contexts with two
+episodes each. None reached the fixed five-episode context floor. The server
+selection therefore proposed zero preference rules / BASELINE, not a profitable
+trait or a global harmful ban. This preview did not write a policy or credit.
+
+The new owned-outcome owner remains distinct from Internet library revisions.
+A subsequent prospective child may learn from these seen originals and compare
+its selector on a later declared archive slice. That is not a retry of G265 or
+untouched validation; neither a new name nor later rows erase archive exposure.
+
+Frozen candidate regressions passed 218 Laravel test executions / 3675
+assertions and 163 Python tests before the separately scoped final numeric-wire
+compatibility fix. The latter requires its own focused acceptance; these counts
+are not market experiments or evidence of stronger descendants.
+
+The final optional schema-numeric projection retains original artifact/default
+export bytes and verifies only numeric API spelling independently in PHP and
+Python. Relevant meta suites passed 42 PHP tests / 283 assertions; a final
+three-test / 38-assertion rerun entered the real SIMPLE API normalization and
+finite method consumer (the bounded replay child was mocked). Final relevant
+Python tests passed 81 cases. These are software wire/issuer proofs, not an
+actual trained market model or a profitable classifier.
+
+The final canonical carrier fan-in regression passed 1 test / 31 assertions:
+verified v2 source-child studies create owned mature-outcome proposals without
+downgrading to invocation-count memory; redelivery is idempotent. A separately
+prepared v1 study retains its original proposal and creates no v2 outcome rows.
+This compressed original-product fixture is software evidence, not child strength.
 
 ## Qualification boundary
 
-Final frozen-source verification: 145 focused Laravel test executions / 1788
+The earlier `0f3d827` delivery's frozen-source verification: 145 focused Laravel test executions / 1788
 assertions, 93 Python tests, changed PHP lint, Python compilation and Project Map
 check passed. The inherited producer tests intentionally execute again in the
 binding class; these counts are software executions, not independent experiments.

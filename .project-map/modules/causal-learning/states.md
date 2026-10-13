@@ -69,6 +69,31 @@ an ordinary model. Existing candidate/study transfer refuses meta assets until
 an explicit fresh reattachment owner exists; old models without assets retain
 their previous behavior and identity.
 
+Owned-outcome v2 follows `reopened eligible original -> unique accepted entry
+and own method/position link -> uncensored mature cost-inclusive close ->
+append-only episode -> frozen contextual proposal -> unused prospective child`.
+The full original account must reconcile. Identical replay aliases add no
+episode power; conflicting content for the same policy/physical episode refuses.
+Five mature episodes per exact context and positive mean net cash permit only
+observational recipe preference. Underpowered or nonpositive groups use BASELINE;
+WAIT/veto utility stays unknown without a counterfactual. Management invocations
+do not create extra episodes; multi-recipe positions remain unranked bundle
+associations. Labels available from 2026 onward are excluded. V1 proposals and
+source policies remain unchanged; an explicitly v2-owned parent's missing or
+invalid original proof is a dependency, not silent legacy fallback. No causal
+credit, Master, independent, paper or stronger-child qualification follows.
+
+Future original method arms may bind `instrument_method_original_deadline_v2`
+before the immutable request barrier when their declared simple incremental
+budget is greater than 300 and at most 600 seconds. Private issuer HMAC, exact
+request/source/physical controls and at most 4096 raw rows (200 warmup) precede
+Python budget selection. Missing or invalid declarations cannot borrow this
+exception. Existing 300-second requests, native/full contracts and old originals
+are not rewritten. A timeout remains technical history, not a strategy loss or
+renewed attempt. The owned-outcome migration owns only its separate append-only
+table and refuses rollback when it contains history; a nullable meta registration
+assessment is unassessed state, never a completed model or authority.
+
 ## Separately scoped prospective questions (ADR-036)
 
 `preregistered_diagnostic -> data_bound_diagnostic -> assessed_diagnostic`

@@ -68,3 +68,30 @@ candidate inheritance refuse until their physical transfer is owned explicitly.
 Own-policy comparison rebases four fresh signed carriers from one original
 proposal root through the existing canonical study dispatcher; unchanged
 selectors close no_effect without compute. Old originals remain immutable.
+
+## Own outcome advice and bounded original execution
+
+Add a separate append-only owned-outcome v2 namespace: an accepted entry must
+link to the same original agent/method and physical position, whose uncensored
+mature cost-inclusive result reconciles with the complete account. Alias replays
+do not increase sample counts; conflicting episode content refuses. Five unique
+mature episodes per exact context and positive mean net cash may rank a recipe
+for research, not prove causal power. WAIT/veto utility remains unknown, and
+multi-recipe positions remain bundle observations. V1 experience/proposals are
+preserved; explicitly v2-owned parents cannot downgrade invalid proof to v1.
+Only an unused prospective child receives a new server-derived own policy.
+
+The canonical original-study owner may privately sign deadline v2 for future
+simple incremental arms with >300, <=600-second caps and <=4096 exact raw rows.
+Python reopens source bytes and verifies scope, physical/runtime controls, method
+and release before choosing that budget. It does not rewrite an old 300-second
+request, authorize full/native/independent/paper work or grant another attempt.
+
+Historical advice retains the same exclusion predicates inside one validated
+repeatable-read transaction, ephemeral positive rosters and frozen horizons.
+Exact source membership/exclusion and light original run tuples fence advisory
+cache revisions; targeted own-transaction retags refuse and caches publish after
+commit. Unsupported isolation, nested production transactions or the 50000-ID
+roster budget remain operational dependencies, not scientific negatives.
+The owned-outcome migration owns its new table only and refuses nonempty rollback;
+nullable unassessed model registration remains absence of assessment, not proof.

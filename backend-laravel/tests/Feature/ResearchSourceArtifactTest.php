@@ -72,6 +72,9 @@ class ResearchSourceArtifactTest extends TestCase
             'ai-service-python/tests/test_research_release.py' => '# focused regression',
             'backend-laravel/resources/research/instrument-methods/curated-v1.json' => '{"catalog":"pinned research-only fixture"}',
             'backend-laravel/resources/research/instrument-methods/curated-v2.json' => '{"catalog":"append-only alternative methods fixture"}',
+            'backend-laravel/resources/research/instrument-methods/calibrated-meta-score/source.json' => '{"reference":"synthetic source fixture"}',
+            'backend-laravel/resources/research/instrument-methods/calibrated-meta-score/method.json' => '{"method":"synthetic score fixture"}',
+            'backend-laravel/resources/research/instrument-methods/calibrated-meta-score/recipe.json' => '{"recipe":"synthetic immutable fixture"}',
             'backend-laravel/.env' => 'SECRET_DO_NOT_ARCHIVE=fake-test-secret',
             'backend-laravel/storage/secret.php' => '<?php // never source',
             'backend-laravel/vendor/secret.php' => '<?php // never source',
@@ -184,6 +187,9 @@ class ResearchSourceArtifactTest extends TestCase
         $this->assertArrayHasKey('ai-service-python/tests/test_research_release.py', $first['manifest']['files']);
         $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/curated-v1.json', $first['manifest']['files']);
         $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/curated-v2.json', $first['manifest']['files']);
+        foreach (['source', 'method', 'recipe'] as $kind) {
+            $this->assertArrayHasKey('backend-laravel/resources/research/instrument-methods/calibrated-meta-score/'.$kind.'.json', $first['manifest']['files']);
+        }
     }
 
     public function test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact(): void
@@ -202,6 +208,18 @@ class ResearchSourceArtifactTest extends TestCase
         $originalV1 = hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json');
         File::put($this->root.'/backend-laravel/resources/research/instrument-methods/curated-v2.json', '{"catalog":"changed alternative"}');
         $this->assertSame($originalV1, hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v1.json'));
+        $this->assertNull($this->owner->currentSourceArtifact());
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
+        $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');
+        $this->owner->verifySourceArtifact($reference, true);
+    }
+
+    public function test_append_only_meta_recipe_drift_retires_current_artifact_not_the_original_bytes(): void
+    {
+        $reference = $this->owner->buildSourceArtifact()['reference'];
+        $v2 = hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v2.json');
+        File::put($this->root.'/backend-laravel/resources/research/instrument-methods/calibrated-meta-score/recipe.json', '{"recipe":"changed fixture"}');
+        $this->assertSame($v2, hash_file('sha256', $this->root.'/backend-laravel/resources/research/instrument-methods/curated-v2.json'));
         $this->assertNull($this->owner->currentSourceArtifact());
         $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
         $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from app.services.research_program_tasks import canonical_hash
 
 PROTOCOL = "instrument_method_meta_model_v1"
+PARAMETER_PROJECTION_PROTOCOL = "instrument_method_schema_numeric_projection_v1"
 BINDING_FIELDS = {"symbol", "timeframe", "strategy", "parameters_hash", "account_risk_hash", "effective_policy_hash",
                   "data_hash", "execution_hash", "source_hash", "python_source_hash", "clock_seconds"}
 PHYSICAL_FIELDS = {"symbol", "timeframe", "strategy", "parameters_hash", "account_risk_hash", "execution_hash", "clock_seconds"}
@@ -45,6 +46,46 @@ def _sha(value) -> bool:
 
 def _number(value) -> bool:
     return type(value) in {int, float} and math.isfinite(value)
+
+
+def project_physical_parameters(strategy: str, parameters: dict, base_strategy: str | None = None) -> dict:
+    """Only float-schema spelling changes; integer/flag/string values stay exact."""
+    from app.services.parameter_schema import PARAMETER_SCHEMAS, EXECUTION_PARAMETER_SCHEMA, strategy_family
+    _need(isinstance(strategy, str) and (base_strategy is None or isinstance(base_strategy, str)),
+          "META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED")
+    _need(base_strategy is None or (0 < len(base_strategy) <= 128 and strategy_family(base_strategy) in PARAMETER_SCHEMAS),
+          "META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED")
+    schema = PARAMETER_SCHEMAS.get(strategy_family(strategy, base_strategy))
+    _need(schema is not None and isinstance(parameters, dict) and len(parameters) <= 256,
+          "META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED")
+    schema = {**schema, **EXECUTION_PARAMETER_SCHEMA}
+    _need(not set(parameters) - set(schema), "META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED")
+    projected = {}
+    for key, value in parameters.items():
+        rule = schema[key]
+        kind = rule['type']
+        valid = (_number(value) if kind is float else type(value) is kind)
+        if kind is str:
+            valid = valid and (not rule.get('choices') or value in rule['choices'])
+        if kind in {int, float}:
+            valid = valid and rule['min'] <= value <= rule['max']
+        _need(valid, "META_MODEL_PARAMETER_PROJECTION_TYPE_REQUIRED")
+        projected[key] = float(value) if kind is float else value
+    return projected
+
+
+def _projected_parameter_hash(projection: dict, binding: dict) -> str:
+    _need(isinstance(projection, dict) and set(projection) == {
+        'protocol', 'strategy', 'base_strategy', 'original_parameters', 'projected_parameters_hash'}
+        and projection.get('protocol') == PARAMETER_PROJECTION_PROTOCOL
+        and projection.get('strategy') == binding['strategy'], "META_MODEL_PARAMETER_PROJECTION_FIELDS_REQUIRED")
+    original = projection['original_parameters']
+    _need(isinstance(original, dict) and canonical_hash(original) == binding['parameters_hash'],
+          "META_MODEL_ORIGINAL_PARAMETER_PROJECTION_REQUIRED")
+    projected = project_physical_parameters(projection['strategy'], original, projection['base_strategy'])
+    result = canonical_hash(projected)
+    _need(result == projection['projected_parameters_hash'], "META_MODEL_PARAMETER_PROJECTION_HASH_INVALID")
+    return result
 
 
 def _utc(value) -> datetime:
@@ -91,7 +132,7 @@ class FiniteInstrumentMetaModel:
     """A bounded count-table classifier and separate chronological calibrator."""
 
     def __init__(self, artifact: dict, expected_training_binding: dict,
-                 evaluation_binding: dict | None = None):
+                 evaluation_binding: dict | None = None, parameter_projection: dict | None = None):
         _need(isinstance(artifact, dict) and set(artifact) == ARTIFACT_FIELDS | {
             "artifact_json", "artifact_hash", "issuer_signature"}, "META_MODEL_FINITE_ARTIFACT_FIELDS_REQUIRED")
         encoded = artifact.get("artifact_json")
@@ -127,9 +168,11 @@ class FiniteInstrumentMetaModel:
                   "META_MODEL_BINDING_TOKEN_REQUIRED")
         _need(type(binding["clock_seconds"]) is int and 1 <= binding["clock_seconds"] <= 86400,
               "META_MODEL_CLOCK_INVALID")
+        projected_hash = None if parameter_projection is None else _projected_parameter_hash(parameter_projection, binding)
         if evaluation_binding is not None:
             _need(isinstance(evaluation_binding, dict) and set(evaluation_binding) == PHYSICAL_FIELDS
-                  and all(evaluation_binding[field] == binding[field] for field in PHYSICAL_FIELDS),
+                  and all(evaluation_binding[field] == (projected_hash if field == 'parameters_hash' and projected_hash is not None
+                                                        else binding[field]) for field in PHYSICAL_FIELDS),
                   "META_MODEL_EVALUATION_PHYSICAL_BASELINE_MISMATCH")
         for field in ("registration_hash", "records_hash", "originals_hash", "training_records_hash", "calibration_records_hash"):
             _need(_sha(body[field]), "META_MODEL_ORIGINAL_PROVENANCE_HASH_REQUIRED")

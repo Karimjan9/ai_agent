@@ -167,15 +167,78 @@ dependency; CSV fields cannot supply a score. Generic/native shared-account
 transfer is refused, not silently stripped or grandfathered. Old models without
 this optional asset keep the same contracts and event hashes.
 
+Optional `instrument_method_schema_numeric_projection_v1` reopens the exact
+original parameters without changing the signed artifact or its raw parameter
+hash. PHP and Python independently project only schema-declared numeric fields
+to the actual API float spelling. Integer, boolean, string and unknown fields
+remain exact; altered values or a different schema family refuse. The derived
+projection is separate from original training identity; account/risk, cost,
+strategy and clock ports remain strict. The legacy projection-less path remains
+unchanged, not silently rehashed.
+
 The immutable v2 meta-sentinel recipe is an availability probe, not a profitable
 classifier. An actual score-consuming recipe must be a separate new revision.
 No training asset or attachment alone creates Master, credit, confirmed skill,
 paper admission or proof of useful child inheritance.
 
+The append-only calibrated-score supplement is reproducible through the
+existing CLI, in source/method/recipe order:
+
+```powershell
+php artisan trading:instrument-methods source --input=resources/research/instrument-methods/calibrated-meta-score/source.json --json
+php artisan trading:instrument-methods method --input=resources/research/instrument-methods/calibrated-meta-score/method.json --json
+php artisan trading:instrument-methods recipe --input=resources/research/instrument-methods/calibrated-meta-score/recipe.json --json
+```
+
+Its 0.70 score threshold is a fixed lab hypothesis, not a publisher's profitable
+rule or a trained model. Missing models remain unavailable; only the actual
+signed finite model can produce the score. Import is idempotent and changes no
+agent policy. Original v1/v2 catalog checksums and their availability-only
+sentinel remain unchanged. The combined installed library therefore has 29
+method classes / 31 revisions and 39 recipes, not 29 qualified skills.
+
+## Agent-owned mature outcome learning
+
+The separate `agent_method_owned_outcome_v2` owner reopens immutable original
+requests, responses, actual method events, clocks and trade ledgers. It joins
+accepted ENTRY to its own mature close, reconciles cost-inclusive cash with the
+original account, excludes censored/post-2025 labels and deduplicates the same
+physical episode. WAIT/veto utility is unknown without an exact counterfactual;
+multiple consumed recipes remain a bundle association, not individual credit.
+
+`learnOwnedOutcomesFromRun` and `proposeOutcomePolicy` use server originals,
+not caller scores. A recipe preference requires at least five mature owned
+episodes in the exact context and positive observed mean net cash. Otherwise
+the proposed selector retains BASELINE; this sample floor is not statistical
+power or independent causal proof. Policies never rewrite the Internet library.
+New eligible ordinary children can consume the verified proposal before any
+seal. Explicit v2 lineage cannot silently downgrade to invocation-count memory
+if original ENTRY/clock/outcome proof is missing. The old v1 receipts remain
+unchanged and can supply seen observations, never retroactive confirmation.
+
+## Future original-study deadline and history readiness
+
+New canonical method studies may declare a signed
+`instrument_method_original_deadline_v2` for 300 < seconds <= 600 and at most
+4096 loaded rows. The internal issuer binds the exact four-arm barrier, source
+bytes/UTC coverage, actual typed parameters, account, method contract and release
+before dispatch. The actual HTTP simple route checks the signature before cache
+or execution. Ordinary unsigned requests keep their existing deadline, and an
+old failed attempt cannot acquire this new declaration. Bounded transport
+failure receipts record technical status and body digest, not a strategy loss
+or permission to retry.
+
+Historical-learning readiness uses one owned REPEATABLE-READ snapshot with the
+unchanged reserved-purpose exclusions. Finite eligible model/run rosters and
+watermarks bind cache reuse; same-count membership swaps and original-run
+completion invalidate it. Source revision publication occurs after commit.
+Unsupported isolation, nested production transactions or roster overflow remain
+typed operational dependencies, not scientific negative lessons.
+
 ## Delivery and qualification
 
-Code is prepared in an isolated worktree. Tests are SQLite-only and Python local
-execution; no production migration or active worker replacement is implicit.
+New source is prepared and verified in an isolated worktree; test completion
+does not imply a production migration or active worker replacement.
 Use the existing drain-first artifact/boot-attested release procedure. Never
 attach to an admitted generation or relabel old data as independent. Pre-2026
 research continues; 2026 and every later year remains paper-only.

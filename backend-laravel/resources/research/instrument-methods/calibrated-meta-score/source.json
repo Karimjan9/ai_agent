@@ -1,0 +1,16 @@
+{
+  "kind": "imported_text",
+  "reference": "https://scikit-learn.org/stable/modules/calibration.html",
+  "content": "Original curator paraphrase: classifier scores require calibration. Probability bins can compare predictions with observed positive-label fractions. Training and calibration rows must be separated. This lab uses its own frozen finite-bin model, not copied scikit-learn code. The 0.70 entry threshold below is an unqualified lab hypothesis, not a profitable publisher rule.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or outcomes.",
+    "access": "public",
+    "title": "Probability calibration",
+    "publisher": "scikit-learn",
+    "source_checked_at": "2026-10-13T11:59:00Z",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "independent_validation": false
+    }
+  }
+}

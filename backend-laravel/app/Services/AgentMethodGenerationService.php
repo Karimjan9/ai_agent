@@ -34,15 +34,45 @@ class AgentMethodGenerationService
         $learned ??= $this->learning->learnFromRun($run);
         if (($learned['status'] ?? null) !== 'learned_diagnostic') return $this->dependency('METHOD_GENERATION_ORIGINAL_EXPERIENCE_REQUIRED');
         $proposals = [];
+        try { $owned = $this->originalRunUsesOwnedOutcomes($run, $learned); }
+        catch (Throwable $error) { return $this->dependency($this->safeReason($error)); }
+        if ($owned) {
+            $outcomes = $this->learning->learnOwnedOutcomesFromRun($run);
+            if (($outcomes['status'] ?? null) !== 'learned_owned_outcomes') return $this->dependency($outcomes['reason'] ?? 'OWNED_METHOD_ORIGINAL_OUTCOMES_REQUIRED');
+        }
         foreach ((array) ($learned['policy_hashes'] ?? []) as $hash) {
-            $proposals[] = $this->proposalOnce($hash);
+            $proposals[] = $this->proposalOnce($hash, $owned);
         }
         return ['status' => 'original_policy_proposals', 'run_id' => $run->run_id, 'proposals' => $proposals, ...$this->ceiling()];
     }
 
-    /** At most one frozen proposal per source policy; replay redelivery cannot create another search attempt. */
-    public function proposalOnce(string $policyHash): array
+    /** Study carriers omit generation metadata; only their verified original source lineage can restore this mode. */
+    private function originalRunUsesOwnedOutcomes(LabEvaluationRun $run, array $learned): bool
     {
+        $model = $run->model_version_id === null ? null : ModelVersion::find($run->model_version_id);
+        if (! $model) return false;
+        if (data_get($model->metadata, self::METADATA.'.constructor.owned_outcome_learning') === true) return true;
+        $study = data_get($model->metadata, AgentMethodStudyPreparationService::METADATA);
+        if ($study === null) return false;
+        $hash = data_get($model->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash');
+        $this->need(is_array($study) && is_string($hash)
+            && in_array($hash, (array) ($learned['policy_hashes'] ?? []), true), 'OWNED_METHOD_STUDY_ORIGINAL_POLICY_REQUIRED');
+        $policy = $this->learning->policy($hash);
+        $this->need(($policy['status'] ?? null) !== 'blocked'
+            && app(AgentMethodStudyPreparationService::class)->verifyProvenance($study, $policy),
+            'OWNED_METHOD_STUDY_ORIGINAL_HANDOFF_REQUIRED');
+        $source = ModelVersion::find($study['source_model_id']);
+        $sourcePolicy = $this->learning->policy($study['source_policy_hash']);
+        $proof = (array) data_get($source?->metadata, self::METADATA, []);
+        $this->need($source !== null && ($sourcePolicy['status'] ?? null) !== 'blocked'
+            && $this->verifyProvenance($proof, $sourcePolicy), 'OWNED_METHOD_STUDY_ORIGINAL_SOURCE_REQUIRED');
+        return ($proof['mode'] ?? null) === 'original_parent_owned_outcome';
+    }
+
+    /** At most one frozen proposal per source policy; replay redelivery cannot create another search attempt. */
+    public function proposalOnce(string $policyHash, bool $ownedOutcomes = false): array
+    {
+        if ($ownedOutcomes) return $this->ownedOutcomeProposalOnce($policyHash);
         try {
             return DB::transaction(function () use ($policyHash): array {
                 $row = DB::table('agent_method_policy_revisions')->where('policy_hash', $policyHash)->lockForUpdate()->first();
@@ -52,6 +82,7 @@ class AgentMethodGenerationService
                 foreach (DB::table('agent_method_policy_revisions')->where('agent_key', $policy['agent_key'])->orderBy('revision')->get() as $candidate) {
                     $body = json_decode($candidate->contract, true, 64, JSON_THROW_ON_ERROR);
                     if (data_get($body, 'learning_provenance.parent_policy_hash') !== $policyHash) continue;
+                    if (data_get($body, 'learning_provenance.protocol') === AgentMethodLearningService::OWNED_OUTCOME_PROVENANCE) continue;
                     $original = $this->learning->policy($candidate->policy_hash);
                     $this->need(($original['status'] ?? null) !== 'blocked', 'METHOD_GENERATION_ORIGINAL_PROPOSAL_DRIFT');
                     return [...$original, 'proposal_status' => 'frozen_diagnostic_proposal', 'already_proposed' => true];
@@ -72,9 +103,17 @@ class AgentMethodGenerationService
         if ($this->protected($child, $niche) || in_array(data_get($niche, 'role'), ['uncertainty_abstain', 'adversarial_guard'], true)) {
             return $this->dependency('METHOD_GENERATION_PROTECTED_OR_COMPARATIVE_OWNER_UNCHANGED');
         }
-        return $this->prepareFreshChild($child, $parent, ['generation_id' => (int) $generation->id, 'slot' => $slot,
+        $constructor = ['generation_id' => (int) $generation->id, 'slot' => $slot,
             'curated_recipe_hashes' => data_get($generation->trigger_context, 'instrument_method_generation_learning.recipe_hashes',
-                [])]);
+                [])];
+        if ($parent && data_get($parent->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash') !== null) {
+            if (! $this->unused($child)) return $this->dependency('METHOD_GENERATION_UNUSED_CONSTRUCTOR_CHILD_REQUIRED');
+            $selection = $this->preferOwnedOutcomeProposal($parent);
+            if (($selection['status'] ?? null) === 'blocked') return $this->dependency($selection['reason']);
+            $constructor['owned_outcome_selection'] = $selection['reason'];
+            if (($selection['status'] ?? null) === 'selected_owned_outcomes') $constructor['owned_outcome_learning'] = true;
+        }
+        return $this->prepareFreshChild($child, $parent, $constructor);
     }
 
     /** Attach to an already constructed, still unused ordinary child without changing any physical treatment. */
@@ -109,8 +148,10 @@ class AgentMethodGenerationService
                     $sourcePolicy = data_get($parent->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash');
                     $source = $this->learning->policy($sourcePolicy);
                     $this->need(($source['agent_key'] ?? null) === 'model:'.$parent->id, 'METHOD_GENERATION_EXACT_PARENT_OWNER_REQUIRED');
-                    $proposal = $this->proposalOnce($sourcePolicy);
-                    $this->need(($proposal['proposal_status'] ?? null) === 'frozen_diagnostic_proposal', 'METHOD_GENERATION_PARENT_ORIGINAL_EXPERIENCES_REQUIRED');
+                    $owned = ($constructor['owned_outcome_learning'] ?? false) === true;
+                    $proposal = $this->proposalOnce($sourcePolicy, $owned);
+                    $this->need(($proposal['proposal_status'] ?? null) === ($owned ? 'frozen_owned_outcome_proposal' : 'frozen_diagnostic_proposal'),
+                        'METHOD_GENERATION_PARENT_ORIGINAL_EXPERIENCES_REQUIRED');
                     $definition = $proposal;
                 } else {
                     $definition = $this->curatedDefault($constructor['curated_recipe_hashes'] ?? null);
@@ -120,7 +161,8 @@ class AgentMethodGenerationService
                 $proof = ['protocol' => self::PROTOCOL, 'target_model_id' => (int) $child->id,
                     'source_model_id' => $proposal ? (int) $parent->id : null, 'source_policy_hash' => $sourcePolicy,
                     'source_proposal_hash' => $proposal['policy_hash'] ?? null,
-                    'mode' => $proposal ? 'original_parent_observation' : 'curated_default',
+                    'mode' => $proposal ? (($constructor['owned_outcome_learning'] ?? false) === true
+                        ? 'original_parent_owned_outcome' : 'original_parent_observation') : 'curated_default',
                     'library_hash' => $definition['library_hash'], 'library_contract' => $definition['library_contract'],
                     'rules' => $definition['rules'], 'default_action' => $definition['default_action'],
                     'physical_hash' => $this->hash($baseline), 'constructor' => $constructor,
@@ -176,7 +218,7 @@ class AgentMethodGenerationService
             if ($proof['mode'] === 'curated_default') {
                 if ($proof['source_model_id'] !== null || $proof['source_policy_hash'] !== null || $proof['source_proposal_hash'] !== null || $proof['lineage_depth'] !== 0) return false;
                 foreach ($proof['library_contract']['recipe_hashes'] as $hash) $this->typedRecipe($hash);
-            } elseif ($proof['mode'] === 'original_parent_observation') {
+            } elseif (in_array($proof['mode'], ['original_parent_observation', 'original_parent_owned_outcome'], true)) {
                 $parent = ModelVersion::find($proof['source_model_id']);
                 if (! $parent || $parent->id >= $target->id || $this->protected($parent)
                     || $this->physical($parent)['family'] !== $this->physical($target)['family']
@@ -188,6 +230,9 @@ class AgentMethodGenerationService
                     || $this->hash($proposal['library_contract']) !== $this->hash($proof['library_contract'])
                     || $this->hash($proposal['rules']) !== $this->hash($proof['rules'])
                     || $proposal['default_action'] !== $proof['default_action']) return false;
+                if ($proof['mode'] === 'original_parent_owned_outcome'
+                    && (data_get($proposal, 'learning_provenance.protocol') !== AgentMethodLearningService::OWNED_OUTCOME_PROVENANCE
+                        || data_get($proof, 'constructor.owned_outcome_learning') !== true)) return false;
             } else return false;
             $binding = data_get($target->metadata, InstrumentMethodResearchBindingService::METADATA);
             if ($binding !== null && (! is_array($binding) || ($binding['agent_key'] ?? null) !== $body['agent_key']
@@ -212,6 +257,72 @@ class AgentMethodGenerationService
         $this->need(($library['valid'] ?? false) === true, 'METHOD_GENERATION_CURATED_LIBRARY_INVALID');
         ksort($rules);
         return [...$library, 'rules' => array_values($rules), 'default_action' => 'BASELINE'];
+    }
+
+    private function ownedOutcomeProposalOnce(string $policyHash): array
+    {
+        try {
+            return DB::transaction(function () use ($policyHash): array {
+                $row = DB::table('agent_method_policy_revisions')->where('policy_hash', $policyHash)->lockForUpdate()->first();
+                $this->need($row !== null, 'METHOD_GENERATION_SOURCE_POLICY_REQUIRED');
+                $policy = $this->learning->policy($policyHash);
+                $this->need(($policy['status'] ?? null) !== 'blocked', 'METHOD_GENERATION_SOURCE_POLICY_INVALID');
+                foreach (DB::table('agent_method_policy_revisions')->where('agent_key', $policy['agent_key'])->orderBy('revision')->get() as $candidate) {
+                    $body = json_decode($candidate->contract, true, 64, JSON_THROW_ON_ERROR);
+                    if (data_get($body, 'learning_provenance.parent_policy_hash') !== $policyHash
+                        || data_get($body, 'learning_provenance.protocol') !== AgentMethodLearningService::OWNED_OUTCOME_PROVENANCE) continue;
+                    $original = $this->learning->policy($candidate->policy_hash);
+                    $this->need(($original['status'] ?? null) !== 'blocked', 'METHOD_GENERATION_ORIGINAL_PROPOSAL_DRIFT');
+                    return [...$original, 'proposal_status' => 'frozen_owned_outcome_proposal', 'already_proposed' => true];
+                }
+                $next = (int) DB::table('agent_method_policy_revisions')->where('agent_key', $policy['agent_key'])->max('revision') + 1;
+                return [...$this->learning->proposeOutcomePolicy($policyHash, $next, 3), 'already_proposed' => false];
+            });
+        } catch (Throwable $error) { return $this->dependency($this->safeReason($error)); }
+    }
+
+    private function preferOwnedOutcomeProposal(ModelVersion $parent): array
+    {
+        try {
+            $source = data_get($parent->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash');
+            $policy = $this->learning->policy($source);
+            $this->need(($policy['status'] ?? null) !== 'blocked', 'OWNED_METHOD_PARENT_POLICY_INVALID');
+            // Missing old observation fields may justify a v1 fallback, but a parent that
+            // already declares owned-outcome learning must not silently downgrade its proof.
+            $requiresOwned = data_get($parent->metadata, self::METADATA.'.constructor.owned_outcome_learning') === true
+                || data_get($parent->metadata, self::METADATA.'.mode') === 'original_parent_owned_outcome'
+                || data_get($policy, 'learning_provenance.protocol') === AgentMethodLearningService::OWNED_OUTCOME_PROVENANCE
+                || data_get($policy, 'learning_provenance.mode') === 'original_parent_owned_outcome'
+                || data_get($policy, 'learning_provenance.constructor.owned_outcome_learning') === true;
+            if (! Schema::hasTable('agent_method_owned_outcomes')) {
+                $this->need(! $requiresOwned, 'OWNED_METHOD_MIGRATION_NOT_AVAILABLE');
+                return ['status' => 'legacy_observational_fallback', 'reason' => 'OWNED_METHOD_MIGRATION_NOT_AVAILABLE'];
+            }
+            $runs = LabEvaluationRun::where('model_version_id', $parent->id)->where('status', 'completed')->orderBy('id')->limit(65)->get();
+            $this->need($runs->count() <= 64, 'OWNED_METHOD_ORIGINAL_RUN_BUDGET_EXCEEDED');
+            $fallback = ['OWNED_METHOD_ORDINARY_SINGLE_POSITION_REQUIRED', 'OWNED_METHOD_SINGLE_POLICY_OWNER_REQUIRED',
+                'OWNED_METHOD_METHOD_EVENT_INDEX_REQUIRED', 'OWNED_METHOD_ACCEPTED_ENTRY_LEDGER_LINK_REQUIRED',
+                'OWNED_METHOD_ENTRY_METHOD_MISSING', 'OWNED_METHOD_ORIGINAL_CLOCK_MISSING'];
+            foreach ($runs as $run) {
+                $learned = $this->learning->learnOwnedOutcomesFromRun($run);
+                if (($learned['status'] ?? null) === 'learned_owned_outcomes') continue;
+                if (! $requiresOwned && in_array($learned['reason'] ?? null, $fallback, true)) continue;
+                return ['status' => 'blocked', 'reason' => $learned['reason'] ?? 'OWNED_METHOD_ORIGINAL_VERIFICATION_FAILED'];
+            }
+            if (! DB::table('agent_method_owned_outcomes')->where('policy_hash', $source)->exists()) {
+                $this->need(! $requiresOwned, 'OWNED_METHOD_NO_EXACT_MATURED_OUTCOMES');
+                return ['status' => 'legacy_observational_fallback', 'reason' => 'OWNED_METHOD_NO_EXACT_MATURED_OUTCOMES'];
+            }
+            $proposal = $this->proposalOnce($source, true);
+            if (($proposal['proposal_status'] ?? null) !== 'frozen_owned_outcome_proposal')
+                return ['status' => 'blocked', 'reason' => $proposal['reason'] ?? 'OWNED_METHOD_PROPOSAL_NOT_VERIFIED'];
+            if ($proposal['rules'] !== []) return ['status' => 'selected_owned_outcomes', 'reason' => 'OWNED_METHOD_POWERED_POSITIVE_ASSOCIATION'];
+            $statistics = (array) data_get($proposal, 'learning_provenance.contextual_statistics', []);
+            $powered = false;
+            foreach ($statistics as $group) foreach ($group as $item) if ($item['matured_episodes'] >= AgentMethodLearningService::OWNED_OUTCOME_MINIMUM) $powered = true;
+            return ['status' => 'selected_owned_outcomes', 'reason' => $powered
+                ? 'OWNED_METHOD_POWERED_NONPOSITIVE_BASELINE' : 'OWNED_METHOD_UNDERPOWERED_BASELINE'];
+        } catch (Throwable $error) { return ['status' => 'blocked', 'reason' => $this->safeReason($error)]; }
     }
 
     private function typedRecipe(string $hash): array
@@ -253,5 +364,5 @@ class AgentMethodGenerationService
         $this->need(is_string($key) && $key !== '', 'METHOD_GENERATION_SERVER_SEAL_KEY_REQUIRED');
         return hash_hmac('sha256', self::PROTOCOL.':'.$this->hash($body), $key);
     }
-    private function safeReason(Throwable $error): string { return preg_match('/^METHOD_GENERATION_[A-Z0-9_]+$/D', $error->getMessage()) ? $error->getMessage() : 'METHOD_GENERATION_ORIGINAL_VERIFICATION_FAILED'; }
+    private function safeReason(Throwable $error): string { return preg_match('/^(METHOD_GENERATION_|OWNED_METHOD_)[A-Z0-9_]+$/D', $error->getMessage()) ? $error->getMessage() : 'METHOD_GENERATION_ORIGINAL_VERIFICATION_FAILED'; }
 }

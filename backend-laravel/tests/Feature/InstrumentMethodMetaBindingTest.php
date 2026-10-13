@@ -150,10 +150,99 @@ class InstrumentMethodMetaBindingTest extends InstrumentMethodMetaModelTest
         $this->assertSame('METHOD_POLICY_STUDY_META_ASSET_TRANSFER_OWNER_REQUIRED', app(AgentMethodStudyPreparationService::class)->prepare($input)['reason']);
     }
 
-    private function fitted(): array
+    public function test_original_float_wire_model_attaches_integer_numeric_target_and_actual_simple_api_consumes_projection(): void
+    {
+        [$target, $hash] = $this->fitted(true); $owner = app(InstrumentMethodMetaBindingService::class);
+        $before = DB::table('instrument_method_meta_models')->where('model_hash', $hash)->first()->artifact_json;
+        $attached = $owner->attachUnusedModel((int) $target->id, $hash);
+        $this->assertSame('attached_meta_model_prospectively', $attached['status'], json_encode($attached));
+        $this->policy($target); $target->refresh(); $request = $this->request($target);
+        $request['execution'] = $request['execution_contract']['parameters'];
+        $bound = app(InstrumentMethodResearchBindingService::class)->forModel($target, $request);
+        $this->assertIsInt($target->parameters['atr_target_multiplier']);
+        $this->assertNotSame($this->hash($target->parameters), $bound['meta_model']['expected_training_binding']['parameters_hash']);
+        $this->assertSame($before, DB::table('instrument_method_meta_models')->where('model_hash', $hash)->first()->artifact_json);
+        $request['policy_context']['instrument_method_learning'] = $bound;
+        $script = <<<'PY'
+import json,sys,pandas as pd
+from app import main
+from app.schemas import SimpleBacktestRequest
+from app.services.instrument_method_learning import InstrumentMethodLearning
+v=json.load(sys.stdin)
+captured={}
+def bounded(operation,p):
+    assert operation=='simple'
+    assert type(p.parameters['atr_target_multiplier']) is float
+    assert type(p.parameters['time_stop_candles']) is int
+    e=InstrumentMethodLearning(p.policy_context['instrument_method_learning'],p)
+    e.validate_frame(pd.DataFrame([{'time':pd.Timestamp('2025-01-01T07:30:00Z'),'open':100.0,'high':101.0,'low':99.0,'close':100.0}]))
+    r=e.evaluate({'time':pd.Timestamp('2025-01-01T07:30:00Z'),'open':100.0,'high':101.0,'low':99.0,'close':100.0,'market_regime':'trend_up','market_session':'london','volatility_regime':'normal_volatility','signal_confidence':.8},decision_id='actual-simple-projection',phase='entry',observed_at='2025-01-01T07:35:00Z',decision_at='2025-01-01T07:35:00Z',direction='BUY')
+    assert r['used'] and r['outputs']['confirmation'] is False
+    assert r['meta_score_status']=='diagnostic_calibrated_score_available'
+    assert not r['economic_authority']
+    captured.update(r)
+    return dict(strategy=p.strategy,parameters=p.parameters,instrument=p.symbol,timeframe=p.timeframe,period='conditional API normalization fixture',initial_balance=p.initial_balance,final_balance=p.initial_balance,net_profit_percent=0,total_trades=0,wins=0,losses=0,winrate=0,profit_factor=0,max_drawdown=0,stability_score=0,top_mistakes=[],trades=[],conclusion='Conditional API/finite-model consumption only; no replay or economic proof.')
+main._run_bounded_replay=bounded
+result=main.run_simple_backtest_api(SimpleBacktestRequest(**v['request']))
+assert type(result.parameters['atr_target_multiplier']) is float
+print(json.dumps({'event':captured,'parameters':result.parameters}))
+PY;
+        [$exit, $stdout, $stderr] = $this->python($script, ['request' => $request]);
+        $this->assertSame(0, $exit, $stderr);
+        $actual = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame($hash, $actual['event']['meta_model_hash']);
+        $this->assertTrue($actual['event']['used']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_schema_numeric_projection_rejects_other_type_aliases_unknown_fields_and_changed_values(): void
+    {
+        $models = app(InstrumentMethodMetaModelService::class);
+        $base = ['atr_target_multiplier' => 2, 'time_stop_candles' => 4, 'meta_label_enabled' => false, 'volume_lane' => 'none'];
+        $projected = $models->projectPhysicalParameters('differential_router', $base);
+        $this->assertSame(2.0, $projected['atr_target_multiplier']);
+        $this->assertSame(4, $projected['time_stop_candles']);
+        $this->assertFalse($projected['meta_label_enabled']);
+        foreach ([['atr_target_multiplier', true], ['atr_target_multiplier', '2'], ['atr_target_multiplier', INF],
+            ['time_stop_candles', 4.0], ['meta_label_enabled', 0], ['volume_lane', 0], ['unknown_field', 2]] as [$field, $value]) {
+            $reason = $field === 'unknown_field' ? 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED' : 'META_MODEL_PARAMETER_PROJECTION_TYPE_REQUIRED';
+            $this->refused(fn () => $models->projectPhysicalParameters('differential_router', [...$base, $field => $value]), $reason);
+        }
+        $this->refused(fn () => $models->projectPhysicalParameters('unknown_strategy', $base), 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+        $this->refused(fn () => $models->projectPhysicalParameters('differential_router', $base, 'unknown_base'), 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+        [$target, $hash] = $this->fitted(true); $owner = app(InstrumentMethodMetaBindingService::class);
+        $this->assertSame('attached_meta_model_prospectively', $owner->attachUnusedModel((int) $target->id, $hash)['status']);
+        $request = $this->request($target->fresh());
+        foreach ([['atr_target_multiplier', 2.01], ['time_stop_candles', 4.0], ['meta_label_enabled', 0], ['unknown_field', 2]] as [$field, $value]) {
+            $changed = $request; $changed['parameters'][$field] = $value;
+            $this->refused(fn () => $owner->forModel($target->fresh(), $changed), 'META_BINDING_ACTUAL_MODEL_PARAMETERS_REQUIRED');
+        }
+        foreach ([false, 2, 'unknown_base'] as $baseStrategy) {
+            $this->refused(fn () => $owner->forModel($target->fresh(), [...$request, 'base_strategy' => $baseStrategy]), 'META_BINDING_ACTUAL_MODEL_PARAMETERS_REQUIRED');
+        }
+    }
+
+    public function test_projection_export_reopens_raw_original_and_does_not_rewrite_legacy_export_or_artifact(): void
+    {
+        [$_target, $hash] = $this->fitted(true); $models = app(InstrumentMethodMetaModelService::class);
+        $legacy = $models->exportOriginalModel($hash); $projected = $models->exportOriginalModel($hash, true);
+        $this->assertArrayNotHasKey('parameter_projection', $legacy);
+        $this->assertSame($legacy['artifact'], $projected['artifact']);
+        $this->assertSame($legacy['expected_binding'], $projected['expected_binding']);
+        $this->assertSame($legacy['artifact']['binding']['parameters_hash'], $this->hash($projected['parameter_projection']['original_parameters']));
+        $registration = DB::table('instrument_method_meta_registrations')->first(); $design = json_decode($registration->design, true);
+        $artifact = \App\Models\LabEvidenceArtifact::where('run_id', $design['roster'][0]['run_id'])->where('artifact_type', 'evaluation_request')->first();
+        Storage::disk('meta_original_test')->put($artifact->storage_path, gzencode('{"parameters":{"atr_target_multiplier":2}}'));
+        $this->assertSame('META_MODEL_ORIGINAL_MODEL_PROOF_REQUIRED', $models->exportOriginalModel($hash, true)['reason']);
+    }
+
+    private function fitted(bool $floatWire = false): array
     {
         $target = $this->model();
-        $run = $this->original(30, ['parameters' => $target->parameters]); $owner = app(InstrumentMethodMetaModelService::class);
+        $owner = app(InstrumentMethodMetaModelService::class);
+        if ($floatWire) { $target->update(['parameters' => [...$target->parameters, 'atr_target_multiplier' => 2]]); $target->refresh(); }
+        $parameters = $floatWire ? $owner->projectPhysicalParameters($target->strategy, $target->parameters) : $target->parameters;
+        $run = $this->original(30, ['parameters' => $parameters]);
         $registered = $owner->preregister($this->design([$run->run_id])); $fit = $owner->fit($registered['registration_hash']);
         $this->assertSame('fitted_diagnostic', $fit['status'], json_encode($fit));
         return [$target, $fit['model_hash']];

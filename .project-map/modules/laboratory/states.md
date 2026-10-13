@@ -1,5 +1,22 @@
 # Laboratory lifecycle states
 
+Ordinary historical advice refresh owns one repeatable-read transaction and a
+finite positive source roster. The original reserved-purpose predicates are
+evaluated once per declaration plane; source agent/run IDs and event, rollup,
+gate and credit watermarks fence all consumers in that call. Same-transaction
+purpose changes reject before commit. Source revision and derived aggregate
+cache publication occurs only after commit, and per-call memory is discarded.
+The source revision binds sorted eligible agent/run IDs, exact reserved-purpose
+exclusions and light original run status/request/response/update tuples, not just
+count/max IDs. Same-ID completion or same-max roster replacement invalidates the
+advisory cache. Each finite roster is capped at 50000 IDs without truncation;
+later-created sources cannot enter an earlier call, and the next call is fresh.
+Unsupported isolation, a nested production transaction, roster overflow or
+invalid identities are operational dependencies, not scientific negatives.
+The database settings, source rows, active studies and authority gates are not
+modified to obtain this snapshot. This is an execution optimization, not a
+persistent eligibility cache or new scheduler.
+
 Known paper input references (2026 onward) make immutable replay products
 ineligible for research learning. Historical mutation targets exclude paper
 admission gates, known paper runs and paper candle/rollup chronology; their

@@ -24,6 +24,8 @@ class InstrumentMethodStudyExecutionService
     public const WORK_TYPE = 'instrument_method_original_matrix';
     public const MARKER = 'instrument_method_study_execution';
     public const WORK_LEASE_SECONDS = 2700;
+    public const DEADLINE_PROTOCOL = 'instrument_method_original_deadline_v2';
+    public const DEADLINE_MARKER = 'instrument_method_original_deadline';
     public const ARMS = ['L1A1', 'L2A1', 'L1A2', 'L2A2'];
 
     public function __construct(private InstrumentMethodStudyService $studies,
@@ -259,7 +261,11 @@ class InstrumentMethodStudyExecutionService
                 'instrument_method_study_resource_cap' => $design['resource_caps'], 'instrument_method_execution' => [
                     'protocol' => self::PROTOCOL, 'original_source' => $proof['source'], 'research_only' => true,
                     'uses_existing_simple_replay' => true, 'independent_validation' => false, 'promotion_evidence' => false]]];
-        return $this->releases->bindGenerationRequest($generation, $request, [(int) $agent->id]);
+        $request = $this->releases->bindGenerationRequest($generation, $request, [(int) $agent->id]);
+        if ($design['resource_caps']['max_runtime_seconds'] > 300) {
+            $request = $this->bindOriginalDeadline($request, $proof['study_hash'], $arm, $proof['source']);
+        }
+        return $request;
     }
 
     private function queueArm(ResearchExperimentWorkItem $work, string $arm, string $requestHash, int $budget): array
@@ -320,6 +326,11 @@ class InstrumentMethodStudyExecutionService
                 'X-Internal-Token' => (string) config('services.internal_api.token'), 'X-Lab-Request-Id' => 'method-study-'.$run->run_id])
                 ->withBody(json_encode($request, JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR), 'application/json')
                 ->post(rtrim((string) config('services.ai_service.url'), '/').'/api/backtest/run');
+            if (! $reply->successful()) {
+                $failure = $this->transportFailureEnvelope($reply->status(), $reply->body(), $budget);
+                $this->evidence->recordArtifact($run, 'method_study_transport_failure', $failure,
+                    ['scientific_result' => false, 'reason_code' => 'METHOD_STUDY_ORIGINAL_TRANSPORT_FAILED', ...$this->ceiling()]);
+            }
             $this->need($reply->successful() && is_array($reply->json()), 'METHOD_STUDY_ORIGINAL_TRANSPORT_FAILED'); $response = $reply->json();
             $this->need(($this->evidence->replayEvidenceCompleteness($run, $response)['complete'] ?? false) === true
                 && app(ExecutionContractService::class)->matches((array) ($response['execution_contract'] ?? []), $agent->symbol, $request['timeframe']),
@@ -432,6 +443,76 @@ class InstrumentMethodStudyExecutionService
         $done = $this->conversion->defer($work, $reason, $retryable);
         return ['status' => $done ? ($retryable ? 'deferred' : 'blocked') : 'stale_lease', 'reason_code' => $reason, ...$this->ceiling()];
     }
+    /** Future original simple requests only; this never changes an old barrier. */
+    private function bindOriginalDeadline(array $request, string $studyHash, string $arm, array $source): array
+    {
+        // The simple API casts only schema-numeric physical fields to floats
+        // before evaluation. Publish that exact future wire spelling before
+        // signing; original model/method seals and all values stay unchanged.
+        $schema = app(StrategyParameterSchemaService::class)->schema($request['base_strategy']);
+        foreach ($request['parameters'] as $field => $value) {
+            if (($schema[$field][0] ?? null) === 'numeric') {
+                $this->need((is_int($value) || is_float($value)) && is_finite((float) $value),
+                    'METHOD_STUDY_SIGNED_DEADLINE_PHYSICAL_NUMBER_REQUIRED');
+                $request['parameters'][$field] = (float) $value;
+            }
+        }
+        $caps = data_get($request, 'policy_context.instrument_method_study_resource_cap');
+        $this->need(is_array($caps) && is_int($caps['max_runtime_seconds'] ?? null)
+            && $caps['max_runtime_seconds'] > 300 && $caps['max_runtime_seconds'] <= 600
+            && is_int($caps['max_rows'] ?? null) && $caps['max_rows'] >= 201 && $caps['max_rows'] <= 4096
+            && ($source['loaded_rows'] ?? 4097) <= $caps['max_rows'], 'METHOD_STUDY_SIGNED_DEADLINE_CAPS_REQUIRED');
+        $key = (string) config('services.internal_api.token');
+        $this->need(strlen($key) >= 32, 'METHOD_STUDY_SIGNED_DEADLINE_PRIVATE_KEY_REQUIRED');
+        $learning = data_get($request, 'policy_context.instrument_method_learning');
+        $this->need(is_array($learning) && is_string($learning['contract_hash'] ?? null)
+            && is_array($learning['scope'] ?? null), 'METHOD_STUDY_SIGNED_DEADLINE_METHOD_REQUIRED');
+        $body = ['protocol' => self::DEADLINE_PROTOCOL, 'operation' => 'simple', 'study_hash' => $studyHash, 'arm' => $arm,
+            'resource_caps' => $caps, 'symbol' => $request['symbol'], 'timeframe' => $request['timeframe'],
+            'strategy' => $request['strategy'], 'base_strategy' => $request['base_strategy'],
+            'parameters_hash' => $this->hash((array) $request['parameters']), 'data_hash' => $request['replay_dataset_hash'],
+            'execution_hash' => data_get($request, 'execution_contract.execution_hash'), 'method_contract_hash' => $learning['contract_hash'],
+            'initial_balance' => (float) $request['initial_balance'], 'risk_per_trade' => (float) $request['risk_per_trade'],
+            'scope' => $learning['scope'], 'source_identity' => $source,
+            'policy_context_hash' => $this->hash((array) $request['policy_context']),
+            'research_release_hash' => $this->hash((array) ($request['research_release'] ?? [])),
+            'runtime_controls_hash' => $this->hash(['random_seed' => $request['random_seed'] ?? 42,
+                'signal_delay_candles' => $request['signal_delay_candles'] ?? 0,
+                'emit_decision_trace' => $request['emit_decision_trace'] ?? false, 'emit_trade_ledger' => $request['emit_trade_ledger'] ?? false]),
+            'research_only' => true, 'independent_validation' => false, 'economic_authority' => false,
+            'promotion_evidence' => false, 'paper_authority' => false, 'live_authority' => false];
+        $canonical = function (mixed $value) use (&$canonical): mixed {
+            if (! is_array($value)) return $value;
+            if (! array_is_list($value)) ksort($value);
+            foreach ($value as $name => $item) $value[$name] = $canonical($item);
+            return $value;
+        };
+        $encoded = json_encode($canonical($body), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+        $hash = hash('sha256', $encoded);
+        $request['policy_context'][self::DEADLINE_MARKER] = [...$body, 'contract_json' => $encoded,
+            'contract_hash' => $hash, 'issuer_signature' => hash_hmac('sha256', self::DEADLINE_PROTOCOL."\n".$hash, $key)];
+        return $request;
+    }
+
+    /** No raw response, token, server trace or arbitrary detail is persisted. */
+    public function transportFailureEnvelope(int $status, string $body, int $declaredBudget): array
+    {
+        $seconds = null;
+        if ($status === 504 && strlen($body) <= 8192) {
+            try { $decoded = json_decode($body, true, 8, JSON_THROW_ON_ERROR); }
+            catch (Throwable) { $decoded = null; }
+            if (is_array($decoded) && is_string($decoded['detail'] ?? null)
+                && preg_match('/^Bounded AI replay exceeded ([1-9][0-9]{0,3})s; strategy verdict withheld\.$/D', $decoded['detail'], $match) === 1
+                && (int) $match[1] <= 1680) $seconds = (int) $match[1];
+        }
+        return ['protocol' => 'instrument_method_transport_failure_v1', 'http_status' => $status,
+            'body_sha256' => hash('sha256', $body), 'body_bytes' => strlen($body), 'operation' => 'simple',
+            'detail_code' => $seconds === null ? 'unclassified_non_success_response' : 'bounded_replay_timeout',
+            'observed_timeout_seconds' => $seconds, 'declared_budget_seconds' => $declaredBudget,
+            'deadline_mismatch_observed' => $seconds !== null && $seconds !== $declaredBudget,
+            'raw_body_retained' => false, 'strategy_verdict_withheld' => true, ...$this->ceiling()];
+    }
+
     private function blocked(Throwable $error): array { return ['status' => 'blocked', 'executable' => false, 'reason_code' => $this->reason($error), ...$this->ceiling()]; }
     private function reason(Throwable $error): string { return preg_match('/^(METHOD_STUDY|STUDY|RESEARCH_RELEASE)_[A-Z0-9_]+$/D', $error->getMessage()) ? $error->getMessage() : 'METHOD_STUDY_ORIGINAL_OWNER_UNAVAILABLE'; }
     private function need(bool $condition, string $reason): void { if (! $condition) throw new LogicException($reason); }

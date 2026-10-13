@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T11:38:09.473Z",
-  "source_digest": "a10506921c5188a71a25ec71045506297f6a6b29a7a666dff5361ecf71543da2",
-  "source_file_count": 1668,
-  "git_head": "b825e3007e9547a40f5436b5711f8c67bd115182",
+  "generated_at": "2026-10-13T15:42:49.043Z",
+  "source_digest": "4110dd1bc4792356d1e1a89c1e548abe56afdd109438480ac6be2b1ec4031644",
+  "source_file_count": 1675,
+  "git_head": "0f3d82729d58edb860483c1c1ad0e28a3a5a0f62",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -16,6 +16,9 @@
     "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
     "backend-laravel/app/Services/InstrumentMethodStudyService.php",
     "backend-laravel/app/Services/AgentMethodLearningService.php",
+    "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+    "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+    "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
     "backend-laravel/app/Services/AgentMethodCandidateService.php",
     "backend-laravel/app/Services/AgentMethodGenerationService.php",
     "backend-laravel/app/Services/AgentMethodStudyPreparationService.php",
@@ -28,6 +31,10 @@
     "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
     "backend-laravel/resources/research/instrument-methods/curated-v1.json",
     "backend-laravel/resources/research/instrument-methods/curated-v2.json",
+    "backend-laravel/resources/research/instrument-methods/calibrated-meta-score/source.json",
+    "backend-laravel/resources/research/instrument-methods/calibrated-meta-score/method.json",
+    "backend-laravel/resources/research/instrument-methods/calibrated-meta-score/recipe.json",
+    "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
     "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
     "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
     "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
@@ -40,9 +47,12 @@
     "backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php",
     "backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
+    "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
     "backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php",
     "ai-service-python/app/services/instrument_method_learning.py",
     "ai-service-python/app/services/instrument_method_features.py",
+    "ai-service-python/app/services/instrument_method_original_deadline.py",
+    "ai-service-python/tests/test_instrument_method_original_deadline.py",
     "ai-service-python/app/services/instrument_method_meta_model.py",
     "ai-service-python/tests/test_instrument_method_meta_model.py",
     "ai-service-python/tests/test_instrument_method_meta_runtime.py",
@@ -193,6 +203,7 @@
     "ai-service-python/app/services/instrument_method_features.py",
     "ai-service-python/app/services/instrument_method_learning.py",
     "ai-service-python/app/services/instrument_method_meta_model.py",
+    "ai-service-python/app/services/instrument_method_original_deadline.py",
     "ai-service-python/app/services/instrument_research.py",
     "ai-service-python/app/services/prospective_probe_window.py",
     "ai-service-python/app/services/walk_forward.py",
@@ -203,6 +214,7 @@
     "ai-service-python/tests/test_instrument_method_matrix.py",
     "ai-service-python/tests/test_instrument_method_meta_model.py",
     "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+    "ai-service-python/tests/test_instrument_method_original_deadline.py",
     "ai-service-python/tests/test_instrument_method_transport.py",
     "ai-service-python/tests/test_parameter_preserving_composition.py",
     "backend-laravel/app/Console/Commands/AdmitAcademyExperiment.php",
@@ -227,6 +239,7 @@
     "backend-laravel/app/Services/AgentMethodCandidateService.php",
     "backend-laravel/app/Services/AgentMethodGenerationService.php",
     "backend-laravel/app/Services/AgentMethodLearningService.php",
+    "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
     "backend-laravel/app/Services/AgentMethodStudyPreparationService.php",
     "backend-laravel/app/Services/AgentProfessionalExamService.php",
     "backend-laravel/app/Services/AutonomousLearningProgressDirectorService.php",
@@ -317,6 +330,7 @@
     "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
     "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
     "backend-laravel/database/migrations/2026_10_13_140000_create_instrument_method_meta_models.php",
+    "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
     "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
     "backend-laravel/tests/Feature/AcademyColdStartFairnessTest.php",
     "backend-laravel/tests/Feature/AcademyColdStartHandoffTest.php",
@@ -332,13 +346,16 @@
     "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
     "backend-laravel/tests/Feature/AgentMethodGenerationTest.php",
     "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
+    "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
     "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
+    "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
     "backend-laravel/tests/Feature/CausalProgressRatchetGovernorServiceTest.php",
     "backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php",
     "backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php",
+    "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
@@ -381,37 +398,37 @@
       "symbol": "run_portfolio_backtest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1881
+      "line": 1883
     },
     {
       "symbol": "_run_portfolio_backtest_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1897
+      "line": 1899
     },
     {
       "symbol": "_verified_research_transport",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1943
+      "line": 1945
     },
     {
       "symbol": "_scoped_full_durable_confirmation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1949
+      "line": 1951
     },
     {
       "symbol": "_method_study_resource_cap",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 1991
+      "line": 1993
     },
     {
       "symbol": "_bounded_replay_seconds",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2020
+      "line": 2022
     },
     {
       "symbol": "_latest_replay_checkpoint",
@@ -423,31 +440,31 @@
       "symbol": "_bounded_env_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2205
+      "line": 2211
     },
     {
       "symbol": "_bounded_contract_int",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2213
+      "line": 2219
     },
     {
       "symbol": "_read_replay_capture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2229
+      "line": 2235
     },
     {
       "symbol": "_terminate_replay_tree",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2243
+      "line": 2249
     },
     {
       "symbol": "_run_bounded_replay",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2291
+      "line": 2297
     },
     {
       "symbol": "_utc_timestamp",
@@ -471,55 +488,55 @@
       "symbol": "_replay_cache_key",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2540
+      "line": 2546
     },
     {
       "symbol": "_runtime_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2564
+      "line": 2570
     },
     {
       "symbol": "_dataset_dependency_manifest",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2611
+      "line": 2617
     },
     {
       "symbol": "_replay_cache_path",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2681
+      "line": 2687
     },
     {
       "symbol": "_load_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2691
+      "line": 2697
     },
     {
       "symbol": "_store_immutable_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2714
+      "line": 2720
     },
     {
       "symbol": "_cleanup_replay_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2741
+      "line": 2747
     },
     {
       "symbol": "_with_replay_compiler_metadata",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2787
+      "line": 2793
     },
     {
       "symbol": "_attach_behavioral_diversity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2812
+      "line": 2818
     },
     {
       "symbol": "_assert_non_paper_source_pre_2026",
@@ -531,37 +548,37 @@
       "symbol": "_minhash_similarity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2917
+      "line": 2923
     },
     {
       "symbol": "_correlation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2922
+      "line": 2928
     },
     {
       "symbol": "_prepare_paper_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2935
+      "line": 2941
     },
     {
       "symbol": "_twin_inference_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 2971
+      "line": 2977
     },
     {
       "symbol": "_council_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3014
+      "line": 3020
     },
     {
       "symbol": "paper_signal",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3052
+      "line": 3058
     },
     {
       "symbol": "_candidate_cache_payload",
@@ -573,49 +590,49 @@
       "symbol": "paper_twin_inference",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3319
+      "line": 3325
     },
     {
       "symbol": "_twin_lane_process_worker",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3362
+      "line": 3368
     },
     {
       "symbol": "_run_twin_lane_process",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3376
+      "line": 3382
     },
     {
       "symbol": "paper_twin_red_team",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3399
+      "line": 3405
     },
     {
       "symbol": "paper_twin_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3467
+      "line": 3473
     },
     {
       "symbol": "paper_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3525
+      "line": 3531
     },
     {
       "symbol": "advance_paper_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3646
+      "line": 3652
     },
     {
       "symbol": "paper_accounting",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3719
+      "line": 3725
     },
     {
       "symbol": "_candidate_scoped_contract",
@@ -627,31 +644,25 @@
       "symbol": "_mtf_variant_payloads",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3858
+      "line": 3864
     },
     {
       "symbol": "variant_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3879
+      "line": 3885
     },
     {
       "symbol": "_mtf_signal_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3918
+      "line": 3924
     },
     {
       "symbol": "_mtf_snapshot_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3939
-    },
-    {
-      "symbol": "frame_hash",
-      "kind": "python_function",
-      "path": "ai-service-python/app/main.py",
-      "line": 3946
+      "line": 3945
     },
     {
       "symbol": "_candidate_cache_contract_is_current",
@@ -660,112 +671,118 @@
       "line": 395
     },
     {
+      "symbol": "frame_hash",
+      "kind": "python_function",
+      "path": "ai-service-python/app/main.py",
+      "line": 3952
+    },
+    {
       "symbol": "_build_mtf_feature_cache",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3972
+      "line": 3978
     },
     {
       "symbol": "_run_mtf_variants",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 3985
+      "line": 3991
     },
     {
       "symbol": "_mtf_validation_lanes",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4102
+      "line": 4108
     },
     {
       "symbol": "_scaled_cost_execution",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4116
+      "line": 4122
     },
     {
       "symbol": "_exit_stress_payload",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4142
+      "line": 4148
     },
     {
       "symbol": "_run_mtf_targeted_validation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4171
+      "line": 4177
     },
     {
       "symbol": "run_mtf_ablation",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4305
+      "line": 4311
     },
     {
       "symbol": "run_mtf_targeted_validation_endpoint",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4390
+      "line": 4396
     },
     {
       "symbol": "run_mtf_hypothesis_batch",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4456
+      "line": 4462
     },
     {
       "symbol": "_mtf_lane_summary",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4550
+      "line": 4556
     },
     {
       "symbol": "_run_single_mtf_lane",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4577
+      "line": 4583
     },
     {
       "symbol": "run_mtf_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4623
+      "line": 4629
     },
     {
       "symbol": "_coverage_permission",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4787
+      "line": 4793
     },
     {
       "symbol": "_abstention_meta_decision",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 4873
+      "line": 4879
     },
     {
       "symbol": "_regime_belief",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5066
+      "line": 5072
     },
     {
       "symbol": "_transition_mixture",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5115
+      "line": 5121
     },
     {
       "symbol": "_typed_agent_council",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5154
+      "line": 5160
     },
     {
       "symbol": "_execution_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5235
+      "line": 5241
     },
     {
       "symbol": "require_internal_token",
@@ -777,43 +794,43 @@
       "symbol": "_strategy_contract_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5339
+      "line": 5345
     },
     {
       "symbol": "_paper_management_audit",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5357
+      "line": 5363
     },
     {
       "symbol": "_tactical_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5415
+      "line": 5421
     },
     {
       "symbol": "_entry_contract_projection",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5457
+      "line": 5463
     },
     {
       "symbol": "boolean",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5467
+      "line": 5473
     },
     {
       "symbol": "number",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5471
+      "line": 5477
     },
     {
       "symbol": "timestamp",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 5480
+      "line": 5486
     },
     {
       "symbol": "_internal_api_token",
@@ -891,25 +908,25 @@
       "symbol": "_run_all_backtests_sync",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 826
+      "line": 828
     },
     {
       "symbol": "add_timing",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 838
+      "line": 840
     },
     {
       "symbol": "run_timed",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 843
+      "line": 845
     },
     {
       "symbol": "shared_features",
       "kind": "python_function",
       "path": "ai-service-python/app/main.py",
-      "line": 957
+      "line": 959
     },
     {
       "symbol": "build_composition_execution_receipt",
@@ -1089,61 +1106,61 @@
       "symbol": "_predicate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 100
+      "line": 104
     },
     {
       "symbol": "_matches",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 115
+      "line": 119
     },
     {
       "symbol": "_canonical",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 121
+      "line": 125
     },
     {
       "symbol": "_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 139
+      "line": 143
     },
     {
       "symbol": "InstrumentMethodLearning",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 160
+      "line": 164
     },
     {
       "symbol": "__init__",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 161
+      "line": 165
     },
     {
       "symbol": "validate_frame",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 330
+      "line": 345
     },
     {
       "symbol": "bind_feature_frame",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 337
+      "line": 352
     },
     {
       "symbol": "notify_mature_close",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 344
+      "line": 359
     },
     {
       "symbol": "evaluate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 352
+      "line": 367
     },
     {
       "symbol": "actual_meta_evaluation_binding",
@@ -1155,25 +1172,13 @@
       "symbol": "receipt",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 476
+      "line": 491
     },
     {
       "symbol": "transport",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 487
-    },
-    {
-      "symbol": "validate_contract",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 497
-    },
-    {
-      "symbol": "receipt_current",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 506
+      "line": 502
     },
     {
       "symbol": "php_arrays",
@@ -1182,82 +1187,154 @@
       "line": 51
     },
     {
+      "symbol": "validate_contract",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 512
+    },
+    {
+      "symbol": "receipt_current",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 521
+    },
+    {
       "symbol": "_sealed_body",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 68
+      "line": 72
     },
     {
       "symbol": "_utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 88
-    },
-    {
-      "symbol": "_count_cell",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 194
-    },
-    {
-      "symbol": "predict",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 202
-    },
-    {
-      "symbol": "_need",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 37
-    },
-    {
-      "symbol": "_sha",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 42
-    },
-    {
-      "symbol": "_number",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 46
-    },
-    {
-      "symbol": "_utc",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 50
+      "line": 92
     },
     {
       "symbol": "_edges",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 60
+      "line": 101
     },
     {
       "symbol": "_bin",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 68
+      "line": 109
     },
     {
       "symbol": "_context",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 73
+      "line": 114
     },
     {
       "symbol": "FiniteInstrumentMetaModel",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 90
+      "line": 131
     },
     {
       "symbol": "__init__",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 93
+      "line": 134
+    },
+    {
+      "symbol": "_count_cell",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 237
+    },
+    {
+      "symbol": "predict",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 245
+    },
+    {
+      "symbol": "_need",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 38
+    },
+    {
+      "symbol": "_sha",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 43
+    },
+    {
+      "symbol": "_number",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 47
+    },
+    {
+      "symbol": "project_physical_parameters",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 51
+    },
+    {
+      "symbol": "_projected_parameter_hash",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 77
+    },
+    {
+      "symbol": "_utc",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_meta_model.py",
+      "line": 91
+    },
+    {
+      "symbol": "verify_original_method_deadline",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 113
+    },
+    {
+      "symbol": "_need",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 31
+    },
+    {
+      "symbol": "_sha",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 36
+    },
+    {
+      "symbol": "_number",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 40
+    },
+    {
+      "symbol": "_utc",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 44
+    },
+    {
+      "symbol": "_original_source_utc",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 54
+    },
+    {
+      "symbol": "_data_roots",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 68
+    },
+    {
+      "symbol": "_source",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_original_deadline.py",
+      "line": 74
     },
     {
       "symbol": "build_instrument_research_trace",
@@ -1884,172 +1961,274 @@
       "line": 88
     },
     {
-      "symbol": "test_unknown_context_or_confidence_bin_is_unavailable_not_global_fallback",
+      "symbol": "test_numeric_projection_never_aliases_integer_flags_strings_unknown_or_nonfinite_values",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 103
+      "line": 116
     },
     {
-      "symbol": "test_finite_numeric_type_count_score_context_and_chronology_guards",
+      "symbol": "test_projection_rejects_malformed_base_and_unknown_schema_without_generic_coercion",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 111
-    },
-    {
-      "symbol": "original_export",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 13
-    },
-    {
-      "symbol": "test_invalid_signal_scores_never_become_calibrated_probability",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 137
-    },
-    {
-      "symbol": "test_future_decision_and_paper_input_rejected_even_with_valid_artifact",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 143
-    },
-    {
-      "symbol": "test_wire_hash_missing_reference_and_wrong_training_baseline_are_rejected",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 152
-    },
-    {
-      "symbol": "reseal",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 36
-    },
-    {
-      "symbol": "predict",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 46
-    },
-    {
-      "symbol": "test_finite_classifier_and_separate_calibrator_not_empirical_pf_filter",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 53
-    },
-    {
-      "symbol": "test_weights_unavailable_until_every_training_and_calibration_label_is_past",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 62
-    },
-    {
-      "symbol": "test_later_evaluation_can_use_different_dataset_and_method_intervention_but_same_physical_baseline",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 67
-    },
-    {
-      "symbol": "test_changed_actual_account_risk_or_hard_limit_identity_refuses_model_transfer",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 77
+      "line": 122
     },
     {
       "symbol": "test_copied_signature_and_self_rehash_cannot_replace_original_server_model_reference",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 85
+      "line": 129
+    },
+    {
+      "symbol": "original_export",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 14
     },
     {
       "symbol": "test_extra_code_authority_or_unbounded_model_types_are_rejected",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
-      "line": 96
-    },
-    {
-      "symbol": "test_training_or_last_calibration_labels_cannot_leak_into_earlier_decisions",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 101
-    },
-    {
-      "symbol": "test_current_actual_physical_request_drift_is_refused_before_cache",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 112
-    },
-    {
-      "symbol": "test_physical_policy_risk_port_changes_are_not_a_free_library_intervention",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 122
-    },
-    {
-      "symbol": "test_copied_artifact_signature_and_self_rehash_cannot_replace_original_ref",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 129
-    },
-    {
-      "symbol": "test_meta_reference_requires_actual_runtime_request_and_exact_sparse_shape",
-      "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
       "line": 140
     },
     {
-      "symbol": "test_copied_ordinary_model_cannot_claim_shared_native_account_qualification",
+      "symbol": "test_unknown_context_or_confidence_bin_is_unavailable_not_global_fallback",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 150
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 147
     },
     {
-      "symbol": "test_actual_ordinary_replay_uses_finite_meta_model_without_external_gate_changes",
+      "symbol": "test_finite_numeric_type_count_score_context_and_chronology_guards",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 160
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 155
     },
     {
-      "symbol": "case",
+      "symbol": "test_invalid_signal_scores_never_become_calibrated_probability",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 25
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 181
     },
     {
-      "symbol": "seal",
+      "symbol": "test_future_decision_and_paper_input_rejected_even_with_valid_artifact",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 50
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 187
     },
     {
-      "symbol": "event",
+      "symbol": "test_wire_hash_missing_reference_and_wrong_training_baseline_are_rejected",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 196
+    },
+    {
+      "symbol": "reseal",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 37
+    },
+    {
+      "symbol": "predict",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 47
+    },
+    {
+      "symbol": "test_finite_classifier_and_separate_calibrator_not_empirical_pf_filter",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
       "line": 54
     },
     {
-      "symbol": "runtime_case",
+      "symbol": "test_weights_unavailable_until_every_training_and_calibration_label_is_past",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
       "line": 63
     },
     {
-      "symbol": "test_registered_finite_model_computes_own_score_with_separate_training_policy",
+      "symbol": "test_later_evaluation_can_use_different_dataset_and_method_intervention_but_same_physical_baseline",
       "kind": "python_function",
-      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 70
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 68
+    },
+    {
+      "symbol": "test_changed_actual_account_risk_or_hard_limit_identity_refuses_model_transfer",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 78
+    },
+    {
+      "symbol": "test_optional_numeric_projection_binds_original_raw_hash_without_rewriting_legacy_artifact",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_model.py",
+      "line": 86
     },
     {
       "symbol": "test_missing_original_context_confidence_or_unseen_cell_is_unavailable_wait",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 84
+      "line": 103
     },
     {
       "symbol": "test_exit_does_not_predict_an_entry_outcome_or_require_signal_confidence",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
-      "line": 93
+      "line": 112
+    },
+    {
+      "symbol": "test_training_or_last_calibration_labels_cannot_leak_into_earlier_decisions",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 120
+    },
+    {
+      "symbol": "test_current_actual_physical_request_drift_is_refused_before_cache",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 131
+    },
+    {
+      "symbol": "test_physical_policy_risk_port_changes_are_not_a_free_library_intervention",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 141
+    },
+    {
+      "symbol": "test_copied_artifact_signature_and_self_rehash_cannot_replace_original_ref",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 148
+    },
+    {
+      "symbol": "test_meta_reference_requires_actual_runtime_request_and_exact_sparse_shape",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 159
+    },
+    {
+      "symbol": "test_copied_ordinary_model_cannot_claim_shared_native_account_qualification",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 169
+    },
+    {
+      "symbol": "test_actual_ordinary_replay_uses_finite_meta_model_without_external_gate_changes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 179
+    },
+    {
+      "symbol": "case",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 26
+    },
+    {
+      "symbol": "seal",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 51
+    },
+    {
+      "symbol": "event",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 55
+    },
+    {
+      "symbol": "runtime_case",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 64
+    },
+    {
+      "symbol": "test_registered_finite_model_computes_own_score_with_separate_training_policy",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 71
+    },
+    {
+      "symbol": "test_projection_schema_family_must_match_actual_request_not_a_caller_selected_alternative",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
+      "line": 83
+    },
+    {
+      "symbol": "test_actual_simple_route_normalized_payload_selects_private_deadline_before_child",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 100
+    },
+    {
+      "symbol": "conditional_child",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 103
+    },
+    {
+      "symbol": "test_forged_signature_is_refused_before_cache_and_valid_marker_cannot_be_run_all",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 114
+    },
+    {
+      "symbol": "test_copied_marker_cannot_authorize_changed_actual_request",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 128
+    },
+    {
+      "symbol": "test_even_signed_declarations_cannot_escape_new_domain_ceiling",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 147
+    },
+    {
+      "symbol": "test_source_mutation_after_signing_is_not_hidden_by_cache_or_header_hash",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 169
+    },
+    {
+      "symbol": "test_signed_original_raw_source_finite_bare_utc_vocabulary_only",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 178
+    },
+    {
+      "symbol": "test_original_csv_does_not_infer_other_local_clock_formats",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 187
+    },
+    {
+      "symbol": "fixture",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 25
+    },
+    {
+      "symbol": "sign",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 52
+    },
+    {
+      "symbol": "guards",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 74
+    },
+    {
+      "symbol": "test_signed_original_600_honors_declared_simple_budget_without_full_transport",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 83
+    },
+    {
+      "symbol": "test_legacy_unsigned_study_caps_do_not_raise_ordinary_simple_deadline",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "line": 90
     },
     {
       "symbol": "test_cache_requires_current_actual_method_receipt_and_refuses_legacy_or_sibling",
@@ -3108,10 +3287,10 @@
       "line": 92
     },
     {
-      "symbol": "registrationInput",
+      "symbol": "prepareFreshChild",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 145
+      "line": 120
     },
     {
       "symbol": "AgentMethodGenerationService",
@@ -3120,76 +3299,28 @@
       "line": 15
     },
     {
+      "symbol": "registrationInput",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 187
+    },
+    {
       "symbol": "verifyProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 158
+      "line": 200
     },
     {
       "symbol": "curatedDefault",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 199
-    },
-    {
-      "symbol": "typedRecipe",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 217
-    },
-    {
-      "symbol": "physical",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 226
-    },
-    {
-      "symbol": "protected",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 233
-    },
-    {
-      "symbol": "unused",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 238
-    },
-    {
-      "symbol": "ceiling",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
       "line": 244
     },
     {
-      "symbol": "dependency",
+      "symbol": "ownedOutcomeProposalOnce",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 247
-    },
-    {
-      "symbol": "need",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 248
-    },
-    {
-      "symbol": "hash",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 249
-    },
-    {
-      "symbol": "seal",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 250
-    },
-    {
-      "symbol": "safeReason",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 256
+      "line": 262
     },
     {
       "symbol": "__construct",
@@ -3198,34 +3329,100 @@
       "line": 27
     },
     {
+      "symbol": "preferOwnedOutcomeProposal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 284
+    },
+    {
       "symbol": "proposeFromOriginalRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
       "line": 32
     },
     {
+      "symbol": "typedRecipe",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 328
+    },
+    {
+      "symbol": "physical",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 337
+    },
+    {
+      "symbol": "protected",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 344
+    },
+    {
+      "symbol": "unused",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 349
+    },
+    {
+      "symbol": "ceiling",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 355
+    },
+    {
+      "symbol": "dependency",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 358
+    },
+    {
+      "symbol": "need",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 359
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 360
+    },
+    {
+      "symbol": "seal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 361
+    },
+    {
+      "symbol": "safeReason",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 367
+    },
+    {
+      "symbol": "originalRunUsesOwnedOutcomes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 50
+    },
+    {
       "symbol": "proposalOnce",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 44
+      "line": 73
     },
     {
       "symbol": "prepareConstructorChild",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 66
-    },
-    {
-      "symbol": "prepareFreshChild",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 81
+      "line": 97
     },
     {
       "symbol": "registerRebasedPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 102
+      "line": 106
     },
     {
       "symbol": "AgentMethodLearningService",
@@ -3237,145 +3434,217 @@
       "symbol": "policy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 140
+      "line": 144
     },
     {
       "symbol": "learnFromRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 173
-    },
-    {
-      "symbol": "registerPolicy",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 20
+      "line": 179
     },
     {
       "symbol": "settleOriginalRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 205
+      "line": 211
+    },
+    {
+      "symbol": "registerPolicy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
+      "line": 22
     },
     {
       "symbol": "settleContractRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 229
+      "line": 235
     },
     {
       "symbol": "registerPolicyBody",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 25
+      "line": 27
     },
     {
       "symbol": "selectedProducts",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 350
+      "line": 356
     },
     {
       "symbol": "proposePolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 396
+      "line": 402
     },
     {
       "symbol": "statistics",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 443
+      "line": 449
     },
     {
       "symbol": "originalProof",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 453
+      "line": 459
     },
     {
       "symbol": "verifiedExperience",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 474
+      "line": 480
     },
     {
       "symbol": "verifiedProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 490
+      "line": 496
     },
     {
       "symbol": "events",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 534
+      "line": 540
     },
     {
       "symbol": "counts",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 589
+      "line": 595
     },
     {
       "symbol": "rules",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 602
+      "line": 608
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 624
+      "line": 630
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 626
+      "line": 632
     },
     {
       "symbol": "require",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 627
+      "line": 633
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 628
+      "line": 634
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 629
+      "line": 635
     },
     {
       "symbol": "eventHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 630
+      "line": 636
     },
     {
       "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 640
+      "line": 646
     },
     {
       "symbol": "registerGenerationPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 85
+      "line": 89
     },
     {
       "symbol": "registerStudyPolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
-      "line": 94
+      "line": 98
+    },
+    {
+      "symbol": "AgentMethodOwnedOutcomeLearningTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 12
+    },
+    {
+      "symbol": "ownedOriginalOutcomes",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 127
+    },
+    {
+      "symbol": "learnOwnedOutcomesFromRun",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 21
+    },
+    {
+      "symbol": "verifiedOwnedOutcomeRow",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 291
+    },
+    {
+      "symbol": "ownedOutcomeSelection",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 306
+    },
+    {
+      "symbol": "ownedUtc",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 332
+    },
+    {
+      "symbol": "ownedNumber",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 337
+    },
+    {
+      "symbol": "ownedOutcomeSeal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 338
+    },
+    {
+      "symbol": "ownedOutcomeReason",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 343
+    },
+    {
+      "symbol": "ownedOutcomeCeiling",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 347
+    },
+    {
+      "symbol": "proposeOutcomePolicy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 55
+    },
+    {
+      "symbol": "verifiedOutcomeProvenance",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 89
     },
     {
       "symbol": "registrationInput",
@@ -6681,13 +6950,7 @@
       "symbol": "attachment",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 111
-    },
-    {
-      "symbol": "export",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 128
+      "line": 120
     },
     {
       "symbol": "InstrumentMethodMetaBindingService",
@@ -6696,46 +6959,58 @@
       "line": 13
     },
     {
+      "symbol": "export",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
+      "line": 137
+    },
+    {
       "symbol": "sameModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 135
+      "line": 144
+    },
+    {
+      "symbol": "projectedHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
+      "line": 154
     },
     {
       "symbol": "physical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 140
+      "line": 158
     },
     {
       "symbol": "unused",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 150
+      "line": 168
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 155
+      "line": 173
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 160
+      "line": 178
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 161
+      "line": 179
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaBindingService.php",
-      "line": 164
+      "line": 182
     },
     {
       "symbol": "__construct",
@@ -6759,19 +7034,13 @@
       "symbol": "fit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 108
+      "line": 143
     },
     {
       "symbol": "inspect",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 133
-    },
-    {
-      "symbol": "exportModel",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 155
+      "line": 168
     },
     {
       "symbol": "InstrumentMethodMetaModelService",
@@ -6780,172 +7049,190 @@
       "line": 17
     },
     {
+      "symbol": "exportModel",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
+      "line": 190
+    },
+    {
       "symbol": "exportOriginalModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 175
+      "line": 210
     },
     {
       "symbol": "original",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 185
+      "line": 233
     },
     {
-      "symbol": "physicalAccountRiskHash",
+      "symbol": "projectPhysicalParameters",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 26
+      "line": 27
     },
     {
       "symbol": "effectivePolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 270
+      "line": 318
     },
     {
       "symbol": "records",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 288
+      "line": 336
     },
     {
       "symbol": "train",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 371
+      "line": 419
     },
     {
       "symbol": "design",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 433
+      "line": 481
     },
     {
       "symbol": "verifiedArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 439
+      "line": 487
+    },
+    {
+      "symbol": "physicalParameterFamily",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
+      "line": 49
     },
     {
       "symbol": "artifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 448
-    },
-    {
-      "symbol": "preregister",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 45
+      "line": 496
     },
     {
       "symbol": "range",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 456
+      "line": 504
     },
     {
       "symbol": "edges",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 463
+      "line": 511
     },
     {
       "symbol": "bin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 471
+      "line": 519
     },
     {
       "symbol": "bothClasses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 476
+      "line": 524
     },
     {
       "symbol": "cellKey",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 477
+      "line": 525
     },
     {
       "symbol": "session",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 478
+      "line": 526
     },
     {
       "symbol": "volatility",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 479
+      "line": 527
     },
     {
       "symbol": "token",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 480
+      "line": 528
     },
     {
       "symbol": "utc",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 481
+      "line": 529
     },
     {
       "symbol": "cutoff",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 482
+      "line": 530
     },
     {
       "symbol": "number",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 483
+      "line": 531
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 484
+      "line": 532
     },
     {
       "symbol": "signature",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 485
+      "line": 533
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 486
+      "line": 534
     },
     {
       "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 487
+      "line": 535
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 488
+      "line": 536
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 489
+      "line": 537
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
-      "line": 492
+      "line": 540
+    },
+    {
+      "symbol": "physicalAccountRiskHash",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
+      "line": 61
+    },
+    {
+      "symbol": "preregister",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodMetaModelService.php",
+      "line": 80
     },
     {
       "symbol": "forModel",
@@ -7077,19 +7364,19 @@
       "symbol": "assertLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 147
+      "line": 149
     },
     {
       "symbol": "admittedContinuationAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 157
+      "line": 159
     },
     {
       "symbol": "execute",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 171
+      "line": 173
     },
     {
       "symbol": "InstrumentMethodStudyExecutionService",
@@ -7101,91 +7388,103 @@
       "symbol": "compileRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 240
+      "line": 242
     },
     {
       "symbol": "queueArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 265
+      "line": 271
     },
     {
       "symbol": "executeQueuedArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 285
+      "line": 291
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 29
+      "line": 31
     },
     {
       "symbol": "registerWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 34
+      "line": 36
     },
     {
       "symbol": "inspectSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 349
+      "line": 360
     },
     {
       "symbol": "inspectOrigin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 390
+      "line": 401
     },
     {
       "symbol": "closeTechnical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 418
+      "line": 429
     },
     {
       "symbol": "defer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 430
+      "line": 441
+    },
+    {
+      "symbol": "bindOriginalDeadline",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 447
+    },
+    {
+      "symbol": "transportFailureEnvelope",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 498
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 435
+      "line": 516
     },
     {
       "symbol": "reason",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 436
+      "line": 517
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 437
+      "line": 518
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 438
+      "line": 519
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 439
+      "line": 520
     },
     {
       "symbol": "inspectWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 83
+      "line": 85
     },
     {
       "symbol": "InstrumentMethodStudyService",
@@ -11868,6 +12167,24 @@
       "line": 9
     },
     {
+      "symbol": "up",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+      "line": 10
+    },
+    {
+      "symbol": "down",
+      "kind": "php_method",
+      "path": "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+      "line": 28
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+      "line": 8
+    },
+    {
       "symbol": "test_underpowered_python_receipts_create_a_diagnostic_scaffold_without_unlocking_next_stage",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
@@ -12834,6 +13151,138 @@
       "line": 98
     },
     {
+      "symbol": "test_conflicting_same_physical_episode_refuses_new_history_without_overwrite",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 100
+    },
+    {
+      "symbol": "test_censored_outcomes_and_insufficient_samples_fall_back_to_baseline_not_harmful_authority",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 113
+    },
+    {
+      "symbol": "test_wait_and_veto_receipts_do_not_receive_counterfeit_zero_or_positive_pnl",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 127
+    },
+    {
+      "symbol": "test_foreign_position_future_signal_missing_or_duplicate_entry_links_fail_closed",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 143
+    },
+    {
+      "symbol": "test_frozen_proposal_reopens_originals_and_refuses_poison_or_caller_copied_v2_provenance",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 161
+    },
+    {
+      "symbol": "test_generation_once_keeps_v1_frozen_and_normal_constructor_prefers_verified_positive_v2",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 179
+    },
+    {
+      "symbol": "test_normal_constructor_uses_owned_baseline_instead_of_retaining_frequent_negative_recipes",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 213
+    },
+    {
+      "symbol": "test_explicit_owned_parent_missing_accepted_entry_link_cannot_downgrade_to_v1_frequency_ranking",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 231
+    },
+    {
+      "symbol": "test_multi_recipe_position_is_a_bundle_association_not_individual_recipe_credit",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 260
+    },
+    {
+      "symbol": "test_original_v2_study_carrier_projection_uses_owned_outcomes_once_and_preserves_v1_study_mode",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 274
+    },
+    {
+      "symbol": "AgentMethodOwnedOutcomeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 30
+    },
+    {
+      "symbol": "test_year_end_labels_entering_paper_epoch_are_excluded_but_account_still_reconciles",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 346
+    },
+    {
+      "symbol": "setUp",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 35
+    },
+    {
+      "symbol": "test_append_only_rollback_and_normal_generation_tamper_guard_preserve_history",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 358
+    },
+    {
+      "symbol": "original",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 377
+    },
+    {
+      "symbol": "publish",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 448
+    },
+    {
+      "symbol": "model",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 461
+    },
+    {
+      "symbol": "recipe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 467
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 487
+    },
+    {
+      "symbol": "canonicalJson",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 488
+    },
+    {
+      "symbol": "test_personal_outcomes_prefer_positive_context_over_frequent_losing_invocations",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 50
+    },
+    {
+      "symbol": "test_duplicate_replay_aliases_do_not_create_extra_matured_episode_power",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 86
+    },
+    {
       "symbol": "AutonomousLearningProgressDirectorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
@@ -12844,6 +13293,48 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
       "line": 27
+    },
+    {
+      "symbol": "input",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 115
+    },
+    {
+      "symbol": "path",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 120
+    },
+    {
+      "symbol": "command",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 125
+    },
+    {
+      "symbol": "CalibratedMetaMethodDeclarationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "test_existing_cli_inputs_reproduce_exact_append_only_hashes_idempotently_without_agent_state",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 22
+    },
+    {
+      "symbol": "test_same_revision_collision_cannot_rewrite_the_declaration_or_activate_it",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 51
+    },
+    {
+      "symbol": "test_php_compiled_threshold_uses_finite_computed_scores_and_missing_model_wait",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 65
     },
     {
       "symbol": "CausalProgressRatchetGovernorServiceTest",
@@ -13164,43 +13655,19 @@
       "line": 138
     },
     {
-      "symbol": "fitted",
+      "symbol": "test_original_float_wire_model_attaches_integer_numeric_target_and_actual_simple_api_consumes_projection",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
       "line": 153
     },
     {
-      "symbol": "model",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
-      "line": 161
-    },
-    {
-      "symbol": "policy",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
-      "line": 167
-    },
-    {
-      "symbol": "request",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
-      "line": 190
-    },
-    {
-      "symbol": "refused",
+      "symbol": "test_schema_numeric_projection_rejects_other_type_aliases_unknown_fields_and_changed_values",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
       "line": 198
     },
     {
-      "symbol": "python",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
-      "line": 204
-    },
-    {
-      "symbol": "hash",
+      "symbol": "test_projection_export_reopens_raw_original_and_does_not_rewrite_legacy_export_or_artifact",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
       "line": 225
@@ -13212,16 +13679,58 @@
       "line": 23
     },
     {
+      "symbol": "fitted",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 239
+    },
+    {
       "symbol": "setUp",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
       "line": 25
     },
     {
+      "symbol": "model",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 250
+    },
+    {
+      "symbol": "policy",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 256
+    },
+    {
+      "symbol": "request",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 279
+    },
+    {
+      "symbol": "refused",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 287
+    },
+    {
+      "symbol": "python",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 293
+    },
+    {
       "symbol": "test_fitted_original_attachment_is_target_owned_and_runtime_identity_is_sparse",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
       "line": 31
+    },
+    {
+      "symbol": "hash",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
+      "line": 314
     },
     {
       "symbol": "test_php_original_fit_compiles_full_python_runtime_and_consumes_own_score_in_new_entry_method",
@@ -13372,6 +13881,36 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php",
       "line": 92
+    },
+    {
+      "symbol": "test_transport_timeout_classifier_does_not_retain_arbitrary_detail_or_invent_timeout",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 106
+    },
+    {
+      "symbol": "newLongWork",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 122
+    },
+    {
+      "symbol": "InstrumentMethodOriginalDeadlineTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 24
+    },
+    {
+      "symbol": "test_new_php_original_600_request_hmac_selects_real_python_simple_budget_without_full_authority",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 28
+    },
+    {
+      "symbol": "test_original_non_success_http_retains_typed_timeout_before_technical_close_without_raw_detail",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 82
     },
     {
       "symbol": "test_pre2026_scope_and_source_clock_guards_refuse_before_compilation",
@@ -14865,6 +15404,9 @@
         "test_weights_unavailable_until_every_training_and_calibration_label_is_past",
         "test_later_evaluation_can_use_different_dataset_and_method_intervention_but_same_physical_baseline",
         "test_changed_actual_account_risk_or_hard_limit_identity_refuses_model_transfer",
+        "test_optional_numeric_projection_binds_original_raw_hash_without_rewriting_legacy_artifact",
+        "test_numeric_projection_never_aliases_integer_flags_strings_unknown_or_nonfinite_values",
+        "test_projection_rejects_malformed_base_and_unknown_schema_without_generic_coercion",
         "test_copied_signature_and_self_rehash_cannot_replace_original_server_model_reference",
         "test_extra_code_authority_or_unbounded_model_types_are_rejected",
         "test_unknown_context_or_confidence_bin_is_unavailable_not_global_fallback",
@@ -14878,6 +15420,7 @@
       "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
       "tests": [
         "test_registered_finite_model_computes_own_score_with_separate_training_policy",
+        "test_projection_schema_family_must_match_actual_request_not_a_caller_selected_alternative",
         "test_missing_original_context_confidence_or_unseen_cell_is_unavailable_wait",
         "test_exit_does_not_predict_an_entry_outcome_or_require_signal_confidence",
         "test_training_or_last_calibration_labels_cannot_leak_into_earlier_decisions",
@@ -14887,6 +15430,20 @@
         "test_meta_reference_requires_actual_runtime_request_and_exact_sparse_shape",
         "test_copied_ordinary_model_cannot_claim_shared_native_account_qualification",
         "test_actual_ordinary_replay_uses_finite_meta_model_without_external_gate_changes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "tests": [
+        "test_signed_original_600_honors_declared_simple_budget_without_full_transport",
+        "test_legacy_unsigned_study_caps_do_not_raise_ordinary_simple_deadline",
+        "test_actual_simple_route_normalized_payload_selects_private_deadline_before_child",
+        "test_forged_signature_is_refused_before_cache_and_valid_marker_cannot_be_run_all",
+        "test_copied_marker_cannot_authorize_changed_actual_request",
+        "test_even_signed_declarations_cannot_escape_new_domain_ceiling",
+        "test_source_mutation_after_signing_is_not_hidden_by_cache_or_header_hash",
+        "test_signed_original_raw_source_finite_bare_utc_vocabulary_only",
+        "test_original_csv_does_not_infer_other_local_clock_formats"
       ]
     },
     {
@@ -15108,6 +15665,32 @@
         "test_invalid_proof_is_reused_only_inside_the_current_batch",
         "test_mixed_generations_cannot_share_a_proof_or_recompute_a_null_proof_per_sibling",
         "test_a_previous_batch_cannot_authorize_artifact_corruption_at_locked_materialization"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "tests": [
+        "setUp",
+        "test_personal_outcomes_prefer_positive_context_over_frequent_losing_invocations",
+        "test_duplicate_replay_aliases_do_not_create_extra_matured_episode_power",
+        "test_conflicting_same_physical_episode_refuses_new_history_without_overwrite",
+        "test_censored_outcomes_and_insufficient_samples_fall_back_to_baseline_not_harmful_authority",
+        "test_wait_and_veto_receipts_do_not_receive_counterfeit_zero_or_positive_pnl",
+        "test_foreign_position_future_signal_missing_or_duplicate_entry_links_fail_closed",
+        "test_frozen_proposal_reopens_originals_and_refuses_poison_or_caller_copied_v2_provenance",
+        "test_generation_once_keeps_v1_frozen_and_normal_constructor_prefers_verified_positive_v2",
+        "test_normal_constructor_uses_owned_baseline_instead_of_retaining_frequent_negative_recipes",
+        "test_explicit_owned_parent_missing_accepted_entry_link_cannot_downgrade_to_v1_frequency_ranking",
+        "test_multi_recipe_position_is_a_bundle_association_not_individual_recipe_credit",
+        "test_original_v2_study_carrier_projection_uses_owned_outcomes_once_and_preserves_v1_study_mode",
+        "test_year_end_labels_entering_paper_epoch_are_excluded_but_account_still_reconciles",
+        "test_append_only_rollback_and_normal_generation_tamper_guard_preserve_history",
+        "original",
+        "publish",
+        "model",
+        "recipe",
+        "hash",
+        "canonicalJson"
       ]
     },
     {
@@ -15344,6 +15927,9 @@
         "test_asset_cannot_late_attach_after_an_own_policy_or_copy_its_proof_to_a_new_model",
         "test_actual_parameters_cost_account_clock_and_plain_scope_are_required_before_cache",
         "test_underpowered_roster_cannot_be_fabricated_as_asset_and_existing_transfer_routes_refuse_silent_drop",
+        "test_original_float_wire_model_attaches_integer_numeric_target_and_actual_simple_api_consumes_projection",
+        "test_schema_numeric_projection_rejects_other_type_aliases_unknown_fields_and_changed_values",
+        "test_projection_export_reopens_raw_original_and_does_not_rewrite_legacy_export_or_artifact",
         "fitted",
         "model",
         "policy",
@@ -15378,6 +15964,15 @@
         "original",
         "hash",
         "canonicalJson"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "tests": [
+        "test_new_php_original_600_request_hmac_selects_real_python_simple_budget_without_full_authority",
+        "test_original_non_success_http_retains_typed_timeout_before_technical_close_without_raw_detail",
+        "test_transport_timeout_classifier_does_not_retain_arbitrary_detail_or_invent_timeout",
+        "newLongWork"
       ]
     },
     {
@@ -15505,6 +16100,17 @@
         "test_exact_two_study_projection_jobs_are_idempotent_audit_only_and_never_ordinary_advice",
         "test_exact_or_malformed_reserved_study_declarations_cannot_mix_into_ordinary_history",
         "studyDeclarations",
+        "test_one_refresh_scans_each_exact_declaration_plane_once_and_next_call_is_fresh",
+        "test_roster_overflow_is_operational_fail_closed_and_releases_the_refresh_scope",
+        "test_positive_snapshot_withholds_later_carriers_runs_events_and_gates_until_the_next_refresh",
+        "test_same_original_source_retag_before_publication_refuses_and_rolls_back_insight_and_cache",
+        "test_unsupported_snapshot_isolation_is_an_operational_refusal_not_a_strategy_result",
+        "test_legacy_derived_cache_cannot_reuse_tainted_early_rows_when_latest_event_id_did_not_change",
+        "test_direction_prior_memo_is_bound_to_the_current_eligible_agent_membership",
+        "test_revision_watermark_recompiles_same_max_different_original_agent_and_run_rosters",
+        "sourceRevisionCacheEnabled",
+        "test_revision_watermark_reuses_unchanged_source_but_recompiles_same_id_completion_and_response_hash",
+        "sourceRevisionCacheEnabled",
         "assertAndExecuteOnlyProjectionJobs",
         "assertZeroAuthority",
         "projectionRun"

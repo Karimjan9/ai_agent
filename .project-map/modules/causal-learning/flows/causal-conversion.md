@@ -1,5 +1,23 @@
 # Causal conversion loop
 
+## Separate observational agent-method outcome learning
+
+The existing method-learning owner reopens immutable ordinary request, response,
+trace, executed clock and ledger products. Exact accepted entry and own method
+link -> mature cost-inclusive position result -> alias-deduplicated episode ->
+fixed exact-context selection -> server-signed unused-child policy handoff.
+This is observational advice, not the independent certificate/credit flow below.
+WAIT/veto has no invented PnL, multi-recipe positions remain bundle observations,
+and source/v1 policies are not edited. Invalid proof on a v2-owned parent blocks
+rather than silently downgrading its advice.
+
+For a separately declared future simple original, the study owner may sign a
+bounded deadline v2 before publishing the four-request barrier. Python reopens
+the entire exact source and checks private HMAC, scope and physical/runtime
+identity before selecting a >300, <=600-second budget. Old requests retain their
+caps, and no timeout or deadline declaration replenishes original attempts or
+authorizes full, independent or paper evaluation. See ADR-040.
+
 ## Separately scoped original confirmation
 
 Existing Foundry copies a source recipe as a fresh prospective question, not

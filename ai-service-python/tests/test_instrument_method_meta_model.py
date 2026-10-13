@@ -5,7 +5,8 @@ import json
 import pytest
 
 from app.services.instrument_method_meta_model import (
-    BINDING_FIELDS, CEILING, CONTEXT_FIELDS, PHYSICAL_FIELDS, PROTOCOL, FiniteInstrumentMetaModel,
+    BINDING_FIELDS, CEILING, CONTEXT_FIELDS, PHYSICAL_FIELDS, PROTOCOL, PARAMETER_PROJECTION_PROTOCOL,
+    FiniteInstrumentMetaModel, project_physical_parameters,
 )
 from app.services.research_program_tasks import canonical_hash, canonical_json
 
@@ -80,6 +81,49 @@ def test_changed_actual_account_risk_or_hard_limit_identity_refuses_model_transf
     physical["account_risk_hash"] = "f" * 64
     with pytest.raises(ValueError, match="EVALUATION_PHYSICAL_BASELINE_MISMATCH"):
         FiniteInstrumentMetaModel(artifact, reference, physical)
+
+
+def test_optional_numeric_projection_binds_original_raw_hash_without_rewriting_legacy_artifact():
+    artifact, _ = original_export()
+    body = json.loads(artifact['artifact_json'])
+    parameters = {'atr_target_multiplier': 2, 'time_stop_candles': 4, 'meta_label_enabled': False, 'volume_lane': 'none'}
+    body['binding']['parameters_hash'] = canonical_hash(parameters)
+    artifact, reference = reseal(body)
+    original_bytes = artifact['artifact_json']
+    physical = {key: artifact['binding'][key] for key in PHYSICAL_FIELDS}
+    projected = project_physical_parameters('differential_router', parameters)
+    physical['parameters_hash'] = canonical_hash(projected)
+    projection = {'protocol': PARAMETER_PROJECTION_PROTOCOL, 'strategy': 'differential_router', 'base_strategy': None,
+                  'original_parameters': parameters, 'projected_parameters_hash': physical['parameters_hash']}
+    with pytest.raises(ValueError, match='EVALUATION_PHYSICAL_BASELINE_MISMATCH'):
+        FiniteInstrumentMetaModel(artifact, reference, physical)
+    assert predict(FiniteInstrumentMetaModel(artifact, reference, physical, projection)) is not None
+    assert artifact['artifact_json'] == original_bytes
+    forged = copy.deepcopy(projection); forged['original_parameters']['atr_target_multiplier'] = 2.0
+    with pytest.raises(ValueError, match='ORIGINAL_PARAMETER_PROJECTION_REQUIRED'):
+        FiniteInstrumentMetaModel(artifact, reference, physical, forged)
+    forged = copy.deepcopy(projection); forged['projected_parameters_hash'] = 'f' * 64
+    with pytest.raises(ValueError, match='PARAMETER_PROJECTION_HASH_INVALID'):
+        FiniteInstrumentMetaModel(artifact, reference, physical, forged)
+    for field in PHYSICAL_FIELDS - {'parameters_hash'}:
+        changed = dict(physical); changed[field] = 301 if field == 'clock_seconds' else 'changed'
+        with pytest.raises(ValueError, match='EVALUATION_PHYSICAL_BASELINE_MISMATCH'):
+            FiniteInstrumentMetaModel(artifact, reference, changed, projection)
+
+
+@pytest.mark.parametrize('field,value', [('atr_target_multiplier', True), ('atr_target_multiplier', '2'),
+    ('atr_target_multiplier', float('nan')), ('time_stop_candles', 4.0), ('meta_label_enabled', 0), ('volume_lane', 0), ('unknown', 2)])
+def test_numeric_projection_never_aliases_integer_flags_strings_unknown_or_nonfinite_values(field, value):
+    parameters = {'atr_target_multiplier': 2, 'time_stop_candles': 4, 'meta_label_enabled': False, 'volume_lane': 'none'}
+    with pytest.raises(ValueError, match='PARAMETER_PROJECTION_(TYPE|SCHEMA)_REQUIRED'):
+        project_physical_parameters('differential_router', {**parameters, field: value})
+
+
+def test_projection_rejects_malformed_base_and_unknown_schema_without_generic_coercion():
+    for strategy, base in [('unknown_strategy', None), ('differential_router', False),
+                           ('differential_router', 2), ('differential_router', 'unknown_base')]:
+        with pytest.raises(ValueError, match='PARAMETER_PROJECTION_SCHEMA_REQUIRED'):
+            project_physical_parameters(strategy, {'atr_target_multiplier': 2}, base)
 
 
 def test_copied_signature_and_self_rehash_cannot_replace_original_server_model_reference():

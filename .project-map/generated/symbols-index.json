@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T11:38:09.473Z",
-  "source_digest": "a10506921c5188a71a25ec71045506297f6a6b29a7a666dff5361ecf71543da2",
-  "source_file_count": 1668,
-  "git_head": "b825e3007e9547a40f5436b5711f8c67bd115182",
+  "generated_at": "2026-10-13T15:42:49.043Z",
+  "source_digest": "4110dd1bc4792356d1e1a89c1e548abe56afdd109438480ac6be2b1ec4031644",
+  "source_file_count": 1675,
+  "git_head": "0f3d82729d58edb860483c1c1ad0e28a3a5a0f62",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -145,13 +145,13 @@
       "symbol": "InstrumentMethodLearning",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 160
+      "line": 164
     },
     {
       "symbol": "FiniteInstrumentMetaModel",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_meta_model.py",
-      "line": 90
+      "line": 131
     },
     {
       "symbol": "MarketAdaptiveReplayService",
@@ -3842,6 +3842,12 @@
       "kind": "php_type",
       "path": "backend-laravel/app/Services/AgentMethodLearningService.php",
       "line": 14
+    },
+    {
+      "symbol": "AgentMethodOwnedOutcomeLearningTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/AgentMethodOwnedOutcomeLearningTrait.php",
+      "line": 12
     },
     {
       "symbol": "AgentMethodStudyPreparationService",
@@ -7624,6 +7630,12 @@
       "line": 7
     },
     {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+      "line": 8
+    },
+    {
       "symbol": "ResearchWindowProvenanceAuditService",
       "kind": "php_type",
       "path": "backend-laravel/scripts/benchmark-research-provenance.php",
@@ -7816,6 +7828,12 @@
       "line": 17
     },
     {
+      "symbol": "AgentMethodOwnedOutcomeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "line": 30
+    },
+    {
       "symbol": "AgentMindTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AgentMindTest.php",
@@ -7910,6 +7928,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/BoundedProbeScreeningDispatchTest.php",
       "line": 25
+    },
+    {
+      "symbol": "CalibratedMetaMethodDeclarationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "line": 14
     },
     {
       "symbol": "CandidateGateDecisionServiceTest",
@@ -8368,6 +8392,12 @@
       "line": 21
     },
     {
+      "symbol": "InstrumentMethodOriginalDeadlineTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "line": 24
+    },
+    {
       "symbol": "InstrumentMethodResearchBindingTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
@@ -8695,7 +8725,19 @@
       "symbol": "NativeStudyHistoricalProjectionIsolationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
-      "line": 24
+      "line": 25
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+      "line": 318
+    },
+    {
+      "symbol": "extends",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
+      "line": 346
     },
     {
       "symbol": "NormalCausalResearchContractTest",

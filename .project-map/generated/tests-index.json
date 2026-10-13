@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T11:38:09.473Z",
-  "source_digest": "a10506921c5188a71a25ec71045506297f6a6b29a7a666dff5361ecf71543da2",
-  "source_file_count": 1668,
-  "git_head": "b825e3007e9547a40f5436b5711f8c67bd115182",
+  "generated_at": "2026-10-13T15:42:49.043Z",
+  "source_digest": "4110dd1bc4792356d1e1a89c1e548abe56afdd109438480ac6be2b1ec4031644",
+  "source_file_count": 1675,
+  "git_head": "0f3d82729d58edb860483c1c1ad0e28a3a5a0f62",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -316,6 +316,9 @@
         "test_weights_unavailable_until_every_training_and_calibration_label_is_past",
         "test_later_evaluation_can_use_different_dataset_and_method_intervention_but_same_physical_baseline",
         "test_changed_actual_account_risk_or_hard_limit_identity_refuses_model_transfer",
+        "test_optional_numeric_projection_binds_original_raw_hash_without_rewriting_legacy_artifact",
+        "test_numeric_projection_never_aliases_integer_flags_strings_unknown_or_nonfinite_values",
+        "test_projection_rejects_malformed_base_and_unknown_schema_without_generic_coercion",
         "test_copied_signature_and_self_rehash_cannot_replace_original_server_model_reference",
         "test_extra_code_authority_or_unbounded_model_types_are_rejected",
         "test_unknown_context_or_confidence_bin_is_unavailable_not_global_fallback",
@@ -329,6 +332,7 @@
       "path": "ai-service-python/tests/test_instrument_method_meta_runtime.py",
       "tests": [
         "test_registered_finite_model_computes_own_score_with_separate_training_policy",
+        "test_projection_schema_family_must_match_actual_request_not_a_caller_selected_alternative",
         "test_missing_original_context_confidence_or_unseen_cell_is_unavailable_wait",
         "test_exit_does_not_predict_an_entry_outcome_or_require_signal_confidence",
         "test_training_or_last_calibration_labels_cannot_leak_into_earlier_decisions",
@@ -338,6 +342,20 @@
         "test_meta_reference_requires_actual_runtime_request_and_exact_sparse_shape",
         "test_copied_ordinary_model_cannot_claim_shared_native_account_qualification",
         "test_actual_ordinary_replay_uses_finite_meta_model_without_external_gate_changes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
+      "tests": [
+        "test_signed_original_600_honors_declared_simple_budget_without_full_transport",
+        "test_legacy_unsigned_study_caps_do_not_raise_ordinary_simple_deadline",
+        "test_actual_simple_route_normalized_payload_selects_private_deadline_before_child",
+        "test_forged_signature_is_refused_before_cache_and_valid_marker_cannot_be_run_all",
+        "test_copied_marker_cannot_authorize_changed_actual_request",
+        "test_even_signed_declarations_cannot_escape_new_domain_ceiling",
+        "test_source_mutation_after_signing_is_not_hidden_by_cache_or_header_hash",
+        "test_signed_original_raw_source_finite_bare_utc_vocabulary_only",
+        "test_original_csv_does_not_infer_other_local_clock_formats"
       ]
     },
     {
@@ -1169,6 +1187,32 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
+      "tests": [
+        "setUp",
+        "test_personal_outcomes_prefer_positive_context_over_frequent_losing_invocations",
+        "test_duplicate_replay_aliases_do_not_create_extra_matured_episode_power",
+        "test_conflicting_same_physical_episode_refuses_new_history_without_overwrite",
+        "test_censored_outcomes_and_insufficient_samples_fall_back_to_baseline_not_harmful_authority",
+        "test_wait_and_veto_receipts_do_not_receive_counterfeit_zero_or_positive_pnl",
+        "test_foreign_position_future_signal_missing_or_duplicate_entry_links_fail_closed",
+        "test_frozen_proposal_reopens_originals_and_refuses_poison_or_caller_copied_v2_provenance",
+        "test_generation_once_keeps_v1_frozen_and_normal_constructor_prefers_verified_positive_v2",
+        "test_normal_constructor_uses_owned_baseline_instead_of_retaining_frequent_negative_recipes",
+        "test_explicit_owned_parent_missing_accepted_entry_link_cannot_downgrade_to_v1_frequency_ranking",
+        "test_multi_recipe_position_is_a_bundle_association_not_individual_recipe_credit",
+        "test_original_v2_study_carrier_projection_uses_owned_outcomes_once_and_preserves_v1_study_mode",
+        "test_year_end_labels_entering_paper_epoch_are_excluded_but_account_still_reconciles",
+        "test_append_only_rollback_and_normal_generation_tamper_guard_preserve_history",
+        "original",
+        "publish",
+        "model",
+        "recipe",
+        "hash",
+        "canonicalJson"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/AgentMindTest.php",
       "tests": [
         "test_run_all_dispatches_canonical_lab_without_agent_mind_artifacts",
@@ -1396,6 +1440,17 @@
         "generation",
         "cleanContext",
         "agent"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
+      "tests": [
+        "test_existing_cli_inputs_reproduce_exact_append_only_hashes_idempotently_without_agent_state",
+        "test_same_revision_collision_cannot_rewrite_the_declaration_or_activate_it",
+        "test_php_compiled_threshold_uses_finite_computed_scores_and_missing_model_wait",
+        "input",
+        "path",
+        "command"
       ]
     },
     {
@@ -2394,6 +2449,9 @@
         "test_asset_cannot_late_attach_after_an_own_policy_or_copy_its_proof_to_a_new_model",
         "test_actual_parameters_cost_account_clock_and_plain_scope_are_required_before_cache",
         "test_underpowered_roster_cannot_be_fabricated_as_asset_and_existing_transfer_routes_refuse_silent_drop",
+        "test_original_float_wire_model_attaches_integer_numeric_target_and_actual_simple_api_consumes_projection",
+        "test_schema_numeric_projection_rejects_other_type_aliases_unknown_fields_and_changed_values",
+        "test_projection_export_reopens_raw_original_and_does_not_rewrite_legacy_export_or_artifact",
         "fitted",
         "model",
         "policy",
@@ -2428,6 +2486,15 @@
         "original",
         "hash",
         "canonicalJson"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+      "tests": [
+        "test_new_php_original_600_request_hmac_selects_real_python_simple_budget_without_full_authority",
+        "test_original_non_success_http_retains_typed_timeout_before_technical_close_without_raw_detail",
+        "test_transport_timeout_classifier_does_not_retain_arbitrary_detail_or_invent_timeout",
+        "newLongWork"
       ]
     },
     {
@@ -3137,6 +3204,17 @@
         "test_exact_two_study_projection_jobs_are_idempotent_audit_only_and_never_ordinary_advice",
         "test_exact_or_malformed_reserved_study_declarations_cannot_mix_into_ordinary_history",
         "studyDeclarations",
+        "test_one_refresh_scans_each_exact_declaration_plane_once_and_next_call_is_fresh",
+        "test_roster_overflow_is_operational_fail_closed_and_releases_the_refresh_scope",
+        "test_positive_snapshot_withholds_later_carriers_runs_events_and_gates_until_the_next_refresh",
+        "test_same_original_source_retag_before_publication_refuses_and_rolls_back_insight_and_cache",
+        "test_unsupported_snapshot_isolation_is_an_operational_refusal_not_a_strategy_result",
+        "test_legacy_derived_cache_cannot_reuse_tainted_early_rows_when_latest_event_id_did_not_change",
+        "test_direction_prior_memo_is_bound_to_the_current_eligible_agent_membership",
+        "test_revision_watermark_recompiles_same_max_different_original_agent_and_run_rosters",
+        "sourceRevisionCacheEnabled",
+        "test_revision_watermark_reuses_unchanged_source_but_recompiles_same_id_completion_and_response_hash",
+        "sourceRevisionCacheEnabled",
         "assertAndExecuteOnlyProjectionJobs",
         "assertZeroAuthority",
         "projectionRun"
@@ -3719,6 +3797,7 @@
         "test_actual_source_bytes_have_a_reproducible_idempotent_content_address_not_fake_git_or_worker_proof",
         "test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact",
         "test_alternative_catalog_drift_is_a_new_release_not_a_rewrite_of_v1",
+        "test_append_only_meta_recipe_drift_retires_current_artifact_not_the_original_bytes",
         "test_prospective_method_generation_settings_are_sealed_without_exposing_secrets",
         "test_archive_hash_rejects_changed_bytes_even_when_the_address_and_labels_match",
         "test_changed_source_entry_rejects_even_with_a_rehashed_transport_label",

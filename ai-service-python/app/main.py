@@ -771,9 +771,9 @@ def _screening_insufficient_robustness_profile(
     }
 
 
-def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest) -> None:
+def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest, *, operation: str = 'run_all') -> None:
     """Authenticate optional diagnostic declarations before any API cache return."""
-    _validate_method_learning_before_cache(payload)
+    _validate_method_learning_before_cache(payload, operation=operation)
     if payload.native_reachability_depth_audit_contract or payload.native_standalone_qualification:
         from app.services.specialist_council import validate_contract
         validate_contract(payload)
@@ -790,9 +790,11 @@ def _validate_native_diagnostics_before_cache(payload: SimpleBacktestRequest) ->
             validate_contract(candidate)
 
 
-def _validate_method_learning_before_cache(payload: SimpleBacktestRequest) -> None:
+def _validate_method_learning_before_cache(payload: SimpleBacktestRequest, *, operation: str = 'simple') -> None:
     """A declared method/policy cannot escape validation through a cache hit."""
     from app.services.instrument_method_learning import validate_contract
+    from app.services.instrument_method_original_deadline import verify_original_method_deadline
+    verify_original_method_deadline(payload, _internal_api_token(), operation=operation)
     _method_study_resource_cap(payload)
     execution_hash = execution_contract_metadata(payload)["execution_hash"]
     candidates = [payload]
@@ -2019,6 +2021,10 @@ def _method_study_resource_cap(payload: SimpleBacktestRequest) -> dict | None:
 
 def _bounded_replay_seconds(payload: SimpleBacktestRequest, operation: str) -> int:
     """Return a deadline that is shorter than the Laravel transport budget."""
+    from app.services.instrument_method_original_deadline import verify_original_method_deadline
+    original_deadline = verify_original_method_deadline(payload, _internal_api_token(), operation=operation)
+    if original_deadline is not None:
+        return original_deadline
     method_caps = _method_study_resource_cap(payload)
     if method_caps is not None:
         # The diagnostic owner cannot buy a longer replay or borrow an
@@ -2300,7 +2306,7 @@ def _run_bounded_replay(
     gives us a hard parent-controlled deadline and a deterministic kill path.
     """
     _assert_clean_discovery_boundary(payload)
-    _validate_native_diagnostics_before_cache(payload)
+    _validate_native_diagnostics_before_cache(payload, operation=operation)
     assert_sealed_dataset_transport(payload)
     global \
         _last_replay_finished_at, \

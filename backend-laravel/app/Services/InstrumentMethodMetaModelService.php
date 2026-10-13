@@ -21,6 +21,41 @@ class InstrumentMethodMetaModelService
     public const BINDING_FIELDS = ['symbol', 'timeframe', 'strategy', 'parameters_hash', 'account_risk_hash', 'effective_policy_hash',
         'data_hash', 'execution_hash', 'source_hash', 'python_source_hash', 'clock_seconds'];
     public const CONTEXT_FIELDS = ['regime', 'volatility', 'session', 'direction'];
+    public const PARAMETER_PROJECTION_PROTOCOL = 'instrument_method_schema_numeric_projection_v1';
+
+    /** Exact simple-API spelling only: no integer/flag coercion, rounding or topology repair. */
+    public function projectPhysicalParameters(string $strategy, array $parameters, ?string $baseStrategy = null): array
+    {
+        $schemas = app(StrategyParameterSchemaService::class);
+        $family = $this->physicalParameterFamily($strategy, $baseStrategy);
+        $schema = $schemas->schema($family);
+        $this->need($schema !== [] && count($parameters) <= 256 && array_diff(array_keys($parameters), array_keys($schema)) === [],
+            'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+        $projected = [];
+        foreach ($parameters as $field => $value) {
+            [$type, $lower, $upper] = array_pad($schema[$field], 3, null);
+            $valid = match ($type) {
+                'numeric' => $this->number($value), 'integer' => is_int($value),
+                'boolean' => is_bool($value), 'string' => is_string($value) && in_array($value, (array) $lower, true),
+                default => false,
+            };
+            $this->need($valid && (! in_array($type, ['numeric', 'integer'], true)
+                || ($lower === null || ($value >= $lower && $value <= $upper))), 'META_MODEL_PARAMETER_PROJECTION_TYPE_REQUIRED');
+            $projected[$field] = $type === 'numeric' ? (float) $value : $value;
+        }
+        return $projected;
+    }
+
+    public function physicalParameterFamily(string $strategy, ?string $baseStrategy = null): string
+    {
+        $schemas = app(StrategyParameterSchemaService::class);
+        $this->need($baseStrategy === null || ($baseStrategy !== '' && strlen($baseStrategy) <= 128
+            && $schemas->schema($baseStrategy) !== []), 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+        $family = $schemas->family($strategy);
+        if (! in_array($family, ['differential_router', 'regime_ensemble'], true) && $baseStrategy !== null) $family = $schemas->family($baseStrategy);
+        $this->need($schemas->schema($family) !== [], 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+        return $family;
+    }
 
     /** Shared compiler identity; no method/library intervention is included. */
     public function physicalAccountRiskHash(array $request): string
@@ -172,13 +207,26 @@ class InstrumentMethodMetaModelService
     }
 
     /** Reopen the issuer's original training binding; clients cannot guess or replace it. */
-    public function exportOriginalModel(string $modelHash): array
+    public function exportOriginalModel(string $modelHash, bool $withParameterProjection = false): array
     {
         try {
             $row = DB::table('instrument_method_meta_models')->where('model_hash', $modelHash)->first();
             $this->need($row !== null, 'META_MODEL_FITTED_ARTIFACT_NOT_FOUND');
             $body = $this->verifiedArtifact($row);
-            return $this->exportModel($modelHash, $body['binding']);
+            $export = $this->exportModel($modelHash, $body['binding']);
+            if (! $withParameterProjection || ($export['status'] ?? null) !== 'exported_diagnostic') return $export;
+            $registration = DB::table('instrument_method_meta_registrations')->where('registration_hash', $row->registration_hash)->first();
+            $design = $this->design($registration);
+            $original = $this->original($design['roster'][0]['run_id'], false);
+            $request = $original['request']; $parameters = (array) ($request['parameters'] ?? []);
+            $this->need($this->hash($parameters) === $body['binding']['parameters_hash']
+                && ($request['strategy'] ?? null) === $body['binding']['strategy'], 'META_MODEL_ORIGINAL_PARAMETER_PROJECTION_REQUIRED');
+            $base = $request['base_strategy'] ?? null;
+            $this->need($base === null || (is_string($base) && strlen($base) <= 128), 'META_MODEL_PARAMETER_PROJECTION_SCHEMA_REQUIRED');
+            $projected = $this->projectPhysicalParameters($request['strategy'], $parameters, $base);
+            return [...$export, 'parameter_projection' => ['protocol' => self::PARAMETER_PROJECTION_PROTOCOL,
+                'strategy' => $request['strategy'], 'base_strategy' => $base, 'original_parameters' => $parameters,
+                'projected_parameters_hash' => $this->hash($projected)]];
         } catch (Throwable $error) { return $this->blocked($error); }
     }
 
@@ -259,7 +307,7 @@ class InstrumentMethodMetaModelService
         $identity = ['run_id' => $id, 'request_hash' => $run->request_hash, 'response_hash' => $run->response_hash,
             'request_artifact_hash' => $requestArtifact->sha256, 'trace_artifact_hash' => $traceArtifact->sha256,
             'ledger_artifact_hash' => $ledgerArtifact->sha256, 'clock_hash' => $clock['receipt_hash'], 'binding_hash' => $this->hash($binding)];
-        if (! $products) return compact('identity', 'binding');
+        if (! $products) return compact('identity', 'binding', 'request');
         [$trace] = $this->artifact($id, 'decision_trace', $traceArtifact->sha256);
         [$ledger] = $this->artifact($id, 'trade_ledger', $ledgerArtifact->sha256);
         $this->need($this->hash($trace) === $this->hash((array) ($response['decision_trace'] ?? []))

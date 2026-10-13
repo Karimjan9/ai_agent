@@ -18,6 +18,7 @@ from app.services.instrument_method_learning import (
     InstrumentMethodLearning, actual_meta_evaluation_binding, validate_contract,
 )
 from app.services.research_program_tasks import canonical_hash, canonical_json
+from app.services.instrument_method_meta_model import PARAMETER_PROJECTION_PROTOCOL, project_physical_parameters
 from test_instrument_method_learning import pinned_recipe, learning_contract, strategy, const
 from test_instrument_method_meta_model import original_export, reseal
 
@@ -77,6 +78,24 @@ def test_registered_finite_model_computes_own_score_with_separate_training_polic
     assert observed['outputs']['confirmation'] is False
     assert observed['meta_model_hash'] == contract['meta_model']['artifact']['artifact_hash']
     assert not observed['economic_authority']
+
+
+def test_projection_schema_family_must_match_actual_request_not_a_caller_selected_alternative():
+    request, data, contract = case()
+    body = {key: copy.deepcopy(value) for key, value in contract.items() if key not in {'contract_hash', 'contract_json'}}
+    projection = {'protocol': PARAMETER_PROJECTION_PROTOCOL, 'strategy': request.strategy,
+        'base_strategy': request.base_strategy, 'original_parameters': dict(request.parameters),
+        'projected_parameters_hash': canonical_hash(project_physical_parameters(request.strategy, request.parameters, request.base_strategy))}
+    body['meta_model']['parameter_projection'] = projection
+    with pytest.raises(ValueError, match='METHOD_META_ACTUAL_REQUEST_REQUIRED'):
+        validate_contract(seal(body), dataset_hash=request.replay_dataset_hash, execution_hash=contract['execution_hash'])
+    runtime = InstrumentMethodLearning(seal(body), request)
+    runtime.validate_frame(data)
+    assert event(runtime, data)['meta_score_status'] == 'diagnostic_calibrated_score_available'
+    for base in ('breakout', 'unknown_base', False, 2):
+        changed = copy.deepcopy(body); changed['meta_model']['parameter_projection']['base_strategy'] = base
+        with pytest.raises(ValueError, match='PARAMETER_PROJECTION_FAMILY_MISMATCH'):
+            InstrumentMethodLearning(seal(changed), request)
 
 
 @pytest.mark.parametrize('changes', [{'market_session': 'unknown'}, {'volatility_regime': None},

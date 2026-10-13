@@ -28,6 +28,7 @@ use Illuminate\Support\Str;
 class LabHistoricalLearningService
 {
     public const PROTOCOL = 'lab_historical_learning_v1';
+    public const MAX_REFRESH_EXCLUSION_IDS = 50000;
 
     private const TARGET_KEYS = [
         'monthly_survival' => [
@@ -58,6 +59,10 @@ class LabHistoricalLearningService
     /** @var array<string, array{summary: array, aggregates: array}> */
     private array $candleEvidenceCache = [];
 
+    /** One lock-owned refresh snapshot only; never retained for another call or authority admission. */
+    private ?array $refreshExclusionRoster = null;
+    private ?array $refreshSourceSnapshot = null;
+
     public function refreshForLab(string $symbol, string $timeframe = 'H1'): array
     {
         $symbol = strtoupper($symbol);
@@ -68,8 +73,21 @@ class LabHistoricalLearningService
         }
 
         try {
-            return $this->refreshForLabLocked($symbol, $timeframe);
+            $this->candleEvidenceCache = [];
+            $this->mutationPriorCache = [];
+            $this->assertRefreshSnapshotIsolation();
+            return DB::transaction(function () use ($symbol, $timeframe): array {
+                $this->refreshExclusionRoster = $this->refreshExclusionRoster();
+                $this->refreshSourceSnapshot = $this->refreshSourceSnapshot($symbol, $timeframe);
+                $insights = $this->refreshForLabLocked($symbol, $timeframe);
+                $this->assertFrozenSourcesRemainOrdinary();
+                return $insights;
+            });
         } finally {
+            $this->refreshExclusionRoster = null;
+            $this->refreshSourceSnapshot = null;
+            $this->candleEvidenceCache = [];
+            $this->mutationPriorCache = [];
             $lock->release();
         }
     }
@@ -87,7 +105,7 @@ class LabHistoricalLearningService
         // hydrate hundreds of megabytes of historical replay metrics again.
         // This is only an execution watermark: canonical insight authority
         // remains in SQL and every source revision still recompiles it.
-        if (! app()->environment('testing') && hash_equals((string) Cache::get($revisionKey, ''), $revision)) {
+        if ($this->sourceRevisionCacheEnabled() && hash_equals((string) Cache::get($revisionKey, ''), $revision)) {
             return $this->currentInsights($symbol, $timeframe);
         }
         // Candle decision evidence is immutable and shared by every family in
@@ -101,7 +119,7 @@ class LabHistoricalLearningService
 
         $insights = $families->map(fn (string $family): ?LabLearningInsight => $this->refreshFamily($symbol, $timeframe, $family, $candleEvidence))
             ->filter()->values()->all();
-        if (! app()->environment('testing')) Cache::forever($revisionKey, $revision);
+        if ($this->sourceRevisionCacheEnabled()) DB::afterCommit(fn () => Cache::forever($revisionKey, $revision));
 
         return $insights;
     }
@@ -181,8 +199,12 @@ class LabHistoricalLearningService
         // family cache would then keep returning a stale null (or an older
         // confirmation count) for the lifetime of the scheduler. Bind the
         // cache identity to the append-only credit revision instead.
-        $creditRevision = (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0);
-        $cacheKey = $baseCacheKey.'|credits:'.$creditRevision;
+        $creditQuery = LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds);
+        $this->frozenPlane($creditQuery, 'lab_mutation_credit_events');
+        $creditRevision = (int) ($creditQuery->max('id') ?? 0);
+        $memberIds = $agentIds; sort($memberIds, SORT_NUMERIC);
+        $cacheKey = $baseCacheKey.'|credits:'.$creditRevision.'|sources:'.$this->hash([
+            'agent_ids' => $memberIds, 'frozen_runs' => $this->refreshSourceSnapshot['run_record_ids'] ?? null]);
         if (array_key_exists($cacheKey, $this->mutationPriorCache)) {
             return $this->mutationPriorCache[$cacheKey];
         }
@@ -192,7 +214,9 @@ class LabHistoricalLearningService
                 'agent:id,model_version_id',
                 'agent.modelVersion:id,metadata',
             ])
-            ->whereIn('lab_agent_id', $agentIds)->get();
+            ->whereIn('lab_agent_id', $agentIds);
+        $this->frozenPlane($credits, 'lab_mutation_credit_events');
+        $credits = $credits->get();
         $runIds = $credits->flatMap(fn (LabMutationCreditEvent $event): array => (array) $event->evidence_run_ids)->filter()->unique()->values();
         $exactRuns = LabEvaluationRun::query()
             ->whereIn('run_id', $runIds->all())
@@ -202,8 +226,9 @@ class LabHistoricalLearningService
             // training. Only pre-2026 full-validation evidence may create a
             // reusable direction prior for a future generation.
             ->where('phase', 'full_validation')
-            ->whereJsonDoesntContain('metadata->historical', true)
-            ->get()
+            ->whereJsonDoesntContain('metadata->historical', true);
+        $this->frozenRuns($exactRuns);
+        $exactRuns = $exactRuns->get()
             ->filter(fn (LabEvaluationRun $run): bool => app(LabImmutableEvidenceService::class)->learningEligibility($run)['complete'])
             ->pluck('run_id')->all();
         if ($exactRuns === []) {
@@ -313,7 +338,9 @@ class LabHistoricalLearningService
         // compilation only needs evidence identity and eligibility manifests;
         // selecting metrics here multiplied memory/CPU by strategy family.
         $runs = LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)
-            ->whereNotIn('run_id', $this->studyRunIds())->get([
+            ->whereNotIn('run_id', $this->studyRunIds());
+        $this->frozenRuns($runs);
+        $runs = $runs->get([
             'id', 'run_id', 'lab_generation_id', 'lab_agent_id', 'model_version_id',
             'phase', 'status', 'request_hash', 'response_hash', 'data_hash',
             'request_meta', 'response_meta', 'metadata', 'created_at', 'updated_at',
@@ -326,8 +353,9 @@ class LabHistoricalLearningService
             ->pluck('run_id')->all();
         $gateEvents = LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)
             ->where(fn ($query) => $query->whereNull('run_id')->orWhereNotIn('run_id', $this->studyRunIds()))
-            ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate'])
-            ->latest('recorded_at')->get([
+            ->whereIn('stage', ['screening', 'full_validation', 'statistical_forward_gate']);
+        $this->frozenPlane($gateEvents, 'lab_gate_decision_events');
+        $gateEvents = $gateEvents->latest('recorded_at')->get([
                 'id', 'lab_generation_id', 'lab_agent_id', 'run_id', 'stage',
                 'decision', 'revision', 'reason_codes', 'metrics', 'payload', 'recorded_at',
             ])
@@ -395,7 +423,9 @@ class LabHistoricalLearningService
                 'agent:id,model_version_id',
                 'agent.modelVersion:id,metadata',
             ])
-            ->whereIn('lab_agent_id', $agentIds)->get();
+            ->whereIn('lab_agent_id', $agentIds);
+        $this->frozenPlane($credits, 'lab_mutation_credit_events');
+        $credits = $credits->get();
         $confirmedCredits = $credits->filter(fn (LabMutationCreditEvent $event): bool => $this->confirmedCreditMatches($event, $exactRunIds));
         $confirmedUnits = $this->independentCreditUnits($confirmedCredits, $exactRunIds);
         $blocked = $confirmedUnits->map(fn (array $unit): LabMutationCreditEvent => $unit['event'])
@@ -502,31 +532,38 @@ class LabHistoricalLearningService
             return $this->candleEvidenceCache[$cacheKey];
         }
 
-        $agents = fn ($query) => $query
-            ->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
-            ->where('a.symbol', strtoupper($symbol))
-            ->where('a.timeframe', strtoupper($timeframe))
-            ->where('e.candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
-            ->whereIn('e.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
-            ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
+        $agents = function ($query) use ($symbol, $timeframe) {
+            $query->join('lab_agents as a', 'a.id', '=', 'e.lab_agent_id')
+                ->where('a.symbol', strtoupper($symbol))
+                ->where('a.timeframe', strtoupper($timeframe))
+                ->where('e.candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
+                ->whereIn('e.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
+                ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
+            $this->frozenPlane($query, 'lab_candle_decision_events', 'e.id');
+            return $query;
+        };
         $legacyBase = $agents(DB::table('lab_candle_decision_events as e'))
             ->whereNotExists(fn ($query) => $query
                 ->selectRaw('1')
                 ->from('lab_candle_decision_rollups as r')
-                ->whereColumn('r.run_id', 'e.run_id'));
+                ->whereColumn('r.run_id', 'e.run_id')
+                ->when($this->refreshSourceSnapshot !== null, fn ($query) => $query
+                    ->where('r.id', '<=', $this->refreshSourceSnapshot['watermarks']['lab_candle_decision_rollups'])));
         $latestLegacyEventId = (int) ((clone $legacyBase)->max('e.id') ?? 0);
         $legacyCacheKey = 'lab-history:ordinary-legacy-candle-evidence:pre2026-v3:'.hash('sha256', $cacheKey);
         $cachedLegacy = Cache::get($legacyCacheKey);
-        if (! is_array($cachedLegacy)
-            || data_get($cachedLegacy, 'protocol') !== 'immutable_ordinary_candle_aggregate_v2'
+        if ($this->refreshExclusionRoster === null || ! is_array($cachedLegacy)
+            || data_get($cachedLegacy, 'protocol') !== 'immutable_ordinary_candle_aggregate_v3'
+            || data_get($cachedLegacy, 'exclusion_source_hash') !== $this->exclusionSourceHash()
             || (int) data_get($cachedLegacy, 'latest_event_id', -1) !== $latestLegacyEventId) {
             $cachedLegacy = [
-                'protocol' => 'immutable_ordinary_candle_aggregate_v2',
+                'protocol' => 'immutable_ordinary_candle_aggregate_v3',
+                'exclusion_source_hash' => $this->exclusionSourceHash(),
                 'latest_event_id' => $latestLegacyEventId,
                 'evidence' => $this->aggregateRawCandleEvidence($legacyBase),
                 'promotion_evidence' => false,
             ];
-            Cache::forever($legacyCacheKey, $cachedLegacy);
+            if ($this->refreshExclusionRoster !== null) DB::afterCommit(fn () => Cache::forever($legacyCacheKey, $cachedLegacy));
         }
 
         $rollupBase = DB::table('lab_candle_decision_rollups as r')
@@ -536,6 +573,7 @@ class LabHistoricalLearningService
             ->where('r.last_candle_time', '<', app(ResearchPaperEpochContractService::class)->cutoff()->format('Y-m-d H:i:s'))
             ->whereIn('r.lab_agent_id', $this->ordinaryHistoryAgents($symbol, $timeframe)->select('id'))
             ->where(fn ($query) => $query->whereNull('r.run_id')->orWhereNotIn('r.run_id', $this->studyRunIds()));
+        $this->frozenPlane($rollupBase, 'lab_candle_decision_rollups', 'r.id');
         $rollupSummary = (clone $rollupBase)
             ->select('a.strategy_family')
             ->selectRaw('SUM(r.event_count) as total, SUM(r.accepted_count) as accepted, SUM(CASE WHEN r.accepted = 0 THEN r.event_count ELSE 0 END) as rejected')
@@ -654,17 +692,24 @@ class LabHistoricalLearningService
         if ($agentIds->isEmpty()) return hash('sha256', $symbol.'|'.$timeframe.'|empty');
 
         $revision = [
+            // Execution watermark only. Sorted original membership/completion
+            // tuples do not issue authority or manufacture independent windows.
+            'original_source_signature' => $this->refreshSourceSnapshot['source_signature'] ?? null,
             'agent_max' => (int) $agentIds->max(),
             'agent_count' => $agentIds->count(),
-            'run_max' => (int) (LabEvaluationRun::query()->whereIn('lab_agent_id', $agentIds)
-                ->whereNotIn('run_id', $this->studyRunIds())->max('id') ?? 0),
-            'gate_max' => (int) (LabGateDecisionEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
-            'credit_max' => (int) (LabMutationCreditEvent::query()->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
-            'candle_max' => (int) (DB::table('lab_candle_decision_events')->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
-            'rollup_max' => (int) (DB::table('lab_candle_decision_rollups')->whereIn('lab_agent_id', $agentIds)->max('id') ?? 0),
+            'run_max' => $this->frozenSourceMax('lab_evaluation_runs', $agentIds),
+            'gate_max' => $this->frozenSourceMax('lab_gate_decision_events', $agentIds),
+            'credit_max' => $this->frozenSourceMax('lab_mutation_credit_events', $agentIds),
+            'candle_max' => $this->frozenSourceMax('lab_candle_decision_events', $agentIds),
+            'rollup_max' => $this->frozenSourceMax('lab_candle_decision_rollups', $agentIds),
         ];
 
         return hash('sha256', json_encode($revision, JSON_UNESCAPED_SLASHES));
+    }
+
+    protected function sourceRevisionCacheEnabled(): bool
+    {
+        return ! app()->environment('testing');
     }
 
     /** Fallback for a direct family refresh outside refreshForLab(). */
@@ -675,6 +720,7 @@ class LabHistoricalLearningService
             ->whereIn('e.lab_agent_id', LabAgent::query()->whereIn('id', $agentIds)
                 ->whereNotIn('id', $this->studyAgentIds())->select('id'))
             ->where(fn ($query) => $query->whereNull('e.run_id')->orWhereNotIn('e.run_id', $this->studyRunIds()));
+        $this->frozenPlane($base, 'lab_candle_decision_events', 'e.id');
         $summary = (clone $base)->selectRaw(
             'COUNT(*) as total, SUM(CASE WHEN e.accepted = 1 THEN 1 ELSE 0 END) as accepted, SUM(CASE WHEN e.accepted = 0 THEN 1 ELSE 0 END) as rejected'
         )->first();
@@ -708,31 +754,43 @@ class LabHistoricalLearningService
 
     private function ordinaryHistoryAgents(string $symbol, string $timeframe): Builder
     {
-        return LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
+        $query = LabAgent::query()->where('symbol', strtoupper($symbol))->where('timeframe', strtoupper($timeframe))
             ->whereNotIn('id', $this->studyAgentIds());
+        if ($this->refreshSourceSnapshot !== null) $query->whereIntegerInRaw('id', $this->refreshSourceSnapshot['agent_ids']);
+        return $query;
     }
 
     private function studyAgentIds(): Builder
     {
+        if ($this->refreshExclusionRoster !== null) {
+            return LabAgent::query()->select('id')->whereIntegerInRaw('id', $this->refreshExclusionRoster['agent_ids']);
+        }
         return LabAgent::query()->select('id')->where(fn ($query) => $query
             ->whereHas('generation', fn ($generation) => $this->studyGenerationScope($generation))
-            ->orWhereHas('modelVersion', fn ($model) => $model
-                ->whereIn('metadata->native_specialist_council_seed->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
-                // A malformed reserved owner is still excluded: failure to
-                // attest it must not turn counterfactual data into advice.
-                ->orWhereNotNull('metadata->native_spread_context_study')
-                ->orWhereNotNull('metadata->native_spread_context_study_contract')
-                ->orWhereNotNull('metadata->native_reachability_depth_audit')
-                ->orWhereNotNull('metadata->native_reachability_depth_audit_contract')
-                ->orWhereNotNull('metadata->scoped_research_certificate')
-                ->orWhereNotNull('metadata->instrument_method_study_execution')
-                ->orWhereNotNull('metadata->unused_draft_price_discovery_seal'))
+            ->orWhereHas('modelVersion', fn ($model) => $this->studyModelScope($model))
             ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')
                 ->whereIn('run_id', $this->studyRunIds())));
     }
 
+    /** Keep the original reserved-purpose predicate in one owner, including malformed declarations. */
+    private function studyModelScope(Builder $model): Builder
+    {
+        return $model->where(fn ($query) => $query
+            ->whereIn('metadata->native_specialist_council_seed->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
+            ->orWhereNotNull('metadata->native_spread_context_study')
+            ->orWhereNotNull('metadata->native_spread_context_study_contract')
+            ->orWhereNotNull('metadata->native_reachability_depth_audit')
+            ->orWhereNotNull('metadata->native_reachability_depth_audit_contract')
+            ->orWhereNotNull('metadata->scoped_research_certificate')
+            ->orWhereNotNull('metadata->instrument_method_study_execution')
+            ->orWhereNotNull('metadata->unused_draft_price_discovery_seal'));
+    }
+
     private function studyGenerationScope(Builder $query): Builder
     {
+        if ($this->refreshExclusionRoster !== null) {
+            return $query->whereIntegerInRaw('id', $this->refreshExclusionRoster['generation_ids']);
+        }
         return $query->where(fn ($generation) => $generation
             ->whereIn('trigger_context->native_specialist_council_intent->research_purpose', ['spread_context_study', NativeReachabilityDepthAuditService::PURPOSE])
             ->orWhereNotNull('trigger_context->native_spread_context_study')
@@ -745,6 +803,9 @@ class LabHistoricalLearningService
 
     private function studyRunIds(): Builder
     {
+        if ($this->refreshExclusionRoster !== null) {
+            return LabEvaluationRun::query()->select('run_id')->whereIntegerInRaw('id', $this->refreshExclusionRoster['run_record_ids']);
+        }
         return LabEvaluationRun::query()->select('run_id')->whereNotNull('run_id')->where(fn ($run) => $run
             ->where('metadata->reason_code', 'NATIVE_SPREAD_CONTEXT_STUDY_RESEARCH_ONLY')
             ->orWhere('metadata->reason_code', 'NATIVE_REACHABILITY_DEPTH_AUDIT_RESEARCH_ONLY')
@@ -768,6 +829,132 @@ class LabHistoricalLearningService
             ->orWhereNotNull('request_meta->payload->policy_context->scoped_research_certificate')
             ->orWhereNotNull('request_meta->payload->policy_context->unused_draft_price_discovery')
             ->orWhere('metadata->reason_code', UnusedDraftPriceDiscoveryPreparationService::RESEARCH_ONLY));
+    }
+
+    /** Read each broad declaration plane once, before advice production, without correlated JSON rescans. */
+    private function refreshExclusionRoster(): array
+    {
+        // The property is still null here: these are the exact uncached owner predicates.
+        // Primary IDs name the exact matched run rows. The consumer still
+        // selects their original run_id; metadata and run identifiers are not cached.
+        // Integer-only IN clauses avoid a 50k UUID binding/parameter ceiling.
+        $runs = $this->boundedExclusionIds($this->studyRunIds(), 'id');
+        $generations = $this->boundedExclusionIds($this->studyGenerationScope(LabGeneration::query()), 'id');
+        $models = $this->boundedExclusionIds($this->studyModelScope(\App\Models\ModelVersion::query()), 'id');
+        $agents = $this->boundedExclusionIds(LabAgent::query()->where(fn ($query) => $query
+            ->whereIntegerInRaw('lab_generation_id', $generations)
+            ->orWhereIntegerInRaw('model_version_id', $models)
+            ->orWhereIn('id', LabEvaluationRun::query()->select('lab_agent_id')->whereIntegerInRaw('id', $runs))), 'id');
+
+        return ['run_record_ids' => $runs, 'generation_ids' => $generations, 'agent_ids' => $agents];
+    }
+
+    private function boundedExclusionIds(Builder $query, string $column): array
+    {
+        $ids = $query->select($column)->limit(self::MAX_REFRESH_EXCLUSION_IDS + 1)->pluck($column)->all();
+        return $this->validateRosterIds($ids, 'EXCLUSION');
+    }
+
+    private function validateRosterIds(array $ids, string $kind): array
+    {
+        if (count($ids) > self::MAX_REFRESH_EXCLUSION_IDS) {
+            throw new \RuntimeException('LAB_HISTORY_REFRESH_'.$kind.'_BUDGET_EXCEEDED');
+        }
+        foreach ($ids as $id) {
+            if ((! is_int($id) && ! (is_string($id) && ctype_digit($id))) || (int) $id <= 0
+                || (string) (int) $id !== (string) $id) {
+                throw new \RuntimeException('LAB_HISTORY_REFRESH_'.$kind.'_ID_INVALID');
+            }
+        }
+        return array_map(intval(...), $ids);
+    }
+
+    /** Do not silently turn READ COMMITTED into an alleged immutable source view. */
+    private function assertRefreshSnapshotIsolation(): void
+    {
+        $connection = DB::connection();
+        if ($connection->transactionLevel() !== 0 && ! app()->environment('testing')) {
+            throw new \RuntimeException('LAB_HISTORY_REFRESH_OWN_SNAPSHOT_TRANSACTION_REQUIRED');
+        }
+        if ($connection->getDriverName() === 'mysql') {
+            try { $row = $connection->selectOne('SELECT @@transaction_isolation AS snapshot_level'); }
+            catch (QueryException $error) { $row = $connection->selectOne('SELECT @@tx_isolation AS snapshot_level'); }
+            $valid = strtoupper(str_replace(' ', '-', (string) $row->snapshot_level)) === 'REPEATABLE-READ';
+        } elseif ($connection->getDriverName() === 'sqlite') {
+            $row = $connection->selectOne('PRAGMA read_uncommitted');
+            $valid = (int) $row->read_uncommitted === 0;
+        } else { $valid = false; }
+        if (! $valid) throw new \RuntimeException('LAB_HISTORY_REFRESH_SNAPSHOT_ISOLATION_REQUIRED');
+    }
+
+    /** Positive original identities, not a live population filtered by yesterday's negative IDs. */
+    private function refreshSourceSnapshot(string $symbol, string $timeframe): array
+    {
+        $agents = $this->ordinaryHistoryAgents($symbol, $timeframe)->limit(self::MAX_REFRESH_EXCLUSION_IDS + 1)
+            ->orderBy('id')->get(['id', 'lab_generation_id', 'model_version_id', 'strategy_family']);
+        $agentIds = $this->validateRosterIds($agents->pluck('id')->all(), 'SOURCE');
+        $runRows = LabEvaluationRun::query()->whereIntegerInRaw('lab_agent_id', $agentIds)
+            ->whereNotIn('run_id', $this->studyRunIds())->orderBy('id')->limit(self::MAX_REFRESH_EXCLUSION_IDS + 1)
+            ->get(['id', 'run_id', 'phase', 'status', 'data_hash', 'request_hash', 'response_hash', 'updated_at']);
+        $runs = $this->validateRosterIds($runRows->pluck('id')->all(), 'SOURCE');
+        $sourceSignature = $this->hash([
+            'agents' => $agents->map(fn ($agent) => ['id' => (int) $agent->id, 'generation_id' => (int) $agent->lab_generation_id,
+                'model_id' => (int) $agent->model_version_id, 'family' => $agent->strategy_family])->all(),
+            'runs' => $runRows->map(fn ($run) => ['id' => (int) $run->id, 'run_id' => $run->run_id, 'phase' => $run->phase,
+                'status' => $run->status, 'data_hash' => $run->data_hash, 'request_hash' => $run->request_hash,
+                'response_hash' => $run->response_hash, 'updated_at' => $run->getRawOriginal('updated_at')])->all(),
+            'exclusions' => $this->exclusionSourceHash(),
+        ]);
+        $watermarks = [];
+        foreach (['lab_gate_decision_events', 'lab_mutation_credit_events', 'lab_candle_decision_events', 'lab_candle_decision_rollups'] as $table) {
+            $watermarks[$table] = (int) (DB::table($table)->max('id') ?? 0);
+        }
+        return ['agent_ids' => $agentIds, 'run_record_ids' => $runs,
+            'generation_ids' => $this->validateRosterIds($agents->pluck('lab_generation_id')->unique()->all(), 'SOURCE'),
+            'model_ids' => $this->validateRosterIds($agents->pluck('model_version_id')->unique()->all(), 'SOURCE'),
+            'watermarks' => $watermarks, 'source_signature' => $sourceSignature];
+    }
+
+    private function frozenPlane($query, string $table, string $column = 'id'): void
+    {
+        if ($this->refreshSourceSnapshot !== null) $query->where($column, '<=', $this->refreshSourceSnapshot['watermarks'][$table]);
+    }
+
+    private function frozenRuns($query): void
+    {
+        if ($this->refreshSourceSnapshot !== null) $query->whereIntegerInRaw('id', $this->refreshSourceSnapshot['run_record_ids']);
+    }
+
+    private function frozenSourceMax(string $table, Collection $agentIds): int
+    {
+        $query = DB::table($table)->whereIn('lab_agent_id', $agentIds);
+        if ($table === 'lab_evaluation_runs') {
+            $query->whereNotIn('run_id', $this->studyRunIds()); $this->frozenRuns($query);
+        } else { $this->frozenPlane($query, $table); }
+        return (int) ($query->max('id') ?? 0);
+    }
+
+    /** Snapshot isolation hides other writers; this additionally rejects own-transaction source retagging. */
+    private function assertFrozenSourcesRemainOrdinary(): void
+    {
+        $snapshot = $this->refreshSourceSnapshot;
+        $roster = $this->refreshExclusionRoster; $this->refreshExclusionRoster = null;
+        try {
+            if ($this->studyGenerationScope(LabGeneration::query()->whereIntegerInRaw('id', $snapshot['generation_ids']))->exists()
+                || $this->studyModelScope(\App\Models\ModelVersion::query()->whereIntegerInRaw('id', $snapshot['model_ids']))->exists()
+                || $this->studyRunIds()->whereIntegerInRaw('id', $snapshot['run_record_ids'])->exists()) {
+                throw new \RuntimeException('LAB_HISTORY_REFRESH_ORIGINAL_SOURCE_PURPOSE_CHANGED');
+            }
+        } finally { $this->refreshExclusionRoster = $roster; }
+    }
+
+    private function exclusionSourceHash(): ?string
+    {
+        if ($this->refreshExclusionRoster === null) return null;
+        $roster = $this->refreshExclusionRoster;
+        foreach ($roster as &$ids) sort($ids, SORT_NUMERIC);
+        unset($ids);
+        return $this->hash($roster);
     }
 
     /** Old append-only insights remain visible in SQL, but cannot be reused. */

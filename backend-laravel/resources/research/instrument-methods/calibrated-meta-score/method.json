@@ -1,0 +1,57 @@
+{
+  "instrument_key": "meta_label_filter",
+  "method_key": "internet_calibrated_meta_score",
+  "revision": 1,
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": [
+    "d3f86298e4343b4f116811e68d09700c718711c72b74e5295068c882b900b5f2"
+  ],
+  "known_limitations": [
+    "Requires the original producer signed finite model and target-owned attachment; absent or premature model/closed context means unavailable WAIT.",
+    "0.70 is a prospective lab threshold, not an empirically optimal setting.",
+    "Seen chronological calibration is not independent market qualification; no economic or Master authority."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {
+          "op": "BOOL",
+          "input_key": "available",
+          "available_at": "2000-01-01T00:00:00Z"
+        },
+        {
+          "op": "GREATER_THAN",
+          "args": [
+            {
+              "op": "NUMBER",
+              "input_key": "score",
+              "available_at": "2000-01-01T00:00:00Z"
+            },
+            {
+              "op": "CONST",
+              "type": "number",
+              "value": 0.70
+            }
+          ]
+        }
+      ]
+    },
+    "input_bindings": {
+      "available": "method_meta_model_available",
+      "score": "method_meta_score"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 196608
+    }
+  }
+}
