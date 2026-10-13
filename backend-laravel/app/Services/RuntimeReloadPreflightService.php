@@ -41,7 +41,7 @@ class RuntimeReloadPreflightService
         ]);
         $activeGenerations = LabGeneration::query()->whereIn('status', [
             'draft', 'queued', 'training', 'screening',
-            'full_queued', 'full_validation',
+            'full_queued', 'full_validation', 'research_reserved',
         ])->count();
         if ($unsealedDraftColdMaintenanceGenerationId !== null) {
             if ($terminalProjectionRecoveryGenerationId !== null) {

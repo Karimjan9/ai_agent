@@ -131,6 +131,28 @@ class AgentMethodCandidateTest extends TestCase
         $this->assertDatabaseCount('lab_evolution_credit_events', 0);
     }
 
+    public function test_exact_canonical_cost_envelope_is_not_model_authority_but_tampered_or_extra_authority_is_refused(): void
+    {
+        $cost = app(\App\Services\ExecutionContractService::class)->for('XAUUSD', 'M5');
+        $model = ModelVersion::create(['name' => 'canonical-cost-only-draft', 'strategy' => 'breakout', 'status' => 'draft',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('breakout'),
+            'metadata' => ['base_strategy' => 'breakout', 'execution_contract' => $cost]]);
+        $owner = app(AgentMethodCandidateService::class);
+        $this->assertSame($model->parameters, $owner->baseline($model)['parameters']);
+        $this->assertEquals($cost, $owner->baseline($model)['metadata']['execution_contract']);
+        $changed = $cost; $changed['parameters']['max_leverage'] = 99;
+        $model->metadata = ['base_strategy' => 'breakout', 'execution_contract' => $changed];
+        try { $owner->baseline($model); $this->fail('Changed canonical costs were accepted.'); }
+        catch (\LogicException $error) { $this->assertSame('METHOD_CANDIDATE_EXACT_EXECUTION_ENVELOPE_REQUIRED', $error->getMessage()); }
+        $model->metadata = ['base_strategy' => 'breakout', 'execution_contract' => [...$cost, 'paper_authority' => true]];
+        try { $owner->baseline($model); $this->fail('Extra authority was hidden in canonical costs.'); }
+        catch (\LogicException $error) { $this->assertSame('METHOD_CANDIDATE_EXACT_EXECUTION_ENVELOPE_REQUIRED', $error->getMessage()); }
+        $model->metadata = ['base_strategy' => 'breakout', 'execution_contract' => $cost, 'risk_governor' => ['paper_authority' => true]];
+        try { $owner->baseline($model); $this->fail('Model authority was borrowed from its cost envelope.'); }
+        catch (\LogicException $error) { $this->assertSame('METHOD_CANDIDATE_RUNTIME_AUTHORITY_METADATA_REFUSED', $error->getMessage()); }
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     private function learnedSource(bool $learn = true): array
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-13T06:00:00Z'));

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T08:10:36.185Z",
-  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "generated_at": "2026-10-13T09:12:59.512Z",
+  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
   "source_file_count": 1656,
-  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
+  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1064,6 +1064,7 @@
         "test_unlearned_or_changed_runtime_cannot_create_a_candidate_and_public_rebase_claims_are_refused",
         "test_copying_a_real_candidate_proof_to_another_model_cannot_create_a_second_target_policy",
         "test_post_run_bound_policy_metadata_drift_invalidates_original_identity_and_rebased_policy",
+        "test_exact_canonical_cost_envelope_is_not_model_authority_but_tampered_or_extra_authority_is_refused",
         "learnedSource",
         "context",
         "scope"
@@ -1255,6 +1256,7 @@
       "path": "backend-laravel/tests/Feature/AutonomousModeControlTest.php",
       "tests": [
         "test_start_stop_and_status_are_persistent_idempotent_and_xauusd_canonical",
+        "test_stop_reports_admitted_research_reserved_originals_as_draining_not_inactive",
         "test_strong_and_lightweight_are_monitoring_profiles_over_the_same_governed_engine",
         "test_invalid_controller_profile_is_rejected_without_changing_autonomy",
         "test_lightweight_monitor_exposes_a_stranded_technical_generation_without_granting_recovery_authority",
@@ -2346,6 +2348,7 @@
         "test_existing_stream_and_model_or_source_drift_block_without_constructor_writes",
         "test_stale_worker_and_ordinary_evaluation_cannot_enter_prospective_study",
         "test_four_completed_originals_with_unassessable_comparison_close_technical_without_replay_or_credit",
+        "test_stop_denies_unprepared_work_but_drains_only_an_original_four_request_barrier",
         "test_paper_source_and_bad_clock_do_not_create_canonical_work",
         "test_bounded_view_reopens_exact_origin_cells_and_retains_separate_original_hash",
         "claim",
@@ -3735,6 +3738,7 @@
         "test_an_inflight_backup_is_checked_before_source_reload",
         "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
         "test_runnable_job_or_active_generation_refuses_reload",
+        "test_prepared_research_reserved_cohort_is_not_idle_between_original_arms",
         "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
         "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
         "test_cold_maintenance_refuses_other_active_generation_or_missing_target",

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T08:10:36.185Z",
-  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "generated_at": "2026-10-13T09:12:59.512Z",
+  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
   "source_file_count": 1656,
-  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
+  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -2588,7 +2588,7 @@
       "symbol": "verifyRebasedProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 110
+      "line": 121
     },
     {
       "symbol": "AgentMethodCandidateService",
@@ -2600,31 +2600,31 @@
       "symbol": "result",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 174
+      "line": 185
     },
     {
       "symbol": "authorityMetadata",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 184
+      "line": 195
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 193
+      "line": 204
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 196
+      "line": 207
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodCandidateService.php",
-      "line": 197
+      "line": 208
     },
     {
       "symbol": "__construct",
@@ -6251,10 +6251,16 @@
       "line": 147
     },
     {
-      "symbol": "execute",
+      "symbol": "admittedContinuationAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
       "line": 157
+    },
+    {
+      "symbol": "execute",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 171
     },
     {
       "symbol": "InstrumentMethodStudyExecutionService",
@@ -6266,19 +6272,19 @@
       "symbol": "compileRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 226
+      "line": 240
     },
     {
       "symbol": "queueArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 251
+      "line": 265
     },
     {
       "symbol": "executeQueuedArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 271
+      "line": 285
     },
     {
       "symbol": "__construct",
@@ -6287,64 +6293,64 @@
       "line": 29
     },
     {
-      "symbol": "inspectSource",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 335
-    },
-    {
       "symbol": "registerWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
       "line": 34
     },
     {
+      "symbol": "inspectSource",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 349
+    },
+    {
       "symbol": "inspectOrigin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 376
+      "line": 390
     },
     {
       "symbol": "closeTechnical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 404
+      "line": 418
     },
     {
       "symbol": "defer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 416
+      "line": 430
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 421
+      "line": 435
     },
     {
       "symbol": "reason",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 422
+      "line": 436
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 423
+      "line": 437
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 424
+      "line": 438
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 425
+      "line": 439
     },
     {
       "symbol": "inspectWork",
@@ -11681,22 +11687,28 @@
       "line": 116
     },
     {
-      "symbol": "learnedSource",
+      "symbol": "test_exact_canonical_cost_envelope_is_not_model_authority_but_tampered_or_extra_authority_is_refused",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
       "line": 134
     },
     {
+      "symbol": "learnedSource",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
+      "line": 156
+    },
+    {
       "symbol": "context",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
-      "line": 193
+      "line": 215
     },
     {
       "symbol": "scope",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
-      "line": 194
+      "line": 216
     },
     {
       "symbol": "AgentMethodCandidateTest",
@@ -12335,28 +12347,34 @@
       "line": 186
     },
     {
-      "symbol": "test_paper_source_and_bad_clock_do_not_create_canonical_work",
+      "symbol": "test_stop_denies_unprepared_work_but_drains_only_an_original_four_request_barrier",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
       "line": 217
     },
     {
+      "symbol": "test_paper_source_and_bad_clock_do_not_create_canonical_work",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
+      "line": 234
+    },
+    {
       "symbol": "test_bounded_view_reopens_exact_origin_cells_and_retains_separate_original_hash",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 231
+      "line": 248
     },
     {
       "symbol": "claim",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 249
+      "line": 266
     },
     {
       "symbol": "context",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 256
+      "line": 273
     },
     {
       "symbol": "InstrumentMethodStudyExecutionTest",

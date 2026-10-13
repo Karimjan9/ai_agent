@@ -34,6 +34,11 @@ purpose is excluded from ordinary historical advice and economic projections.
 Eligible unused ordinary children may receive a verified own policy before
 seals from pinned curated defaults or original parent experience. Protected
 comparative/passport/council seats remain unchanged, not silently treated.
+An already sealed four-request barrier may continue under drain-first STOP;
+unprepared studies and PAUSE/SAFETY_HALT cannot use that exception. Reserved
+cohorts remain active for control/status and reload refusal between original
+arms. A canonical exact cost envelope is not model authority; tampered costs
+or extra authority fields still refuse candidate rebasing.
 
 ## Separately scoped prospective questions (ADR-036)
 

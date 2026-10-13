@@ -73,6 +73,17 @@ class AutonomousModeControlTest extends TestCase
         $this->assertSame(2, SystemEvent::query()->where('event_type', 'autonomous_mode_transition')->count());
     }
 
+    public function test_stop_reports_admitted_research_reserved_originals_as_draining_not_inactive(): void
+    {
+        $lab = $this->laboratory();
+        LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'status' => 'research_reserved',
+            'population_size' => 4, 'trigger_type' => 'instrument_method_original_matrix']);
+        $mode = app(AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'bounded original drain');
+        $this->assertFalse($mode['enabled']);
+        $this->assertTrue(data_get($mode, 'latest_generation.active'));
+        $this->assertSame('draining', $mode['state']);
+    }
+
     public function test_strong_and_lightweight_are_monitoring_profiles_over_the_same_governed_engine(): void
     {
         $this->laboratory();

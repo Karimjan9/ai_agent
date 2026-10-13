@@ -220,7 +220,9 @@ class ResearchLoopArbiterService
             && in_array((string) $latest->status, ['draft', 'research_reserved', 'screening'], true);
         if ($latest && $pendingCouncilWorkId > 0
             && ((string) $latest->status === 'draft' || $authorizedPanelPending || $scopedDescendantPending || $methodStudyPending || LabPopulationService::constructionIncomplete($latest))) {
-            $work = $dryRun || ! $this->autonomy->enabled($symbol, $timeframe)
+            $methodDrain = $methodStudyPending && ! $this->autonomy->enabled($symbol, $timeframe)
+                && app(InstrumentMethodStudyExecutionService::class)->admittedContinuationAllowed(ResearchExperimentWorkItem::find($pendingCouncilWorkId));
+            $work = $dryRun || (! $this->autonomy->enabled($symbol, $timeframe) && ! $methodDrain)
                 ? null : $this->conversion->claimCouncilContinuationForGeneration($latest);
             if ($work) {
                 return $this->decide($symbol, $timeframe, 'RESUME_COUNCIL_DURABLE_NEXT_WORK', 100,

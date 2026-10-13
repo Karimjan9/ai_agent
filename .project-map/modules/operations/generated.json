@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T08:10:36.185Z",
-  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "generated_at": "2026-10-13T09:12:59.512Z",
+  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
   "source_file_count": 1656,
-  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
+  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -1331,49 +1331,49 @@
       "symbol": "fidelityPlanForAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1175
+      "line": 1177
     },
     {
       "symbol": "hasLiveScheduledCommandLock",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1208
+      "line": 1210
     },
     {
       "symbol": "canonicalArguments",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1234
+      "line": 1236
     },
     {
       "symbol": "operationalStateSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1249
+      "line": 1251
     },
     {
       "symbol": "generationLabQueueSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1420
+      "line": 1422
     },
     {
       "symbol": "generationQueueWatermark",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1441
+      "line": 1443
     },
     {
       "symbol": "admittedGenerationReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1461
+      "line": 1463
     },
     {
       "symbol": "mtfAllocation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1510
+      "line": 1512
     },
     {
       "symbol": "tickLocked",
@@ -1385,67 +1385,67 @@
       "symbol": "driftAlreadyConsumed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1555
+      "line": 1557
     },
     {
       "symbol": "latestHasZeroPassScreening",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1568
+      "line": 1570
     },
     {
       "symbol": "latestCanAutonomouslyRecordDataEdgeAudit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1586
+      "line": 1588
     },
     {
       "symbol": "directorPriority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1599
+      "line": 1601
     },
     {
       "symbol": "recentAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1611
+      "line": 1613
     },
     {
       "symbol": "learningCurriculum",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1620
+      "line": 1622
     },
     {
       "symbol": "compactClosure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1642
+      "line": 1644
     },
     {
       "symbol": "compactDirector",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1652
+      "line": 1654
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1666
+      "line": 1668
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1672
+      "line": 1674
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1677
+      "line": 1679
     },
     {
       "symbol": "ResearchLoopArbiterService",
@@ -1457,7 +1457,7 @@
       "symbol": "nativeDepthContinuationDecision",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 782
+      "line": 784
     },
     {
       "symbol": "__construct",
@@ -1469,25 +1469,19 @@
       "symbol": "researchPolicyEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 826
+      "line": 828
     },
     {
       "symbol": "openCausalReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 834
+      "line": 836
     },
     {
       "symbol": "unadmittedHistoricalDraftContinuityReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 859
-    },
-    {
-      "symbol": "freshDatasetContinuityReadiness",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 919
+      "line": 861
     },
     {
       "symbol": "tick",
@@ -1496,10 +1490,16 @@
       "line": 92
     },
     {
+      "symbol": "freshDatasetContinuityReadiness",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
+      "line": 921
+    },
+    {
       "symbol": "decide",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 983
+      "line": 985
     },
     {
       "symbol": "ResearchReleaseSealService",
@@ -2333,67 +2333,61 @@
       "symbol": "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 104
+      "line": 117
     },
     {
       "symbol": "test_cold_maintenance_refuses_other_active_generation_or_missing_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 117
+      "line": 130
     },
     {
       "symbol": "test_cold_maintenance_never_overrides_running_pause_or_safety_halt",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 127
+      "line": 140
     },
     {
       "symbol": "test_cold_maintenance_refuses_missing_or_authority_granting_proof",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 141
+      "line": 154
     },
     {
       "symbol": "test_cli_refuses_invalid_explicit_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 159
+      "line": 172
     },
     {
       "symbol": "test_named_unused_draft_allows_only_read_only_cold_maintenance_and_retains_data_dependency",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 165
+      "line": 178
     },
     {
       "symbol": "test_unused_draft_requires_every_original_slot_model_and_draft_agent",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 196
+      "line": 209
     },
     {
       "symbol": "unusedDraftConstructionFailures",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 220
+      "line": 233
     },
     {
       "symbol": "test_unused_draft_refuses_original_seals_and_separate_owners",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 235
+      "line": 248
     },
     {
       "symbol": "unusedDraftForbiddenMarkers",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 253
-    },
-    {
-      "symbol": "test_unused_draft_cannot_hide_original_attempts_or_queue_history",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 279
+      "line": 266
     },
     {
       "symbol": "RuntimeReloadPreflightTest",
@@ -2402,16 +2396,10 @@
       "line": 28
     },
     {
-      "symbol": "unusedDraftHistoricalEvidence",
+      "symbol": "test_unused_draft_cannot_hide_original_attempts_or_queue_history",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 310
-    },
-    {
-      "symbol": "test_unused_draft_refuses_unknown_or_nonempty_queues",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 315
+      "line": 292
     },
     {
       "symbol": "test_an_inflight_backup_is_checked_before_source_reload",
@@ -2420,46 +2408,52 @@
       "line": 32
     },
     {
-      "symbol": "test_unused_draft_refuses_running_pause_safety_halt_and_unknown_control",
+      "symbol": "unusedDraftHistoricalEvidence",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 323
+    },
+    {
+      "symbol": "test_unused_draft_refuses_unknown_or_nonempty_queues",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "line": 328
     },
     {
+      "symbol": "test_unused_draft_refuses_running_pause_safety_halt_and_unknown_control",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 341
+    },
+    {
       "symbol": "test_unused_draft_refuses_constructor_owner_and_lease_without_changing_them",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 340
+      "line": 353
     },
     {
       "symbol": "test_unused_draft_refuses_missing_competing_target_or_ambiguous_mode",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 357
+      "line": 370
     },
     {
       "symbol": "test_unused_draft_refuses_cache_stores_whose_reads_can_mutate_expired_owner_records",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 368
+      "line": 381
     },
     {
       "symbol": "test_unused_draft_cli_requires_explicit_single_valid_target",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 377
+      "line": 390
     },
     {
       "symbol": "unusedDraft",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 390
-    },
-    {
-      "symbol": "emptyQueueService",
-      "kind": "php_method",
-      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 423
+      "line": 403
     },
     {
       "symbol": "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
@@ -2468,10 +2462,16 @@
       "line": 43
     },
     {
+      "symbol": "emptyQueueService",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 436
+    },
+    {
       "symbol": "activeProjection",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
-      "line": 432
+      "line": 445
     },
     {
       "symbol": "test_runnable_job_or_active_generation_refuses_reload",
@@ -2480,10 +2480,16 @@
       "line": 57
     },
     {
-      "symbol": "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
+      "symbol": "test_prepared_research_reserved_cohort_is_not_idle_between_original_arms",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
       "line": 81
+    },
+    {
+      "symbol": "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
+      "line": 94
     },
     {
       "symbol": "registered",
@@ -2989,6 +2995,7 @@
       "path": "backend-laravel/tests/Feature/AutonomousModeControlTest.php",
       "tests": [
         "test_start_stop_and_status_are_persistent_idempotent_and_xauusd_canonical",
+        "test_stop_reports_admitted_research_reserved_originals_as_draining_not_inactive",
         "test_strong_and_lightweight_are_monitoring_profiles_over_the_same_governed_engine",
         "test_invalid_controller_profile_is_rejected_without_changing_autonomy",
         "test_lightweight_monitor_exposes_a_stranded_technical_generation_without_granting_recovery_authority",
@@ -3290,6 +3297,7 @@
         "test_an_inflight_backup_is_checked_before_source_reload",
         "test_delayed_research_is_visible_but_does_not_block_an_idle_reload",
         "test_runnable_job_or_active_generation_refuses_reload",
+        "test_prepared_research_reserved_cohort_is_not_idle_between_original_arms",
         "test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict",
         "test_cold_maintenance_refuses_unknown_pending_delayed_or_reserved_queue",
         "test_cold_maintenance_refuses_other_active_generation_or_missing_target",

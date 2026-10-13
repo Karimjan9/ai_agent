@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T08:10:36.185Z",
-  "source_digest": "438c976d8f036dfefb244ff4d55279cc2ef5a73a6f26bf774f34e6aeffe17ec0",
+  "generated_at": "2026-10-13T09:12:59.512Z",
+  "source_digest": "3d92c171b5f90688397f425421fc4f6c4d80c73ae22dfd5f4882ac8fd2c34496",
   "source_file_count": 1656,
-  "git_head": "9d4d6f0d560a6f82d3a1b6b0cbbadce0bb6282f2",
+  "git_head": "d7f3dee84644672c7a5a6c7a574664355aefee18",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [

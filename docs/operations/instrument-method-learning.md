@@ -89,6 +89,11 @@ Original comparison closes into local method experiences/proposals only. Study
 observations are fenced out of ordinary historical advice, credit, paper and
 generic screening fan-out. Bounded resource and current lease/source guards apply
 at registration, claim, queue and publication.
+Drain-first STOP permits only the already admitted four-request barrier to
+finish. PAUSE and SAFETY_HALT do not. `research_reserved` remains active for
+runtime status and reload guards even between queued originals. Canonical
+execution-envelope usability cannot be mistaken for model trading authority
+when rebasing a same-baseline research child; its exact costs are revalidated.
 
 For local diagnostic software acceptance, the offline runner is:
 

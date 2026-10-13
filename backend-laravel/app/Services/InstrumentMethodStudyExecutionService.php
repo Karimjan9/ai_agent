@@ -150,7 +150,21 @@ class InstrumentMethodStudyExecutionService
         $this->need($current !== null && $current->status === 'leased' && $current->lease_token === $work->lease_token
             && (int) $current->fence_version === (int) $work->fence_version && $current->lease_expires_at
             && $current->lease_expires_at->gt(now()->addSeconds($minimumSeconds)), 'METHOD_STUDY_WORK_LEASE_NOT_CURRENT');
-        if ($admission) $this->need(app(AutonomousModeService::class)->enabled($work->symbol, $work->timeframe), 'METHOD_STUDY_AUTONOMOUS_MODE_STOPPED');
+        if ($admission) $this->need($this->admittedContinuationAllowed($work), 'METHOD_STUDY_AUTONOMOUS_MODE_STOPPED');
+    }
+
+    /** STOP drains only the already admitted four-request unit; PAUSE/HALT never admit work. */
+    public function admittedContinuationAllowed(?ResearchExperimentWorkItem $work): bool
+    {
+        if (! $work || $work->work_type !== self::WORK_TYPE) return false;
+        $mode = app(AutonomousModeService::class)->status($work->symbol, $work->timeframe);
+        if (($mode['enabled'] ?? false) === true) return true;
+        if (! in_array($mode['state'] ?? null, ['stopped', 'draining'], true)
+            || data_get($work->result, 'original_barrier.all_four_originals_ready') !== true) return false;
+        $generation = LabGeneration::find((int) data_get($work->result, 'original_barrier.generation_id'));
+        return $generation !== null && in_array($generation->status, ['research_reserved', 'screening'], true)
+            && data_get($generation->trigger_context, self::MARKER.'.work_item_id') === (int) $work->id
+            && data_get($generation->trigger_context, self::MARKER.'.study_hash') === data_get($work->payload, 'method_registration.study_hash');
     }
 
     /** All four original requests must be compiled and sealed before publishing any arm. */

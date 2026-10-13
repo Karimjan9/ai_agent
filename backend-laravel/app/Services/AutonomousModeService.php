@@ -234,7 +234,7 @@ class AutonomousModeService
             $attentionReasons[] = 'QUEUE_STATE_UNKNOWN';
         }
         $activeGeneration = $latest && in_array((string) $latest->status, [
-            'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation',
+            'draft', 'queued', 'training', 'screening', 'full_queued', 'full_validation', 'research_reserved',
         ], true);
         $technicalAgents = (int) ($agentCounts['evaluation_error'] ?? 0)
             + (int) ($agentCounts['technical_quarantine'] ?? 0);
@@ -400,7 +400,7 @@ class AutonomousModeService
                 ->latest('generation')
                 ->first()
             : null;
-        $activeStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation'];
+        $activeStatuses = ['draft', 'queued', 'screening', 'training', 'full_queued', 'full_validation', 'research_reserved'];
         $active = $latest !== null && in_array((string) $latest->status, $activeStatuses, true);
         $inFlightEvaluation = $storedState === 'paused' && $latest !== null && Schema::hasTable('lab_evaluation_runs')
             && DB::table('lab_evaluation_runs')->where('lab_generation_id', $latest->id)

@@ -99,7 +99,18 @@ class AgentMethodCandidateService
             $this->need(! filled(data_get($model->metadata, $field)), 'METHOD_CANDIDATE_SOURCE_RUNTIME_REQUIRES_EXISTING_CONSTRUCTOR');
         }
         $metadata = Arr::only((array) $model->metadata, self::BASELINE_METADATA);
-        $this->need(! $this->authorityMetadata($metadata), 'METHOD_CANDIDATE_RUNTIME_AUTHORITY_METADATA_REFUSED');
+        $authorityView = $metadata;
+        if (array_key_exists('execution_contract', $authorityView)) {
+            // This envelope's promotion_evidence means canonical cost-policy
+            // usability, not that a model earned paper/economic authority.
+            $cost = $authorityView['execution_contract'];
+            $this->need(is_array($cost) && is_string($cost['symbol'] ?? null) && is_string($cost['timeframe'] ?? null),
+                'METHOD_CANDIDATE_EXACT_EXECUTION_ENVELOPE_REQUIRED');
+            $canonical = app(ExecutionContractService::class)->for($cost['symbol'], $cost['timeframe']);
+            $this->need($this->evidence->equivalentJsonValue($cost, $canonical), 'METHOD_CANDIDATE_EXACT_EXECUTION_ENVELOPE_REQUIRED');
+            unset($authorityView['execution_contract']);
+        }
+        $this->need(! $this->authorityMetadata($authorityView), 'METHOD_CANDIDATE_RUNTIME_AUTHORITY_METADATA_REFUSED');
         $family = $this->schemas->family((string) ($metadata['base_strategy'] ?? $model->strategy));
         try { $this->schemas->validate($family, (array) $model->parameters); }
         catch (\InvalidArgumentException) { throw new LogicException('METHOD_CANDIDATE_EXACT_SCHEMA_BASELINE_REQUIRED'); }

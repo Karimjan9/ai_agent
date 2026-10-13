@@ -78,6 +78,19 @@ class RuntimeReloadPreflightTest extends TestCase
         $this->assertSame('ACTIVE_GENERATION_EXISTS', $result['reason']);
     }
 
+    public function test_prepared_research_reserved_cohort_is_not_idle_between_original_arms(): void
+    {
+        $queues = Mockery::mock(LabQueueJobInspector::class);
+        $queues->shouldReceive('reservedQueueBacklog')->once()->andReturn(['total' => 0, 'queues' => [], 'pending' => 0, 'delayed' => 0]);
+        $lab = AiLaboratory::create(['name' => 'Reserved method cohort', 'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_families' => ['hybrid']]);
+        LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1, 'population_size' => 4,
+            'status' => 'research_reserved', 'trigger_type' => 'instrument_method_original_matrix']);
+        $result = (new RuntimeReloadPreflightService($queues))->inspect();
+        $this->assertFalse($result['safe']);
+        $this->assertSame('ACTIVE_GENERATION_EXISTS', $result['reason']);
+        $this->assertSame(1, $result['active_generations']);
+    }
+
     public function test_explicit_cold_maintenance_requires_exact_proof_but_default_stays_strict(): void
     {
         $generation = $this->activeProjection();

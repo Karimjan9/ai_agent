@@ -214,6 +214,23 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         Bus::assertNothingDispatched(); Http::assertNothingSent();
     }
 
+    public function test_stop_denies_unprepared_work_but_drains_only_an_original_four_request_barrier(): void
+    {
+        $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class);
+        app(\App\Services\AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'deny unprepared work');
+        $this->assertFalse($owner->admittedContinuationAllowed($work));
+        app(\App\Services\AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'prepare originals');
+        $this->assertSame('queued', $owner->execute($work)['status']);
+        app(\App\Services\AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'drain prepared originals');
+        $this->assertTrue($owner->admittedContinuationAllowed($work->fresh()));
+        $owner->assertLease($work->fresh());
+        app(\App\Services\AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'operator continues');
+        app(\App\Services\AutonomousModeService::class)->pause('XAUUSD', 'H1', 'test', 'computer needed');
+        $this->assertFalse($owner->admittedContinuationAllowed($work->fresh()));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_paper_source_and_bad_clock_do_not_create_canonical_work(): void
     {
         $path = $this->fixtureRoot.'/paper.csv';
