@@ -2,6 +2,18 @@
 
 ## Original method outcomes, deadline and historical advice
 
+The closed feature boundary additionally exposes exactly typed MACD12/26/9
+cross, seeded Wilder RSI14 boundary recovery and positive Wilder ATR22-based
+Chandelier22/3 close-exit booleans. Crossing pairs require mature immediately
+adjacent closed bars. Chandelier is an owned-position request at the next open,
+not a replacement intrabar stop; native gap-stop/target precedence is preserved.
+Caller indicator columns cannot provide these observations. The finite compiler
+only confirms/reduces/exits an existing strategy; reference text creates no
+direction or authority. A separate construction-time single-partial ATR runner
+uses the existing native partial/trail/time fields on a fresh vector; it cannot
+alter sealed agents and its weighted terminal bookkeeping is not a realized
+partial-cash ledger.
+
 Method-only feature binding supplies missing session labels and grouping from
 the shared Python calendar owner before closed session extrema are compiled;
 explicit unknown columns are not repaired. PHP/Python feature types also expose

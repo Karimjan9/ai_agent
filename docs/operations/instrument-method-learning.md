@@ -5,6 +5,14 @@ Champion Council. Sources, library versions and agent skill have separate owners
 
 ## Inventory and input
 
+The 2026-10-14 source-grounded supplement adds conventional MACD12/26/9 closed
+crossing, seeded Wilder RSI14 30/70 recovery, Chandelier22/3 owned close-exit,
+one MACD/Chandelier hybrid and native single-partial ATR-runner construction.
+See `source-grounded-method-backtests-2026-10-14.md` for original paired results,
+provenance and limits. These are finite usable research methods, not four newly
+qualified market skills. Source review/guard tests, actual use, beneficial
+control contrast and independent qualification are separate evidence levels.
+
 `php artisan trading:instrument-methods inventory --json` reads all 26
 instrument usage cards in five groups and 13 playbooks without seeding trading
 authority. `catalog` reads the checksum-pinned assistant-curated source plan;

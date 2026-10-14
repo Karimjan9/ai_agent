@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI",
+  "content": "Curator paraphrase: Wilder's RSI compares average upward and downward price changes and ranges from zero to100. Conventional30/70 boundaries describe oversold/overbought states; strong trends can remain beyond these levels. This supplement interprets a closed return across a boundary as a directional recovery hypothesis, not a publisher-proven entry system. RSI calculation uses14 deltas with Wilder smoothing; context-specific usefulness is measured separately from formula correctness.",
+  "metadata": {
+    "license": "Original curator paraphrase; publisher retains rights; no copied code, transcript or market outcomes.",
+    "access": "public",
+    "title": "Relative Strength Index",
+    "publisher": "Fidelity",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

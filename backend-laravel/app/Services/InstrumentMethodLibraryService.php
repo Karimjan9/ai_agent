@@ -16,7 +16,9 @@ class InstrumentMethodLibraryService
         'method_signal_available', 'method_meta_model_available', 'method_compression_expansion',
         'method_dynamic_cooldown_ready', 'method_regime_aligned', 'method_regime_available', 'method_transition_available', 'method_quote_available',
         'method_band_available', 'method_band_reentry', 'method_pullback_available', 'method_pullback_confirmed',
-        'method_retest_available', 'method_retest_confirmed'];
+        'method_retest_available', 'method_retest_confirmed',
+        'method_macd_available', 'method_macd_cross', 'method_rsi_available', 'method_rsi_recovery',
+        'method_chandelier_available', 'method_chandelier_exit'];
     public const FEATURE_NUMBER_INPUTS = ['method_atr_ratio', 'method_range_atr', 'method_session_range_atr',
         'method_session_distance_atr', 'method_swing_range_atr', 'method_fib_retracement', 'method_sr_distance_atr',
         'method_sr_touch_count', 'method_sr_age', 'method_equal_level_count', 'method_volume_ratio',

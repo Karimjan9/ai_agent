@@ -2,6 +2,12 @@
 
 ## Instrument methods and agent-owned policies (ADR-040)
 
+New source-grounded MACD/RSI confirmations and Chandelier close exits retain
+the same registered_research_only state. Positive history availability is not
+a signal or economic proof. Missing history/equality does not confirm or exit.
+The single-partial runner is construction-only and requires a fresh compatible
+ema_rsi vector. No original policy, receipt, dataset or qualification is revised.
+
 Source `registered_reference_only` is untrusted provenance, not an executable
 instruction or economic evidence. Methods and recipes become
 `registered_research_only`; each revision is append-only and binds source,

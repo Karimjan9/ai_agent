@@ -1,0 +1,48 @@
+{
+  "instrument_key": "cost_aware_exit",
+  "method_key": "internet_closed_chandelier_22_3_exit_v1",
+  "revision": 1,
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": [
+    "22543f2b86ca45e19e66fe9f8ee13c6fefb279028116f716ec7a7b467975d519"
+  ],
+  "known_limitations": [
+    "Twenty-two closed OHLC observations determine rolling highest high/lowest low. True range uses high-low and differences from previous close; the first row uses high-low. ATR22 seeds the first22 true ranges with their mean then applies Wilder recursion. Strictly positive ATR is required.",
+    "Long level=rollingHH22-3*ATR22; short level=rollingLL22+3*ATR22. BUY-held close below long level or SELL-held close above short level requests exit. Equality waits; missing observations cannot request it. The level is not ratcheted; this is not the existing prior-close ATR trail.",
+    "The source gives daily22/3 defaults. Applying these periods to M5, close-confirmed timing and trend_up/London/normal scope are explicit lab adaptations, not validated publisher results.",
+    "Only phase=exit on an already owned position evaluates this operator. Existing native gap-stop/target precedence, sizing, costs and account ledger remain unchanged. Current scope does not claim regime-wide or session-wide position coverage."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "exit",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {
+          "op": "BOOL",
+          "input_key": "available",
+          "available_at": "2000-01-01T00:00:00Z"
+        },
+        {
+          "op": "BOOL",
+          "input_key": "effect",
+          "available_at": "2000-01-01T00:00:00Z"
+        }
+      ]
+    },
+    "input_bindings": {
+      "available": "method_chandelier_available",
+      "effect": "method_chandelier_exit"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 12288
+    }
+  }
+}

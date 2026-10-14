@@ -1,0 +1,26 @@
+{
+  "instrument_key": "cost_aware_exit",
+  "method_key": "internet_native_single_partial_atr_runner_v1",
+  "revision": 1,
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["c38756f9baa045b0d59c0aebb1f03500635556ae8e1ad7cbbf5ce628d1f540b2"],
+  "known_limitations": [
+    "Construction-time EMA/RSI-family adapter only: set one partial fraction to 0.50, partial target to 1.0 native management ATR, prior-close ATR trail to 2.0 and time stop to 24 execution candles before sealing the new model. Selecting this recipe during replay cannot change an existing sealed vector or create an entry.",
+    "The native partial target is market-entry price plus or minus the CURRENT evaluated candle's management ATR times the multiplier. That ATR is not frozen at entry, and this is not a fixed 1R target or an advance broker order with an entry-known price. Native full stop/target and time-exit handling precede the partial test; intrabar ordering is not observed from OHLC.",
+    "The owner permits one partial only. It stores the partial execution price and weights that fraction together with the remaining return at final close. It does not expose an independently realized-cash partial-close ledger, release capital at the partial, reduce the original position-size field or proportionally shorten carry charges. These native costs and bookkeeping remain unchanged.",
+    "The trail ratchets from the preceding closed candle's close plus or minus 2.0 native management ATR and applies to the owned position before as well as after its partial. It is not activated by the partial and is not a Chandelier rolling-extreme stop, break-even stop or multi-stage scale-out. Twenty-four candles means the configured execution timeframe, not twenty-four hours.",
+    "The initial stop, final target, account equity, per-trade risk budget, leverage cap, spread, slippage, commission and carry model remain those of the compatible original baseline. A partial profit or tighter ratchet does not guarantee a smaller realized loss or a positive net account result.",
+    "CME documents partial and remainder exits at different prices, not this fifty-percent/one-ATR/two-ATR/twenty-four-bar combination or the London normal-volatility trend-up scope. All exact settings and their economic utility are prospective lab hypotheses. This supplement grants no independent market validation, learned skill, economic credit, Master status, promotion or paper/live authority."
+  ],
+  "implementation": {
+    "kind": "parameter_adapter",
+    "strategy_family": "ema_rsi",
+    "parameters": {
+      "partial_take_profit_fraction": 0.50,
+      "partial_target_atr_multiplier": 1.0,
+      "trailing_atr_multiplier": 2.0,
+      "time_stop_candles": 24
+    }
+  }
+}

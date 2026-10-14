@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/chandelier-exit",
+  "content": "Curator paraphrase: Chandelier long and short levels use a rolling22-period highest high minus3 times ATR22 and lowest low plus3 times ATR22. These levels may rise or fall with the rolling extrema and volatility. This supplement uses a closed price beyond the corresponding held-position level to request an owned exit at the next execution opportunity. It is not an intrabar protective stop or a broker order; M5 adaptation and trading context are laboratory scope choices.",
+  "metadata": {
+    "license": "Original curator paraphrase; publisher retains rights; no copied code, transcript or market outcomes.",
+    "access": "public",
+    "title": "Chandelier Exit",
+    "publisher": "StockCharts ChartSchool",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

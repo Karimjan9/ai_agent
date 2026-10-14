@@ -1,0 +1,48 @@
+{
+  "instrument_key": "range_reentry",
+  "method_key": "internet_closed_wilder_rsi_14_recovery_v1",
+  "revision": 1,
+  "context_predicate": {
+    "regime": "range",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": [
+    "4aaddccd799fe6a93aa9114067650161dd7e4ce84deda2185e702a5dc44872ad"
+  ],
+  "known_limitations": [
+    "RSI14 seeds average gain/loss from the first14 close differences at index14; later averages are(previous average*13+current delta)/14. Both zero averages map to50; loss alone zero maps100, gain alone zero maps0. The first mature adjacent comparison is index15.",
+    "BUY requires previous RSI strictly below30 and current strictly above30; SELL requires previous strictly above70 and current strictly below70. Equality waits; a crossing cannot bridge a missing immediate bar.",
+    "Wilder formula and conventional boundaries come from established references. Boundary-recovery interpretation, EMA-independent execution, range/London/normal context and hour horizon are laboratory hypotheses, not guaranteed mean reversion.",
+    "This only confirms an existing same-direction proposal. It does not fabricate confidence, quotes, volume, directions or beneficial trade outcomes. Strong trends may invalidate the interpretation."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {
+          "op": "BOOL",
+          "input_key": "available",
+          "available_at": "2000-01-01T00:00:00Z"
+        },
+        {
+          "op": "BOOL",
+          "input_key": "effect",
+          "available_at": "2000-01-01T00:00:00Z"
+        }
+      ]
+    },
+    "input_bindings": {
+      "available": "method_rsi_available",
+      "effect": "method_rsi_recovery"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 12288
+    }
+  }
+}

@@ -25,6 +25,8 @@ BOOL_FIELDS = {
     "method_band_available", "method_band_reentry",
     "method_pullback_available", "method_pullback_confirmed",
     "method_retest_available", "method_retest_confirmed",
+    "method_macd_available", "method_macd_cross", "method_rsi_available", "method_rsi_recovery",
+    "method_chandelier_available", "method_chandelier_exit",
 }
 NUMBER_FIELDS = {
     "method_atr_ratio", "method_range_atr", "method_session_range_atr",
@@ -59,6 +61,33 @@ def _utc(value) -> pd.Timestamp:
     if pd.isna(stamp) or stamp.tzinfo is None:
         raise ValueError("METHOD_FEATURE_EXPLICIT_UTC_REQUIRED")
     return stamp.tz_convert("UTC")
+
+
+def _wilder_average(values: pd.Series, period: int, *, first: int = 0) -> pd.Series:
+    """Closed arithmetic seed, then Wilder recursion; no invented early values."""
+    result = [float("nan")] * len(values)
+    seed_index = first + period - 1
+    if seed_index >= len(values):
+        return pd.Series(result, index=values.index, dtype=float)
+    seed = [_number(value) for value in values.iloc[first:seed_index + 1]]
+    if any(value is None for value in seed):
+        return pd.Series(result, index=values.index, dtype=float)
+    try:
+        average = _number(math.fsum(seed) / period)
+    except OverflowError:
+        return pd.Series(result, index=values.index, dtype=float)
+    if average is None:
+        return pd.Series(result, index=values.index, dtype=float)
+    result[seed_index] = average
+    for index in range(seed_index + 1, len(values)):
+        value = _number(values.iloc[index])
+        if value is None:
+            break
+        average = _number((average * (period - 1) + value) / period)
+        if average is None:
+            break
+        result[index] = average
+    return pd.Series(result, index=values.index, dtype=float)
 
 
 class ClosedInstrumentMethodFeatures:
@@ -113,6 +142,28 @@ class ClosedInstrumentMethodFeatures:
         ema50 = close.ewm(span=50, adjust=False, min_periods=50).mean()
         donchian_high = high.shift(1).rolling(20, min_periods=20).max()
         donchian_low = low.shift(1).rolling(20, min_periods=20).min()
+        # Fidelity documents the conventional MACD EMA difference and signal
+        # EMA. Fixed recursive seeds/maturity and adjacent closed crossings are
+        # lab contracts, not publisher-qualified signals or probabilities.
+        macd = (close.ewm(span=12, adjust=False, min_periods=12).mean()
+            - close.ewm(span=26, adjust=False, min_periods=26).mean())
+        macd_signal = macd.ewm(span=9, adjust=False, min_periods=9).mean()
+        # Wilder RSI seeds the first fourteen observed close changes, not the
+        # initial close; flat/one-sided histories retain their defined bounds.
+        delta = close.diff()
+        rsi_gain = _wilder_average(delta.clip(lower=0), 14, first=1)
+        rsi_loss = _wilder_average(-delta.clip(upper=0), 14, first=1)
+        wilder_rsi = 100.0 - 100.0 / (1.0 + rsi_gain / rsi_loss)
+        wilder_rsi.loc[rsi_loss.eq(0) & rsi_gain.gt(0)] = 100.0
+        wilder_rsi.loc[rsi_gain.eq(0) & rsi_loss.gt(0)] = 0.0
+        wilder_rsi.loc[rsi_gain.eq(0) & rsi_loss.eq(0)] = 50.0
+        # TradingView describes extrema +/- ATR multiples. This fixed 22/3,
+        # current-window close-only variant neither ratchets a physical stop
+        # nor changes the older simple-ATR method observation. With no preceding
+        # close on the first row, its observed high-low is the initial TR.
+        chandelier_atr = _wilder_average(tr, 22)
+        chandelier_long = high.rolling(22, min_periods=22).max() - 3.0 * chandelier_atr
+        chandelier_short = low.rolling(22, min_periods=22).min() + 3.0 * chandelier_atr
         volume = pd.Series([_number(row.get("volume")) for row in rows], dtype=float)
         observed_volume = pd.Series([_flag(row.get("volume_available")) for row in rows]) & volume.gt(0)
         previous_volume = volume.where(observed_volume).shift(1).rolling(20, min_periods=20).mean()
@@ -151,6 +202,36 @@ class ClosedInstrumentMethodFeatures:
             previous_fast = _number(ema20.iloc[index - 1]) if index else None
             previous_trend = _number(ema50.iloc[index - 1]) if index else None
             contiguous = bool(index and stamp - self.stamps[index - 1] == self.duration)
+            macd_value, macd_reference = _number(macd.iloc[index]), _number(macd_signal.iloc[index])
+            previous_macd = _number(macd.iloc[index - 1]) if index else None
+            previous_macd_reference = _number(macd_signal.iloc[index - 1]) if index else None
+            macd_ready = contiguous and all(value is not None for value in
+                (macd_value, macd_reference, previous_macd, previous_macd_reference))
+            macd_direction = None
+            if macd_ready:
+                if previous_macd <= previous_macd_reference and macd_value > macd_reference:
+                    macd_direction = "BUY"
+                elif previous_macd >= previous_macd_reference and macd_value < macd_reference:
+                    macd_direction = "SELL"
+            rsi_value = _number(wilder_rsi.iloc[index])
+            previous_rsi = _number(wilder_rsi.iloc[index - 1]) if index else None
+            rsi_ready = contiguous and rsi_value is not None and previous_rsi is not None
+            rsi_direction = None
+            if rsi_ready:
+                if previous_rsi < 30.0 and rsi_value > 30.0:
+                    rsi_direction = "BUY"
+                elif previous_rsi > 70.0 and rsi_value < 70.0:
+                    rsi_direction = "SELL"
+            chandelier_range = _number(chandelier_atr.iloc[index])
+            long_level, short_level = _number(chandelier_long.iloc[index]), _number(chandelier_short.iloc[index])
+            chandelier_ready = (chandelier_range is not None and chandelier_range > 0
+                and long_level is not None and short_level is not None)
+            output.update({"method_macd_available": macd_ready, "_macd": macd_value,
+                "_macd_signal": macd_reference, "_macd_cross_direction": macd_direction,
+                "method_rsi_available": rsi_ready, "_wilder_rsi14": rsi_value,
+                "_rsi_recovery_direction": rsi_direction,
+                "method_chandelier_available": chandelier_ready, "_wilder_atr22": chandelier_range,
+                "_chandelier_long": long_level, "_chandelier_short": short_level})
             # The immediate pullback/reclaim pair cannot bridge a missing bar
             # or weekend; the fifty-close EMA history need not be gap-free.
             pullback_ready = contiguous and all(value is not None for value in (fast, trend, previous_fast, previous_trend))
@@ -332,6 +413,11 @@ class ClosedInstrumentMethodFeatures:
             output["method_band_reentry"] = source["_band_reentry_direction"] == direction
             output["method_pullback_confirmed"] = source["_pullback_direction"] == direction
             output["method_retest_confirmed"] = source["_retest_direction"] == direction
+            output["method_macd_cross"] = source["_macd_cross_direction"] == direction
+            output["method_rsi_recovery"] = source["_rsi_recovery_direction"] == direction
+            if output["method_chandelier_available"]:
+                output["method_chandelier_exit"] = bool(close < source["_chandelier_long"] if buy
+                    else close > source["_chandelier_short"])
             output["method_bos"] = source["_break_direction"] == direction
             output["method_choch"] = source["_change_direction"] == direction
             code = source.get("method_regime_code")

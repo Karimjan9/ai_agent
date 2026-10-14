@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T08:08:08.223Z",
-  "source_digest": "027a1e579aa4832da27b71b993596580c2c1a6651580e090c167ba229d9e6396",
-  "source_file_count": 1686,
-  "git_head": "35cac7a66c64a332248c179c63b58ccdb87aa8c2",
+  "generated_at": "2026-10-14T09:08:37.414Z",
+  "source_digest": "7c50ecd98a32aaec42eebef226dd4c32858adea97650e0378aaa111c49b768e3",
+  "source_file_count": 1690,
+  "git_head": "5700994b7ad9ab8290b576275b40c18e05afeb44",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -820,6 +820,33 @@
         "test_m5_volume_uses_seven_day_m5_budget_and_causal_bucket",
         "test_invalid_legacy_spread_values_cannot_claim_observation",
         "test_numeric_legacy_spread_remains_unverified_for_promotion"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_source_grounded_method_features.py",
+      "tests": [
+        "test_macd_recursive_formula_signal_seed_and_two_mature_closed_values",
+        "test_macd_strict_current_cross_previous_equality_direction_and_current_equality_wait",
+        "test_rsi_first_fourteen_deltas_seed_and_wilder_not_ewm_or_rolling_update",
+        "test_rsi_flat_zero_loss_zero_gain_bounds_and_directional_recovery",
+        "test_rsi_threshold_equality_on_either_closed_bar_waits",
+        "test_chandelier_rolling_extremes_and_arithmetic_seed_then_wilder_atr",
+        "test_chandelier_close_only_directional_owned_exit_and_equality_wait",
+        "test_gap_cannot_confirm_macd_or_rsi_and_configured_duration_is_used",
+        "test_future_suffix_cannot_rewrite_closed_public_or_private_formula_prefixes",
+        "test_supplied_derived_columns_and_input_spoofs_are_ignored_while_ohlc_drift_refuses",
+        "test_current_candle_is_unavailable_before_close_and_all_new_fields_are_typed",
+        "test_nonfinite_source_or_overflowed_derived_seed_cannot_supply_chandelier_levels"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_source_grounded_method_runtime.py",
+      "tests": [
+        "test_unpatched_native_ema_missing_volume_and_actual_context_are_preserved",
+        "test_macd_and_wilder_rsi_confirmation_consume_closed_directional_features_not_new_signals",
+        "test_chandelier_owned_exit_is_prior_closed_next_open_and_never_rewrites_stop",
+        "test_risk_multiplier_reduces_actual_cost_inclusive_exposure_not_hard_risk_limit",
+        "test_chandelier_exit_cannot_bypass_existing_gap_stop_execution_price"
       ]
     },
     {
@@ -3264,6 +3291,20 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php",
+      "tests": [
+        "test_cli_registers_append_only_source_method_and_recipe_without_agent_or_catalog_changes",
+        "test_adapter_changes_only_the_four_declared_management_fields_and_preserves_guards",
+        "test_php_compiled_parameters_drive_one_native_partial_and_the_owned_runner_on_synthetic_prices",
+        "register",
+        "compile",
+        "scope",
+        "parameters",
+        "input",
+        "path"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/NativeSpecialistCouncilConstructorTest.php",
       "tests": [
         "intent",
@@ -4296,6 +4337,17 @@
       "tests": [
         "test_audit_uses_primary_key_and_reports_arms_controls_and_replay_identity_read_only",
         "test_edge_progressing_is_a_stage_result_and_not_a_terminal_trial"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php",
+      "tests": [
+        "test_primary_source_supplements_are_append_only_and_do_not_qualify_or_rebind_agents",
+        "test_all_single_and_hybrid_methods_compile_on_exact_baselines_without_physical_mutation",
+        "test_wrong_types_and_retroactive_rule_replacement_are_refused",
+        "registerAll",
+        "input",
+        "path"
       ]
     },
     {

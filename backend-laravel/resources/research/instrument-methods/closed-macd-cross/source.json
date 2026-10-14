@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/macd",
+  "content": "Curator paraphrase: MACD subtracts EMA26 from EMA12 of prices and uses an EMA9 signal line. Crossing above the signal is a bullish observation; crossing below is bearish. Range conditions can generate repeated false crossings. This supplement computes those closed observations and only confirms an already proposed direction; the hour horizon and exact market context are laboratory scope choices, not publisher validation or an independent profitable strategy.",
+  "metadata": {
+    "license": "Original curator paraphrase; publisher retains rights; no copied code, transcript or market outcomes.",
+    "access": "public",
+    "title": "MACD",
+    "publisher": "Fidelity",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

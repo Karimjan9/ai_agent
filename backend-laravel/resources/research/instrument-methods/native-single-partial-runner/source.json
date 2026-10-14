@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.cmegroup.com/education/courses/futures-trading-mechanics-and-regulation/futures-order-types",
+  "content": "Original curator paraphrase of the primary CME Group Futures Order Types lesson: a trader may exit part of a multi-contract position at one price and exit the remainder at another price. This establishes partial position exits as a genuine order-management technique. The lesson does not specify a fifty-percent allocation, ATR-based partial target, ATR trailing distance or holding-period optimum. Those settings and the existing simulator's simplified accounting in this supplement are separately declared lab hypotheses, not CME recommendations or profitable-strategy evidence.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code, chart or market outcomes.",
+    "access": "public",
+    "title": "Futures Order Types — Partial Position Exits",
+    "publisher": "CME Group",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

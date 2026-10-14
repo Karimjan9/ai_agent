@@ -2,6 +2,15 @@
 
 ## Separate observational agent-method outcome learning
 
+Reviewed primary method references -> immutable source/method/recipe revisions
+-> exact fresh baseline compilation -> past-closed MACD/RSI confirmation or
+owned Chandelier close-exit -> original use/behavior/account receipt -> bounded
+control/ablation archive comparison. An unchanged or unreached method is a null
+or coverage finding, never automatic skill credit. Native single-partial runner
+construction declares its physical four-gene delta before replay and keeps
+external risk/cost identity. No source text is executed and agent-owned policy
+development remains independent of curator library revisions.
+
 Original closed frame -> shared calendar grouping for absent session inputs ->
 prefix-only method features -> bounded typed confirmation/risk/exit -> actual
 entry/WAIT and owned position receipt. Observed-quote, closed-band reentry,

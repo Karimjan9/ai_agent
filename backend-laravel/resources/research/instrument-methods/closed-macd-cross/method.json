@@ -1,0 +1,48 @@
+{
+  "instrument_key": "trend_pullback",
+  "method_key": "internet_closed_macd_12_26_9_v1",
+  "revision": 1,
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": [
+    "85b2377bb98eb5503c2d9bc3cfed50fca7d4b4f4bfe6cb1f31cfae9bc5a61e9d"
+  ],
+  "known_limitations": [
+    "MACD uses close EMA12 minus EMA26, adjust=False recursion seeded from the first observed close; EMA26 becomes mature after26 closes. Signal uses9 mature MACD values. The first previous/current pair is index34. Only immediate configured-duration neighbors can cross; equality at current signal waits.",
+    "BUY requires previous MACD<=previous signal and current MACD>current signal; SELL mirrors this. These are closed-bar directional confirmations, not an unbounded order generator. No caller indicator columns or future candles are trusted.",
+    "EMA seeding, maturity, M5 application, trend_up/London/normal context and hour horizon are explicit laboratory conventions. The cited source gives indicator defaults/crossing interpretation, not economic qualification of this composition.",
+    "Only an existing strategy candidate can be vetoed. Physical strategy, risk, costs and exit stay identical. Missing history cannot confirm."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {
+          "op": "BOOL",
+          "input_key": "available",
+          "available_at": "2000-01-01T00:00:00Z"
+        },
+        {
+          "op": "BOOL",
+          "input_key": "effect",
+          "available_at": "2000-01-01T00:00:00Z"
+        }
+      ]
+    },
+    "input_bindings": {
+      "available": "method_macd_available",
+      "effect": "method_macd_cross"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 12288
+    }
+  }
+}

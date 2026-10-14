@@ -1,0 +1,12 @@
+{
+  "recipe_key": "internet_closed_chandelier_22_3_exit_recipe_v1",
+  "revision": 1,
+  "method_hashes": [
+    "162580a0525759056d67af9851263062c4e8ac5e5260b034bc911d7f224bee27"
+  ],
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

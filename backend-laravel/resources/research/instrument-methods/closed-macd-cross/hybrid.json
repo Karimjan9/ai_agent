@@ -1,0 +1,13 @@
+{
+  "recipe_key": "internet_macd_chandelier_close_managed_recipe_v1",
+  "revision": 1,
+  "method_hashes": [
+    "e8b810eabd771790e343adc1e4c4b9da2280cff45d6e46fbfcf29e2cb1e47b26",
+    "162580a0525759056d67af9851263062c4e8ac5e5260b034bc911d7f224bee27"
+  ],
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

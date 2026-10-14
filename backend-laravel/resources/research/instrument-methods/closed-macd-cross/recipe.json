@@ -1,0 +1,12 @@
+{
+  "recipe_key": "internet_closed_macd_12_26_9_recipe_v1",
+  "revision": 1,
+  "method_hashes": [
+    "e8b810eabd771790e343adc1e4c4b9da2280cff45d6e46fbfcf29e2cb1e47b26"
+  ],
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

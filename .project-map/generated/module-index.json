@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T08:08:08.223Z",
-  "source_digest": "027a1e579aa4832da27b71b993596580c2c1a6651580e090c167ba229d9e6396",
-  "source_file_count": 1686,
-  "git_head": "35cac7a66c64a332248c179c63b58ccdb87aa8c2",
+  "generated_at": "2026-10-14T09:08:37.414Z",
+  "source_digest": "7c50ecd98a32aaec42eebef226dd4c32858adea97650e0378aaa111c49b768e3",
+  "source_file_count": 1690,
+  "git_head": "5700994b7ad9ab8290b576275b40c18e05afeb44",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -66,6 +66,24 @@
         "backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php",
         "backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php",
         "backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php",
+        "backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php",
+        "backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php",
+        "ai-service-python/tests/test_source_grounded_method_features.py",
+        "ai-service-python/tests/test_source_grounded_method_runtime.py",
+        "docs/operations/source-grounded-method-backtests-2026-10-14.md",
+        "backend-laravel/resources/research/instrument-methods/closed-macd-cross/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-macd-cross/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-macd-cross/recipe.json",
+        "backend-laravel/resources/research/instrument-methods/closed-macd-cross/hybrid.json",
+        "backend-laravel/resources/research/instrument-methods/closed-rsi-recovery/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-rsi-recovery/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-rsi-recovery/recipe.json",
+        "backend-laravel/resources/research/instrument-methods/closed-chandelier-exit/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-chandelier-exit/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-chandelier-exit/recipe.json",
+        "backend-laravel/resources/research/instrument-methods/native-single-partial-runner/source.json",
+        "backend-laravel/resources/research/instrument-methods/native-single-partial-runner/method.json",
+        "backend-laravel/resources/research/instrument-methods/native-single-partial-runner/recipe.json",
         "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
         "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
         "backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php",
@@ -440,6 +458,10 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php",
+        "backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php",
+        "ai-service-python/tests/test_source_grounded_method_features.py",
+        "ai-service-python/tests/test_source_grounded_method_runtime.py",
         "backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php",
         "backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php",
         "backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php",
@@ -533,7 +555,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 186,
+      "source_file_count": 190,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {

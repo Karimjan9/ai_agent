@@ -1,0 +1,12 @@
+{
+  "recipe_key": "internet_closed_wilder_rsi_14_recovery_recipe_v1",
+  "revision": 1,
+  "method_hashes": [
+    "b347f255996273d7153c929b056b12c9bab428d2e0ff2e219b58576ef8684891"
+  ],
+  "context_predicate": {
+    "regime": "range",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

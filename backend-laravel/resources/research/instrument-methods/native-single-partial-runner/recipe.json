@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_native_single_partial_atr_runner_recipe_v1",
+  "revision": 1,
+  "method_hashes": ["fa8f367e9aa39f8a736a25ae61dbd74a1b322b36b297a247180f297ce3cd6b62"],
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}
+}

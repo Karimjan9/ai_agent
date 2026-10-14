@@ -57,6 +57,10 @@ class ResearchSourceArtifactTest extends TestCase
         'observed-quote-firewall' => ['quote-source', 'atr-source', 'method', 'recipe'],
         'closed-ema-pullback' => ['source', 'method', 'recipe'],
         'closed-donchian-retest' => ['source', 'method', 'recipe'],
+        'closed-macd-cross' => ['source', 'method', 'recipe', 'hybrid'],
+        'closed-rsi-recovery' => ['source', 'method', 'recipe'],
+        'closed-chandelier-exit' => ['source', 'method', 'recipe'],
+        'native-single-partial-runner' => ['source', 'method', 'recipe'],
     ];
     private const METHOD_SUPPLEMENT_SOFTWARE_FILES = [
         'backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php',
@@ -64,6 +68,10 @@ class ResearchSourceArtifactTest extends TestCase
         'backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php',
         'backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php',
         'backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php',
+        'backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php',
+        'backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php',
+        'ai-service-python/tests/test_source_grounded_method_features.py',
+        'ai-service-python/tests/test_source_grounded_method_runtime.py',
         'ai-service-python/tests/test_instrument_method_session_runtime.py',
         'ai-service-python/tests/test_instrument_method_band_reentry.py',
         'ai-service-python/tests/test_observed_quote_method.py',
@@ -240,7 +248,7 @@ class ResearchSourceArtifactTest extends TestCase
     public function test_exact_method_supplements_and_synthetic_software_fixtures_are_archived_but_provider_and_private_files_are_not(): void
     {
         $paths = $this->methodSupplementPaths();
-        $this->assertCount(27, $paths); // Fourteen declarations, eleven tests, two synthetic fixtures.
+        $this->assertCount(44, $paths); // Twenty-seven declarations, fifteen tests, two synthetic fixtures.
         $projectRoot = dirname(base_path());
         $archive = $this->owner->buildSourceArtifact();
         foreach ($paths as $path) {
