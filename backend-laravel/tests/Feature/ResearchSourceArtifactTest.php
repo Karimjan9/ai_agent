@@ -52,6 +52,36 @@ class FixtureResearchSourceArtifactOwner extends ResearchReleaseSealService
 class ResearchSourceArtifactTest extends TestCase
 {
     use RefreshDatabase;
+    private const METHOD_SUPPLEMENT_DECLARATIONS = [
+        'closed-band-reentry' => ['source', 'method', 'recipe', 'probe-spec'],
+        'observed-quote-firewall' => ['quote-source', 'atr-source', 'method', 'recipe'],
+        'closed-ema-pullback' => ['source', 'method', 'recipe'],
+        'closed-donchian-retest' => ['source', 'method', 'recipe'],
+    ];
+    private const METHOD_SUPPLEMENT_SOFTWARE_FILES = [
+        'backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php',
+        'backend-laravel/tests/Feature/ResearchExperimentConversionKernelServiceTest.php',
+        'backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php',
+        'backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php',
+        'backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php',
+        'ai-service-python/tests/test_instrument_method_session_runtime.py',
+        'ai-service-python/tests/test_instrument_method_band_reentry.py',
+        'ai-service-python/tests/test_observed_quote_method.py',
+        'ai-service-python/tests/test_instrument_method_quote_alias.py',
+        'ai-service-python/tests/test_instrument_method_pullback_retest.py',
+        'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.csv',
+        'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json',
+    ];
+    private const EXCLUDED_METHOD_SOURCE_FILES = [
+        'backend-laravel/resources/research/instrument-methods/unlisted.json',
+        'backend-laravel/resources/research/instrument-methods/closed-band-reentry/unlisted.json',
+        'ai-service-python/tests/fixtures/provider-quotes.csv',
+        'ai-service-python/tests/fixtures/observed_quote_canonical.csv',
+        'ai-service-python/tests/fixtures/unlisted.provenance.json',
+        'backend-laravel/storage/app/lab-datasets/provider-quotes.csv',
+        '.runtime/private-method-panel.py',
+        'docs/task-final-notes.md',
+    ];
     private string $root;
     private FixtureResearchSourceArtifactOwner $owner;
 
@@ -83,6 +113,10 @@ class ResearchSourceArtifactTest extends TestCase
         ] as $path => $bytes) {
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             File::put($this->root.'/'.$path, $bytes);
+        }
+        foreach ([...$this->methodSupplementPaths(), ...self::EXCLUDED_METHOD_SOURCE_FILES] as $path) {
+            File::ensureDirectoryExists(dirname($this->root.'/'.$path));
+            File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $this->owner = new FixtureResearchSourceArtifactOwner($this->root);
     }
@@ -200,6 +234,57 @@ class ResearchSourceArtifactTest extends TestCase
         $this->assertSame('verified', $this->owner->verifySourceArtifact($reference)['status']);
         $this->expectExceptionMessage('SOURCE_ARTIFACT_SOURCE_DRIFT');
         $this->owner->verifySourceArtifact($reference, true);
+    }
+
+    public function test_exact_method_supplements_and_synthetic_software_fixtures_are_archived_but_provider_and_private_files_are_not(): void
+    {
+        $paths = $this->methodSupplementPaths();
+        $this->assertCount(26, $paths); // Fourteen declarations, ten tests, two synthetic fixtures.
+        $projectRoot = dirname(base_path());
+        $archive = $this->owner->buildSourceArtifact();
+        foreach ($paths as $path) {
+            $this->assertFileExists($projectRoot.'/'.$path, 'The explicitly allowlisted real repository path must exist.');
+            $this->assertArrayHasKey($path, $archive['manifest']['files']);
+            $this->assertSame(hash_file('sha256', $this->root.'/'.$path), $archive['manifest']['files'][$path]['sha256']);
+        }
+        foreach (self::EXCLUDED_METHOD_SOURCE_FILES as $path) {
+            $this->assertFileExists($this->root.'/'.$path);
+            $this->assertArrayNotHasKey($path, $archive['manifest']['files']);
+        }
+        $provenance = json_decode(File::get($projectRoot.'/ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json'), true, 32, JSON_THROW_ON_ERROR);
+        $this->assertTrue($provenance['synthetic']);
+        $this->assertFalse($provenance['provider_data']);
+        $this->assertTrue($provenance['software_fixture_only']);
+        $this->assertFalse($archive['scientific_evidence']);
+        $this->assertFalse($archive['promotion_evidence']);
+    }
+
+    public function test_each_new_method_declaration_drift_retires_current_pointer_without_rewriting_the_verified_old_archive(): void
+    {
+        $archive = $this->owner->buildSourceArtifact();
+        $reference = $archive['reference'];
+        $zipHash = hash_file('sha256', $this->zipPath($reference));
+        $pointer = File::get($this->root.'/.runtime/research-source-artifacts/current.json');
+        foreach (array_keys(self::METHOD_SUPPLEMENT_DECLARATIONS) as $supplement) {
+            $path = 'backend-laravel/resources/research/instrument-methods/'.$supplement.'/method.json';
+            $original = File::get($this->root.'/'.$path);
+            File::put($this->root.'/'.$path, '{"fixture":"changed new method declaration"}');
+            $this->assertNull($this->owner->currentSourceArtifact(), $supplement);
+            $verified = $this->owner->verifySourceArtifact($reference);
+            $this->assertSame('verified', $verified['status']);
+            $this->assertSame($archive['manifest'], $verified['manifest']);
+            $this->assertSame($zipHash, hash_file('sha256', $this->zipPath($reference)));
+            $this->assertSame($pointer, File::get($this->root.'/.runtime/research-source-artifacts/current.json'));
+            try {
+                $this->owner->verifySourceArtifact($reference, true);
+                $this->fail('Changed '.$supplement.' declaration must not certify the current release.');
+            } catch (RuntimeException $error) {
+                $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $error->getMessage());
+            } finally {
+                File::put($this->root.'/'.$path, $original);
+            }
+            $this->assertSame($reference, $this->owner->currentSourceArtifact());
+        }
     }
 
     public function test_alternative_catalog_drift_is_a_new_release_not_a_rewrite_of_v1(): void
@@ -355,6 +440,15 @@ class ResearchSourceArtifactTest extends TestCase
         $legacy['release_hash'] = app(\App\Services\ExecutionContractService::class)->hashParameters($identity);
         $fresh->update(['trigger_context' => ['research_release' => $legacy, 'mtf_bundle_hash' => str_repeat('b', 64)]]);
         $this->assertSame($legacy, $this->owner->seal($fresh->fresh())->trigger_context['research_release']);
+    }
+
+    private function methodSupplementPaths(): array
+    {
+        $paths = self::METHOD_SUPPLEMENT_SOFTWARE_FILES;
+        foreach (self::METHOD_SUPPLEMENT_DECLARATIONS as $directory => $kinds) {
+            foreach ($kinds as $kind) $paths[] = 'backend-laravel/resources/research/instrument-methods/'.$directory.'/'.$kind.'.json';
+        }
+        return $paths;
     }
 
     private function zipPath(array $reference): string { return $this->root.'/'.$reference['archive_path']; }

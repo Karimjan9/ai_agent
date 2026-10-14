@@ -108,7 +108,13 @@ credentials, environment files, datasets, storage and installed dependencies
 are excluded. Build after source changes/tests are final and before the next
 new generation seal. Non-secret authorized paper/research registry digests
 also bind effective policy changes; a changed registry retires only the current
-pointer, never rewrites the original archive. Matching new seals include the
+pointer, never rewrites the original archive.
+
+Instrument-method source packaging explicitly names the four append-only
+quote/band/pullback/retest supplement declarations, their focused tests and two
+labelled synthetic fixtures. It does not glob provider CSVs or private backtest
+products; declaration drift retires only current-source certification, never
+rewrites the original archive or an old experiment. Matching new seals include the
 verified archive reference;
 absence remains diagnostic incomplete, never retroactive archive proof.
 `--verify-source-artifact=HASH` verifies source/archive bytes without extracting

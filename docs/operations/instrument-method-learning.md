@@ -333,6 +333,13 @@ Use the existing drain-first artifact/boot-attested release procedure. Never
 attach to an admitted generation or relabel old data as independent. Pre-2026
 research continues; 2026 and every later year remains paper-only.
 
+The byte artifact explicitly includes all fourteen declarations in the four
+append-only quote/band/pullback/retest supplements, ten focused software tests
+and two labelled synthetic quote-fixture files. Provider CSVs, private panel
+products, runtime helpers and unlisted resource files remain excluded. A changed
+supplement invalidates only the current release pointer; the original verified
+archive remains immutable historical source bytes, not market evidence.
+
 Further qualifications are empirical: additional per-instrument approaches,
 scope-specific independent issuer, specialist transfer/retention, native council
 comparison and prospective paper behavior. A registry or a passing software
