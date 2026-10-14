@@ -1,0 +1,38 @@
+{
+  "instrument_key": "range_reentry",
+  "method_key": "internet_closed_band_reentry_20_2_v2",
+  "revision": 2,
+  "context_predicate": {
+    "regime": "range",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": ["cf02f74c9bb1f072d4e729e3916143a346bef36a4cd455ed7feec8b60d09c5bd"],
+  "known_limitations": [
+    "The closed feature owner computes each band's twenty-close SMA and population standard deviation (ddof=0), with width two deviations; both consecutive windows must have positive width.",
+    "BUY requires the previous close strictly below its own lower band, the current close strictly inside its own bands and a higher current close; SELL mirrors this across the upper band. A band touch, continuing outside close or widening-band recapture with no inward price movement does not qualify.",
+    "This additional confirmation vetoes an existing same-direction strategy signal only after the current bar closes. It creates no BUY/SELL direction and changes no quotes, cost accounting, sizing, risk caps or exit owner.",
+    "The range/session/volatility context and exact thresholds are prospective lab hypotheses. This is not Bollinger's complete W-bottom/M-top method or an independently qualified reversal skill. The old construction-only mean-reversion declaration remains unchanged."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+        {"op": "BOOL", "input_key": "reentry", "available_at": "2000-01-01T00:00:00Z"}
+      ]
+    },
+    "input_bindings": {
+      "available": "method_band_available",
+      "reentry": "method_band_reentry"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 12288
+    }
+  }
+}

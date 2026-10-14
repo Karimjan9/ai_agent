@@ -1,0 +1,20 @@
+{
+  "kind": "imported_text",
+  "reference": "https://help.ctrader.com/indicators/built-in/volatility/average-true-range/",
+  "content": "Original curator paraphrase: cTrader describes ATR as a moving average of true range over a declared period, with a simple 14-period average as its documented default. The lab feature variant uses the arithmetic mean of the latest 14 completed true ranges, each the maximum of high-minus-low, absolute high-minus-previous-close and absolute low-minus-previous-close. It is not Wilder recursive smoothing. ATR describes volatility, not direction, expected profit or confirmation of this spread gate.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or market outcomes.",
+    "access": "public",
+    "title": "Average True Range and the explicit simple-average variant",
+    "publisher": "Spotware cTrader",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "feature_variant": "closed_true_range_sma_14",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

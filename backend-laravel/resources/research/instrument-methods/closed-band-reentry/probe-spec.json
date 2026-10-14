@@ -1,0 +1,34 @@
+{
+  "protocol": "instrument_method_prospective_probe_spec_v1",
+  "status": "plan_only_original_unseen_input_required",
+  "method_key": "internet_closed_band_reentry_20_2_v2",
+  "revision": 2,
+  "hypothesis": "An exact closed outside-to-inside range confirmation changes an existing agent's own entry selection; net cost-inclusive utility is unknown until original replay and mature owned episodes exist.",
+  "context_predicate": {"regime": "range", "session": "london", "volatility": "normal"},
+  "input_requirements": {
+    "timeframe": "M5",
+    "pre_2026_only": true,
+    "max_raw_rows": 4096,
+    "warmup_rows": 200,
+    "requires_prospective_source_hash_and_closed_clock": true,
+    "requires_observed_outside_then_inside_opportunities": true,
+    "missing_opportunity_result": "underpowered_without_invented_reentry",
+    "data_seen_by_old_generation_or_method_outcome": "cannot_claim_independent_evidence"
+  },
+  "comparison": {
+    "control": "Unused same-baseline strategy model with no new range-reentry confirmation.",
+    "candidate": "Unused same-baseline strategy model with the exact new typed confirmation recipe; library and policy hash are frozen before original publication.",
+    "exact_equal_controls": ["original OHLC rows and their order", "observed bid/ask coverage", "cost contract", "account and capital", "risk governor and sizing", "base strategy parameters", "stop and target", "holding and exit owner", "executed clock and resource caps"],
+    "existing_canonical_owner": "Register source, method and recipe through the existing method library; compile and execute only a prospectively authorized existing original matrix or unused-model replay owner. This file queues nothing."
+  },
+  "record": ["closed previous and current band availability", "outside-side and inward direction", "policy and recipe identity", "original entry veto or permission", "accepted entry and own position link", "mature uncensored cost-inclusive close", "signal count and changed behavior count", "same physical clock and cost/risk parity"],
+  "boundaries": {
+    "software_fixture_is_market_evidence": false,
+    "economic_authority": false,
+    "independent_validation": false,
+    "paper_authority": false,
+    "old_v1_and_v2_snapshots_unchanged": true,
+    "maximum_original_attempts_per_arm": 1,
+    "replay_after_outcome_or_timeout": false
+  }
+}

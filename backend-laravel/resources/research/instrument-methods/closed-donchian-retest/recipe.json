@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_closed_donchian_retest_20_3_recipe_v2",
+  "revision": 2,
+  "method_hashes": ["094252dde2eb8e58f775d439479d9197ea8a2a1b22cd158aedd4a272079d20aa"],
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}
+}

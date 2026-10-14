@@ -1,0 +1,61 @@
+{
+  "instrument_key": "cost_firewall",
+  "method_key": "internet_observed_quote_cost_firewall",
+  "revision": 1,
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  },
+  "horizon": "hour",
+  "source_keys": [
+    "d7eef36f3aca847123b24592921058200f9ae57dc4b6ce2117f3edb54e65415a",
+    "6f30ee62684fd9d29d58ed7fc4cfb40bf0a2abe73dd023ae4c3fd7b82ba8a030"
+  ],
+  "known_limitations": [
+    "Effective entry is existing runtime confirmation AND validated observed quote availability AND observed spread divided by closed ATR strictly less than 0.10; this method only vetoes an existing direction.",
+    "Requires the original quote's availability flag, bid-close/ask-close/spread agreement, in-candle quote timestamp and exact closed-bar availability timestamp. Missing or inconsistent observations produce WAIT.",
+    "ATR variant is the simple arithmetic mean of 14 completed true ranges, not Wilder recursive smoothing; immature or zero ATR is unavailable.",
+    "0.10 and the trend-up London normal-volatility context are bounded prospective lab hypotheses, not empirically optimal or publisher-qualified settings.",
+    "Observed spread is a method input only. Physical modeled execution spread, slippage, commission, risk and account controls remain unchanged.",
+    "This declaration creates no agent policy, independent market validation, economic credit, Master status or paper/live authority."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {
+      "op": "AND",
+      "args": [
+        {
+          "op": "BOOL",
+          "input_key": "quote_available",
+          "available_at": "2000-01-01T00:00:00Z"
+        },
+        {
+          "op": "LESS_THAN",
+          "args": [
+            {
+              "op": "NUMBER",
+              "input_key": "spread_atr",
+              "available_at": "2000-01-01T00:00:00Z"
+            },
+            {
+              "op": "CONST",
+              "type": "number",
+              "value": 0.10
+            }
+          ]
+        }
+      ]
+    },
+    "input_bindings": {
+      "quote_available": "method_quote_available",
+      "spread_atr": "method_spread_atr"
+    },
+    "budget": {
+      "cpu_seconds": 0.5,
+      "max_calls": 4096,
+      "max_node_evaluations": 196608
+    }
+  }
+}

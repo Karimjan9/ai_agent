@@ -1,0 +1,16 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.bollingerbands.com/bollinger-band-rules",
+  "content": "Original curator paraphrase of John Bollinger's primary rules: traditional bands combine a simple moving average with standard deviation; twenty periods and two deviations are defaults. A band contact alone is not a trading signal, and an outside close can continue a trend. This lab therefore declares a separate closed-price outside-to-inside confirmation hypothesis rather than buying every low band contact. The population-variance convention, strict boundaries, inward price movement, range context and exact confirmation rule are lab choices; the publisher has not qualified this combined rule or its profitability.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or outcomes.",
+    "access": "public",
+    "title": "Bollinger Bands Rules",
+    "publisher": "John Bollinger",
+    "source_checked_at": "2026-10-14T04:29:20Z",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "independent_validation": false
+    }
+  }
+}

@@ -14,6 +14,8 @@ paths:
   - docs/operations/instrument-method-learning.md
   - backend-laravel/app/Services/InstrumentMethodSourceService.php
   - backend-laravel/app/Services/InstrumentMethodLibraryService.php
+  - backend-laravel/app/Services/AgentMethodVerificationScope.php
+  - backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php
   - backend-laravel/app/Services/InstrumentMethodResearchBindingService.php
   - backend-laravel/app/Services/InstrumentMethodStudyService.php
   - backend-laravel/app/Services/AgentMethodLearningService.php
@@ -35,6 +37,23 @@ paths:
   - backend-laravel/resources/research/instrument-methods/calibrated-meta-score/source.json
   - backend-laravel/resources/research/instrument-methods/calibrated-meta-score/method.json
   - backend-laravel/resources/research/instrument-methods/calibrated-meta-score/recipe.json
+  - backend-laravel/resources/research/instrument-methods/observed-quote-firewall/quote-source.json
+  - backend-laravel/resources/research/instrument-methods/observed-quote-firewall/atr-source.json
+  - backend-laravel/resources/research/instrument-methods/observed-quote-firewall/method.json
+  - backend-laravel/resources/research/instrument-methods/observed-quote-firewall/recipe.json
+  - backend-laravel/resources/research/instrument-methods/closed-band-reentry/source.json
+  - backend-laravel/resources/research/instrument-methods/closed-band-reentry/method.json
+  - backend-laravel/resources/research/instrument-methods/closed-band-reentry/recipe.json
+  - backend-laravel/resources/research/instrument-methods/closed-band-reentry/probe-spec.json
+  - backend-laravel/resources/research/instrument-methods/closed-ema-pullback/source.json
+  - backend-laravel/resources/research/instrument-methods/closed-ema-pullback/method.json
+  - backend-laravel/resources/research/instrument-methods/closed-ema-pullback/recipe.json
+  - backend-laravel/resources/research/instrument-methods/closed-donchian-retest/source.json
+  - backend-laravel/resources/research/instrument-methods/closed-donchian-retest/method.json
+  - backend-laravel/resources/research/instrument-methods/closed-donchian-retest/recipe.json
+  - backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php
+  - backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php
+  - backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php
   - backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php
   - backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php
   - backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php
@@ -58,6 +77,13 @@ paths:
   - ai-service-python/tests/test_instrument_method_meta_model.py
   - ai-service-python/tests/test_instrument_method_meta_runtime.py
   - ai-service-python/tests/test_instrument_method_features.py
+  - ai-service-python/tests/test_instrument_method_session_runtime.py
+  - ai-service-python/tests/test_instrument_method_band_reentry.py
+  - ai-service-python/tests/test_instrument_method_pullback_retest.py
+  - ai-service-python/tests/test_observed_quote_method.py
+  - ai-service-python/tests/test_instrument_method_quote_alias.py
+  - ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.csv
+  - ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json
   - ai-service-python/scripts/backtest-instrument-method-matrix.py
   - ai-service-python/tests/test_instrument_method_learning.py
   - ai-service-python/tests/test_instrument_method_matrix.py
@@ -403,6 +429,15 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php
+  - backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php
+  - backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php
+  - backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php
+  - ai-service-python/tests/test_instrument_method_session_runtime.py
+  - ai-service-python/tests/test_instrument_method_band_reentry.py
+  - ai-service-python/tests/test_instrument_method_pullback_retest.py
+  - ai-service-python/tests/test_observed_quote_method.py
+  - ai-service-python/tests/test_instrument_method_quote_alias.py
   - backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php
   - backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php
   - ai-service-python/tests/test_instrument_method_original_deadline.py

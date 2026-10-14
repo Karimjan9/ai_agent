@@ -9,6 +9,34 @@ context, horizon, limitations and bounded typed AST or construction adapter.
 Library snapshots are intrinsic. Dataset/baseline-bound compiled pools have a
 different hash, so compiling a fresh scope does not rewrite the method version.
 
+Session-input methods bind absent session columns from the same canonical
+calendar used by selection, with instance and calendar-version grouping before
+prefix extrema. Explicit unknown sessions remain unavailable. New closed-band
+reentry confirms only a directional inward move from a prior outside close to
+a current inside close; each band uses its own twenty closed observations.
+The append-only observed-quote firewall requires validated closed BID/ASK and
+spread/simple-ATR(14) below its declared lab cap. Modeled execution costs cannot
+fill missing observations. Neither revision alters v1/v2 source snapshots,
+physical risk/costs, original receipts or qualification state.
+
+Separate EMA20/50 pullback and prior20 Donchian retest revisions expose typed
+availability and directional confirmation booleans. EMA confirmation requires
+two mature values and immediate configured-duration bar adjacency, not gap-free
+earlier history. The retest owner freezes a crossed prior-channel level, never
+confirms on the breakout bar, and consumes one later touch-and-close confirmation
+within three contiguous bars. Opposing closes, gaps and expiry cancel; equality
+at the closing level waits. These bounded observations only veto an existing
+candidate and do not own orders or revise legacy construction semantics.
+
+An original-method inspection owns one bounded ephemeral policy-verification
+scope across transient nested provenance owners. Exact successful policy hashes
+may be reused only inside that inspection, on the same connection/PDO and root
+transaction context. Cycles, attempt/memory overflow, connection or transaction
+replacement fail closed. Every outer exit drops the scope. Reconciliation also
+uses its just-derived proof once for the same locked work's dependency result;
+claim, construction and publication still open fresh inspections. No worker-wide
+cache, current lease/mode permission or scientific authority is memoized.
+
 Agent policy `registered_research_only -> original observed experience ->
 prospective proposed policy` is separate from library revisions. The original
 model, policy, actual in-loop events and immutable response are rechecked before

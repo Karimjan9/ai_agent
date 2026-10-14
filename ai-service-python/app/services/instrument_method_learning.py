@@ -353,7 +353,21 @@ class InstrumentMethodLearning:
         if self.needs_features:
             from app.services.instrument_method_features import ClosedInstrumentMethodFeatures
             from app.services.backtester import _timeframe_duration_minutes
-            self.features = ClosedInstrumentMethodFeatures(frame,
+            feature_frame = frame
+            session_fields = {'method_session_available', 'method_session_range_atr', 'method_session_distance_atr'}
+            if (not {'market_session', 'session'}.intersection(frame.columns)
+                    and any(field in session_fields for programs in self.programs.values()
+                        for program in programs for field in program.bindings.values())):
+                from app.services.market_sessions import session_membership
+                # Selection already resolves missing session labels through this
+                # calendar owner. Bind the same point-in-time groups before
+                # compiling their closed extrema; explicit unknowns stay missing.
+                sessions = session_membership(frame['time'])
+                feature_frame = frame.copy()
+                feature_frame['market_session'] = sessions['session']
+                feature_frame['market_session_instance_id'] = sessions['session_instance_id']
+                feature_frame['market_session_calendar_version'] = sessions['calendar_version']
+            self.features = ClosedInstrumentMethodFeatures(feature_frame,
                 bar_duration_seconds=int(_timeframe_duration_minutes(self.body['scope']['timeframe']) * 60))
 
     def notify_mature_close(self, *, position_id: str, net_pnl: float,

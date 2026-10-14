@@ -1,0 +1,12 @@
+{
+  "recipe_key": "internet_observed_quote_cost_firewall_recipe",
+  "revision": 1,
+  "method_hashes": [
+    "41044f73004c8c580fa3ba292177a4126411b991ca15e2a1c31b71f5e0b15e55"
+  ],
+  "context_predicate": {
+    "regime": "trend_up",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

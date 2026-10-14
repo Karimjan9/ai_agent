@@ -1,0 +1,24 @@
+{
+  "instrument_key": "breakout_retest",
+  "method_key": "internet_closed_donchian_retest_20_3_v2",
+  "revision": 2,
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["5d89c6ade98b8d3ece16d713569f4bc575f9cb85eda7f0dcdd47b698e946db67"],
+  "known_limitations": [
+    "The closed feature owner uses a channel from the prior twenty closed bars, excluding the breakout bar. BUY arms only when previous close <= prior channel high < current close; SELL mirrors the prior channel low. The crossed boundary is frozen, and the breakout bar itself cannot confirm a retest.",
+    "A same-direction retest must occur on one of the next three contiguous closed bars, touch the frozen level and close strictly back on the breakout side. Equality at the closing boundary waits; an opposing close, a history gap or expiry cancels the pending breakout. A confirmed breakout cannot be consumed twice.",
+    "This additional confirmation can only veto an existing same-direction strategy candidate after its current bar closes. It creates no direction or order, changes no strategy parameters, observed quotes, physical execution costs, sizing, risk caps or exit owner. Missing history cannot confirm.",
+    "The period, three-bar limit, exact retest, context and horizon are lab hypotheses, not a publisher-qualified profitable strategy. This append-only revision preserves the old construction-only one-bar retest method and receipts. Source provenance and software tests grant no independent economic qualification, Master status, promotion, or paper/live trading authority."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {"op": "AND", "args": [
+      {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+      {"op": "BOOL", "input_key": "retest", "available_at": "2000-01-01T00:00:00Z"}
+    ]},
+    "input_bindings": {"available": "method_retest_available", "retest": "method_retest_confirmed"},
+    "budget": {"cpu_seconds": 0.5, "max_calls": 4096, "max_node_evaluations": 12288}
+  }
+}

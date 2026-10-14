@@ -143,6 +143,46 @@ class AgentMethodLearningService
     /** Reinspect a frozen policy and its original library references, not the current library head. */
     public function policy(string $policyHash): array
     {
+        try {
+            // Nested generation/preparation owners resolve transient service
+            // instances; only the current application's explicit inspection
+            // scope shares immutable results, never a worker/global cache.
+            if (app()->bound(AgentMethodVerificationScope::class)) {
+                return app(AgentMethodVerificationScope::class)->policy($policyHash,
+                    fn (): array => $this->inspectPolicy($policyHash));
+            }
+
+            return $this->inspectPolicy($policyHash);
+        } catch (Throwable $error) {
+            return $this->blocked($error->getMessage());
+        }
+    }
+
+    /** Pure inspection only; every outer exit drops proof reuse before admission. */
+    public function withVerificationScope(callable $inspect): mixed
+    {
+        if (app()->bound(AgentMethodVerificationScope::class)) {
+            app(AgentMethodVerificationScope::class)->assertCurrent();
+
+            return $inspect();
+        }
+        $connection = DB::connection();
+
+        $scope = new AgentMethodVerificationScope($connection);
+        app()->instance(AgentMethodVerificationScope::class, $scope);
+        try {
+            $result = $inspect();
+            $scope->assertCurrent();
+
+            return $result;
+        } finally {
+            app()->forgetInstance(AgentMethodVerificationScope::class);
+            $scope->dispose();
+        }
+    }
+
+    private function inspectPolicy(string $policyHash): array
+    {
         $this->policyInspectionDepth++;
         try {
             $this->require($this->policyInspectionDepth <= 64, 'POLICY_PROVENANCE_DEPTH_EXCEEDED');

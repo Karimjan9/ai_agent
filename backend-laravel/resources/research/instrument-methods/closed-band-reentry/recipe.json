@@ -1,0 +1,10 @@
+{
+  "recipe_key": "internet_closed_band_reentry_20_2_recipe_v2",
+  "revision": 2,
+  "method_hashes": ["0e400298fcd5f22ecfe90a94c237f58bd6e2ff16ddb1b5a8a19fec93c60023ce"],
+  "context_predicate": {
+    "regime": "range",
+    "session": "london",
+    "volatility": "normal"
+  }
+}

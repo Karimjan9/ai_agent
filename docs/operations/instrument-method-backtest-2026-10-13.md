@@ -243,6 +243,77 @@ downgrading to invocation-count memory; redelivery is idempotent. A separately
 prepared v1 study retains its original proposal and creates no v2 outcome rows.
 This compressed original-product fixture is software evidence, not child strength.
 
+## Additional fixed completion panel — 2026-10-14
+
+A separate seen-archive software/discovery question prospectively froze fourteen
+originals: four schema-family baselines, six original construction adapters,
+two session rules, closed-band reentry and observed-quote confirmation. The same
+raw 512-row prefix, 200 warmup/312 decision rows, physical account/costs and fixed
+120-second per-original caps were preserved. All fourteen completed once, with
+no timeout, retry or technical error; all 78 pinned producer/runtime files
+remained byte-identical through the last product.
+
+| Original | Trades | Net cash | Interpretation |
+| --- | ---: | ---: | --- |
+| EMA baseline / 21-55 / ATR-target / trailing-time / modeled-cost variants | 0 each | 0.00 each | Baseline confidence veto; no economic ATR/exit measurement |
+| Breakout baseline | 5 | -169.41 | Original next-bar retest owner |
+| Breakout construction variant | 4 | -94.47 | ATR displacement changed; confirmation-candle branch remains shadowed |
+| Mean-reversion baseline / legacy band adapter | 1 each | +91.50 each | Exactly identical parameters and ledger, not a new skill |
+| Router baseline | 10 | -495.85 | Matches the previously observed control ledger |
+| Session break / session width / observed-quote rule | 11 each | -284.57 each | Identical ledgers from ten missing-input vetoes each, zero true confirmations |
+| New closed-band reentry | 10 | -495.85 | Entry target not reached in its range context; unchanged control ledger |
+
+The grouped rows represent exactly fourteen products. The positive one-trade
+legacy range result has no intervention effect and no statistical qualification.
+The three veto ledgers do not isolate a positive session/quote algorithm; their
+method uses are explicitly underpowered-session or missing-quote observations.
+The new band's selected range opportunities occurred at exits, not entries.
+The zero-fill EMA family cannot demonstrate stop, trailing or cost effectiveness.
+No source/threshold was retuned or original replay repeated to select success.
+
+Spec SHA256 `d6fd50896134f0f5dba39858cbe45a3c7af828d346f715d880317dc60d8b8463`;
+summary SHA256 `4b9644e01c006218e5434ec4de1de9f88820b6a88f102c77b659011e59dc3db9`.
+Original products are retained at
+`.runtime/instrument-method-learning-20261013/.runtime/method-completion-panel-20261014/`.
+An independent read-only verifier recomputed product bytes, complete trade-
+ledger hashes, cost-inclusive account chains and all method event/ordered-stream
+hashes, and checked original clocks/physical parity. Generic compact event tokens
+are not exported, so their digest was checked for envelope consistency, not
+independently reconstructed. No independent market, economic, Master or paper
+authority follows.
+
+## Canonical own-outcome continuation — G266
+
+At 2026-10-14 05:15 UTC, the unchanged main `5a58653` scheduler had created
+G266/DB362 from work 14 and the four prospectively registered models 3535–3538.
+Their original request barrier preceded dispatch. L1A1 original run
+`92fb9818-9c5e-427c-ae0a-2be801e25778` completed with DB phase elapsed 374.406
+seconds. Its retained request declares the signed original 600-second cap;
+the response exports no HTTP elapsed/deadline telemetry, so the phase duration
+alone is not a loaded-deadline attestation. Response SHA256
+`022041922129ad95b60be30654e06292779062d0b2cc7b2b5ba5ea51c3ae7885`.
+The other originals/comparison/owned-outcome settlement were still pending at
+that observation. G265's failed original was not retried or replaced. Main
+source remained unchanged while G266 owned its release; new supplement/readiness
+code remained isolated. This is a progress checkpoint, not completed child
+retention, independent confirmation or a new active patch release.
+
+At 05:54 UTC, both L1A1 and L2A1 original products had completed, with 104
+mature closes each, zero censored closes and cash results -1912.56 and
+-1855.79 from the same 10000 account. The observed conditional difference is
++56.77, not an absolute profit or a completed four-arm library/selector result.
+Owned-outcome rows for these originals were still zero: harvesting and policy
+settlement must be distinguished from eligible labels in their immutable
+trade ledgers. The remaining originals and canonical comparison were pending.
+
+A read-only meta-model eligibility audit fixed a chronological calendar split
+before counting classes: 93 training labels (29 positive / 64 nonpositive)
+and 11 calibration labels (4 / 7). Five exact training context/confidence
+cells met the unchanged five-label floor, but none of the calibration entries
+reached those cells. `META_MODEL_CALIBRATION_CONTEXT_NOT_REACHED` remains a
+genuine dependency. No model was fitted, bins widened, other policies pooled,
+or original unsuccessful assessment overwritten.
+
 ## Qualification boundary
 
 The earlier `0f3d827` delivery's frozen-source verification: 145 focused Laravel test executions / 1788
@@ -265,3 +336,39 @@ algorithms. Source ingestion is explicit and bounded, not automatic unrestricted
 YouTube crawling. Fresh candidate models still require canonical cohort
 ingestion; this delivery does not create an additional scheduler or silently
 open generations. 2026 and all later years remain paper-only.
+
+## Final typed entry completion panel — 2026-10-14
+
+A new private three-original question kept the unchanged differential-router
+schema baseline, modeled physical costs/account risk, and the exact previously
+seen 512-row prefix: 200 warmup rows and 312 executed decisions. Each original
+completed once under its fixed 120-second cap, with no timeout, retry or tuning.
+Every ledger close was mature; censored closes were zero.
+
+| Original | Mature trades | Censored | Net cash | Method used / changed | True / false confirmations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Unchanged router baseline | 10 | 0 | -495.85 | — | — |
+| Closed EMA20/50 pullback | 11 | 0 | -284.57 | 10 / 10 | 0 / 10 |
+| Closed prior-20-bar Donchian retest | 11 | 0 | -284.57 | 10 / 10 | 0 / 10 |
+
+Both new methods had available inputs but rejected the same ten candidates
+at 08:10–08:55 UTC on 2025-10-14. Their complete trade ledgers were identical;
+independent source-derived formula checks confirmed all ten false outputs.
+This establishes actual veto consumption, not a positive archive confirmation
+or two independently effective skills. The positive/veto software fixtures
+(12 focused Python tests and 3 PHP tests / 147 assertions) test implementation,
+not economic strength.
+
+Source SHA256 `185b7c360ad1bf5dcf26a1c02534144577c79b9e057397c6598c06f9c819d008`;
+spec SHA256 `61a18fa02abb1a6b02f5cff8db123ba49efe7e446b11346c67dd7be2a680d52b`;
+summary and final checkpoint SHA256
+`39bc18f6ffdbf2cdf4ab3a6d04824dacc3ba32bffe70494758543d67d7e55517`.
+Products, process records and all three checkpoints remain at
+`.runtime/instrument-method-learning-20261013/.runtime/final-typed-entry-panel-20261014/`.
+Independent retained-byte verification passed all 79 frozen source/helper/test
+files, runtime versions, requests/responses, source-derived executed schedules,
+complete ledgers, cost-inclusive account chains and actual method event seals.
+Generic compact event digests were checked for envelope/count consistency, not
+independently reconstructed. No HTTP-service, native-MTF, independent-market,
+qualification, Master-skill or paper/live-authority claim follows. The old
+fourteen-original panel and quote-pair products were not changed or repeated.

@@ -214,8 +214,10 @@ class ResearchExperimentConversionKernelService
                         if ($before !== (array) $item->payload) $normalized++;
                         $payload = (array) $item->payload;
                         $councilProof = null;
+                        $methodProof = null;
                         if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
                             $proof = app(InstrumentMethodStudyExecutionService::class)->inspectWork($item);
+                            $methodProof = $proof;
                             $payload['executable'] = ($proof['executable'] ?? false) === true;
                             $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'METHOD_STUDY_ORIGINAL_READINESS_REQUIRED');
                             if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
@@ -255,7 +257,7 @@ class ResearchExperimentConversionKernelService
                             if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
                         }
                         $executable = (bool) ($payload['executable'] ?? false);
-                        $dependencyReady = $this->dependencyReady($item, $payload, $councilProof);
+                        $dependencyReady = $this->dependencyReady($item, $payload, $councilProof, $methodProof);
                         $desired = $executable && $dependencyReady ? 'ready' : 'blocked';
                         if ((string) $item->status !== $desired) {
                             $item->update([
@@ -592,10 +594,13 @@ class ResearchExperimentConversionKernelService
         });
     }
 
-    private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null): bool
+    private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null, ?array $lockedMethodProof = null): bool
     {
         if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
-            return (app(InstrumentMethodStudyExecutionService::class)->inspectWork($item)['executable'] ?? false) === true;
+            // The same locked work was just inspected above. This local proof
+            // expires with reconciliation; claim and admission remain fresh.
+            $proof = $lockedMethodProof ?? app(InstrumentMethodStudyExecutionService::class)->inspectWork($item);
+            return ($proof['executable'] ?? false) === true;
         }
         if ($item->work_type === ScopedDescendantCandidatePreparationService::WORK_TYPE) {
             return (app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item)['executable'] ?? false) === true;

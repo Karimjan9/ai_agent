@@ -1,0 +1,25 @@
+{
+  "instrument_key": "trend_pullback",
+  "method_key": "internet_closed_ema_pullback_20_50_v2",
+  "revision": 2,
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["3ab3d22426a0babdb6a5e10f3b5ae228611483f89262e15c4e2805dfeb5573a6"],
+  "known_limitations": [
+    "The closed feature owner computes fixed EMA20 and EMA50 recursively with adjust=False and min_periods=50 from observed closes. Both current and previous values must be mature, so the first possible confirmation is source index fifty. Their timestamps must be exactly one configured bar duration apart; earlier EMA history need not be gap-free. Caller-supplied EMA or method columns are not trusted.",
+    "BUY requires previous low <= previous EMA20, previous EMA50 < previous close <= previous EMA20, previous EMA20 > previous EMA50, and current close > current EMA20 and previous close while current EMA20 > current EMA50. SELL mirrors every comparison with previous high >= EMA20 and EMA50 > previous close >= EMA20. Equality at the current bounce close does not confirm.",
+    "The exact directional EMA bounce, period pair, London normal-volatility trend-up context and hour horizon are lab hypotheses. The primary source defines an EMA and its limitations, not this combined trading recipe or its profitability.",
+    "This additional confirmation can only veto an existing same-direction strategy candidate after its current bar closes. It creates no direction or order, changes no strategy parameters, observed quotes, physical execution costs, sizing, risk caps or exit owner. Missing history cannot confirm.",
+    "This append-only revision does not rewrite the old construction-only pullback method or its receipts. Internet provenance and software guard tests are not independent economic qualification, Master status, promotion, or paper/live trading authority."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {"op": "AND", "args": [
+      {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+      {"op": "BOOL", "input_key": "bounce", "available_at": "2000-01-01T00:00:00Z"}
+    ]},
+    "input_bindings": {"available": "method_pullback_available", "bounce": "method_pullback_confirmed"},
+    "budget": {"cpu_seconds": 0.5, "max_calls": 4096, "max_node_evaluations": 12288}
+  }
+}

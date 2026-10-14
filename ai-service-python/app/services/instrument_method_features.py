@@ -22,6 +22,9 @@ BOOL_FIELDS = {
     "method_loss_history_available", "method_signal_available", "method_meta_model_available",
     "method_compression_expansion", "method_dynamic_cooldown_ready", "method_regime_aligned",
     "method_regime_available", "method_transition_available", "method_quote_available",
+    "method_band_available", "method_band_reentry",
+    "method_pullback_available", "method_pullback_confirmed",
+    "method_retest_available", "method_retest_confirmed",
 }
 NUMBER_FIELDS = {
     "method_atr_ratio", "method_range_atr", "method_session_range_atr",
@@ -95,6 +98,21 @@ class ClosedInstrumentMethodFeatures:
         # twenty-bar baseline, followed by the current completed expansion bar.
         compressed = tr.shift(1).rolling(5, min_periods=5).mean()
         compression_base = tr.shift(6).rolling(20, min_periods=20).mean()
+        # A band belongs to its own completed twenty-close window. Population
+        # variance (ddof=0) and the two-standard-deviation width are fixed lab
+        # conventions, not a claim that prices have a normal distribution.
+        band_mean = close.rolling(20, min_periods=20).mean()
+        band_deviation = close.rolling(20, min_periods=20).std(ddof=0)
+        band_lower = band_mean - 2.0 * band_deviation
+        band_upper = band_mean + 2.0 * band_deviation
+        # cTrader's EMA recursion uses alpha=2/(n+1); dynamic EMA support and
+        # prior-channel breakouts are reference ideas, not profitability proof.
+        # These periods, maturity floor and three-bar retest cap are fixed lab
+        # hypotheses. Both EMAs need fifty observed closes, including their seed.
+        ema20 = close.ewm(span=20, adjust=False, min_periods=50).mean()
+        ema50 = close.ewm(span=50, adjust=False, min_periods=50).mean()
+        donchian_high = high.shift(1).rolling(20, min_periods=20).max()
+        donchian_low = low.shift(1).rolling(20, min_periods=20).min()
         volume = pd.Series([_number(row.get("volume")) for row in rows], dtype=float)
         observed_volume = pd.Series([_flag(row.get("volume_available")) for row in rows]) & volume.gt(0)
         previous_volume = volume.where(observed_volume).shift(1).rolling(20, min_periods=20).mean()
@@ -103,11 +121,79 @@ class ClosedInstrumentMethodFeatures:
         last_break, last_regime, transition_age = None, None, 0
         last_signal, signal_age = None, 0
         session_key, session_high, session_low, session_count = None, None, None, 0
+        # At most one (direction, frozen prior-channel level, breakout index).
+        # It is consumed on one confirmation candle, never backdated or held
+        # beyond three subsequent contiguous source observations.
+        pending_retest = None
         for index in range(count):
             row, stamp = rows[index], self.stamps[index]
             a = _number(atr.iloc[index])
             output = {key: False for key in BOOL_FIELDS}
             output["method_history_available"] = a is not None and a > 0
+            lower, upper = _number(band_lower.iloc[index]), _number(band_upper.iloc[index])
+            previous_lower = _number(band_lower.iloc[index - 1]) if index else None
+            previous_upper = _number(band_upper.iloc[index - 1]) if index else None
+            band_ready = bool(lower is not None and upper is not None and lower < upper
+                and previous_lower is not None and previous_upper is not None and previous_lower < previous_upper)
+            reentry_direction = None
+            if band_ready and lower < close.iloc[index] < upper:
+                # Contact or a continuing outside close is not reentry. A
+                # price move inward is required as well as the band crossing,
+                # so widening bands alone cannot turn a stationary close into
+                # this new confirmation. No later bar confirms it retroactively.
+                if close.iloc[index - 1] < previous_lower and close.iloc[index] > close.iloc[index - 1]:
+                    reentry_direction = "BUY"
+                elif close.iloc[index - 1] > previous_upper and close.iloc[index] < close.iloc[index - 1]:
+                    reentry_direction = "SELL"
+            output.update({"method_band_available": band_ready, "_band_lower": lower,
+                "_band_upper": upper, "_band_reentry_direction": reentry_direction})
+            fast, trend = _number(ema20.iloc[index]), _number(ema50.iloc[index])
+            previous_fast = _number(ema20.iloc[index - 1]) if index else None
+            previous_trend = _number(ema50.iloc[index - 1]) if index else None
+            contiguous = bool(index and stamp - self.stamps[index - 1] == self.duration)
+            # The immediate pullback/reclaim pair cannot bridge a missing bar
+            # or weekend; the fifty-close EMA history need not be gap-free.
+            pullback_ready = contiguous and all(value is not None for value in (fast, trend, previous_fast, previous_trend))
+            pullback_direction = None
+            if pullback_ready:
+                if (low.iloc[index - 1] <= previous_fast and previous_trend < close.iloc[index - 1] <= previous_fast
+                        and previous_fast > previous_trend and close.iloc[index] > fast
+                        and close.iloc[index] > close.iloc[index - 1] and fast > trend):
+                    pullback_direction = "BUY"
+                elif (high.iloc[index - 1] >= previous_fast and previous_trend > close.iloc[index - 1] >= previous_fast
+                        and previous_fast < previous_trend and close.iloc[index] < fast
+                        and close.iloc[index] < close.iloc[index - 1] and fast < trend):
+                    pullback_direction = "SELL"
+            output.update({"method_pullback_available": pullback_ready, "_ema20": fast, "_ema50": trend,
+                "_pullback_direction": pullback_direction})
+            channel_high, channel_low = _number(donchian_high.iloc[index]), _number(donchian_low.iloc[index])
+            retest_ready = bool(contiguous and channel_high is not None and channel_low is not None and channel_high >= channel_low)
+            retest_direction, retest_level = None, None
+            if pending_retest is not None:
+                side, level, breakout_index = pending_retest
+                if not contiguous or index - breakout_index > 3:
+                    pending_retest = None
+                else:
+                    retest_level = level
+                    opposing = close.iloc[index] < level if side == "BUY" else close.iloc[index] > level
+                    touched = low.iloc[index] <= level if side == "BUY" else high.iloc[index] >= level
+                    back_on_side = close.iloc[index] > level if side == "BUY" else close.iloc[index] < level
+                    if opposing:
+                        pending_retest = None
+                    elif touched and back_on_side:
+                        retest_direction, pending_retest = side, None
+            # Only a preceding-bar channel can arm a crossing. Already being
+            # beyond a level is not a new breakout; a breakout candle cannot
+            # also be its own retest. A consumed confirmation does not rearm.
+            if pending_retest is None and retest_direction is None and retest_ready:
+                if close.iloc[index - 1] <= channel_high < close.iloc[index]:
+                    pending_retest = ("BUY", channel_high, index)
+                    retest_level = channel_high
+                elif close.iloc[index - 1] >= channel_low > close.iloc[index]:
+                    pending_retest = ("SELL", channel_low, index)
+                    retest_level = channel_low
+            output.update({"method_retest_available": retest_ready, "_retest_direction": retest_direction,
+                "_retest_level": retest_level, "_donchian_high": channel_high, "_donchian_low": channel_low})
             output["method_compression_expansion"] = bool(
                 _number(compression_base.iloc[index]) is not None and compression_base.iloc[index] > 0
                 and compressed.iloc[index] < .7 * compression_base.iloc[index]
@@ -181,10 +267,20 @@ class ClosedInstrumentMethodFeatures:
                 output.update({"method_volume_available": True, "method_volume_ratio": float(volume.iloc[index] / previous_volume.iloc[index])})
             # Explicit provenance-bearing observed quotes only; modeled spread
             # and bare OHLC never become quote evidence.
-            spread = _number(row.get("bid_ask_spread"))
+            # The canonical quote freezer exports `spread`; older observed
+            # inputs may use `bid_ask_spread`. Present malformed/conflicting
+            # aliases cannot be rescued by selecting the other column.
+            canonical_present = "spread" in row
+            legacy_present = "bid_ask_spread" in row
+            canonical_spread = _number(row.get("spread"))
+            legacy_spread = _number(row.get("bid_ask_spread"))
+            spread = canonical_spread if canonical_present else legacy_spread
+            aliases_agree = not (canonical_present and legacy_present) or (
+                canonical_spread is not None and legacy_spread is not None
+                and canonical_spread == legacy_spread)
             bid, ask = _number(row.get("bid_close")), _number(row.get("ask_close"))
             quote_valid = False
-            if (_flag(row.get("spread_available")) and spread is not None and spread >= 0
+            if (aliases_agree and _flag(row.get("spread_available")) and spread is not None and spread >= 0
                     and bid is not None and ask is not None and ask >= bid
                     and abs((ask - bid) - spread) <= .000001
                     and abs(bid - close.iloc[index]) <= .000001):
@@ -233,6 +329,9 @@ class ClosedInstrumentMethodFeatures:
         high, low = source.get("_high_pivot"), source.get("_low_pivot")
         buy = direction == "BUY"
         if direction in {"BUY", "SELL"}:
+            output["method_band_reentry"] = source["_band_reentry_direction"] == direction
+            output["method_pullback_confirmed"] = source["_pullback_direction"] == direction
+            output["method_retest_confirmed"] = source["_retest_direction"] == direction
             output["method_bos"] = source["_break_direction"] == direction
             output["method_choch"] = source["_change_direction"] == direction
             code = source.get("method_regime_code")

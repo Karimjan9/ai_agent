@@ -10,11 +10,11 @@ instrument usage cards in five groups and 13 playbooks without seeding trading
 authority. `catalog` reads the checksum-pinned assistant-curated source plan;
 `install` transactionally installs its exact immutable source/method/recipe
 revisions, idempotently and without creating agent policies or qualification.
-The delivered catalog covers eight method classes / ten revisions and three
+The original v1 catalog covers eight method classes / ten revisions and three
 hybrids. Six classes are existing prospective construction adapters; two classes
 are genuine typed entry-veto methods with separate L1/L2 revisions. The remaining
-18 instrument cards expose explicit implementation/data dependencies, not fake
-executable skills. Eight primary references include original paraphrases,
+18 instrument cards exposed explicit implementation/data dependencies in that
+v1 snapshot; this is not the current combined coverage count. Eight primary references include original paraphrases,
 licensing and unknown prior-exposure disclosures. Thresholds are lab hypotheses,
 not claims attributed to those publishers.
 
@@ -197,6 +197,86 @@ agent policy. Original v1/v2 catalog checksums and their availability-only
 sentinel remain unchanged. The combined installed library therefore has 29
 method classes / 31 revisions and 39 recipes, not 29 qualified skills.
 
+## Closed sessions, actual quotes and price confirmations
+
+Four append-only supplements use the existing source/method/recipe import path:
+`observed-quote-firewall`, `closed-band-reentry`, `closed-ema-pullback` and
+`closed-donchian-retest`. Import their source file(s),
+then `method.json`, then `recipe.json`; no active model or old library revision
+is rebound. Together with the calibrated-score supplement, they declare 33
+method classes / 35 revisions and 43 recipes, not 33 qualified skills.
+
+The quote rule requires actual validated closed BID/ASK availability and
+`spread / simple ATR(14) < 0.10`. Its cap is a laboratory hypothesis. Invalid,
+immature, future or missing quotes produce WAIT, while the physical execution
+spread/commission/risk remain identical. The canonical method feature ATR is
+the simple fourteen-true-range average, not an unlabeled Wilder recurrence.
+
+The canonical quoted CSV column is `spread`. The closed feature owner also
+accepts legacy `bid_ask_spread`; when both are present, both must be finite and
+equal after numeric parsing. A malformed or contradictory alias cannot fall
+back to the other column. Availability, original BID-close equality, ASK/BID
+spread consistency and closed quote timestamps remain mandatory. A modeled
+spread alone is unavailable. Source regression fixtures are explicitly
+synthetic software inputs; genuine provider samples and original products stay
+in private evidence storage.
+
+A separate quality-selected December 2025 diagnostic pair preserved 512 real
+quoted rows, 200 warmup rows and 312 decisions. Both original requests completed
+once within unchanged 120-second caps and shared exact account, risk, modeled
+costs, clock and trade ledger: nine trades and net cash -182.19. All 512 quotes
+validated; all 312 evaluated decision rows and 134 method events had available
+quote features. The declared trend-up/London/normal entry context never occurred,
+so the selector retained BASELINE and the recipe had zero uses or changed
+decisions. This establishes canonical quote-input compatibility, not observed
+rule utility, independent market qualification or trading authority. No
+outcome-dependent retuning, renewed attempts or historical receipt edits follow.
+
+The band rule uses twenty-close SMA and two population standard deviations.
+The previous close must be outside its own completed band; the current close
+must move inward and be strictly inside its own band, in the proposed direction.
+Band contact, a stationary price recaptured only by widening bands and later
+confirming candles cannot satisfy the rule. This is a fresh lab confirmation
+hypothesis informed by the original Bollinger documentation, not a copied
+profitable strategy. It creates no direction or increased risk.
+
+The pullback supplement uses fixed EMA20/50 (`adjust=False`, `min_periods=50`)
+from closed observations, with mature values on two immediately adjacent bars.
+BUY requires a prior low touching EMA20, a prior close above EMA50 but no higher
+than EMA20, fast EMA above slow EMA on both bars, and a current close strictly
+above EMA20 and the prior close. SELL mirrors those comparisons. Earlier EMA
+history may contain gaps, but the immediate confirmation pair may not. The
+[primary EMA reference](https://help.ctrader.com/indicators/built-in/trend/exponential-moving-average/)
+defines the indicator and discusses lag/false signals; this exact period pair
+and bounce are unqualified laboratory hypotheses.
+
+The retest supplement excludes the breakout bar from its prior20 high/low
+channel. A strict close across that channel from its previous inside-side close
+arms a frozen level, not an entry. Only one of the next three contiguous closed
+bars may confirm a same-direction level touch and a strict close on the breakout
+side; the breakout candle itself and repeated retests cannot confirm. Equality
+at the closing level waits, while an opposing close, gap or expiry cancels.
+The [primary Donchian reference](https://help.ctrader.com/indicators/built-in/volatility/donchian-channel/)
+defines channel extremes, not this complete delayed-retest recipe or its profit.
+Both supplements use trend-up/London/normal/hour context, AND availability with
+directional confirmation, and can only veto an existing candidate. Their
+software tests invent no volume or market evidence and grant no order or
+trading authority; missing observed data and model power remain dependencies.
+
+Normal raw OHLC snapshots now supply absent session labels, instance IDs and
+calendar version from the existing selection calendar before session extrema
+are compiled. Explicit unknown session columns stay unknown. Past extrema do
+not change when a future suffix is added.
+
+Legacy construction semantics are retained rather than retroactively repaired:
+the v1 band adapter is an extreme fade, its breakout retest branch does not
+consume the declared two-confirmation parameter, and its spread gate reads
+modeled costs rather than observed quote coverage. Testing those old adapters
+must describe their actual behavior, not assert those missing capabilities.
+The new band and observed-quote revisions are the corresponding explicit
+executable rules. Missing observed volume/quotes and an underpowered fitted
+meta model remain data/evidence dependencies, not invented skill successes.
+
 ## Agent-owned mature outcome learning
 
 The separate `agent_method_owned_outcome_v2` owner reopens immutable original
@@ -234,6 +314,16 @@ watermarks bind cache reuse; same-count membership swaps and original-run
 completion invalidate it. Source revision publication occurs after commit.
 Unsupported isolation, nested production transactions or roster overflow remain
 typed operational dependencies, not scientific negative lessons.
+
+Original method inspection has a separate, bounded verification reuse scope.
+Nested parent/policy provenance owners re-use an exact successfully checked
+policy only inside one outer `inspectWork`, on the same connection/PDO and
+root transaction context. Cycle, depth/attempt, memory and transaction-context
+failures refuse the inspection; `finally` discards all retained results. The
+next inspection reopens originals, including after corruption or repair.
+This is not a worker-wide cache or a cached admission permission. Reconciliation
+also reuses its same locked proof for the immediate dependency calculation;
+locked claim, construction and every original publication stay fresh.
 
 ## Delivery and qualification
 

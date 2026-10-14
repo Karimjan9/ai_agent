@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://help.ctrader.com/indicators/built-in/volatility/donchian-channel/",
+  "content": "Original curator paraphrase of the primary cTrader Donchian reference: channel boundaries are the highest high and lowest low over a chosen period, with their midpoint forming the middle line. A close beyond a boundary can identify a possible breakout, while historical dependence introduces delay and choppy markets can produce false breakouts. This supplement's prior-twenty-bar channel, frozen breakout level and later retest within three closed bars are separate lab hypotheses; the reference does not qualify that combined rule or promise profits.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or market outcomes.",
+    "access": "public",
+    "title": "Donchian Channel",
+    "publisher": "Spotware cTrader",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

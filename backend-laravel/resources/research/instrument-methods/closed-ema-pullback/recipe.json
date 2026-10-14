@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_closed_ema_pullback_20_50_recipe_v2",
+  "revision": 2,
+  "method_hashes": ["8da55685e120d9ddd5fdecb4d0bc8b7efa54bee36f955bf4c981d67df383e590"],
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}
+}

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-13T16:04:22.986Z",
-  "source_digest": "e5ab0b7b5f7de7374d22717059348e58b606efa214fd62a97ba4e9acd5cef29c",
-  "source_file_count": 1675,
-  "git_head": "6383fb5cc095fc220e5ea99d5900e1f76ffc14e7",
+  "generated_at": "2026-10-14T06:25:20.566Z",
+  "source_digest": "df26c39555f0c5fc940d203711e18d0ace0ce34d204e0bd7e41eb15da10414a1",
+  "source_file_count": 1685,
+  "git_head": "5a58653808c1c518750a77288908a1a6dc5c9f96",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -257,6 +257,18 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_instrument_method_band_reentry.py",
+      "tests": [
+        "test_two_positive_width_windows_are_required_and_degenerate_bands_wait",
+        "test_buy_and_sell_need_their_own_side_prior_outside_and_current_inside",
+        "test_contact_and_continuing_outside_close_are_not_reentry",
+        "test_future_extremes_do_not_rewrite_prefix_or_enter_before_the_bar_closes",
+        "test_widening_band_alone_cannot_recapture_a_stationary_outside_close",
+        "test_real_declaration_binds_typed_closed_inputs_and_owner_overwrites_injection",
+        "test_actual_ordinary_backtest_records_veto_and_reentry_without_clock_or_cost_changes"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_instrument_method_context_contract.py",
       "tests": [
         "test_exact_observed_session_instance_and_calendar_version_select_and_veto",
@@ -356,6 +368,41 @@
         "test_source_mutation_after_signing_is_not_hidden_by_cache_or_header_hash",
         "test_signed_original_raw_source_finite_bare_utc_vocabulary_only",
         "test_original_csv_does_not_infer_other_local_clock_formats"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_pullback_retest.py",
+      "tests": [
+        "test_pullback_requires_two_mature_50_observation_ema_values_with_exact_recursive_formula",
+        "test_pullback_both_directions_are_confirmations_not_generated_signals",
+        "test_pullback_needs_prior_close_between_fast_and_slow_and_current_reclaim",
+        "test_pullback_immediate_pair_cannot_bridge_a_gap_and_uses_configured_duration",
+        "test_retest_requires_prior20_and_later_bar_touching_exact_frozen_level_on_its_own_side",
+        "test_retest_one_to_three_bars_confirm_but_fourth_bar_expires_and_touch_is_consumed",
+        "test_pending_breakout_level_is_not_overwritten_by_a_later_fresh_high",
+        "test_opposing_close_cancels_and_equality_waits_for_strict_back_on_side",
+        "test_clock_gap_cancels_pending_and_configured_timeframe_defines_contiguity",
+        "test_future_tail_cannot_rewrite_prefix_and_unclosed_invalid_or_injected_inputs_refuse",
+        "test_typed_runtime_uses_owner_values_not_injected_fields",
+        "test_actual_ordinary_replay_records_each_real_confirmation_and_veto_without_cost_clock_changes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_quote_alias.py",
+      "tests": [
+        "test_synthetic_canonical_header_is_preserved_and_complete_quote_shape_is_available",
+        "test_equal_finite_aliases_agree_but_conflicts_and_malformed_aliases_refuse",
+        "test_legacy_only_observed_alias_is_supported_with_identical_provenance_guards",
+        "test_modeled_or_unflagged_spread_still_cannot_supply_observed_quotes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_session_runtime.py",
+      "tests": [
+        "test_actual_ordinary_snapshot_without_session_columns_consumes_calendar_features",
+        "test_explicit_unknown_sessions_are_not_filled_from_the_calendar",
+        "test_calendar_instance_change_resets_the_closed_range_even_with_same_session_label",
+        "test_future_session_extrema_cannot_rewrite_the_closed_prefix"
       ]
     },
     {
@@ -507,6 +554,15 @@
         "test_requested_public_atr_never_guesses_existing_management_or_structure_field",
         "test_nonpositive_or_nonfinite_explicit_source_feature_is_data_missing",
         "test_binding_must_be_single_supported_native_port_and_match_original_study_before_compute"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_observed_quote_method.py",
+      "tests": [
+        "test_missing_observed_quote_rejects_injected_method_values_and_modeled_spread",
+        "test_quote_provenance_and_strict_threshold_are_checked_by_actual_feature_owner",
+        "test_original_replay_missing_and_wide_quotes_wait_while_narrow_preserves_exact_cost_result",
+        "test_existing_runtime_confirmation_still_vetoes_without_fabricated_method_invocations"
       ]
     },
     {
@@ -1214,6 +1270,21 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php",
+      "tests": [
+        "policyFixture",
+        "test_transient_and_nested_owners_share_only_one_outer_inspection_and_preserve_contract",
+        "test_nested_exception_clears_scope_and_next_inspection_refuses_corruption_then_reopens_repair",
+        "test_cycle_detection_is_shared_across_transient_services_and_cannot_be_hidden_by_nested_catch",
+        "test_scope_bounds_attempts_and_retained_bytes_and_always_disposes_failure",
+        "test_changed_transaction_context_is_refused_without_changing_parent_transaction",
+        "test_commit_then_begin_at_the_same_depth_cannot_reuse_the_old_root_context",
+        "test_completed_nested_transaction_preserves_the_parent_read_context_and_memo",
+        "policyJson",
+        "hash"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/AgentMindTest.php",
       "tests": [
         "test_run_all_dispatches_canonical_lab_without_agent_mind_artifacts",
@@ -1635,6 +1706,28 @@
         "model",
         "researchCohortModel",
         "resultMetrics"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php",
+      "tests": [
+        "test_existing_cli_registers_fresh_closed_band_declaration_without_touching_old_catalogs_or_agent_state",
+        "test_php_compiled_confirmation_consumes_real_closed_directional_bands_and_never_future_bars",
+        "test_same_new_revision_cannot_change_the_rule_after_registration",
+        "input",
+        "path",
+        "command"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php",
+      "tests": [
+        "test_existing_cli_registers_two_append_only_hypotheses_without_catalog_or_agent_mutation",
+        "test_php_compiled_programs_consume_real_closed_directional_features_and_preserve_baseline",
+        "test_registered_revisions_cannot_replace_closed_rule_with_availability_alone",
+        "register",
+        "input",
+        "path"
       ]
     },
     {
@@ -3265,6 +3358,17 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ObservedQuoteMethodDeclarationTest.php",
+      "tests": [
+        "test_cli_imports_exact_append_only_declarations_without_policy_or_execution",
+        "test_threshold_collision_cannot_rewrite_registered_method",
+        "test_php_compiled_quote_gate_uses_real_closed_features_and_retains_physical_parameters",
+        "register",
+        "input",
+        "path"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/OriginalModelRuntimeIdentityTest.php",
       "tests": [
         "test_first_request_preserves_raw_transport_hash_and_freezes_real_nested_treatment_and_generated_contract",
@@ -3612,6 +3716,8 @@
       "path": "backend-laravel/tests/Feature/ResearchExperimentConversionKernelServiceTest.php",
       "tests": [
         "contract",
+        "test_method_reconciliation_reuses_only_its_same_locked_inspection_and_next_call_is_fresh",
+        "test_reconciled_method_proof_cannot_replace_the_next_locked_claim_proof",
         "test_terminal_receipt_and_next_work_are_idempotent_and_stale_completion_is_fenced",
         "test_terminal_closure_requires_exactly_one_next_work_or_reason",
         "test_canonical_closure_recovers_expired_ownership_before_selection_and_fences_old_delivery",

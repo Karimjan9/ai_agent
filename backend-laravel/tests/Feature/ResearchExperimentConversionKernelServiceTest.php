@@ -25,6 +25,53 @@ class ResearchExperimentConversionKernelServiceTest extends TestCase
             'arms' => [['role' => 'frozen_control'], ['role' => 'candidate']], 'revisions' => ['subject' => 2, 'evidence' => 3]];
     }
 
+    public function test_method_reconciliation_reuses_only_its_same_locked_inspection_and_next_call_is_fresh(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $row = $kernel->record($this->contract(), ['method_fixture' => true], 'INCONCLUSIVE',
+            ['type' => \App\Services\InstrumentMethodStudyExecutionService::WORK_TYPE, 'identity' => 'locked-method-proof']);
+        $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+        $calls = 0;
+        $this->mock(\App\Services\InstrumentMethodStudyExecutionService::class, function ($mock) use (&$calls, $work): void {
+            $mock->shouldReceive('inspectWork')->twice()->andReturnUsing(function ($item) use (&$calls, $work): array {
+                $this->assertSame($work->id, $item->id);
+                $this->assertGreaterThan(0, DB::transactionLevel());
+                return ['executable' => ++$calls === 1, 'reason_code' => 'ORIGINAL_CHANGED_AFTER_FIRST_INSPECTION'];
+            });
+        });
+        $kernel->reconcileOwnershipAndDependencies();
+        $this->assertSame(1, $calls);
+        $this->assertSame('ready', $work->fresh()->status);
+        $kernel->reconcileOwnershipAndDependencies();
+        $this->assertSame(2, $calls);
+        $this->assertSame('blocked', $work->fresh()->status);
+        $this->assertSame(0, $work->fresh()->attempts);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_reconciled_method_proof_cannot_replace_the_next_locked_claim_proof(): void
+    {
+        $kernel = app(ResearchExperimentConversionKernelService::class);
+        $row = $kernel->record($this->contract(), ['method_fixture' => true], 'INCONCLUSIVE',
+            ['type' => \App\Services\InstrumentMethodStudyExecutionService::WORK_TYPE, 'identity' => 'fresh-method-claim']);
+        $work = ResearchExperimentWorkItem::findOrFail($row['work_id']);
+        $calls = 0;
+        $this->mock(\App\Services\InstrumentMethodStudyExecutionService::class, function ($mock) use (&$calls): void {
+            $mock->shouldReceive('inspectWork')->times(3)->andReturnUsing(function () use (&$calls): array {
+                return ['executable' => ++$calls < 3, 'reason_code' => 'CLAIM_REQUIRES_FRESH_ORIGINAL'];
+            });
+        });
+        $kernel->reconcileOwnershipAndDependencies();
+        $this->assertSame([], $kernel->claimForOwner(ResearchLoopArbiterService::class, 1));
+        $this->assertSame(3, $calls);
+        $this->assertSame('blocked', $work->fresh()->status);
+        $this->assertSame('CLAIM_REQUIRES_FRESH_ORIGINAL', $work->fresh()->last_error);
+        $this->assertSame(0, $work->fresh()->attempts);
+        $this->assertSame(0, $work->fresh()->fence_version);
+        $this->assertNull($work->fresh()->lease_token);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_terminal_receipt_and_next_work_are_idempotent_and_stale_completion_is_fenced(): void
     {
         $kernel = app(ResearchExperimentConversionKernelService::class);

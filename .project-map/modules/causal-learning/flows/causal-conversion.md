@@ -2,6 +2,13 @@
 
 ## Separate observational agent-method outcome learning
 
+Original closed frame -> shared calendar grouping for absent session inputs ->
+prefix-only method features -> bounded typed confirmation/risk/exit -> actual
+entry/WAIT and owned position receipt. Observed-quote, closed-band reentry,
+EMA pullback and later frozen-level Donchian retest supplements constrain
+existing proposals; missing inputs remain explicit and
+physical execution costs are not supplied by a method's research observation.
+
 The existing method-learning owner reopens immutable ordinary request, response,
 trace, executed clock and ledger products. Exact accepted entry and own method
 link -> mature cost-inclusive position result -> alias-deduplicated episode ->

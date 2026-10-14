@@ -1,0 +1,19 @@
+{
+  "kind": "imported_text",
+  "reference": "https://help.ctrader.com/indicators/built-in/trend/exponential-moving-average/",
+  "content": "Original curator paraphrase of the primary cTrader EMA reference: an exponential moving average recursively gives newer closes greater weight, using a smoothing factor of two divided by period plus one. EMAs may describe trend direction and dynamic support or resistance, but lag price and can give false signals in choppy conditions. The fixed twenty/fifty closed-bar averages and directional bounce confirmation in this supplement are separate lab hypotheses, not a publisher-endorsed complete strategy or a profitability claim.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or market outcomes.",
+    "access": "public",
+    "title": "Exponential Moving Average",
+    "publisher": "Spotware cTrader",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

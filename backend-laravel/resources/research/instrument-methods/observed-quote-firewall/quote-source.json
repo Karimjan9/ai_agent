@@ -1,0 +1,20 @@
+{
+  "kind": "imported_text",
+  "reference": "https://help.ctrader.com/ctrader-algo/references/MarketData/Symbols/Symbol/",
+  "content": "Original curator paraphrase: the cTrader Symbol API exposes current bid, ask and spread, with pip and tick sizes as separate units. Spread is the ask-minus-bid price difference. The lab observes a provenance-bearing closed bid/ask quote and divides its price spread by closed-bar ATR; a configured execution spread is not an observed quote. This normalization and the strict 0.10 threshold are prospective lab hypotheses, not a publisher profitability claim.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publisher material retains its rights; no copied code or market outcomes.",
+    "access": "public",
+    "title": "Symbol bid, ask and spread",
+    "publisher": "Spotware cTrader",
+    "source_checked_on": "2026-10-14",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "supporting_reference": "https://help.ctrader.com/trading-with-ctrader/markets/",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

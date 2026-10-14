@@ -85,6 +85,14 @@ class InstrumentMethodStudyExecutionService
     public function inspectWork(ResearchExperimentWorkItem $work): array
     {
         try {
+            return app(AgentMethodLearningService::class)->withVerificationScope(
+                fn (): array => $this->inspectWorkInVerificationScope($work));
+        } catch (Throwable $error) { return $this->blocked($error); }
+    }
+
+    private function inspectWorkInVerificationScope(ResearchExperimentWorkItem $work): array
+    {
+        try {
             $registration = (array) data_get($work->payload, 'method_registration', []);
             $this->need($work->work_type === self::WORK_TYPE && data_get($work->payload, 'owner') === ResearchLoopArbiterService::class
                 && data_get($work->payload, 'executor') === ResearchExperimentWorkConsumerService::class

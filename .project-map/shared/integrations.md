@@ -2,6 +2,29 @@
 
 ## Original method outcomes, deadline and historical advice
 
+Method-only feature binding supplies missing session labels and grouping from
+the shared Python calendar owner before closed session extrema are compiled;
+explicit unknown columns are not repaired. PHP/Python feature types also expose
+closed-band availability/directional reentry. The observed-quote supplement
+consumes validated BID/ASK availability and spread normalized by the explicitly
+simple-averaged ATR(14), not the execution contract's modeled spread. These
+inputs constrain entry confirmation and cannot invent quotes or change costs.
+
+The same bounded typed boundary carries `method_pullback_available` /
+`method_pullback_confirmed` and `method_retest_available` /
+`method_retest_confirmed` from the original closed Python feature owner. These
+two PHP declarations bind them only to confirmation ASTs. EMA20/50 bounce values require mature
+immediately adjacent bars; prior20 Donchian breakouts freeze a level for one
+later confirmation within three contiguous bars. Those observation states
+create no direction, order, larger risk or market data.
+
+Original method readiness shares a bounded container-held policy proof scope
+only across nested owners within one inspection. Its connection, PDO and root
+transaction identity are guarded; the scope is disposed on every outer exit.
+The kernel reuses that same locked reconciliation proof for its immediate
+dependency result, never a later claim or publication. Original source/data,
+HMAC, model, lease and current operator-mode guards are unchanged.
+
 PHP owned-outcome v2 consumes original accepted-entry/method trace and exact own
 position ledger, not invocation counts as outcome labels. Executed clock, costs
 and full account reconcile; mature labels available in 2026+ and censored closes
@@ -60,6 +83,11 @@ genome rewrites. The Python ordinary/native loops publish actual contextual
 decision events and a count/framed-event-hash-bound receipt. Empty explicit
 declarations and stale cache receipts are rejected before cache consumption;
 batch cache identities retain the exact selected candidate binding.
+Canonical synchronized quote CSVs bind `spread` to the closed method feature
+owner; legacy `bid_ask_spread` is also accepted. Present aliases must both be
+finite and numerically equal. Original quote flags, BID-close/ASK-spread
+consistency and closed as-of checks still precede method availability. The
+observation does not replace the separately sealed physical cost contract.
 The original model-runtime treatment seal sparsely includes an explicit method
 binding; every undeclared legacy hash is unchanged. A post-seal policy metadata
 edit invalidates that original identity. Fresh policy rebasing excludes only

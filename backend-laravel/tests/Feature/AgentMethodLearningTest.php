@@ -305,18 +305,30 @@ class AgentMethodLearningTest extends TestCase
         $this->assertSame(['evaluation_request' => 2, 'evaluation_response' => 2], $reads);
         foreach ([1, 2] as $inspection) {
             $reads = [];
-            $this->assertSame($proposal['policy_hash'], $owner->policy($proposal['policy_hash'])['policy_hash']);
+            $scoped = $owner->withVerificationScope(function () use ($owner, $proposal): array {
+                $first = $owner->policy($proposal['policy_hash']);
+                $nested = app(AgentMethodLearningService::class)->withVerificationScope(
+                    fn (): array => app(AgentMethodLearningService::class)->policy($proposal['policy_hash']));
+                $this->assertSame($first, $nested);
+                $this->assertSame($first, app(AgentMethodLearningService::class)->policy($proposal['policy_hash']));
+
+                return $nested;
+            });
+            $this->assertSame($proposal['policy_hash'], $scoped['policy_hash']);
             $this->assertSame(['evaluation_request' => 1, 'evaluation_response' => 1], $reads, 'Fresh inspection '.$inspection);
         }
         $last = $rows->last();
         DB::table('agent_method_experiences')->where('id', $last->id)->update(['facts' => '{"caller_score":999999}']);
-        $this->assertSame('PRIOR_EXPERIENCE_CONTENT_MISMATCH', $owner->policy($proposal['policy_hash'])['reason']);
+        $this->assertSame('PRIOR_EXPERIENCE_CONTENT_MISMATCH', $owner->withVerificationScope(
+            fn (): array => $owner->policy($proposal['policy_hash']))['reason']);
         DB::table('agent_method_experiences')->where('id', $last->id)->update(['facts' => $last->facts]);
         $requestArtifact->update(['payload' => [...$request, 'evaluation_mode' => 'paper']]);
-        $this->assertSame('ORIGINAL_REQUEST_ARTIFACT_HASH_MISMATCH', $owner->policy($proposal['policy_hash'])['reason']);
+        $this->assertSame('ORIGINAL_REQUEST_ARTIFACT_HASH_MISMATCH', $owner->withVerificationScope(
+            fn (): array => $owner->policy($proposal['policy_hash']))['reason']);
         $requestArtifact->update(['payload' => $request]);
         $reads = [];
-        $this->assertSame($proposal['policy_hash'], $owner->policy($proposal['policy_hash'])['policy_hash']);
+        $this->assertSame($proposal['policy_hash'], $owner->withVerificationScope(
+            fn (): array => $owner->policy($proposal['policy_hash']))['policy_hash']);
         $this->assertSame(['evaluation_request' => 1, 'evaluation_response' => 1], $reads);
         $this->assertSame($before, DB::table('agent_method_experiences')->orderBy('experience_key')->get()->toJson());
         $this->assertDatabaseCount('agent_method_policy_revisions', 2);

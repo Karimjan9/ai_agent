@@ -1,0 +1,11 @@
+{
+  "fixture_kind": "synthetic_canonical_quote_header_and_asof_shapes",
+  "synthetic": true,
+  "provider_data": false,
+  "selected_start_utc": "2025-01-06T00:00:00Z",
+  "selected_last_open_utc": "2025-01-06T01:55:00Z",
+  "selected_rows": 24,
+  "volume": "zero_and_unavailable_no_observed_volume_claim",
+  "software_fixture_only": true,
+  "economic_qualification": false
+}
