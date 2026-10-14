@@ -127,13 +127,10 @@ class InstrumentMethodStudyExecutionService
                 $this->need(data_get($model->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash') === $arm['policy_hash']
                     && data_get($model->metadata, InstrumentMethodResearchBindingService::METADATA.'.agent_key') === 'model:'.$model->id,
                     'METHOD_STUDY_ORIGINAL_POLICY_BINDING_REQUIRED');
-                // The canonical execution envelope's promotion_evidence label
-                // describes cost-policy usability, not model trading authority.
-                // Its exact parameters are independently checked below. Do not
-                // copy that envelope into the generic candidate authority test.
-                $plain = clone $model; $plainMetadata = (array) $model->metadata;
-                unset($plainMetadata['execution_contract']); $plain->metadata = $plainMetadata;
-                app(AgentMethodCandidateService::class)->baseline($plain);
+                // Candidate baseline already validates the canonical cost
+                // envelope without treating it as model authority. A signed
+                // meta attachment must inspect the unmodified physical model.
+                app(AgentMethodCandidateService::class)->baseline($model);
                 $policy = app(AgentMethodLearningService::class)->policy($arm['policy_hash']);
                 $this->need(($policy['status'] ?? null) !== 'blocked' && $policy['agent_key'] === 'model:'.$model->id,
                     'METHOD_STUDY_ORIGINAL_POLICY_REQUIRED');
@@ -256,19 +253,22 @@ class InstrumentMethodStudyExecutionService
         $execution = app(ExecutionContractService::class)->for($agent->symbol, $design['scope']['timeframe']);
         $scope = [...$design['scope'], 'data_hash' => $design['data_hash'], 'execution_hash' => $design['execution_hash']];
         $family = app(StrategyParameterSchemaService::class)->family(data_get($model->metadata, 'base_strategy', $model->strategy));
-        $learning = $this->bindings->compilePolicy($design['arms'][$arm]['policy_hash'], ['strategy_family' => $family,
-            'parameters' => (array) $model->parameters], $scope, 'model:'.$model->id);
         $request = ['symbol' => $agent->symbol, 'timeframe' => $design['scope']['timeframe'], 'strategy' => $model->strategy,
             'base_strategy' => $family, 'parameters' => (array) $model->parameters, 'evaluation_mode' => 'incremental',
             'dataset_path' => $proof['source']['dataset_path'], 'replay_dataset_hash' => $design['data_hash'],
             'initial_balance' => $design['initial_balance'], 'risk_per_trade' => $design['risk_per_trade'],
             'execution' => $execution['parameters'], 'execution_contract' => $execution, 'execution_hash' => $execution['execution_hash'],
             'emit_decision_trace' => true, 'emit_trade_ledger' => true,
-            'policy_context' => ['instrument_method_learning' => $learning, 'hard_limits' => $design['hard_limits'],
+            'policy_context' => ['hard_limits' => $design['hard_limits'],
                 'instrument_method_study' => ['study_hash' => $proof['study_hash'], 'arm' => $arm, 'resource_caps' => $design['resource_caps']],
                 'instrument_method_study_resource_cap' => $design['resource_caps'], 'instrument_method_execution' => [
                     'protocol' => self::PROTOCOL, 'original_source' => $proof['source'], 'research_only' => true,
                     'uses_existing_simple_replay' => true, 'independent_validation' => false, 'promotion_evidence' => false]]];
+        // Meta assets verify the seven physical facts of the actual request;
+        // compiling the policy first would silently omit that consumer boundary.
+        $request['policy_context']['instrument_method_learning'] = $this->bindings->compilePolicy(
+            $design['arms'][$arm]['policy_hash'], ['strategy_family' => $family,
+                'parameters' => (array) $model->parameters], $scope, 'model:'.$model->id, $request);
         $request = $this->releases->bindGenerationRequest($generation, $request, [(int) $agent->id]);
         if ($design['resource_caps']['max_runtime_seconds'] > 300) {
             $request = $this->bindOriginalDeadline($request, $proof['study_hash'], $arm, $proof['source']);
@@ -441,10 +441,185 @@ class InstrumentMethodStudyExecutionService
             $generation->update(['status' => 'technical_quarantine', 'completed_at' => now(), 'trigger_context' => [...(array) $generation->trigger_context,
                 'instrument_method_study_terminal' => ['protocol' => self::PROTOCOL, 'reason_code' => $reason,
                     'original_results_unchanged' => true, ...$this->ceiling()]]]);
-            return $this->conversion->complete($work, ['status' => 'original_method_matrix_unassessable', 'reason_code' => $reason,
+            $done = $this->conversion->complete($work, ['status' => 'original_method_matrix_unassessable', 'reason_code' => $reason,
                 'generation_id' => (int) $generation->id, 'original_arms' => data_get($work->fresh()->result, 'original_arms', []), ...$this->ceiling()]);
+            if ($done) $this->projectTechnicalAgents($generation, $work, $reason);
+            return $done;
         });
         return ['status' => $done ? 'completed_technical' : 'stale_lease', 'reason_code' => $reason, ...$this->ceiling()];
+    }
+
+    /** A routing hint only. The reconciliation below owns every substantive proof. */
+    public function hasTerminalProjection(LabGeneration $generation): bool
+    {
+        return $generation->status === 'technical_quarantine'
+            && data_get($generation->trigger_context, self::MARKER.'.protocol') === self::PROTOCOL;
+    }
+
+    /**
+     * Repair only an already-spent original four-arm mutable agent projection.
+     * Historical requests are reopened, never recompiled under today's source.
+     * No work, run, assessment, barrier, scientific budget or credit is rewritten.
+     */
+    public function reconcileGeneration(LabGeneration $generation): ?array
+    {
+        if (data_get($generation->trigger_context, self::MARKER) === null) return null;
+        $workId = data_get($generation->trigger_context, self::MARKER.'.work_item_id');
+        $lock = Cache::lock('instrument-method-study-work:'.$workId, 60);
+        $lane = Cache::lock('laravel-queue-overlap:'.config('services.lab_queue.replay_mutex_key', 'neurotrader-ai-heavy-replay'), 60);
+        $ownsWork = false; $ownsLane = false;
+        try {
+            $this->need(is_int($workId) && $workId > 0, 'METHOD_STUDY_TERMINAL_WORK_ID_REQUIRED');
+            $this->need($ownsWork = $lock->get(), 'METHOD_STUDY_TERMINAL_WORK_OWNER_BUSY');
+            $this->need($ownsLane = $lane->get(), 'METHOD_STUDY_TERMINAL_REPLAY_OWNER_BUSY');
+            return DB::transaction(function () use ($generation, $workId): array {
+                $work = ResearchExperimentWorkItem::whereKey($workId)->lockForUpdate()->first();
+                $current = LabGeneration::whereKey($generation->id)->lockForUpdate()->firstOrFail();
+                $this->need($this->hasTerminalProjection($current) && $current->completed_at !== null,
+                    'METHOD_STUDY_TERMINAL_GENERATION_REQUIRED');
+                $marker = (array) data_get($current->trigger_context, self::MARKER);
+                $registration = (array) data_get($work?->payload, 'method_registration', []);
+                $this->need($work !== null && $work->work_type === self::WORK_TYPE && $work->status === 'settled'
+                    && $work->completed_at !== null && $work->lease_token === null && $work->lease_expires_at === null
+                    && data_get($work->payload, 'owner') === ResearchLoopArbiterService::class
+                    && data_get($work->payload, 'executor') === ResearchExperimentWorkConsumerService::class
+                    && ($registration['protocol'] ?? null) === self::PROTOCOL
+                    && $this->hash($registration) === data_get($work->payload, 'method_registration_hash')
+                    && ($marker['work_key'] ?? null) === $work->work_key
+                    && ($marker['source_receipt_id'] ?? null) === (int) $work->research_experiment_receipt_id
+                    && ($marker['study_hash'] ?? null) === ($registration['study_hash'] ?? null)
+                    && data_get($work->result, 'status') === 'original_method_matrix_unassessable'
+                    && data_get($work->result, 'generation_id') === (int) $current->id
+                    && data_get($current->trigger_context, 'instrument_method_study_terminal.protocol') === self::PROTOCOL
+                    && preg_match('/^(METHOD_STUDY|STUDY)_[A-Z0-9_]+$/D', (string) data_get($work->result, 'reason_code')) === 1
+                    && data_get($work->result, 'reason_code') === data_get($current->trigger_context, 'instrument_method_study_terminal.reason_code'),
+                    'METHOD_STUDY_TERMINAL_WORK_BINDING_REQUIRED');
+                $receipt = $work->receipt;
+                $this->need($receipt !== null && $this->hash((array) data_get($receipt->payload, 'contract')) === $receipt->contract_hash
+                    && $this->hash((array) data_get($receipt->payload, 'evidence')) === $receipt->evidence_hash
+                    && data_get($receipt->payload, 'evidence.registration_hash') === $this->hash($registration)
+                    && data_get($receipt->payload, 'evidence.original_registration') === $registration,
+                    'METHOD_STUDY_TERMINAL_RECEIPT_BINDING_REQUIRED');
+                foreach ($this->ceiling() as $field => $value) {
+                    $this->need(($registration[$field] ?? null) === $value && data_get($work->result, $field) === $value,
+                        'METHOD_STUDY_DIAGNOSTIC_AUTHORITY_REQUIRED');
+                }
+                $design = $this->studies->originalDesign($registration['study_hash']);
+                $this->need($work->symbol === $design['scope']['symbol'] && $work->timeframe === 'H1'
+                    && (int) $current->ai_laboratory_id === (int) AiLaboratory::where('symbol', $work->symbol)->where('timeframe', $work->timeframe)->value('id')
+                    && (int) $current->population_size === 4
+                    && (app(ImmutableGenerationContractService::class)->validate($current)['valid'] ?? false),
+                    'METHOD_STUDY_TERMINAL_COHORT_REQUIRED');
+                $this->need((int) LabGeneration::where('ai_laboratory_id', $current->ai_laboratory_id)->latest('id')->value('id') === (int) $current->id,
+                    'METHOD_STUDY_TERMINAL_LATEST_GENERATION_REQUIRED');
+                $seal = (array) data_get($current->trigger_context, 'research_release', []); $identity = $seal;
+                unset($identity['release_hash'], $identity['sealed_at'], $identity['promotion_evidence']);
+                $this->need(($seal['protocol'] ?? null) === ResearchReleaseSealService::PROTOCOL
+                    && app(ExecutionContractService::class)->hashParameters($identity) === ($seal['release_hash'] ?? null)
+                    && ($seal['source_hash'] ?? null) === ($registration['php_source_hash'] ?? null)
+                    && ($seal['python_source_hash'] ?? null) === ($registration['python_source_hash'] ?? null)
+                    && ($seal['dataset_hash'] ?? null) === $design['data_hash'], 'METHOD_STUDY_TERMINAL_RELEASE_REQUIRED');
+                if (isset($seal['source_artifact'])) {
+                    $this->need(($this->releases->verifySourceArtifact($seal['source_artifact'])['status'] ?? null) === 'verified',
+                        'METHOD_STUDY_TERMINAL_SOURCE_ARCHIVE_REQUIRED');
+                }
+                $agents = $current->agents()->orderBy('id')->lockForUpdate()->get();
+                $expected = array_column($design['arms'], 'model_id'); sort($expected);
+                $actual = $agents->pluck('model_version_id')->map('intval')->sort()->values()->all();
+                $checkpoints = (array) data_get($work->result, 'original_arms', []);
+                $actualArms = array_keys($checkpoints); $expectedArms = self::ARMS; sort($actualArms); sort($expectedArms);
+                $this->need($actual === $expected && $actualArms === $expectedArms,
+                    'METHOD_STUDY_TERMINAL_FOUR_ORIGINALS_REQUIRED');
+                $facts = [];
+                foreach (self::ARMS as $arm) {
+                    $agent = $agents->firstWhere('model_version_id', $design['arms'][$arm]['model_id']); $checkpoint = $checkpoints[$arm];
+                    $model = $agent->modelVersion;
+                    $this->need($model !== null && $this->hash((array) $model->parameters) === $design['arms'][$arm]['parameter_hash']
+                        && $this->hash($this->evidence->modelRuntimeBasis($model)) === $design['arms'][$arm]['model_runtime_basis_hash'],
+                        'METHOD_STUDY_ORIGINAL_MODEL_DRIFT');
+                    $runs = LabEvaluationRun::where('model_version_id', $agent->model_version_id)->limit(2)->get();
+                    $this->need($runs->count() === 1, 'METHOD_STUDY_TERMINAL_ONE_ORIGINAL_REQUIRED'); $run = $runs[0];
+                    $this->need($run->run_id === ($checkpoint['run_id'] ?? null) && ($checkpoint['model_id'] ?? null) === (int) $agent->model_version_id
+                        && (int) $run->lab_generation_id === (int) $current->id && (int) $run->lab_agent_id === (int) $agent->id
+                        && $run->phase === 'screening' && $run->finished_at !== null && in_array($run->status, ['completed', 'technical_error'], true)
+                        && $run->data_hash === $design['data_hash'] && data_get($run->metadata, self::MARKER.'.work_id') === $workId
+                        && data_get($run->metadata, self::MARKER.'.study_hash') === $registration['study_hash']
+                        && data_get($run->metadata, self::MARKER.'.arm') === $arm, 'METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED');
+                    $requests = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->limit(2)->get();
+                    $responses = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_response')->limit(2)->get();
+                    $this->need($requests->count() === 1 && $responses->count() === 1, 'METHOD_STUDY_TERMINAL_ORIGINAL_ARTIFACTS_REQUIRED');
+                    foreach ([$requests[0], $responses[0]] as $artifact) $this->need((int) $artifact->lab_generation_id === (int) $current->id
+                        && (int) $artifact->lab_agent_id === (int) $agent->id, 'METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED');
+                    $request = $this->evidence->readArtifactPayload($requests[0]); $response = $this->evidence->readArtifactPayload($responses[0]);
+                    $this->need(is_array($request) && is_array($response) && $this->hash($request) === ($checkpoint['request_hash'] ?? null)
+                        && $this->evidence->hash($request) === $run->request_hash && $this->evidence->hash($response) === $run->response_hash
+                        && data_get($request, 'policy_context.instrument_method_study.study_hash') === $registration['study_hash']
+                        && data_get($request, 'policy_context.instrument_method_study.arm') === $arm
+                        && data_get($request, 'research_release.release_hash') === $seal['release_hash']
+                        && data_get($request, 'execution_hash') === $design['execution_hash'], 'METHOD_STUDY_TERMINAL_ORIGINAL_BYTES_REQUIRED');
+                    $facts[$arm] = ['run_id' => $run->run_id, 'status' => $run->status, 'request_hash' => $run->request_hash,
+                        'response_hash' => $run->response_hash, 'request_artifact_hash' => $requests[0]->sha256, 'response_artifact_hash' => $responses[0]->sha256];
+                }
+                $this->assertTerminalProjectionIdle($work);
+                $changed = $this->projectTechnicalAgents($current, $work, (string) data_get($work->result, 'reason_code'));
+                $key = 'instrument_method_study_projection_terminal';
+                $projection = ['protocol' => self::PROTOCOL, 'work_id' => $workId, 'study_hash' => $registration['study_hash'],
+                    'original_proof_hash' => $this->hash($facts), 'original_results_unchanged' => true, ...$this->ceiling()];
+                $prior = data_get($current->trigger_context, $key);
+                $this->need($prior === null || $prior === $projection, 'METHOD_STUDY_TERMINAL_PROJECTION_DRIFT');
+                if ($prior === null) $current->update(['trigger_context' => [...(array) $current->trigger_context, $key => $projection]]);
+                return ['status' => 'recorded', 'closed' => $changed > 0 || $prior === null, 'changed_agents' => $changed,
+                    'generation_id' => (int) $current->id, 'reason_code' => 'METHOD_STUDY_TERMINAL_PROJECTION_RECONCILED', ...$this->ceiling()];
+            });
+        } catch (Throwable $error) { return $this->blocked($error) + ['closed' => false]; }
+        finally { if ($ownsLane) $lane->release(); if ($ownsWork) $lock->release(); }
+    }
+
+    private function assertTerminalProjectionIdle(ResearchExperimentWorkItem $work): void
+    {
+        $control = app(AutonomousModeService::class)->status($work->symbol, $work->timeframe);
+        $this->need(($control['enabled'] ?? true) === false && in_array($control['state'] ?? null, ['stopped', 'draining'], true),
+            'METHOD_STUDY_TERMINAL_OPERATOR_STOP_REQUIRED');
+        $this->need(! ResearchExperimentWorkItem::where('symbol', $work->symbol)->where('timeframe', $work->timeframe)
+            ->where('status', 'leased')->where('lease_expires_at', '>', now())->exists(), 'METHOD_STUDY_TERMINAL_ACTIVE_WORK_LEASE');
+        $queues = array_values(array_unique(['scheduler-constructor', 'lab-full-validation',
+            (string) config('services.lab_queue.full_validation_queue', 'lab-full-validation'),
+            (string) config('services.lab_queue.learning_queue', 'lab-learning'),
+            (string) config('services.lab_queue.screening_queue', 'lab-screening'),
+            (string) config('services.lab_queue.frontier_queue', 'lab-frontier'),
+            ...((array) config('services.lab_queue.legacy_screening_queues', []))]));
+        $snapshot = app(LabQueueJobInspector::class)->queueSnapshot($queues);
+        $this->need(($snapshot['available'] ?? true) === true && ($snapshot['total'] ?? null) === 0,
+            'METHOD_STUDY_TERMINAL_QUEUE_IDLE_REQUIRED');
+        $probe = app(ReplayLivenessProbeService::class)->probe();
+        $this->need(($probe['source'] ?? null) === 'replay-status' && ($probe['status'] ?? null) === 'ok'
+            && ($probe['active_requests'] ?? null) === 0 && ($probe['screening_active'] ?? 0) === 0 && ($probe['full_active'] ?? 0) === 0,
+            'METHOD_STUDY_TERMINAL_AUTHENTICATED_REPLAY_IDLE_REQUIRED');
+    }
+
+    private function projectTechnicalAgents(LabGeneration $generation, ResearchExperimentWorkItem $work, string $reason): int
+    {
+        $design = $this->studies->originalDesign((string) data_get($work->payload, 'method_registration.study_hash'));
+        $agents = $generation->agents()->orderBy('id')->lockForUpdate()->get();
+        $actual = $agents->pluck('model_version_id')->map('intval')->sort()->values()->all();
+        $expected = array_column($design['arms'], 'model_id'); sort($expected);
+        $this->need($actual === $expected, 'METHOD_STUDY_TERMINAL_COHORT_REQUIRED');
+        $changed = 0;
+        foreach ($agents as $agent) {
+            if (! in_array($agent->lifecycle_status, ['draft', 'queued', 'screening', 'evaluation_error'], true)) continue;
+            $runs = LabEvaluationRun::where('model_version_id', $agent->model_version_id)->limit(2)->get();
+            $this->need($runs->count() <= 1, 'METHOD_STUDY_TERMINAL_ONE_ORIGINAL_REQUIRED'); $run = $runs->first();
+            $this->need($run === null || ((int) $run->lab_generation_id === (int) $generation->id
+                && (int) $run->lab_agent_id === (int) $agent->id && $run->finished_at !== null
+                && in_array($run->status, ['completed', 'technical_error'], true)), 'METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED');
+            $target = $run?->status === 'completed' ? 'screened' : 'technical_quarantine'; $from = $agent->lifecycle_status;
+            $agent->update(['lifecycle_status' => $target, 'decision_reason' => 'Original method study terminal projection; no quality verdict, replay or authority.']);
+            $this->evidence->recordLifecycle($agent, 'instrument_method_study_terminal_projection', [
+                'reason_code' => $reason, 'work_id' => (int) $work->id, 'original_results_unchanged' => true, ...$this->ceiling()],
+                'screening', $run?->run_id, null, self::class, null, $from, $target);
+            $changed++;
+        }
+        return $changed;
     }
     private function defer(ResearchExperimentWorkItem $work, string $reason, bool $retryable): array
     {

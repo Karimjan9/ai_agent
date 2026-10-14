@@ -20,7 +20,7 @@ use Throwable;
 class ResearchInstrumentMethods extends Command
 {
     protected $signature = 'trading:instrument-methods
-        {action=inventory : inventory, curriculum, teach, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach or status}
+        {action=inventory : inventory, curriculum, teach, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach, meta-transfer or status}
         {--input= : Local JSON object file, at most 1 MiB}
         {--fetch : Explicitly fetch a public HTTPS source reference; source action only}
         {--json : Print the bounded result with exact JSON numeric values}';
@@ -35,7 +35,7 @@ class ResearchInstrumentMethods extends Command
     ): int {
         try {
             $action = $this->argument('action');
-            if (! in_array($action, ['inventory', 'curriculum', 'teach', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'status'], true)) {
+            if (! in_array($action, ['inventory', 'curriculum', 'teach', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'meta-transfer', 'status'], true)) {
                 throw new InvalidArgumentException('METHOD_COMMAND_ACTION_INVALID');
             }
             if ($this->option('fetch') && $action !== 'source') throw new InvalidArgumentException('METHOD_COMMAND_FETCH_SOURCE_ONLY');
@@ -68,6 +68,7 @@ class ResearchInstrumentMethods extends Command
                 'meta-fit' => app(InstrumentMethodMetaModelService::class)->fit($this->onlyHash($input, 'registration_hash')),
                 'meta-status' => app(InstrumentMethodMetaModelService::class)->inspect($this->onlyHash($input, 'registration_hash')),
                 'meta-attach' => $this->attachMetaModel($input),
+                'meta-transfer' => $this->transferMetaModel($input),
                 'status' => $this->status($input, $library, $agents),
             };
             // Reference text is stored by the source owner, never echoed by this interface.
@@ -106,6 +107,15 @@ class ResearchInstrumentMethods extends Command
         }
         return app(InstrumentMethodMetaBindingService::class)->attachUnusedModel(
             $this->integer($input, 'model_id'), $this->hashField($input, 'model_hash'));
+    }
+
+    private function transferMetaModel(array $input): array
+    {
+        if (count($input) !== 2 || array_diff(array_keys($input), ['source_model_id', 'target_model_id']) !== []) {
+            throw new InvalidArgumentException('METHOD_COMMAND_EXACT_META_TRANSFER_REQUIRED');
+        }
+        return app(InstrumentMethodMetaBindingService::class)->reattachToUnusedChild(
+            $this->integer($input, 'source_model_id'), $this->integer($input, 'target_model_id'));
     }
 
     private function settleStudy(array $input): array

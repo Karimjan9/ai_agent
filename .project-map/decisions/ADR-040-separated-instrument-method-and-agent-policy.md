@@ -9,7 +9,8 @@ Media review scope is explicit (text, bounded transcript, author excerpt or
 metadata-only), never assumed from a link. Known lab conventions, physical
 consumer differences and unavailable observations stay visible.
 
-Only a new eligible unused-child generation handoff may bind a code-owned pack
+Only a new eligible unused-child generation, fresh candidate or own-policy
+four-carrier handoff may bind a code-owned pack
 before its own policy seal. Teaching remains a distinct provenance component,
 not earned-agent or trading authority. Its selected recipes are revalidated;
 old handoffs without a pack remain valid under their original owner. Actual
@@ -81,7 +82,16 @@ generic performance score or independent certificate. Target-specific attachment
 precedes policy/runtime seals; original training and actual physical evaluation
 identities are separate. Cash/risk numeric wire normalization is explicit while
 hard limits and other ports remain exact. Native shared-account reuse and silent
-candidate inheritance refuse until their physical transfer is owned explicitly.
+candidate inheritance refuse unless their physical transfer is owned explicitly.
+The ordinary transfer extension now reopens the original issuer and source
+attachment, requires a later unused physically identical target, and signs a
+fresh target attachment before its own policy seal. Its bounded sixteen-hop
+lineage cannot copy a parent's target seal or hide changed parameters, declared
+clock, account, costs or risk. Generation pins original asset/own attachment;
+candidate/study parity retains the intrinsic asset and normalizes only a
+separately verified target proof. The study compiler receives the complete actual
+physical request before publication. Native learned-model reuse still requires
+the distinct whole-council/member/shared-account training and target protocol.
 Own-policy comparison rebases four fresh signed carriers from one original
 proposal root through the existing canonical study dispatcher; unchanged
 selectors close no_effect without compute. Old originals remain immutable.

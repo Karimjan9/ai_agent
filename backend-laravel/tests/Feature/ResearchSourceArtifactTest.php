@@ -52,6 +52,10 @@ class FixtureResearchSourceArtifactOwner extends ResearchReleaseSealService
 class ResearchSourceArtifactTest extends TestCase
 {
     use RefreshDatabase;
+    private const REPLAY_IDLE_SOURCE_FILES = [
+        'backend-laravel/app/Services/ReplayLivenessProbeService.php',
+        'backend-laravel/tests/Unit/ReplayLivenessProbeTest.php',
+    ];
     private const METHOD_SUPPLEMENT_DECLARATIONS = [
         'closed-band-reentry' => ['source', 'method', 'recipe', 'probe-spec'],
         'observed-quote-firewall' => ['quote-source', 'atr-source', 'method', 'recipe'],
@@ -99,6 +103,7 @@ class ResearchSourceArtifactTest extends TestCase
         'backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php',
         'backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php',
         'backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php',
+        'backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php',
         'ai-service-python/tests/test_instrument_operating_skill_exercises.py',
         'ai-service-python/tests/test_temporal_closed_observation.py',
     ];
@@ -139,12 +144,29 @@ class ResearchSourceArtifactTest extends TestCase
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $projectRoot = dirname(base_path());
-        foreach (self::OPERATING_CURRICULUM_SOURCE_FILES as $path) {
+        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES] as $path) {
             if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
         }
         $this->owner = new FixtureResearchSourceArtifactOwner($this->root);
+    }
+
+    public function test_exact_replay_idle_probe_source_and_regression_are_archived(): void
+    {
+        $artifact = $this->owner->buildSourceArtifact();
+        $this->assertSame('verified', $artifact['status'], json_encode($artifact));
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($this->zipPath($artifact['reference'])));
+        try {
+            foreach (self::REPLAY_IDLE_SOURCE_FILES as $path) {
+                $bytes = $zip->getFromName($path);
+                $this->assertIsString($bytes, $path);
+                $this->assertSame(hash_file('sha256', $this->root.'/'.$path), hash('sha256', $bytes));
+            }
+            $this->assertFalse($zip->getFromName('backend-laravel/.env'));
+            $this->assertFalse($zip->getFromName('datasets/secret.csv'));
+        } finally { $zip->close(); }
     }
 
     protected function tearDown(): void
@@ -287,7 +309,7 @@ class ResearchSourceArtifactTest extends TestCase
 
     public function test_exact_operating_curriculum_bytes_and_proofs_are_archived_without_private_or_provider_files(): void
     {
-        $this->assertCount(8, self::OPERATING_CURRICULUM_SOURCE_FILES);
+        $this->assertCount(9, self::OPERATING_CURRICULUM_SOURCE_FILES);
         $projectRoot = dirname(base_path());
         $unlisted = 'backend-laravel/resources/research/instrument-operating-skills/unlisted.json';
         File::put($this->root.'/'.$unlisted, '{"fixture":"not an allowlisted lesson"}');

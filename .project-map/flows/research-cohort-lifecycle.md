@@ -19,6 +19,10 @@ Lane-owned data readiness (validated historical archive or live continuity)
 ```
 
 Typed research diagnostics do not traverse the ordinary economic/paper chain.
+An already-terminal unassessable method study may reconcile a stale arm projection
+only through its original owner after immutable four-original/receipt/cohort
+proof and STOP/idle/queue/mutex guards. The expected-generation settle-only
+invocation exits without a successor, replay, renewed budget or scientific claim.
 An original native depth purpose executes its cheap carrier, seals the actual
 pool/sample, then lets the same arbiter/dispatcher admit the original deeper
 carrier. Original diagnostic comparison and neutral episode dispositions own

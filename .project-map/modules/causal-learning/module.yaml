@@ -89,6 +89,7 @@ paths:
   - backend-laravel/tests/Feature/AgentMethodLearningTest.php
   - backend-laravel/tests/Feature/AgentMethodCandidateTest.php
   - backend-laravel/tests/Feature/AgentMethodGenerationTest.php
+  - backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php
   - backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php
   - backend-laravel/tests/Feature/CuratedExpandedInstrumentMethodCatalogTest.php
   - backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php
@@ -454,6 +455,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php
   - backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php
   - backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php
   - ai-service-python/tests/test_instrument_operating_skill_exercises.py

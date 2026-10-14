@@ -6,7 +6,8 @@ All 26 curator lessons are `operating_skill_curriculum`, not earned agent skills
 Exact installed recipes can yield `operating_rules_taught`; missing or altered
 mapped originals block, while unrelated custom methods are `unmapped`. Synthetic
 exercise correctness has no economic authority. A new unused ordinary child
-may seal a code-owned teaching pack before its initial own policy. Actual use
+or fresh candidate/four-carrier study may seal a code-owned teaching pack before
+its initial own policy. Actual use
 and mature own outcomes remain separate practice; old handoffs have no new
 mandatory pack and are not relabelled. Teaching never expands the active roster
 or substitutes observations, trained weights, independent confirmation or credit.
@@ -108,9 +109,14 @@ part of runtime identity only when present. Compiler and Python revalidate
 physical parameters/account/risk/execution/clock. Prediction requires closed
 observations strictly after training/calibration labels; unavailable inputs stay
 unavailable. Native shared-account execution is unsupported, not inferred from
-an ordinary model. Existing candidate/study transfer refuses meta assets until
-an explicit fresh reattachment owner exists; old models without assets retain
-their previous behavior and identity.
+an ordinary model. The original issuer can now reattach a verified asset to a
+later unused physically identical ordinary child before its own policy seal.
+The new target has its own attachment hash/HMAC and bounded source lineage;
+copying a parent seal, source drift or a changed physical baseline refuses.
+Generation, fresh candidate and own-policy four-carrier preparation use this
+owner. Intrinsic assets remain comparative baseline; only reverified target
+attachment identity is normalized. New generation proofs pin asset ownership
+and curated teaching packs; old asset-free proofs retain their identity.
 
 Owned-outcome v2 follows `reopened eligible original -> unique accepted entry
 and own method/position link -> uncensored mature cost-inclusive close ->

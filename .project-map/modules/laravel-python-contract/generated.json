@@ -2,13 +2,15 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T11:54:23.563Z",
-  "source_digest": "c59be6b0b660f434b77712f80e516010f8936c5470f65eb4fea90b4fd12d0709",
-  "source_file_count": 1695,
-  "git_head": "751c54d5ed85b6200fc57a904bd5d3feb02bec5d",
+  "generated_at": "2026-10-14T13:39:20.148Z",
+  "source_digest": "6af5c2286e183a8c18577b832885dfdef386f63a4a49bc04179661de62d8cdc5",
+  "source_file_count": 1697,
+  "git_head": "31dc58136c54181f00d5ef09e7a2897f0ff7ccf2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [
+    "backend-laravel/app/Services/ReplayLivenessProbeService.php",
+    "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
     "ai-service-python/app/services/instrument_method_learning.py",
     "ai-service-python/app/services/instrument_method_original_deadline.py",
     "ai-service-python/tests/test_instrument_method_original_deadline.py",
@@ -136,6 +138,7 @@
     "backend-laravel/app/Services/NativeReachabilityDepthReceiptValidatorService.php",
     "backend-laravel/app/Services/NativeSpreadContextStudyService.php",
     "backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php",
+    "backend-laravel/app/Services/ReplayLivenessProbeService.php",
     "backend-laravel/app/Services/ResearchReleaseSealService.php",
     "backend-laravel/app/Services/SpecialistCouncilAuthorizedArmExecutionService.php",
     "backend-laravel/ecosystem.config.cjs",
@@ -147,7 +150,8 @@
     "backend-laravel/tests/Feature/NativeStudyHistoricalProjectionIsolationTest.php",
     "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
     "backend-laravel/tests/Feature/TypedOperatorDecisionIntegrationTest.php",
-    "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php"
+    "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
+    "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php"
   ],
   "symbols": [
     {
@@ -6739,6 +6743,24 @@
       "line": 93
     },
     {
+      "symbol": "ReplayLivenessProbeService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/ReplayLivenessProbeService.php",
+      "line": 15
+    },
+    {
+      "symbol": "probe",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ReplayLivenessProbeService.php",
+      "line": 20
+    },
+    {
+      "symbol": "parse",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/ReplayLivenessProbeService.php",
+      "line": 59
+    },
+    {
       "symbol": "ResearchReleaseSealService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
@@ -6748,163 +6770,163 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 214
+      "line": 216
     },
     {
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 286
+      "line": 288
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 376
+      "line": 378
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 406
+      "line": 408
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 418
+      "line": 420
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 434
+      "line": 436
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 449
+      "line": 451
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 451
+      "line": 453
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 464
+      "line": 466
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 472
+      "line": 474
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 483
+      "line": 485
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 501
+      "line": 503
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 511
+      "line": 513
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 532
+      "line": 534
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 546
+      "line": 548
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 567
+      "line": 569
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 579
+      "line": 581
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 590
+      "line": 592
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 597
+      "line": 599
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 619
+      "line": 621
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 625
+      "line": 627
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 642
+      "line": 644
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 679
+      "line": 681
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 709
+      "line": 711
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 717
+      "line": 719
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 739
+      "line": 741
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 748
+      "line": 750
     },
     {
       "symbol": "execute",
@@ -8189,6 +8211,60 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
       "line": 88
+    },
+    {
+      "symbol": "ReplayLivenessProbeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 11
+    },
+    {
+      "symbol": "setUp",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 13
+    },
+    {
+      "symbol": "test_malformed_authenticated_counter_stays_unknown_without_healthy_public_fallback",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 22
+    },
+    {
+      "symbol": "test_malformed_public_health_counter_cannot_claim_idle",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 39
+    },
+    {
+      "symbol": "invalidCounters",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 52
+    },
+    {
+      "symbol": "test_valid_integer_counters_keep_the_existing_idle_active_and_optional_defaults",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 62
+    },
+    {
+      "symbol": "validCounters",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 74
+    },
+    {
+      "symbol": "test_missing_required_active_counter_and_malformed_protocol_stay_unknown",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 84
+    },
+    {
+      "symbol": "test_transport_failure_still_allows_explicit_valid_health_projection",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "line": 95
     }
   ],
   "tests": [
@@ -8987,6 +9063,19 @@
         "test_paper_transport_requires_exact_top_level_and_sealed_entry_contract_parity",
         "test_confirmation_entry_paper_request_receives_all_closed_context_streams",
         "canonicalHash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "tests": [
+        "setUp",
+        "test_malformed_authenticated_counter_stays_unknown_without_healthy_public_fallback",
+        "test_malformed_public_health_counter_cannot_claim_idle",
+        "invalidCounters",
+        "test_valid_integer_counters_keep_the_existing_idle_active_and_optional_defaults",
+        "validCounters",
+        "test_missing_required_active_counter_and_malformed_protocol_stay_unknown",
+        "test_transport_failure_still_allows_explicit_valid_health_projection"
       ]
     }
   ]

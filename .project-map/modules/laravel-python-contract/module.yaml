@@ -9,6 +9,8 @@ aliases:
   - hash
   - attestation
 paths:
+  - backend-laravel/app/Services/ReplayLivenessProbeService.php
+  - backend-laravel/tests/Unit/ReplayLivenessProbeTest.php
   - ai-service-python/app/services/instrument_method_learning.py
   - ai-service-python/app/services/instrument_method_original_deadline.py
   - ai-service-python/tests/test_instrument_method_original_deadline.py
@@ -146,6 +148,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Unit/ReplayLivenessProbeTest.php
   - ai-service-python/tests/test_market_regime.py
   - ai-service-python/tests/test_scoped_research_runtime.py
   - ai-service-python/tests/test_scoped_position_maturity.py

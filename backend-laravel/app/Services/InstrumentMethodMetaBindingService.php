@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\LabAgent;
 use App\Models\LabEvaluationRun;
 use App\Models\ModelVersion;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use Throwable;
@@ -15,10 +16,84 @@ class InstrumentMethodMetaBindingService
     public const PROTOCOL = 'instrument_method_meta_model_binding_v1';
     public const METADATA = 'instrument_method_meta_model';
     public const PROOF_METADATA = 'instrument_method_meta_model_attachment';
+    public const TRANSFER_PROTOCOL = 'instrument_method_meta_model_transfer_v1';
     public const PHYSICAL_FIELDS = ['symbol', 'timeframe', 'strategy', 'parameters_hash', 'account_risk_hash', 'execution_hash', 'clock_seconds'];
 
     public function __construct(private InstrumentMethodMetaModelService $models,
         private ResearchPaperEpochContractService $hashes) {}
+
+    /** Reopen the issuer and target seal, never infer an asset from copied metadata. */
+    public function assetForModel(ModelVersion $model): ?array
+    {
+        $metadata = (array) $model->metadata;
+        if (! array_key_exists(self::METADATA, $metadata) && ! array_key_exists(self::PROOF_METADATA, $metadata)) return null;
+        $ref = $metadata[self::METADATA] ?? null;
+        $this->need(is_array($ref) && array_diff(array_keys($ref), ['protocol', 'model_hash']) === []
+            && count($ref) === 2 && ($ref['protocol'] ?? null) === self::PROTOCOL
+            && is_string($ref['model_hash'] ?? null), 'META_BINDING_EXACT_MODEL_REFERENCE_REQUIRED');
+        $export = $this->export($ref['model_hash']);
+        $this->attachment($model, $export);
+        $this->sameModel($model, $export);
+        $this->declaredScope($model, $export);
+        $proof = $metadata[self::PROOF_METADATA];
+        return ['model_hash' => $ref['model_hash'], 'reference' => $ref,
+            'attachment_hash' => $proof['attachment_hash'], 'physical_basis_hash' => $proof['physical_basis_hash'],
+            'original_training_binding_hash' => $proof['original_training_binding_hash']];
+    }
+
+    /** Reissue a fresh target attachment; neither the source seal nor trained weights are copied or edited. */
+    public function reattachToUnusedChild(int $sourceModelId, int $targetModelId): array
+    {
+        try {
+            return DB::transaction(function () use ($sourceModelId, $targetModelId): array {
+                $source = ModelVersion::whereKey($sourceModelId)->lockForUpdate()->first();
+                $target = ModelVersion::whereKey($targetModelId)->lockForUpdate()->first();
+                $this->need($source !== null && $target !== null && $sourceModelId < $targetModelId,
+                    'META_BINDING_ORIGINAL_PARENT_CHILD_REQUIRED');
+                $this->need($this->unused($target), 'META_BINDING_UNUSED_PLAIN_MODEL_REQUIRED');
+                $asset = $this->assetForModel($source);
+                if ($asset === null) return ['status' => 'no_meta_asset', 'source_model_id' => $sourceModelId,
+                    'model_id' => $targetModelId, ...$this->ceiling()];
+                $metadata = (array) $target->metadata;
+                $this->beforeOwnSeal($target, $metadata);
+                $export = $this->export($asset['model_hash']);
+                $this->sameModel($target, $export);
+                $this->declaredScope($target, $export);
+                $this->need($this->hash($this->physical($source)) === $this->hash($this->physical($target)),
+                    'META_BINDING_TRANSFER_PHYSICAL_DRIFT');
+                $sourceProof = (array) $source->metadata[self::PROOF_METADATA];
+                $sourceTime = $this->stamp($sourceProof['attached_at']);
+                $now = now()->utc()->toIso8601String();
+                $this->need($target->created_at !== null && $source->created_at !== null
+                    && $target->created_at->greaterThanOrEqualTo($source->created_at)
+                    && $this->stamp($now)->greaterThanOrEqualTo($sourceTime)
+                    && $this->stamp($now)->greaterThanOrEqualTo($target->created_at), 'META_BINDING_TRANSFER_CHRONOLOGY_REQUIRED');
+                $depth = (int) data_get($sourceProof, 'transfer.depth', 0) + 1;
+                $this->need($depth <= 16, 'META_BINDING_TRANSFER_DEPTH_REQUIRED');
+                $transfer = ['protocol' => self::TRANSFER_PROTOCOL, 'source_model_id' => $sourceModelId,
+                    'source_attachment_hash' => $asset['attachment_hash'], 'depth' => $depth];
+                if (array_key_exists(self::METADATA, $metadata) || array_key_exists(self::PROOF_METADATA, $metadata)) {
+                    $existing = $this->assetForModel($target);
+                    $this->need($existing !== null && $existing['model_hash'] === $asset['model_hash']
+                        && $this->hash((array) data_get($metadata, self::PROOF_METADATA.'.transfer', [])) === $this->hash($transfer),
+                        'META_BINDING_TRANSFER_ATTACHMENT_IMMUTABLE');
+                    return ['status' => 'original_meta_model_transfer_exists', 'source_model_id' => $sourceModelId,
+                        'model_id' => $targetModelId, 'protocol' => self::PROTOCOL, ...$existing, ...$this->ceiling()];
+                }
+                $ref = ['protocol' => self::PROTOCOL, 'model_hash' => $asset['model_hash']];
+                $proof = ['protocol' => self::PROTOCOL, 'target_model_id' => $targetModelId, 'model_hash' => $asset['model_hash'],
+                    'physical_basis_hash' => $this->hash($this->physical($target)),
+                    'original_training_binding_hash' => $asset['original_training_binding_hash'],
+                    'attached_at' => $now, 'attached_before_own_policy' => true, 'transfer' => $transfer, ...$this->ceiling()];
+                $proof['attachment_hash'] = $this->hash($proof); $proof['server_seal'] = $this->seal($proof);
+                $target->update(['metadata' => [...$metadata, self::METADATA => $ref, self::PROOF_METADATA => $proof]]);
+                $verified = $this->assetForModel($target->fresh());
+                return ['status' => 'reattached_meta_model_prospectively', 'source_model_id' => $sourceModelId,
+                    'model_id' => $targetModelId, 'protocol' => self::PROTOCOL, ...$verified, ...$this->ceiling()];
+            });
+        } catch (Throwable $error) { return ['status' => 'blocked', 'reason' => preg_match('/^(META_BINDING|META_MODEL|METHOD_CANDIDATE)_[A-Z0-9_]+$/D', $error->getMessage())
+            ? $error->getMessage() : 'META_BINDING_ORIGINAL_OWNER_REFUSED', ...$this->ceiling()]; }
+    }
 
     public function attachUnusedModel(int $modelId, string $modelHash): array
     {
@@ -27,12 +102,7 @@ class InstrumentMethodMetaBindingService
                 $target = ModelVersion::whereKey($modelId)->lockForUpdate()->first();
                 $this->need($target !== null && $this->unused($target), 'META_BINDING_UNUSED_PLAIN_MODEL_REQUIRED');
                 $metadata = (array) $target->metadata;
-                $this->need(data_get($metadata, InstrumentMethodResearchBindingService::METADATA) === null
-                    && data_get($metadata, AgentMethodGenerationService::METADATA) === null
-                    && data_get($metadata, 'instrument_method_candidate') === null
-                    && data_get($metadata, AgentMethodStudyPreparationService::METADATA) === null
-                    && ! DB::table('agent_method_policy_revisions')->where('agent_key', 'model:'.$modelId)->exists(),
-                    'META_BINDING_MUST_PRECEDE_OWN_POLICY_SEAL');
+                $this->beforeOwnSeal($target, $metadata);
                 $this->physical($target);
                 $export = $this->export($modelHash);
                 $this->sameModel($target, $export);
@@ -117,8 +187,9 @@ class InstrumentMethodMetaBindingService
     }
 
     /** Sparse asset ownership is separately attested before every future compiled request. */
-    private function attachment(ModelVersion $model, array $export): void
+    private function attachment(ModelVersion $model, array $export, int $hops = 0): void
     {
+        $this->need($hops <= 16, 'META_BINDING_TRANSFER_DEPTH_REQUIRED');
         $proof = (array) data_get($model->metadata, self::PROOF_METADATA, []);
         $ref = data_get($model->metadata, self::METADATA);
         $this->need(is_array($ref) && count($ref) === 2 && $this->hash($ref) === $this->hash(['protocol' => self::PROTOCOL, 'model_hash' => $export['artifact']['artifact_hash']]),
@@ -133,6 +204,58 @@ class InstrumentMethodMetaBindingService
             && ($proof['original_training_binding_hash'] ?? null) === $this->hash($export['artifact']['binding']),
             'META_BINDING_ORIGINAL_ATTACHMENT_REQUIRED');
         foreach ($this->ceiling() as $field => $value) $this->need(($proof[$field] ?? null) === $value, 'META_BINDING_AUTHORITY_FORBIDDEN');
+        if (array_key_exists('transfer', $proof)) {
+            $transfer = $proof['transfer'];
+            $this->need(is_array($transfer) && array_diff(array_keys($transfer), ['protocol', 'source_model_id', 'source_attachment_hash', 'depth']) === []
+                && ($transfer['protocol'] ?? null) === self::TRANSFER_PROTOCOL && is_int($transfer['source_model_id'] ?? null)
+                && $transfer['source_model_id'] > 0 && $transfer['source_model_id'] < (int) $model->id
+                && is_int($transfer['depth'] ?? null) && $transfer['depth'] >= 1 && $transfer['depth'] <= 16,
+                'META_BINDING_ORIGINAL_TRANSFER_REQUIRED');
+            $source = ModelVersion::find($transfer['source_model_id']);
+            $this->need($source !== null, 'META_BINDING_ORIGINAL_TRANSFER_REQUIRED');
+            $this->attachment($source, $export, $hops + 1);
+            $this->sameModel($source, $export);
+            $this->declaredScope($source, $export);
+            $sourceProof = (array) data_get($source->metadata, self::PROOF_METADATA, []);
+            $this->need($transfer['source_attachment_hash'] === $sourceProof['attachment_hash']
+                && $transfer['depth'] === (int) data_get($sourceProof, 'transfer.depth', 0) + 1
+                && $this->hash($this->physical($source)) === $proof['physical_basis_hash'], 'META_BINDING_ORIGINAL_TRANSFER_REQUIRED');
+            $this->need($source->created_at !== null && $model->created_at !== null
+                && $model->created_at->greaterThanOrEqualTo($source->created_at)
+                && $this->stamp($proof['attached_at'])->greaterThanOrEqualTo($this->stamp($sourceProof['attached_at']))
+                && $this->stamp($proof['attached_at'])->greaterThanOrEqualTo($model->created_at), 'META_BINDING_TRANSFER_CHRONOLOGY_REQUIRED');
+        }
+    }
+
+    private function beforeOwnSeal(ModelVersion $model, array $metadata): void
+    {
+        $this->need(data_get($metadata, InstrumentMethodResearchBindingService::METADATA) === null
+            && data_get($metadata, AgentMethodGenerationService::METADATA) === null
+            && data_get($metadata, 'instrument_method_candidate') === null
+            && data_get($metadata, AgentMethodStudyPreparationService::METADATA) === null
+            && ! DB::table('agent_method_policy_revisions')->where('agent_key', 'model:'.$model->id)->exists(),
+            'META_BINDING_MUST_PRECEDE_OWN_POLICY_SEAL');
+    }
+
+    private function declaredScope(ModelVersion $model, array $export): void
+    {
+        foreach (['lab_symbol' => 'symbol', 'lab_timeframe' => 'timeframe'] as $key => $field) {
+            if (array_key_exists($key, (array) $model->metadata)) $this->need($model->metadata[$key] === $export['artifact']['binding'][$field],
+                'META_BINDING_TRANSFER_SCOPE_DRIFT');
+        }
+        $execution = data_get($model->metadata, 'execution_contract');
+        if ($execution !== null) $this->need(is_array($execution)
+            && ($execution['execution_hash'] ?? null) === $export['artifact']['binding']['execution_hash'], 'META_BINDING_TRANSFER_SCOPE_DRIFT');
+    }
+
+    private function stamp(mixed $value): CarbonImmutable
+    {
+        try {
+            if ($value instanceof \DateTimeInterface) return CarbonImmutable::instance($value)->utc();
+            $this->need(is_string($value) && preg_match('/(Z|[+-][0-9]{2}:[0-9]{2})$/D', $value) === 1,
+                'META_BINDING_TRANSFER_CHRONOLOGY_REQUIRED');
+            return CarbonImmutable::parse($value)->utc();
+        } catch (Throwable) { throw new LogicException('META_BINDING_TRANSFER_CHRONOLOGY_REQUIRED'); }
     }
     private function export(string $hash): array
     {

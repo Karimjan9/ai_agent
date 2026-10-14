@@ -1,5 +1,14 @@
 # Integrations and runtime boundaries
 
+## Read-only replay liveness contract
+
+`ReplayLivenessProbeService` accepts integer nonnegative `active_requests` and
+present `screening_active`/`full_active` counters. Missing optional fields retain
+legacy zero. Authenticated malformed success is unknown, never converted through
+public health into idle. Missing credentials/transport failure can expose only
+the explicit health fallback. Terminal mutation still requires authenticated
+replay-status idle, queue/mutex/control proof and original immutable artifacts.
+
 ## Curator operating knowledge and agent practice
 
 The existing curated method owner reads three pinned instruction parts covering
@@ -90,6 +99,22 @@ trusts CSV/caller scores, unclosed observations or future weights. A source/data
 change does not turn seen calibration into independent evidence. Ordinary
 account/risk guards remain exact; native shared-account meta evaluation refuses.
 No artifact, registration or attachment grants economic, Master or paper rights.
+
+`instrument_method_meta_model_transfer_v1` reopens the original issuer and
+source attachment for a later unused ordinary target. Exact physical basis,
+declared symbol/timeframe/execution, monotone lineage and a 16-hop bound guard
+fresh target issuance. The intrinsic reference is retained in comparative
+baselines; only a successfully reverified target-specific attachment is
+excluded from parity. New generation proofs pin that asset; candidate and
+four-arm policy preparation attach it before their own seals. The original
+study dispatcher passes the complete actual physical request to method
+compilation, not an invented training binding. Native/shared-account learned
+assets remain unsupported; typed native method transport remains available.
+
+Selected curator teaching packs are additionally sealed and reopened by fresh
+candidate and own-policy study owners. Missing/altered mapped lessons refuse;
+unrelated unmapped custom recipes and old absent-pack proofs keep their original
+semantics. No pack rewrites agent-owned selection or earns skill authority.
 
 Optional `instrument_method_schema_numeric_projection_v1` reopens raw original
 parameters and keeps their artifact hash unchanged. Both owners independently

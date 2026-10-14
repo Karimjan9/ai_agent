@@ -4,8 +4,14 @@
 
 Reviewed scoped source instruction -> all-26 immutable operating curriculum ->
 exact installed recipe teaching pack -> server-signed unused-child generation
-proof -> separately sealed own selection policy -> original runtime method use
--> existing owned mature outcome -> prospective agent policy revision. Technical
+or fresh own-policy candidate/four-carrier preparation -> actual physical
+request -> original method event -> own mature outcome -> agent preference.
+Optional original fitted asset -> issuer/source attachment reinspection ->
+physically identical unused ordinary target -> fresh target attachment ->
+own policy seal. All four study requests reach the compiler with their actual
+account/risk/cost/data/clock facts before the original publication barrier.
+The separately sealed own selection policy leads to original runtime method use,
+owned mature outcomes and a prospective agent policy revision. Technical
 correctness of the taught rule and contextual usefulness of its agent consumer
 are different acceptances. Neither source text nor exercise labels enter trading
 as authority; bounded active recipe selection and old immutable products remain.

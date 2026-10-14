@@ -31,9 +31,7 @@ class AgentMethodStudyPreparationService
             return DB::transaction(function () use ($input): array {
                 $source = ModelVersion::whereKey($input['source_model_id'])->lockForUpdate()->first();
                 $this->need($source !== null && $this->unused($source), 'METHOD_POLICY_STUDY_UNUSED_OWN_CHILD_REQUIRED');
-                $this->need(! array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $source->metadata)
-                    && ! array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $source->metadata),
-                    'METHOD_POLICY_STUDY_META_ASSET_TRANSFER_OWNER_REQUIRED');
+                $meta = app(InstrumentMethodMetaBindingService::class)->assetForModel($source);
                 [$own, $baseline, $root] = $this->sourcePolicies($source);
                 $basis = $this->baseline($source, $own);
                 $definitions = $this->definitions($input['libraries'], $baseline, $own);
@@ -71,10 +69,20 @@ class AgentMethodStudyPreparationService
                 $arms = [];
                 foreach (InstrumentMethodStudyExecutionService::ARMS as $armKey) {
                     $definition = $definitions[$armKey];
+                    $metadata = $basis['metadata'];
+                    // Never copy an attachment issued for the source model. A
+                    // verified intrinsic asset is freshly attached before our seal.
+                    unset($metadata[InstrumentMethodMetaBindingService::METADATA], $metadata[InstrumentMethodMetaBindingService::PROOF_METADATA]);
                     $model = ModelVersion::create(['name' => 'own-policy-'.$root.'-'.$armKey,
                         'strategy' => $basis['strategy'], 'version' => 'own_policy_study_v1', 'status' => 'draft',
-                        'parameters' => $basis['parameters'], 'metadata' => $basis['metadata'],
+                        'parameters' => $basis['parameters'], 'metadata' => $metadata,
                         'description' => 'Prospective exact-baseline own-policy diagnostic carrier; no independent or trading authority.']);
+                    if ($meta !== null) {
+                        $attached = app(InstrumentMethodMetaBindingService::class)->reattachToUnusedChild((int) $source->id, (int) $model->id);
+                        $this->need(in_array($attached['status'] ?? null, ['reattached_meta_model_prospectively', 'original_meta_model_transfer_exists'], true),
+                            $attached['reason'] ?? 'METHOD_POLICY_STUDY_FRESH_META_ATTACHMENT_REQUIRED');
+                        $model->refresh();
+                    }
                     $proof = ['protocol' => self::PROTOCOL, 'source_model_id' => (int) $source->id,
                         'target_model_id' => (int) $model->id, 'source_policy_hash' => $own['policy_hash'],
                         'baseline_policy_hash' => $baseline['policy_hash'], 'source_question_root' => $root,
@@ -82,8 +90,21 @@ class AgentMethodStudyPreparationService
                         'baseline_hash' => $this->hash($basis), 'library_hash' => $definition['library_hash'],
                         'library_contract' => $definition['library_contract'], 'rules' => $definition['rules'],
                         'default_action' => $definition['default_action'], ...$this->ceiling()];
+                    $catalog = app(CuratedInstrumentMethodCatalogService::class);
+                    $teaching = $catalog->teachingPack($definition['library_contract']['recipe_hashes']);
+                    if (($teaching['status'] ?? null) === 'operating_rules_taught') {
+                        $this->need($catalog->verifyTeachingPack($teaching, $definition['library_contract']['recipe_hashes']),
+                            'METHOD_POLICY_STUDY_TEACHING_PACK_INVALID');
+                        $proof['teaching_pack'] = $teaching;
+                    } else {
+                        // Existing unrelated custom recipes keep their original
+                        // treatment; broken mapped originals cannot omit teaching.
+                        $this->need(($teaching['status'] ?? null) === 'unmapped'
+                            && ($teaching['reason'] ?? null) === 'OPERATING_RECIPE_NOT_IN_REVIEWED_LESSONS',
+                            'METHOD_POLICY_STUDY_TEACHING_PACK_REQUIRED');
+                    }
                     $proof['handoff_hash'] = $this->hash($proof); $proof['server_seal'] = $this->seal($proof);
-                    $model->update(['metadata' => [...$basis['metadata'], self::METADATA => $proof]]);
+                    $model->update(['metadata' => [...(array) $model->metadata, self::METADATA => $proof]]);
                     $registered = $this->learning->registerStudyPolicy((int) $model->id);
                     $this->need(($registered['status'] ?? null) === 'registered_research_only',
                         $registered['reason'] ?? 'METHOD_POLICY_STUDY_OWN_CARRIER_REGISTRATION_REQUIRED');
@@ -135,6 +156,9 @@ class AgentMethodStudyPreparationService
             $definition = $this->definitions($proof['libraries'], $baseline, $own)[$proof['arm']];
             $metadata = (array) $target->metadata;
             unset($metadata[self::METADATA], $metadata[InstrumentMethodResearchBindingService::METADATA], $metadata['lifecycle_sync']);
+            if (app(InstrumentMethodMetaBindingService::class)->assetForModel($target) !== null) {
+                unset($metadata[InstrumentMethodMetaBindingService::PROOF_METADATA]);
+            }
             if ($proof['source_policy_hash'] !== $own['policy_hash'] || $proof['baseline_policy_hash'] !== $baseline['policy_hash']
                 || $proof['source_question_root'] !== $root || $proof['baseline_hash'] !== $this->hash($this->baseline($source, $own))
                 || $proof['baseline_hash'] !== $this->hash(['strategy' => $target->strategy, 'parameters' => (array) $target->parameters, 'metadata' => $metadata])
@@ -143,6 +167,12 @@ class AgentMethodStudyPreparationService
                 if ($this->hash(['value' => $proof[$field]]) !== $this->hash(['value' => $definition[$field]])
                     || $this->hash(['value' => $body[$field] ?? null]) !== $this->hash(['value' => $definition[$field]])) return false;
             }
+            // Historical study proofs have no mandatory teaching pack. A new
+            // pack reopens only this arm's exact original recipe/source pool.
+            if (array_key_exists('teaching_pack', $proof)
+                && (! is_array($proof['teaching_pack'])
+                    || ! app(CuratedInstrumentMethodCatalogService::class)->verifyTeachingPack(
+                        $proof['teaching_pack'], $definition['library_contract']['recipe_hashes']))) return false;
             $binding = data_get($target->metadata, InstrumentMethodResearchBindingService::METADATA);
             if ($binding !== null && (($binding['agent_key'] ?? null) !== $body['agent_key']
                 || ($binding['policy_hash'] ?? null) !== $this->hash(array_diff_key($body, ['policy_hash' => true, 'policy_json' => true])))) return false;
@@ -173,6 +203,9 @@ class AgentMethodStudyPreparationService
         }
         unset($metadata[InstrumentMethodResearchBindingService::METADATA], $metadata['lifecycle_sync']);
         app(AgentMethodCandidateService::class)->baseline($model); // Existing rich-owner/schema/authority guards still apply.
+        if (app(InstrumentMethodMetaBindingService::class)->assetForModel($model) !== null) {
+            unset($metadata[InstrumentMethodMetaBindingService::PROOF_METADATA]);
+        }
         return ['strategy' => $model->strategy, 'parameters' => (array) $model->parameters, 'metadata' => $metadata];
     }
 

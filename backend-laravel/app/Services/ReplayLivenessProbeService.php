@@ -27,8 +27,9 @@ class ReplayLivenessProbeService
                 $response = Http::connectTimeout(2)->timeout(5)->acceptJson()
                     ->withHeaders(['X-Internal-Token' => $token])
                     ->get($base.'/api/replay-status');
-                $parsed = $this->parse($response->successful() ? (array) $response->json() : [], 'replay-status');
-                if ($parsed['status'] !== 'unknown') return $parsed;
+                // A successful authenticated reply is authoritative even when
+                // malformed. Public health cannot turn that refusal into idle.
+                if ($response->successful()) return $this->parse((array) $response->json(), 'replay-status');
             } catch (\Throwable) {
                 // Fall through to the narrow local health projection.
             }
@@ -58,8 +59,13 @@ class ReplayLivenessProbeService
     private function parse(array $payload, string $source): array
     {
         $active = $payload['active_requests'] ?? null;
-        $protocol = trim((string) ($payload['protocol'] ?? ''));
-        if (! is_numeric($active) || $protocol === '') {
+        $protocol = $payload['protocol'] ?? null;
+        $countersValid = is_int($active) && $active >= 0;
+        foreach (['screening_active', 'full_active'] as $counter) {
+            if (array_key_exists($counter, $payload)
+                && (! is_int($payload[$counter]) || $payload[$counter] < 0)) $countersValid = false;
+        }
+        if (! $countersValid || ! is_string($protocol) || trim($protocol) === '') {
             return [
                 'protocol' => self::PROTOCOL,
                 'status' => 'unknown',
@@ -69,23 +75,21 @@ class ReplayLivenessProbeService
             ];
         }
 
-        $active = max(0, (int) $active);
-
         return [
             'protocol' => self::PROTOCOL,
             'status' => $active === 0 ? 'ok' : 'active',
             'reason' => $active === 0 ? 'idle' : 'replay_in_progress',
             'active_requests' => $active,
-            'screening_active' => (int) ($payload['screening_active'] ?? 0),
+            'screening_active' => $payload['screening_active'] ?? 0,
             'screening_capacity' => (int) ($payload['screening_capacity'] ?? 0),
-            'full_active' => (int) ($payload['full_active'] ?? 0),
+            'full_active' => $payload['full_active'] ?? 0,
             'last_replay_started_at' => $payload['last_replay_started_at'] ?? null,
             'last_replay_finished_at' => $payload['last_replay_finished_at'] ?? null,
             'last_replay_termination' => $payload['last_replay_termination'] ?? null,
             'last_replay_stage_timings_ms' => (array) ($payload['last_replay_stage_timings_ms'] ?? []),
             'last_replay_checkpoint' => (array) ($payload['last_replay_checkpoint'] ?? []),
             'source' => $source,
-            'service_protocol' => $protocol,
+            'service_protocol' => trim($protocol),
         ];
     }
 }

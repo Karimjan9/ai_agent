@@ -1,5 +1,18 @@
 # Laboratory lifecycle states
 
+A spent, declared original method study can have terminal technical history
+while a failed arm's mutable agent projection still says screening. The existing
+terminal boundary now routes only that technical method purpose to its original
+owner. All four immutable originals/checkpoints, receipt, cohort and historical
+source are reopened; STOP, no live lease, empty constructor/replay queues,
+owned work/replay mutexes and authenticated idle are required. Only the owned
+unfinished agent projections and a diagnostic projection marker change.
+Successful agents, runs, barriers, budgets, comparison and authority stay exact.
+Idempotent `--settle-only --expected-generation-id` always exits without a
+successor. Future technical method closure also terminalizes its unattempted
+draft seats neutrally rather than fabricating replay. Ordinary terminal scopes
+keep their original already-terminal behavior.
+
 Ordinary historical advice refresh owns one repeatable-read transaction and a
 finite positive source roster. The original reserved-purpose predicates are
 evaluated once per declaration plane; source agent/run IDs and event, rollup,

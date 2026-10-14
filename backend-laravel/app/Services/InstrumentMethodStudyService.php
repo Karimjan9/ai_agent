@@ -203,6 +203,11 @@ class InstrumentMethodStudyService
             }
         }
         $metadata = (array) $model->metadata;
+        // A separately verified target attachment is not an experimental
+        // treatment. Its intrinsic model reference stays in the baseline.
+        if (app(InstrumentMethodMetaBindingService::class)->assetForModel($model) !== null) {
+            unset($metadata[InstrumentMethodMetaBindingService::PROOF_METADATA]);
+        }
         unset($metadata[InstrumentMethodResearchBindingService::METADATA], $metadata['lifecycle_sync']);
         return ['strategy' => $model->strategy, 'parameters' => (array) $model->parameters, 'metadata' => $metadata];
     }

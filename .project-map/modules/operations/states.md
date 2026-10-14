@@ -1,5 +1,12 @@
 # Operations states
 
+The read-only Laravel/Python liveness contract accepts only true nonnegative
+integer active counters. Optional lane counters may be absent (legacy zero),
+but present malformed counters yield unknown. A successful malformed
+authenticated replay-status cannot fall back to a public health idle. Release
+and technical projection guards must distinguish that typed unknown from
+zero; genuine transport failure still has an explicitly labelled health path.
+
 Windows display maintenance uses public PAUSE to fence new scheduled research children
 while already-running originals finish. With unchanged application fingerprint
 and identical native PHP bytes, an empty known consumer lane may refresh only

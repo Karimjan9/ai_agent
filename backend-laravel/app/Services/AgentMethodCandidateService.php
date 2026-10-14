@@ -56,6 +56,17 @@ class AgentMethodCandidateService
                     'source_policy_hash' => $sourcePolicyHash, 'proposal_policy_hash' => $proposalHash,
                     'baseline_hash' => $this->hash($baseline), 'library_hash' => $proposal['library_hash'],
                     'learning_semantics_hash' => $semantics, 'lineage_depth' => $depth, ...$this->ceiling()];
+                $catalog = app(CuratedInstrumentMethodCatalogService::class);
+                $teaching = $catalog->teachingPack($proposal['library_contract']['recipe_hashes']);
+                if (($teaching['status'] ?? null) === 'operating_rules_taught') {
+                    $this->need($catalog->verifyTeachingPack($teaching, $proposal['library_contract']['recipe_hashes']),
+                        'METHOD_CANDIDATE_TEACHING_PACK_INVALID');
+                    $proof['teaching_pack'] = $teaching;
+                } else {
+                    $this->need(($teaching['status'] ?? null) === 'unmapped'
+                        && ($teaching['reason'] ?? null) === 'OPERATING_RECIPE_NOT_IN_REVIEWED_LESSONS',
+                        $teaching['reason'] ?? 'METHOD_CANDIDATE_TEACHING_PACK_REFUSED');
+                }
                 $key = $this->hash($proof);
                 $proof['candidate_key'] = $key;
                 // A different proposal revision label cannot create another candidate for the same original learning question.
@@ -70,20 +81,29 @@ class AgentMethodCandidateService
                         'METHOD_CANDIDATE_ORIGINAL_TARGET_DRIFT');
                     return $this->result($existing, (array) data_get($existing->metadata, 'instrument_method_candidate'), $targetPolicyHash, true);
                 }
+                $targetMetadata = $baseline['metadata'];
+                // The intrinsic asset is comparable, its attachment belongs to a
+                // particular target. Never copy either parent attachment or a
+                // caller reference into a newly constructed policy carrier.
+                unset($targetMetadata[InstrumentMethodMetaBindingService::METADATA]);
                 $target = ModelVersion::create(['name' => 'method_research_'.substr($key, 0, 64),
                     'strategy' => $baseline['strategy'], 'version' => 'method_candidate_v1', 'status' => 'draft',
                     'parameters' => $baseline['parameters'], 'description' => 'Fresh exact research baseline with an original diagnostic method policy; canonical admission remains required.',
-                    'metadata' => [...$baseline['metadata'], 'instrument_method_candidate' => $proof]]);
+                    'metadata' => $targetMetadata]);
+                $transfer = app(InstrumentMethodMetaBindingService::class)->reattachToUnusedChild((int) $source->id, (int) $target->id);
+                $this->need(in_array($transfer['status'] ?? null, ['no_meta_asset', 'reattached_meta_model_prospectively'], true),
+                    $transfer['reason'] ?? 'METHOD_CANDIDATE_META_TRANSFER_REQUIRED');
+                $target->refresh();
                 $proof['target_model_id'] = (int) $target->id;
                 $proof['candidate_key'] = $this->hash(array_diff_key($proof, ['candidate_key' => true]));
-                $target->update(['metadata' => [...$baseline['metadata'], 'instrument_method_candidate' => $proof]]);
+                $target->update(['metadata' => [...(array) $target->metadata, 'instrument_method_candidate' => $proof]]);
                 $registered = $this->learning->registerRebasedPolicy($proposalHash, (int) $target->id);
                 $this->need(($registered['status'] ?? null) === 'registered_research_only', 'METHOD_CANDIDATE_TARGET_POLICY_REGISTRATION_REQUIRED');
                 $this->bindings->attachToUnusedModel((int) $target->id, $registered['policy_hash']);
                 return $this->result($target->fresh(), $proof, $registered['policy_hash'], false);
             });
         } catch (Throwable $error) {
-            return ['status' => 'blocked', 'reason' => preg_match('/^METHOD_CANDIDATE_[A-Z0-9_]+$/D', $error->getMessage())
+            return ['status' => 'blocked', 'reason' => preg_match('/^(METHOD_CANDIDATE|META_BINDING|META_MODEL)_[A-Z0-9_]+$/D', $error->getMessage())
                 ? $error->getMessage() : 'METHOD_CANDIDATE_ORIGINAL_VERIFICATION_FAILED', ...$this->ceiling()];
         }
     }
@@ -91,10 +111,7 @@ class AgentMethodCandidateService
     /** Plain schema strategies only; richer programme owners must construct their own original successor. */
     public function baseline(ModelVersion $model): array
     {
-        if (array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $model->metadata)
-            || array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $model->metadata)) {
-            throw new LogicException('METHOD_CANDIDATE_META_ASSET_TRANSFER_OWNER_REQUIRED');
-        }
+        $meta = app(InstrumentMethodMetaBindingService::class)->assetForModel($model);
         foreach (['specialist_council', 'specialist_council_evaluation', 'specialist_council_membership',
             'native_specialist_council_seed', 'authorized_specialist_council_panel_seed', 'prospective_scoped_composition_recipe',
             'composition_passport', 'composition_runtime_contract', 'confirmation_entry', 'runtime_ensemble',
@@ -115,6 +132,7 @@ class AgentMethodCandidateService
             unset($authorityView['execution_contract']);
         }
         $this->need(! $this->authorityMetadata($authorityView), 'METHOD_CANDIDATE_RUNTIME_AUTHORITY_METADATA_REFUSED');
+        if ($meta !== null) $metadata[InstrumentMethodMetaBindingService::METADATA] = $meta['reference'];
         $family = $this->schemas->family((string) ($metadata['base_strategy'] ?? $model->strategy));
         try { $this->schemas->validate($family, (array) $model->parameters); }
         catch (\InvalidArgumentException) { throw new LogicException('METHOD_CANDIDATE_EXACT_SCHEMA_BASELINE_REQUIRED'); }
@@ -139,6 +157,9 @@ class AgentMethodCandidateService
                 || $this->hash($this->baseline($target)) !== $provenance['baseline_hash']) return false;
             $targetMetadata = (array) $target->metadata;
             $allowedMetadata = [...array_keys($this->baseline($target)['metadata']), 'instrument_method_candidate', InstrumentMethodResearchBindingService::METADATA];
+            if (app(InstrumentMethodMetaBindingService::class)->assetForModel($target) !== null) {
+                $allowedMetadata[] = InstrumentMethodMetaBindingService::PROOF_METADATA;
+            }
             if (array_diff(array_keys($targetMetadata), $allowedMetadata) !== []) return false;
             $proposal = $this->learning->policy((string) ($provenance['source_policy_hash'] ?? ''));
             if (($proposal['status'] ?? null) === 'blocked' || ($proposal['learning_provenance']['protocol'] ?? null) !== 'frozen_method_learning_exposure_v1'
@@ -156,6 +177,10 @@ class AgentMethodCandidateService
                 || ($targetBinding['agent_key'] ?? null) !== $body['agent_key']
                 || ($targetBinding['policy_hash'] ?? null) !== $this->hash(array_diff_key($body, ['policy_hash' => true, 'policy_json' => true])))) return false;
             $proof = (array) data_get($target->metadata, 'instrument_method_candidate', []);
+            if (array_key_exists('teaching_pack', $proof)
+                && (! is_array($proof['teaching_pack'])
+                    || ! app(CuratedInstrumentMethodCatalogService::class)->verifyTeachingPack(
+                        $proof['teaching_pack'], $proposal['library_contract']['recipe_hashes']))) return false;
             $key = $proof['candidate_key'] ?? null;
             if ($key !== $provenance['candidate_key'] || ($proof['protocol'] ?? null) !== self::PROTOCOL
                 || ($proof['source_model_id'] ?? null) !== $provenance['source_model_id']
@@ -180,7 +205,9 @@ class AgentMethodCandidateService
             // The intentionally new owned policy is verified separately above;
             // every other physical treatment component must remain exact.
             unset($originalBasis['components'][InstrumentMethodResearchBindingService::METADATA],
-                $newBasis['components'][InstrumentMethodResearchBindingService::METADATA]);
+                $newBasis['components'][InstrumentMethodResearchBindingService::METADATA],
+                $originalBasis['components'][InstrumentMethodMetaBindingService::PROOF_METADATA],
+                $newBasis['components'][InstrumentMethodMetaBindingService::PROOF_METADATA]);
             if ($this->hash($originalBasis) !== $this->hash($newBasis)) return false;
             return true;
         } catch (Throwable) { return false; }

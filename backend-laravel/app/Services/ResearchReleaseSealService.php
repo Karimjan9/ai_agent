@@ -96,6 +96,8 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/ResearchInstrumentMethodsCommandTest.php',
         'backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php',
         'backend-laravel/tests/Feature/AgentMethodGenerationTest.php',
+        'backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php',
+        'backend-laravel/tests/Unit/ReplayLivenessProbeTest.php',
         'backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php',
         'ai-service-python/scripts/backtest-instrument-method-matrix.py',
         'ai-service-python/tests/test_instrument_method_learning.py',

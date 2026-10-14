@@ -122,6 +122,7 @@ class AgentMethodGenerationService
         if (! Schema::hasTable('agent_method_policy_revisions')) return $this->dependency('METHOD_GENERATION_MIGRATION_REQUIRED');
         try {
             $this->need(! array_key_exists('teaching_pack', $constructor), 'METHOD_GENERATION_CODE_OWNED_TEACHING_PACK_REQUIRED');
+            $this->need(! array_key_exists('meta_asset_binding', $constructor), 'METHOD_GENERATION_CODE_OWNED_META_ASSET_REQUIRED');
             return DB::transaction(function () use ($child, $parent, $constructor): array {
                 if ($parent !== null) {
                     $parent = ModelVersion::find($parent->id);
@@ -129,9 +130,6 @@ class AgentMethodGenerationService
                 }
                 $child = ModelVersion::whereKey($child->id)->lockForUpdate()->firstOrFail();
                 $this->need($this->unused($child), 'METHOD_GENERATION_UNUSED_CONSTRUCTOR_CHILD_REQUIRED');
-                $this->need($parent === null || (! array_key_exists(InstrumentMethodMetaBindingService::METADATA, (array) $parent->metadata)
-                    && ! array_key_exists(InstrumentMethodMetaBindingService::PROOF_METADATA, (array) $parent->metadata)),
-                    'METHOD_GENERATION_META_ASSET_TRANSFER_OWNER_REQUIRED');
                 $this->need(! $this->protected($child), 'METHOD_GENERATION_EXISTING_TYPED_CONSTRUCTOR_REQUIRED');
                 $baseline = $this->physical($child);
                 $prior = data_get($child->metadata, self::METADATA);
@@ -142,6 +140,17 @@ class AgentMethodGenerationService
                     return ['status' => 'original_child_policy_exists', 'model_id' => (int) $child->id, 'policy_hash' => $hash, ...$this->ceiling()];
                 }
                 $this->need(data_get($child->metadata, InstrumentMethodResearchBindingService::METADATA) === null, 'METHOD_GENERATION_CHILD_ALREADY_OWNED');
+                $metaOwner = app(InstrumentMethodMetaBindingService::class);
+                $parentAsset = $parent === null ? null : $metaOwner->assetForModel($parent);
+                if ($parentAsset !== null) {
+                    $transfer = $metaOwner->reattachToUnusedChild((int) $parent->id, (int) $child->id);
+                    $this->need(in_array($transfer['status'] ?? null,
+                        ['reattached_meta_model_prospectively', 'original_meta_model_transfer_exists'], true),
+                        $transfer['reason'] ?? 'METHOD_GENERATION_META_ASSET_TRANSFER_REQUIRED');
+                    $child->refresh();
+                    $this->need($this->hash($this->physical($child)) === $this->hash($baseline), 'METHOD_GENERATION_PHYSICAL_TREATMENT_CHANGED');
+                }
+                $targetAsset = $metaOwner->assetForModel($child);
                 $sourcePolicy = null; $proposal = null;
                 if ($parent !== null && data_get($parent->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash') !== null) {
                     $this->need($parent->id < $child->id && ! $this->protected($parent), 'METHOD_GENERATION_SUPPORTED_PARENT_REQUIRED');
@@ -168,6 +177,7 @@ class AgentMethodGenerationService
                     'rules' => $definition['rules'], 'default_action' => $definition['default_action'],
                     'physical_hash' => $this->hash($baseline), 'constructor' => $constructor,
                     'lineage_depth' => $depth, ...$this->ceiling()];
+                if ($targetAsset !== null) $proof['meta_asset_binding'] = $this->metaAssetPin($targetAsset);
                 // Instruction is pinned separately from learned selection. It
                 // cannot install a model asset or change a physical treatment.
                 $catalog = app(CuratedInstrumentMethodCatalogService::class);
@@ -231,6 +241,11 @@ class AgentMethodGenerationService
                 || $this->hash((array) ($body['rules'] ?? [])) !== $this->hash($proof['rules'])
                 || ($body['default_action'] ?? null) !== $proof['default_action']) return false;
             if (($this->library->verifyLibrary(['library_contract' => $proof['library_contract'], 'library_hash' => $proof['library_hash']])['valid'] ?? false) !== true) return false;
+            if (array_key_exists('meta_asset_binding', $proof)) {
+                $asset = app(InstrumentMethodMetaBindingService::class)->assetForModel($target);
+                if ($asset === null || ! is_array($proof['meta_asset_binding'])
+                    || $this->hash($proof['meta_asset_binding']) !== $this->hash($this->metaAssetPin($asset))) return false;
+            }
             // Old proofs have no instruction pack and remain byte-for-byte
             // valid. New packs must belong to this exact, pinned recipe pool.
             if (array_key_exists('teaching_pack', $proof)
@@ -380,11 +395,15 @@ class AgentMethodGenerationService
     private function dependency(string $reason): array { return ['status' => 'dependency', 'reason' => $reason, ...$this->ceiling()]; }
     private function need(bool $condition, string $reason): void { if (! $condition) throw new LogicException($reason); }
     private function hash(array $body): string { return $this->hashes->parameterHash($body); }
+    private function metaAssetPin(array $asset): array
+    {
+        return array_intersect_key($asset, array_flip(['model_hash', 'attachment_hash', 'original_training_binding_hash']));
+    }
     private function seal(array $body): string
     {
         $key = config('app.key');
         $this->need(is_string($key) && $key !== '', 'METHOD_GENERATION_SERVER_SEAL_KEY_REQUIRED');
         return hash_hmac('sha256', self::PROTOCOL.':'.$this->hash($body), $key);
     }
-    private function safeReason(Throwable $error): string { return preg_match('/^(METHOD_GENERATION_|OWNED_METHOD_)[A-Z0-9_]+$/D', $error->getMessage()) ? $error->getMessage() : 'METHOD_GENERATION_ORIGINAL_VERIFICATION_FAILED'; }
+    private function safeReason(Throwable $error): string { return preg_match('/^(METHOD_GENERATION_|OWNED_METHOD_|META_BINDING_|META_MODEL_)[A-Z0-9_]+$/D', $error->getMessage()) ? $error->getMessage() : 'METHOD_GENERATION_ORIGINAL_VERIFICATION_FAILED'; }
 }

@@ -47,6 +47,11 @@ class LabGenerationTerminalBoundaryService
         if (! $generation) {
             return $this->blocked('GENERATION_NOT_FOUND');
         }
+        // This owner alone repairs a spent method original's agent projection.
+        // It verifies the old originals and idle fences; it cannot replay them.
+        if (app(InstrumentMethodStudyExecutionService::class)->hasTerminalProjection($generation)) {
+            return app(InstrumentMethodStudyExecutionService::class)->reconcileGeneration($generation);
+        }
         if (! in_array((string) $generation->status, ['queued', 'screening', 'full_validation'], true)) {
             return $this->blocked('GENERATION_ALREADY_TERMINAL', $generation);
         }

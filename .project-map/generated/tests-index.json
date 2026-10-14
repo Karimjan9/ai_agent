@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T11:54:23.563Z",
-  "source_digest": "c59be6b0b660f434b77712f80e516010f8936c5470f65eb4fea90b4fd12d0709",
-  "source_file_count": 1695,
-  "git_head": "751c54d5ed85b6200fc57a904bd5d3feb02bec5d",
+  "generated_at": "2026-10-14T13:39:20.148Z",
+  "source_digest": "6af5c2286e183a8c18577b832885dfdef386f63a4a49bc04179661de62d8cdc5",
+  "source_file_count": 1697,
+  "git_head": "31dc58136c54181f00d5ef09e7a2897f0ff7ccf2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -1323,6 +1323,22 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php",
+      "tests": [
+        "setUp",
+        "test_all_four_study_carriers_seal_exact_code_owned_teaching_before_registration_without_mutating_sources",
+        "test_reinspection_rejects_altered_teaching_and_keeps_original_legacy_proof_without_pack_compatible",
+        "test_missing_or_invalid_mapped_teaching_rolls_back_all_carriers_and_caller_cannot_supply_a_pack",
+        "studyInput",
+        "originalParent",
+        "model",
+        "setUnboundFixture",
+        "policyBody",
+        "sealFixture",
+        "context"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php",
       "tests": [
         "policyFixture",
@@ -2613,12 +2629,19 @@
         "test_php_original_fit_compiles_full_python_runtime_and_consumes_own_score_in_new_entry_method",
         "test_asset_cannot_late_attach_after_an_own_policy_or_copy_its_proof_to_a_new_model",
         "test_actual_parameters_cost_account_clock_and_plain_scope_are_required_before_cache",
-        "test_underpowered_roster_cannot_be_fabricated_as_asset_and_existing_transfer_routes_refuse_silent_drop",
+        "test_underpowered_roster_cannot_be_fabricated_as_asset_and_transfer_routes_refuse_invalid_issuer",
+        "test_original_parent_asset_is_reattached_with_fresh_target_seal_and_original_training_refs",
+        "test_transferred_asset_rejects_ancestor_declared_scope_drift",
+        "test_transfer_refuses_copied_binding_physical_scope_chronology_and_already_owned_targets",
+        "test_generation_reattaches_issuer_asset_and_pins_it_without_claiming_parent_selection_learning",
+        "test_original_fitted_asset_follows_new_owned_practice_into_candidate_and_learned_generation_child",
+        "test_four_meta_study_carriers_reopen_same_original_asset_and_actual_physical_request",
         "test_original_float_wire_model_attaches_integer_numeric_target_and_actual_simple_api_consumes_projection",
         "test_schema_numeric_projection_rejects_other_type_aliases_unknown_fields_and_changed_values",
         "test_projection_export_reopens_raw_original_and_does_not_rewrite_legacy_export_or_artifact",
         "fitted",
         "model",
+        "metaPractice",
         "policy",
         "request",
         "refused",
@@ -2691,12 +2714,21 @@
         "tearDown",
         "test_original_registration_is_sealed_then_claimed_by_existing_owner_not_by_flags",
         "test_canonical_constructor_owns_exact_four_models_and_all_requests_before_first_queue",
+        "test_policy_compiler_receives_exact_physical_request_before_original_publication",
         "test_existing_stream_and_model_or_source_drift_block_without_constructor_writes",
         "test_stale_worker_and_ordinary_evaluation_cannot_enter_prospective_study",
         "test_four_completed_originals_with_unassessable_comparison_close_technical_without_replay_or_credit",
         "test_stop_denies_unprepared_work_but_drains_only_an_original_four_request_barrier",
         "test_paper_source_and_bad_clock_do_not_create_canonical_work",
         "test_bounded_view_reopens_exact_origin_cells_and_retains_separate_original_hash",
+        "test_original_transport_failure_terminalizes_owned_agents_without_another_attempt",
+        "test_spent_four_original_projection_reopens_historical_bytes_and_is_idempotent",
+        "test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original",
+        "test_spent_projection_refuses_changed_original_artifact_bytes",
+        "test_spent_projection_requires_stop_no_live_lease_and_known_empty_pending_delayed_reserved_queues",
+        "test_spent_projection_requires_authenticated_idle_not_public_health_or_live_replay",
+        "test_existing_frozen_settle_only_command_repairs_spent_projection_without_successor",
+        "spentOriginalProjection",
         "claim",
         "context"
       ]
@@ -3857,6 +3889,7 @@
         "tearDown",
         "test_default_inventory_and_status_are_read_only_and_command_is_discovered",
         "test_own_child_study_preparation_requires_bounded_owner_input_and_never_dispatches_from_invalid_ids",
+        "test_meta_transfer_uses_original_owner_only_and_rejects_caller_assets_or_force",
         "test_source_method_recipe_policy_and_both_compile_routes_preserve_original_contracts",
         "test_fetch_is_explicit_source_only_and_never_prints_fetched_content",
         "test_bounded_local_object_input_rejects_remote_streams_lists_invalid_json_and_oversized_files",
@@ -3988,6 +4021,7 @@
         "verifySourceArtifact",
         "sourceArtifactByteFence",
         "setUp",
+        "test_exact_replay_idle_probe_source_and_regression_are_archived",
         "tearDown",
         "test_archive_byte_fence_rehashes_actual_bytes_and_original_reference_without_claiming_full_verification",
         "test_archive_byte_fence_refuses_changed_reference_bytes_even_with_original_zip",
@@ -5518,6 +5552,19 @@
         "source",
         "scope",
         "hash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
+      "tests": [
+        "setUp",
+        "test_malformed_authenticated_counter_stays_unknown_without_healthy_public_fallback",
+        "test_malformed_public_health_counter_cannot_claim_idle",
+        "invalidCounters",
+        "test_valid_integer_counters_keep_the_existing_idle_active_and_optional_defaults",
+        "validCounters",
+        "test_missing_required_active_counter_and_malformed_protocol_stay_unknown",
+        "test_transport_failure_still_allows_explicit_valid_health_projection"
       ]
     },
     {

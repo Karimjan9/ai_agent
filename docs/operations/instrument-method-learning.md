@@ -206,9 +206,31 @@ physical parameters/account/risk/execution/clock. Original source/library/data
 identity remains separately recorded as training provenance. Prediction uses
 only closed observations strictly after calibration and the last label becomes
 observable. Missing context or a model not yet available remains an explicit
-dependency; CSV fields cannot supply a score. Generic/native shared-account
+dependency; CSV fields cannot supply a score. Native shared-account
 transfer is refused, not silently stripped or grandfathered. Old models without
 this optional asset keep the same contracts and event hashes.
+
+`meta-transfer` accepts only `source_model_id` and `target_model_id`. The
+original owner reopens the source issuer/attachment, requires a later unused
+ordinary target and unchanged physical baseline, and signs a new target
+attachment before any policy/cohort/run. It neither copies the parent's target
+seal nor retrains/edits the asset. Source lineage is bounded to sixteen hops;
+wrong family, parameters, risk, cost, declared clock/symbol, missing issuer,
+copied proof and late attachment fail closed.
+
+The ordinary generation, fresh own-policy candidate and four-carrier preparation
+use that owner. New generation proofs additionally pin their own asset hash and
+attachment; candidate/study baselines retain the intrinsic asset and normalize
+only the separately verified target proof. Each original study request now
+reaches the method compiler with its actual account/risk/cost/data/clock fields.
+Teacher packs also follow fresh candidate and study carriers before registration:
+code-owned reviewed library instruction stays separate from agent-owned
+preference. Legacy absent-pack and asset-free proofs remain unchanged.
+
+This closes supported ordinary software transfer, not native learned-model
+transfer, a completed future original matrix, untouched market validation or
+economic child retention. A finite model still requires genuine calibrated
+original labels; teaching text supplies none. All 2026+ market data stays paper.
 
 Optional `instrument_method_schema_numeric_projection_v1` reopens the exact
 original parameters without changing the signed artifact or its raw parameter
@@ -377,6 +399,17 @@ also reuses its same locked proof for the immediate dependency calculation;
 locked claim, construction and every original publication stay fresh.
 
 ## Delivery and qualification
+
+Original technical method closure now terminalizes its unfinished owned agent
+projections as technical quarantine, including unattempted drafts without
+invented runs. Successful screened arms and immutable results stay unchanged.
+For a previously spent four-original study, the existing expected-generation
+settle-only lifecycle route can reconcile a stale projection after reopening
+all original request/response bytes, receipt, cohort, checkpoints and historical
+release. STOP, known empty relevant constructor/replay queues, no live work
+lease, owned work/replay mutexes and authenticated idle are mandatory. This
+invocation never admits a successor or renews an original arm. Unknown/corrupt
+or incomplete proof remains blocked, not manually relabelled as success.
 
 New source is prepared and verified in an isolated worktree; test completion
 does not imply a production migration or active worker replacement.

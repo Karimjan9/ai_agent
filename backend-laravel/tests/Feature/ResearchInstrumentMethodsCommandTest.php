@@ -56,6 +56,25 @@ class ResearchInstrumentMethodsCommandTest extends TestCase
         $this->assertDatabaseCount('jobs', 0);
     }
 
+    public function test_meta_transfer_uses_original_owner_only_and_rejects_caller_assets_or_force(): void
+    {
+        $owner = $this->mock(InstrumentMethodMetaBindingService::class);
+        $owner->shouldReceive('reattachToUnusedChild')->once()->with(7, 11)->andReturn([
+            'status' => 'reattached_meta_model_prospectively', 'economic_authority' => false,
+            'mastery_proven' => false, 'research_only' => true]);
+        [$exit, $result] = $this->commandResult('meta-transfer', ['source_model_id' => 7, 'target_model_id' => 11]);
+        $this->assertSame(0, $exit); $this->assertFalse($result['economic_authority']);
+        foreach ([['source_model_id' => 7, 'target_model_id' => 11, 'force' => true],
+            ['source_model_id' => 7, 'target_model_id' => 11, 'model_hash' => str_repeat('b', 64)]] as $bad) {
+            [$exit, $result] = $this->commandResult('meta-transfer', $bad);
+            $this->assertSame(1, $exit);
+            $this->assertSame('METHOD_COMMAND_EXACT_META_TRANSFER_REQUIRED', $result['reason']);
+        }
+        $this->assertDatabaseCount('model_versions', 0);
+        $this->assertDatabaseCount('jobs', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
     public function test_source_method_recipe_policy_and_both_compile_routes_preserve_original_contracts(): void
     {
         $marker = 'DO_NOT_PRINT_RAW_EXTERNAL_SOURCE_TEXT';

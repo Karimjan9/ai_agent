@@ -284,6 +284,7 @@ class InstrumentMethodMetaModelTest extends TestCase
             'parameters' => $options['parameters'] ?? ['entry_confidence' => 0.5], 'initial_balance' => 10000.0, 'risk_per_trade' => 1.0,
             'replay_dataset_hash' => str_repeat('d', 64), 'execution_contract' => $execution,
             'research_release' => ['python_source_hash' => str_repeat('f', 64)]];
+        if (array_key_exists('policy_context', $options)) $request['policy_context'] = $options['policy_context'];
         if (isset($options['library'])) {
             $method = ['library_hash' => str_repeat($options['library'], 64), 'policy' => ['rules' => [], 'default_action' => 'BASELINE']];
             $method['contract_hash'] = $this->hash($method); $request['instrument_method_learning'] = $method;

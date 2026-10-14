@@ -1,5 +1,14 @@
 # Causal-learning history
 
+## 2026-10-14 - Explicit ordinary model asset transfer
+
+ADR-040's ordinary transfer extension reissues target-specific attachments from
+the verified original issuer before new generation/candidate/study policy seals.
+Selected curator teaching additionally follows fresh candidates and four-arm
+carriers without rewriting agent-owned preferences. Complete actual physical
+requests reach the original dispatcher/compiler boundary. Native learned assets
+and independent economics remain separate scopes, not inferred from this route.
+
 ## 2026-10-14 - Source-taught operating rules, separately earned practice
 
 ADR-040's operating curriculum extension covers all 26 tools with pinned

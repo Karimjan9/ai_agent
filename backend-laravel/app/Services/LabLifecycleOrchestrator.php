@@ -212,7 +212,8 @@ class LabLifecycleOrchestrator
                         ],
                     );
                 }
-                if (! $this->generationStillOwnsSettlement($settlementGeneration)) {
+                if (! $this->generationStillOwnsSettlement($settlementGeneration)
+                    && ! app(InstrumentMethodStudyExecutionService::class)->hasTerminalProjection($settlementGeneration)) {
                     return $this->summarize(
                         $cycleId,
                         $symbol,
@@ -251,6 +252,12 @@ class LabLifecycleOrchestrator
                         'next_action' => 'research_loop_arbiter_reselect',
                     ],
                 );
+            }
+            if ($settleOnly && app(InstrumentMethodStudyExecutionService::class)->hasTerminalProjection($settlementGeneration)) {
+                return $this->summarize($cycleId, $symbol, $timeframe, self::STATUS_PAUSED,
+                    'Spent original method projection boundary; no successor or replay in this invocation.', $stage,
+                    ['terminal_boundary' => $terminalBoundary, 'expected_generation_id' => (int) $settlementGeneration->id,
+                        'next_action' => 'research_loop_arbiter_reselect']);
             }
             if ($settleOnly && in_array($terminalBoundary['reason_code'] ?? null,
                 ['SETTLEMENT_WATERMARK_NOT_TERMINAL', 'OBSERVED_COUNCIL_EPISODE_DISPOSITION_BLOCKED'], true)) {

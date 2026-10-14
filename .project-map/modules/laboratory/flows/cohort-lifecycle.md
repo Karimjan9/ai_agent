@@ -1,5 +1,14 @@
 # Laboratory cohort lifecycle
 
+## Spent original method projection
+
+Terminal technical method work -> existing expected-generation settle-only
+route -> original receipt/cohort/four-run/artifact proof -> STOP plus known idle
+and owned mutexes -> unfinished agent projection closure -> return without
+successor. The next ordinary arbiter cadence selects new work; no old original,
+budget, scientific result or authority is renewed. Future method technical
+closure projects unfinished owned arms terminally within its original lease.
+
 ## One-call historical advice source snapshot
 
 Before ordinary population construction, the existing historical owner acquires
