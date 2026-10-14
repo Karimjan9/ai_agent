@@ -372,3 +372,41 @@ Generic compact event digests were checked for envelope/count consistency, not
 independently reconstructed. No HTTP-service, native-MTF, independent-market,
 qualification, Master-skill or paper/live-authority claim follows. The old
 fourteen-original panel and quote-pair products were not changed or repeated.
+
+## G266 canonical technical terminal — 2026-10-14
+
+At 07:17:50 UTC, work 14 settled as `original_method_matrix_unassessable`
+and G266/DB362 entered `technical_quarantine`. A 07:23:46 UTC read-only review
+reopened the immutable products without replay, manual harvest or settlement.
+
+| Arm / model | Mature trades | Censored | Net cash | Method used / changed |
+| --- | ---: | ---: | ---: | ---: |
+| L1A1 / 3535 | 104 | 0 | -1912.56 | 8 / 4 |
+| L2A1 / 3536 | 104 | 0 | -1855.79 | 8 / 5 |
+| L1A2 / 3537 | 105 | 0 | -1882.80 | 0 / 0 |
+| L2A2 / 3538 | Unavailable | Unavailable | Unavailable | Unavailable |
+
+The fourth original, `33b5bf98-b102-4c36-8e76-9791276f6ffd`, ended in
+`technical_error`: its immutable transport artifact records HTTP 504,
+`bounded_replay_timeout`, observed 600 seconds equal to the signed declared
+600-second cap, and `deadline_mismatch_observed=false`. This is an actual
+timeout receipt, not an inference from phase duration. Its terminal envelope
+is not a completed zero-trade economic result. No budget was raised or original
+retried; `METHOD_STUDY_ORIGINAL_TRANSPORT_FAILED` remains the terminal cause.
+
+The assessment is absent, so no full four-arm contrast or interaction is claimed.
+Actual persisted owned-outcome rows, experience rows and post-original learning
+proposals for this cohort were all zero. Only its four preregistered revision-one
+carrier policies remained. Mature labels in the three complete ledgers are not
+harvested learning or qualified child strength.
+
+Registration receipt 48 matches registration hash
+`2201cf7342cd91b7a5c14e20036852cfe09def19972ebd81dd5a8585ee6d0820`;
+study hash `563c382b672653524c1cf6c75ef0b63e746b589557795cd15697f1c9bf1ce0d4`.
+Fourth terminal-envelope SHA256
+`fa0586f8eaa485f4bf9679d93e1fabddeb8f1d091eeca2eb671ef38f68feb234`;
+transport-failure SHA256
+`4d90d3604df95cc40516f692beb9deb9ff68f99b4007eb7220c77e7d1ae10866`.
+All originals and earlier checkpoints were retained. Main remained protected
+at `5a58653`; this terminal does not confer skill, independence or paper/live
+authority, and does not itself attest completion of the subsequent cold release.

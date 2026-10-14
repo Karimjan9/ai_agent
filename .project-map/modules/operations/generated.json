@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T07:14:48.896Z",
+  "generated_at": "2026-10-14T07:26:37.682Z",
   "source_digest": "6cc811d71be063342af25b68b1306bbfd177d29222ea3c15a76308f8de9a2460",
   "source_file_count": 1685,
-  "git_head": "90f50065a5ec6a4fccdc6ffa39a82129b6fa373d",
+  "git_head": "6e4358bf3dbde4b55e297fbd535eef6a0be9a293",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
