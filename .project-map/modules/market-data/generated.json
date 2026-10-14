@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T13:39:20.148Z",
-  "source_digest": "6af5c2286e183a8c18577b832885dfdef386f63a4a49bc04179661de62d8cdc5",
+  "generated_at": "2026-10-14T15:51:11.161Z",
+  "source_digest": "4789d3df1cac8e8b4d2a90d4a33e764af06ebfda21b4e1bc4f2731d1dfcf04e7",
   "source_file_count": 1697,
-  "git_head": "31dc58136c54181f00d5ef09e7a2897f0ff7ccf2",
+  "git_head": "b6ea8529f29c7dc81b98847d7c89cd1a7da2613d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "market-data",
   "paths": [

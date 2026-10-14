@@ -23,6 +23,9 @@ An already-terminal unassessable method study may reconcile a stale arm projecti
 only through its original owner after immutable four-original/receipt/cohort
 proof and STOP/idle/queue/mutex guards. The expected-generation settle-only
 invocation exits without a successor, replay, renewed budget or scientific claim.
+The exact legacy completed-marker omission is verified against the four original
+checkpoint/request chains, never caller flags, a rewritten run or a fabricated
+retained barrier. New completion preserves its original publication owner.
 An original native depth purpose executes its cheap carrier, seals the actual
 pool/sample, then lets the same arbiter/dispatcher admit the original deeper
 carrier. Original diagnostic comparison and neutral episode dispositions own

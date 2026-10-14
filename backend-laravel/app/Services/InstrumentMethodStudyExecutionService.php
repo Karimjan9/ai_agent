@@ -344,8 +344,9 @@ class InstrumentMethodStudyExecutionService
                 && app(ExecutionContractService::class)->matches((array) ($response['execution_contract'] ?? []), $agent->symbol, $request['timeframe']),
                 'METHOD_STUDY_COMPLETE_ORIGINAL_EVIDENCE_REQUIRED');
             $this->assertLease($work, 0, false);
-            $this->evidence->finishIfOpen($run, 'completed', $response, [], [self::MARKER => ['arm' => $arm,
-                'study_hash' => $proof['study_hash'], 'projection_withheld' => true, ...$this->ceiling()]]);
+            // The evidence owner refreshes/locks this row. Do not replace its
+            // exact begin marker (including work_id) with a partial close marker.
+            $this->evidence->finishIfOpen($run, 'completed', $response);
             $agent->update(['lifecycle_status' => 'screened']);
             return $this->defer($work, 'METHOD_STUDY_NEXT_ORIGINAL_OR_SETTLEMENT', true);
         } catch (Throwable $error) {
@@ -539,10 +540,13 @@ class InstrumentMethodStudyExecutionService
                         'METHOD_STUDY_ORIGINAL_MODEL_DRIFT');
                     $runs = LabEvaluationRun::where('model_version_id', $agent->model_version_id)->limit(2)->get();
                     $this->need($runs->count() === 1, 'METHOD_STUDY_TERMINAL_ONE_ORIGINAL_REQUIRED'); $run = $runs[0];
+                    $legacyCompletedOwner = $this->legacyCompletedOwnerShape($run);
                     $this->need($run->run_id === ($checkpoint['run_id'] ?? null) && ($checkpoint['model_id'] ?? null) === (int) $agent->model_version_id
                         && (int) $run->lab_generation_id === (int) $current->id && (int) $run->lab_agent_id === (int) $agent->id
                         && $run->phase === 'screening' && $run->finished_at !== null && in_array($run->status, ['completed', 'technical_error'], true)
-                        && $run->data_hash === $design['data_hash'] && data_get($run->metadata, self::MARKER.'.work_id') === $workId
+                        && data_get($run->metadata, 'source') === self::class && $run->code_hash === $registration['php_source_hash']
+                        && $run->data_hash === $design['data_hash']
+                        && (data_get($run->metadata, self::MARKER.'.work_id') === $workId || $legacyCompletedOwner)
                         && data_get($run->metadata, self::MARKER.'.study_hash') === $registration['study_hash']
                         && data_get($run->metadata, self::MARKER.'.arm') === $arm, 'METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED');
                     $requests = \App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_request')->limit(2)->get();
@@ -557,6 +561,28 @@ class InstrumentMethodStudyExecutionService
                         && data_get($request, 'policy_context.instrument_method_study.arm') === $arm
                         && data_get($request, 'research_release.release_hash') === $seal['release_hash']
                         && data_get($request, 'execution_hash') === $design['execution_hash'], 'METHOD_STUDY_TERMINAL_ORIGINAL_BYTES_REQUIRED');
+                    if ($legacyCompletedOwner) {
+                        // Historical settlement discarded original_barrier as
+                        // well as completed marker.work_id. Reopen all four
+                        // checkpoint-bound original requests; never manufacture
+                        // a retained barrier or recompile under current source.
+                        $this->need(data_get($run->metadata, 'research_release_hash') === $seal['release_hash']
+                            && ($request['evaluation_mode'] ?? null) === 'incremental'
+                            && ($request['symbol'] ?? null) === $design['scope']['symbol']
+                            && ($request['timeframe'] ?? null) === $design['scope']['timeframe']
+                            && ($request['strategy'] ?? null) === $model->strategy
+                            && $this->historicalRequestParametersMatch($request, $model, $registration, $design, $arm)
+                            && ($request['replay_dataset_hash'] ?? null) === $design['data_hash']
+                            && $this->evidence->equivalentJsonValue($request['initial_balance'] ?? null, $design['initial_balance'])
+                            && $this->evidence->equivalentJsonValue($request['risk_per_trade'] ?? null, $design['risk_per_trade'])
+                            && $this->evidence->equivalentJsonValue(data_get($request, 'policy_context.hard_limits'), $design['hard_limits'])
+                            && data_get($request, 'execution_contract.execution_hash') === $design['execution_hash']
+                            && $this->evidence->equivalentJsonValue($request['execution'] ?? null, $design['execution_costs'])
+                            && data_get($request, 'policy_context.instrument_method_learning.policy.policy_hash') === $design['arms'][$arm]['policy_hash']
+                            && data_get($request, 'policy_context.instrument_method_execution.protocol') === self::PROTOCOL
+                            && data_get($request, 'policy_context.instrument_method_execution.original_source') === $registration['source'],
+                            'METHOD_STUDY_TERMINAL_LEGACY_COMPLETED_BINDING_REQUIRED');
+                    }
                     $facts[$arm] = ['run_id' => $run->run_id, 'status' => $run->status, 'request_hash' => $run->request_hash,
                         'response_hash' => $run->response_hash, 'request_artifact_hash' => $requests[0]->sha256, 'response_artifact_hash' => $responses[0]->sha256];
                 }
@@ -573,6 +599,44 @@ class InstrumentMethodStudyExecutionService
             });
         } catch (Throwable $error) { return $this->blocked($error) + ['closed' => false]; }
         finally { if ($ownsLane) $lane->release(); if ($ownsWork) $lock->release(); }
+    }
+
+    /** Only the exact old completed publication shape may omit its owner id. */
+    private function legacyCompletedOwnerShape(LabEvaluationRun $run): bool
+    {
+        $marker = data_get($run->metadata, self::MARKER);
+        if (! is_array($marker) || array_key_exists('work_id', $marker)
+            || $run->status !== 'completed' || $run->mode !== 'incremental'
+            || data_get($run->metadata, 'protocol') !== 'lab_immutable_evidence_v1'
+            || data_get($run->metadata, 'source') !== self::class
+            || data_get($run->metadata, 'historical') !== false
+            || data_get($run->metadata, 'terminal') !== true
+            || ($marker['projection_withheld'] ?? null) !== true
+            || array_diff(array_keys($marker), ['arm', 'study_hash', 'projection_withheld', ...array_keys($this->ceiling())]) !== []) return false;
+        foreach ($this->ceiling() as $field => $value) if (($marker[$field] ?? null) !== $value) return false;
+        return true;
+    }
+
+    /** Pure comparison with the old signed wire; no request/artifact is published. */
+    private function historicalRequestParametersMatch(array $request, ModelVersion $model, array $registration, array $design, string $arm): bool
+    {
+        try {
+            $policy = (array) ($request['policy_context'] ?? []);
+            if ($design['resource_caps']['max_runtime_seconds'] <= 300) {
+                return ! array_key_exists(self::DEADLINE_MARKER, $policy)
+                    && $this->hash((array) ($request['parameters'] ?? [])) === $design['arms'][$arm]['parameter_hash'];
+            }
+            if (! is_array($policy[self::DEADLINE_MARKER] ?? null)
+                || ($policy['instrument_method_study_resource_cap'] ?? null) !== $design['resource_caps']) return false;
+            // Only the original owner's schema-numeric int->float spelling is
+            // admissible. Integer/bool fields, values, old policy/release/source
+            // and the issuer signature must all match this pure rederivation.
+            $expected = $request; $expected['parameters'] = (array) $model->parameters;
+            unset($expected['policy_context'][self::DEADLINE_MARKER]);
+            $expected = $this->bindOriginalDeadline($expected, $registration['study_hash'], $arm, $registration['source']);
+            return $this->hash((array) ($request['parameters'] ?? [])) === $this->hash($expected['parameters'])
+                && $this->hash($policy[self::DEADLINE_MARKER]) === $this->hash($expected['policy_context'][self::DEADLINE_MARKER]);
+        } catch (Throwable) { return false; }
     }
 
     private function assertTerminalProjectionIdle(ResearchExperimentWorkItem $work): void

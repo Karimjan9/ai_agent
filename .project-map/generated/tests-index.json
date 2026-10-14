@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T13:39:20.148Z",
-  "source_digest": "6af5c2286e183a8c18577b832885dfdef386f63a4a49bc04179661de62d8cdc5",
+  "generated_at": "2026-10-14T15:51:11.161Z",
+  "source_digest": "4789d3df1cac8e8b4d2a90d4a33e764af06ebfda21b4e1bc4f2731d1dfcf04e7",
   "source_file_count": 1697,
-  "git_head": "31dc58136c54181f00d5ef09e7a2897f0ff7ccf2",
+  "git_head": "b6ea8529f29c7dc81b98847d7c89cd1a7da2613d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -2723,12 +2723,19 @@
         "test_bounded_view_reopens_exact_origin_cells_and_retains_separate_original_hash",
         "test_original_transport_failure_terminalizes_owned_agents_without_another_attempt",
         "test_spent_four_original_projection_reopens_historical_bytes_and_is_idempotent",
+        "test_completed_actual_publication_keeps_exact_begin_owner_marker",
+        "test_legacy_completed_publication_missing_owner_reopens_four_originals_without_rewriting_history",
+        "test_legacy_owner_compatibility_refuses_present_null_wrong_or_noncompleted_markers",
+        "test_legacy_owner_compatibility_requires_original_source_binding_even_when_artifact_hashes_agree",
+        "test_legacy_original_deadline_requires_exact_typed_wire_and_signature",
+        "legacyDeadlineWireCases",
         "test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original",
         "test_spent_projection_refuses_changed_original_artifact_bytes",
         "test_spent_projection_requires_stop_no_live_lease_and_known_empty_pending_delayed_reserved_queues",
         "test_spent_projection_requires_authenticated_idle_not_public_health_or_live_replay",
         "test_existing_frozen_settle_only_command_repairs_spent_projection_without_successor",
         "spentOriginalProjection",
+        "syntheticCompletedResponse",
         "claim",
         "context"
       ]

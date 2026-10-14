@@ -335,6 +335,115 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         $this->assertDatabaseCount('lab_evolution_credit_events', 0); Bus::assertNothingDispatched(); Http::assertNothingSent();
     }
 
+    public function test_completed_actual_publication_keeps_exact_begin_owner_marker(): void
+    {
+        $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class);
+        $queued = $owner->execute($work); $beginMarker = null;
+        Http::fake(['*/api/backtest/run' => function ($request) use (&$beginMarker) {
+            $beginMarker = data_get(LabEvaluationRun::sole()->metadata, InstrumentMethodStudyExecutionService::MARKER);
+            return Http::response($this->syntheticCompletedResponse(json_decode($request->body(), true)), 200);
+        }]);
+        $result = $owner->executeQueuedArm($work->id, $work->lease_token, $work->fence_version,
+            $queued['arm'], data_get($work->fresh()->result, 'queued_arm.request_hash'), 120);
+        $this->assertSame('deferred', $result['status'], json_encode($result));
+        $run = LabEvaluationRun::sole();
+        $this->assertSame('completed', $run->status);
+        $this->assertSame((int) $work->id, $beginMarker['work_id']);
+        $this->assertSame($beginMarker, data_get($run->metadata, InstrumentMethodStudyExecutionService::MARKER));
+        $this->assertTrue($run->metadata['terminal']);
+        $this->assertTrue(app(LabImmutableEvidenceService::class)->replayEvidenceCompleteness($run,
+            app(LabImmutableEvidenceService::class)->readArtifactPayload(\App\Models\LabEvidenceArtifact::where('run_id', $run->run_id)->where('artifact_type', 'evaluation_response')->sole()))['complete']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertSentCount(1); Bus::assertDispatched(ExecuteScopedResearchArmJob::class, 1);
+    }
+
+    public function test_legacy_completed_publication_missing_owner_reopens_four_originals_without_rewriting_history(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true);
+        $this->assertNull(data_get($work->result, 'original_barrier')); // Historical settlement discarded it.
+        $before = [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->toArray(), $work->receipt->toArray(),
+            \App\Models\LabEvidenceArtifact::orderBy('id')->get()->toArray(), File::get($this->source['dataset_path'])];
+        foreach (LabEvaluationRun::where('status', 'completed')->get() as $run) {
+            $this->assertArrayNotHasKey('work_id', $run->metadata[InstrumentMethodStudyExecutionService::MARKER]);
+        }
+        $evidence = Mockery::mock(LabImmutableEvidenceService::class)->makePartial();
+        $evidence->shouldReceive('codeHash')->never();
+        $this->app->instance(LabImmutableEvidenceService::class, $evidence);
+        $this->app->forgetInstance(InstrumentMethodStudyExecutionService::class);
+        $owner = app(InstrumentMethodStudyExecutionService::class);
+        $result = $owner->reconcileGeneration($generation);
+        $this->assertSame('recorded', $result['status'], json_encode($result)); $this->assertSame(1, $result['changed_agents']);
+        $this->assertSame($before, [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->fresh()->toArray(), $work->receipt->fresh()->toArray(),
+            \App\Models\LabEvidenceArtifact::orderBy('id')->get()->toArray(), File::get($this->source['dataset_path'])]);
+        $second = $owner->reconcileGeneration($generation->fresh());
+        $this->assertSame('recorded', $second['status']); $this->assertFalse($second['closed']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 4); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public function test_legacy_owner_compatibility_refuses_present_null_wrong_or_noncompleted_markers(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true); $owner = app(InstrumentMethodStudyExecutionService::class);
+        $run = LabEvaluationRun::where('status', 'completed')->firstOrFail(); $metadata = $run->metadata;
+        $marker = $metadata[InstrumentMethodStudyExecutionService::MARKER];
+        foreach (['wrong' => (int) $work->id + 1, 'null' => null, 'string' => (string) $work->id] as $case => $id) {
+            $run->update(['metadata' => [...$metadata, InstrumentMethodStudyExecutionService::MARKER => [...$marker, 'work_id' => $id]]]);
+            $this->assertSame('METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED', $owner->reconcileGeneration($generation)['reason_code'], $case);
+        }
+        foreach ([['economic_authority' => true], ['extra' => 'unowned']] as $change) {
+            $run->update(['metadata' => [...$metadata, InstrumentMethodStudyExecutionService::MARKER => [...$marker, ...$change]]]);
+            $this->assertSame('METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
+        }
+        $run->update(['metadata' => $metadata, 'status' => 'technical_error']);
+        $this->assertSame('METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
+        $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public function test_legacy_owner_compatibility_requires_original_source_binding_even_when_artifact_hashes_agree(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true, function (array $requests): array {
+            $requests['L1A1']['policy_context']['instrument_method_execution']['original_source']['dataset_sha256'] = str_repeat('b', 64);
+            return $requests;
+        });
+        $result = app(InstrumentMethodStudyExecutionService::class)->reconcileGeneration($generation);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LEGACY_COMPLETED_BINDING_REQUIRED', $result['reason_code']);
+        $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
+        $this->assertSame(4, $work->fresh()->attempts); Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('legacyDeadlineWireCases')]
+    public function test_legacy_original_deadline_requires_exact_typed_wire_and_signature(string $case): void
+    {
+        config()->set('services.internal_api.token', 'synthetic-legacy-deadline-test-key-not-production-0123456789');
+        $this->design['study_key'] = 'legacy-deadline-wire-'.$case;
+        $this->design['resource_caps']['max_runtime_seconds'] = 600;
+        $registered = app(InstrumentMethodStudyService::class)->preregister($this->design);
+        $this->assertSame('preregistered_diagnostic', $registered['status']); $this->studyHash = $registered['study_hash'];
+        [$work, $generation] = $this->spentOriginalProjection(true, function (array $requests) use ($case): array {
+            $request = &$requests['L1A1'];
+            if ($case === 'numeric_value') $request['parameters']['trend_strength_min'] += .1;
+            if ($case === 'integer_type') $request['parameters']['lookback'] = (float) $request['parameters']['lookback'];
+            if ($case === 'signature') $request['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER]['issuer_signature'] = str_repeat('a', 64);
+            return $requests;
+        });
+        $before = LabEvaluationRun::orderBy('id')->get()->toArray();
+        $result = app(InstrumentMethodStudyExecutionService::class)->reconcileGeneration($generation);
+        if ($case === 'valid') {
+            $this->assertSame('recorded', $result['status'], json_encode($result));
+        } else {
+            $this->assertSame('METHOD_STUDY_TERMINAL_LEGACY_COMPLETED_BINDING_REQUIRED', $result['reason_code'], $case);
+            $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
+        }
+        $this->assertSame($before, LabEvaluationRun::orderBy('id')->get()->toArray());
+        $this->assertSame(4, $work->fresh()->attempts); Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public static function legacyDeadlineWireCases(): array
+    {
+        return [['valid'], ['numeric_value'], ['integer_type'], ['signature']];
+    }
+
     public function test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original(): void
     {
         [$work, $generation] = $this->spentOriginalProjection(); $owner = app(InstrumentMethodStudyExecutionService::class);
@@ -422,7 +531,7 @@ class InstrumentMethodStudyExecutionTest extends TestCase
     }
 
     /** Synthetic transition products only; no market outcome or economic claim. */
-    private function spentOriginalProjection(): array
+    private function spentOriginalProjection(bool $legacyCompleted = false, ?callable $mutateRequests = null): array
     {
         $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class); $proof = $owner->inspectWork($work);
         $generation = app(LabPopulationService::class)->buildInstrumentMethodStudy($work, $proof);
@@ -430,6 +539,9 @@ class InstrumentMethodStudyExecutionTest extends TestCase
             $agent = $generation->agents()->where('model_version_id', $proof['design']['arms'][$arm]['model_id'])->sole();
             $requests[$arm] = $owner->compileRequest($generation, $agent, $arm, $proof);
         }
+        if ($mutateRequests !== null) $requests = $mutateRequests($requests);
+        $ceiling = ['research_only' => true, 'independent_validation' => false, 'economic_authority' => false, 'confirmation_proven' => false,
+            'mastery_proven' => false, 'skill_credit' => false, 'promotion_evidence' => false, 'paper_authority' => false];
         $originals = []; $evidence = app(LabImmutableEvidenceService::class);
         foreach (InstrumentMethodStudyExecutionService::ARMS as $index => $arm) {
             $agent = $generation->agents()->where('model_version_id', $proof['design']['arms'][$arm]['model_id'])->sole();
@@ -437,13 +549,15 @@ class InstrumentMethodStudyExecutionTest extends TestCase
             $run->update(['metadata' => [...(array) $run->metadata, InstrumentMethodStudyExecutionService::MARKER => [
                 'work_id' => (int) $work->id, 'study_hash' => $this->studyHash, 'arm' => $arm]]]);
             $evidence->attachRequest($run, $requests[$arm], ['data_hash' => $this->design['data_hash']]);
-            $evidence->finishIfOpen($run, $index === 3 ? 'technical_error' : 'completed', ['synthetic_transition_fixture' => true], [], ['quality_verdict' => 'withheld']);
+            $metadata = ['quality_verdict' => 'withheld'];
+            if ($legacyCompleted && $index !== 3) $metadata[InstrumentMethodStudyExecutionService::MARKER] = [
+                'arm' => $arm, 'study_hash' => $this->studyHash, 'projection_withheld' => true, ...$ceiling];
+            $response = $legacyCompleted && $index !== 3 ? $this->syntheticCompletedResponse($requests[$arm]) : ['synthetic_transition_fixture' => true];
+            $evidence->finishIfOpen($run, $index === 3 ? 'technical_error' : 'completed', $response, [], $metadata);
             $agent->update(['lifecycle_status' => $index === 3 ? 'screening' : 'screened']);
             $originals[$arm] = ['run_id' => $run->run_id, 'model_id' => (int) $agent->model_version_id,
                 'request_hash' => app(\App\Services\ResearchPaperEpochContractService::class)->parameterHash($requests[$arm])];
         }
-        $ceiling = ['research_only' => true, 'independent_validation' => false, 'economic_authority' => false, 'confirmation_proven' => false,
-            'mastery_proven' => false, 'skill_credit' => false, 'promotion_evidence' => false, 'paper_authority' => false];
         $reason = 'METHOD_STUDY_ORIGINAL_TRANSPORT_FAILED';
         $generation->update(['status' => 'technical_quarantine', 'completed_at' => now(), 'trigger_context' => [...(array) $generation->trigger_context,
             'instrument_method_study_terminal' => ['protocol' => InstrumentMethodStudyExecutionService::PROTOCOL, 'reason_code' => $reason,
@@ -455,7 +569,26 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         $probe = Mockery::mock(\App\Services\ReplayLivenessProbeService::class);
         $probe->shouldReceive('probe')->andReturn(['source' => 'replay-status', 'status' => 'ok', 'active_requests' => 0]);
         $this->app->instance(\App\Services\ReplayLivenessProbeService::class, $probe);
+        // The fixture's original full trace publication schedules only faked
+        // candle projection jobs. Reconciliation must publish no new job.
+        if ($legacyCompleted) Bus::fake();
         return [$work->fresh(), $generation->fresh()];
+    }
+
+    /** Explicit software-only zero-trade producer envelope for publication tests. */
+    private function syntheticCompletedResponse(array $request): array
+    {
+        $trace = []; $start = \Carbon\CarbonImmutable::parse('2025-11-03T07:00:00Z');
+        for ($index = 200; $index < 512; $index++) $trace[] = ['event_type' => 'signal_evaluation',
+            'candle_index' => $index, 'candle_time' => $start->addMinutes(5 * $index)->format('Y-m-d\TH:i:s\Z'), 'decision' => 'WAIT'];
+        $release = $request['research_release'];
+        return ['synthetic_transition_fixture' => true, 'execution_contract' => $request['execution_contract'],
+            'decision_trace' => $trace, 'trade_ledger' => [], 'trades' => [], 'total_trades' => 0,
+            'trade_ledger_hash' => app(LabImmutableEvidenceService::class)->hash([]),
+            'data_quality' => ['decision_trace' => ['protocol' => 'candle_decision_trace_v1', 'requested' => true, 'complete' => true,
+                'input_candle_count' => 512, 'event_count' => 312, 'evaluated_candle_count' => 312, 'covered_candle_count' => 312],
+                'research_release_receipt' => ['protocol' => 'research_worker_release_receipt_v1', 'loaded_code_attested' => true,
+                    'release_hash' => $release['release_hash'], 'source_hash' => $release['python_source_hash'], 'boot_source_hash' => $release['python_source_hash']]]];
     }
 
     private function claim(): ResearchExperimentWorkItem

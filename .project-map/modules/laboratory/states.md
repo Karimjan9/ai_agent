@@ -8,6 +8,11 @@ source are reopened; STOP, no live lease, empty constructor/replay queues,
 owned work/replay mutexes and authenticated idle are required. Only the owned
 unfinished agent projections and a diagnostic projection marker change.
 Successful agents, runs, barriers, budgets, comparison and authority stay exact.
+Legacy completed method publication overwrote its nested run marker and omitted
+the work ID. Only that exact absent-key completion shape can be rejoined through
+all four immutable checkpoint/request chains and the original source owner.
+Present null/wrong IDs, omitted technical owners or changed original bytes fail
+closed. This does not recreate a discarded work-result barrier or alter history.
 Idempotent `--settle-only --expected-generation-id` always exits without a
 successor. Future technical method closure also terminalizes its unattempted
 draft seats neutrally rather than fabricating replay. Ordinary terminal scopes

@@ -410,6 +410,13 @@ release. STOP, known empty relevant constructor/replay queues, no live work
 lease, owned work/replay mutexes and authenticated idle are mandatory. This
 invocation never admits a successor or renews an original arm. Unknown/corrupt
 or incomplete proof remains blocked, not manually relabelled as success.
+The legacy completed publisher replaced its nested marker without `work_id`.
+Only the exact absent-key completed shape is accepted after verifying all four
+original checkpoints, immutable request/response bytes and historical source
+owner. A present null/wrong ID or missing technical-run owner remains blocked.
+The old terminal work result did not retain its original request barrier;
+verification uses the retained four original request/checkpoint chains without
+inventing a stored barrier. Future completion preserves the initial marker.
 
 New source is prepared and verified in an isolated worktree; test completion
 does not imply a production migration or active worker replacement.
