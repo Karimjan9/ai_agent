@@ -69,6 +69,7 @@ class ResearchSourceArtifactTest extends TestCase
         'ai-service-python/tests/test_observed_quote_method.py',
         'ai-service-python/tests/test_instrument_method_quote_alias.py',
         'ai-service-python/tests/test_instrument_method_pullback_retest.py',
+        'ai-service-python/tests/test_volume_none_confidence_compatibility.py',
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.csv',
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json',
     ];
@@ -239,7 +240,7 @@ class ResearchSourceArtifactTest extends TestCase
     public function test_exact_method_supplements_and_synthetic_software_fixtures_are_archived_but_provider_and_private_files_are_not(): void
     {
         $paths = $this->methodSupplementPaths();
-        $this->assertCount(26, $paths); // Fourteen declarations, ten tests, two synthetic fixtures.
+        $this->assertCount(27, $paths); // Fourteen declarations, eleven tests, two synthetic fixtures.
         $projectRoot = dirname(base_path());
         $archive = $this->owner->buildSourceArtifact();
         foreach ($paths as $path) {

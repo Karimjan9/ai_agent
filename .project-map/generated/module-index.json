@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T07:26:37.682Z",
-  "source_digest": "6cc811d71be063342af25b68b1306bbfd177d29222ea3c15a76308f8de9a2460",
-  "source_file_count": 1685,
-  "git_head": "6e4358bf3dbde4b55e297fbd535eef6a0be9a293",
+  "generated_at": "2026-10-14T08:08:08.223Z",
+  "source_digest": "027a1e579aa4832da27b71b993596580c2c1a6651580e090c167ba229d9e6396",
+  "source_file_count": 1686,
+  "git_head": "35cac7a66c64a332248c179c63b58ccdb87aa8c2",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -1070,6 +1070,7 @@
         "ai-service-python/tests/test_composition_runtime.py",
         "ai-service-python/tests/test_multitimeframe.py",
         "ai-service-python/tests/test_volume_features.py",
+        "ai-service-python/tests/test_volume_none_confidence_compatibility.py",
         "backend-laravel/tests/Feature/HistoricalVolumeReplayContractTest.php",
         "backend-laravel/tests/Feature/HistoricalQuoteSpreadTest.php",
         "ai-service-python/tests/test_historical_quotes.py",
@@ -1167,6 +1168,7 @@
         "Rolling/live volume coverage never attests a historical replay snapshot.",
         "A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.",
         "A no-volume lane is not a failed volume capability and reports not_requested.",
+        "The no-volume policy preserves native signal-confidence field absence and explicit values; it must not manufacture zero that overrides the existing price-only admission fallback. That compatibility fallback is not a calibrated probability; active volume lanes and thresholds remain unchanged.",
         "Sparse historical provider bars are recovered only into a new content-addressed training dataset with actual provider/tick proof, immutable old-source SHA, economic-row digest and explicit remaining calendar gaps. Missing minutes are never synthesized; new price bytes require freshly hash-bound quote sidecars and do not constitute independent validation or promotion evidence.",
         "Explicit v3 raw-tick recovery aggregates omitted candle minutes from hash-bound synchronized native Jetta/BI5 observations, validates observed M1 prices and six-decimal volume identity, reopens the raw evidence before readiness/resume, and never certifies uninterrupted tick history or inserts raw proofs into old v2 receipts.",
         "Explicit secondary recovery creates a separate mixed price archive with raw-response proofs and row attribution. Only typed pre-2026 bounded clean discovery consumes it; ordinary native full validation remains fenced, unavailable volume/quotes stay unavailable and the verified original native bundle anchors the existing question budget.",
@@ -1189,7 +1191,8 @@
         "backend-laravel/scripts/decode-dukascopy-tick-hour.test.py",
         "backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php",
         "backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php",
-        "ai-service-python/tests/test_historical_quotes.py"
+        "ai-service-python/tests/test_historical_quotes.py",
+        "ai-service-python/tests/test_volume_none_confidence_compatibility.py"
       ],
       "flows": [
         ".project-map/modules/market-data/flows/continuity-recovery.md"

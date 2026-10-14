@@ -543,6 +543,10 @@ plus a provenance receipt bound to their content hashes. Laravel derives
 `volume_context` from that manifest. The rolling/live volume audit is operational
 evidence for its own time range and cannot attest pre-2026 history. A price-only
 lane crosses this boundary as `not_requested`, not `volume_unavailable`.
+The no-volume Python wrapper also preserves native signal-confidence field
+absence, so it cannot inject a zero that overrides the existing price-only
+gate fallback. Explicit zero/low/unknown values and requested volume lanes keep
+their prior semantics; no calibrated confidence or relaxed threshold is issued.
 New agent-owned bundles may also bind an exact-hash synchronized historical
 quote sidecar before queue admission. M5 CSV columns preserve spread
 availability, BID/ASK, quote time, close-time availability and age; the bundle

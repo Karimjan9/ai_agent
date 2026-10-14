@@ -78,6 +78,7 @@ invariants:
   - Rolling/live volume coverage never attests a historical replay snapshot.
   - A volume-dependent historical replay requires a hash-bound provenance receipt and an explicit volume_available column in every consumed stream.
   - A no-volume lane is not a failed volume capability and reports not_requested.
+  - The no-volume policy preserves native signal-confidence field absence and explicit values; it must not manufacture zero that overrides the existing price-only admission fallback. That compatibility fallback is not a calibrated probability; active volume lanes and thresholds remain unchanged.
   - Sparse historical provider bars are recovered only into a new content-addressed training dataset with actual provider/tick proof, immutable old-source SHA, economic-row digest and explicit remaining calendar gaps. Missing minutes are never synthesized; new price bytes require freshly hash-bound quote sidecars and do not constitute independent validation or promotion evidence.
   - Explicit v3 raw-tick recovery aggregates omitted candle minutes from hash-bound synchronized native Jetta/BI5 observations, validates observed M1 prices and six-decimal volume identity, reopens the raw evidence before readiness/resume, and never certifies uninterrupted tick history or inserts raw proofs into old v2 receipts.
   - Explicit secondary recovery creates a separate mixed price archive with raw-response proofs and row attribution. Only typed pre-2026 bounded clean discovery consumes it; ordinary native full validation remains fenced, unavailable volume/quotes stay unavailable and the verified original native bundle anchors the existing question budget.
@@ -106,3 +107,4 @@ tests:
   - backend-laravel/tests/Feature/ProspectiveCleanDiscoverySnapshotTest.php
   - backend-laravel/tests/Feature/SecondaryM5ResearchRecoveryTest.php
   - ai-service-python/tests/test_historical_quotes.py
+  - ai-service-python/tests/test_volume_none_confidence_compatibility.py

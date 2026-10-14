@@ -49,6 +49,7 @@ class ResearchReleaseSealService
         'ai-service-python/tests/test_observed_quote_method.py',
         'ai-service-python/tests/test_instrument_method_quote_alias.py',
         'ai-service-python/tests/test_instrument_method_pullback_retest.py',
+        'ai-service-python/tests/test_volume_none_confidence_compatibility.py',
         // Explicit synthetic software fixtures only; no provider/dataset CSV glob.
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.csv',
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json',

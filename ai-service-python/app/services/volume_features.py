@@ -359,12 +359,16 @@ def apply_volume_policy(
         out = add_volume_features(out)
     if "signal" not in out.columns:
         out["signal"] = "WAIT"
-    if "signal_confidence" not in out.columns:
+    # A no-volume control must preserve the strategy's native column absence.
+    # Manufacturing zero here would override the existing admission fallback;
+    # neither that compatibility fallback nor missing data is a probability.
+    if lane != "none" and "signal_confidence" not in out.columns:
         out["signal_confidence"] = 0.0
     out["pre_volume_signal"] = out["signal"].astype(str)
-    out["pre_volume_signal_confidence"] = pd.to_numeric(
-        out["signal_confidence"], errors="coerce"
-    ).fillna(0.0)
+    if "signal_confidence" in out.columns:
+        out["pre_volume_signal_confidence"] = pd.to_numeric(
+            out["signal_confidence"], errors="coerce"
+        ).fillna(0.0)
     out["volume_lane_applied"] = lane
     if "volume_policy_rejection" not in out.columns:
         out["volume_policy_rejection"] = ""

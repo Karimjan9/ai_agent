@@ -277,6 +277,14 @@ The new band and observed-quote revisions are the corresponding explicit
 executable rules. Missing observed volume/quotes and an underpowered fitted
 meta model remain data/evidence dependencies, not invented skill successes.
 
+The final compatibility check found that the native EMA strategy emits no
+confidence field, while the old no-volume wrapper inserted zero and thereby
+overrode the existing price-only admission fallback. Future no-volume wrappers
+preserve that absence; they do not write a guessed confidence or change the
+threshold. Explicit zero/low/NaN/malformed values and active-volume behavior
+remain unchanged. Native full-ledger/clock parity is a software regression,
+not a calibrated probability, repaired old experiment or profitable strategy.
+
 ## Agent-owned mature outcome learning
 
 The separate `agent_method_owned_outcome_v2` owner reopens immutable original
@@ -334,7 +342,7 @@ attach to an admitted generation or relabel old data as independent. Pre-2026
 research continues; 2026 and every later year remains paper-only.
 
 The byte artifact explicitly includes all fourteen declarations in the four
-append-only quote/band/pullback/retest supplements, ten focused software tests
+append-only quote/band/pullback/retest supplements, eleven focused software tests
 and two labelled synthetic quote-fixture files. Provider CSVs, private panel
 products, runtime helpers and unlisted resource files remain excluded. A changed
 supplement invalidates only the current release pointer; the original verified

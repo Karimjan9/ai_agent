@@ -410,3 +410,39 @@ transport-failure SHA256
 All originals and earlier checkpoints were retained. Main remained protected
 at `5a58653`; this terminal does not confer skill, independence or paper/live
 authority, and does not itself attest completion of the subsequent cold release.
+
+## New-source EMA no-volume wiring smoke — 2026-10-14
+
+A separately preregistered software/archive question tested the corrected
+`volume_lane=none` NOOP, not a retry of any old panel or G266 original. It kept
+the literal old EMA baseline request, the same seen 512-row source and 200
+warmup/312 executed-decision clock, confidence threshold 0.35, account risk and
+modeled physical costs. Exactly one original completed in 15.374 seconds under
+the unchanged 120-second cap, without timeout, retry or outcome-based tuning.
+
+Its measured account was 10000 to 10305.10: 17 mature trades, zero censored
+trades, net and mature net cash +305.10. Native, no-volume and final prepared
+frames all retained absence of `signal_confidence`; no confidence column or
+probability was manufactured. The existing admission compatibility fallback
+of 1.0 and the unchanged 0.35 threshold were preserved. Native/no-volume signals
+were identical. Actual gate receipts recorded 17 accepted entries, 30 outside-
+session and 7 loss-cooldown rejections, zero minimum-confidence rejections and
+zero volume vetoes. Volume remained `not_requested`, non-blocking and unobserved.
+Its 313-source-row volume telemetry (190 pre/post actionable signals) is distinct
+from the 312 executed decisions. No method contract, receipt or method event
+was present; no database, HTTP service, native-MTF replay or generation was used.
+
+The retained old volume source is SHA256
+`6cf41821d8efa669f10268419a24b25816d7387410e90cd7f26b5ee2fe39b7e3`;
+the new source is `adfb014b2a53143b6315573042408e3aa237c1aac2af3a42d1c894140cc140fc`.
+Spec SHA256 `ecdc493caa5cc94184af96e648dba2d8eb9a5f4e6b14c9723c255712246c0490`;
+response SHA256 `bfef04db69bb93e4c03dfeef6f6dbf7c18e121affb7535b75ea0d8a809cb3135`;
+summary/checkpoint SHA256
+`6a10e7d4a6868bfbde3b1e05c022cc2289f0f7a3a331e3e0e2d019c4afe98e60`.
+All 61 pinned source/helper/test/request files remained unchanged, and retained
+bytes, full ledger/account chains and actual clock receipts were reverified.
+The generic compact event digest has envelope/count checks only. New products
+remain under `.runtime/instrument-method-learning-20261013/.runtime/volume-none-ema-wiring-smoke-20261014/`;
+old requests, source snapshots, products and checkpoints remain untouched.
+The positive measured result is not a paired causal contrast, independent market
+validation, method training, qualified skill or paper/live authority.
