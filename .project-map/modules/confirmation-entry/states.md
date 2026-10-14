@@ -12,6 +12,12 @@
 `WAIT` is a first-class terminal decision for one opportunity, not an error or
 implicit retry. Exact fields/protocols remain in source and contract tests.
 
+Ordinary temporal probe updates and registrations use the previous closed row
+and its actual source index before the current-open assessment. A later high/low
+in the current execution bar cannot change that same-open decision. Legitimate
+index zero matures under the same inclusive observed-window rules as other
+indices; expiry, disabled defaults and external cost/risk limits are unchanged.
+
 Frozen composition replay uses a bounded adapter over the same ordered state
 names. It never promotes WAIT to a signal: the strategy must first emit an
 opportunity, the tactic may narrow it to WAIT, and executable invalidation/risk

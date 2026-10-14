@@ -20,7 +20,7 @@ use Throwable;
 class ResearchInstrumentMethods extends Command
 {
     protected $signature = 'trading:instrument-methods
-        {action=inventory : inventory, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach or status}
+        {action=inventory : inventory, curriculum, teach, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach or status}
         {--input= : Local JSON object file, at most 1 MiB}
         {--fetch : Explicitly fetch a public HTTPS source reference; source action only}
         {--json : Print the bounded result with exact JSON numeric values}';
@@ -35,16 +35,18 @@ class ResearchInstrumentMethods extends Command
     ): int {
         try {
             $action = $this->argument('action');
-            if (! in_array($action, ['inventory', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'status'], true)) {
+            if (! in_array($action, ['inventory', 'curriculum', 'teach', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'status'], true)) {
                 throw new InvalidArgumentException('METHOD_COMMAND_ACTION_INVALID');
             }
             if ($this->option('fetch') && $action !== 'source') throw new InvalidArgumentException('METHOD_COMMAND_FETCH_SOURCE_ONLY');
             $path = $this->option('input');
-            if ($action === 'inventory' && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
+            if (in_array($action, ['inventory', 'curriculum'], true) && filled($path)) throw new InvalidArgumentException('METHOD_COMMAND_INVENTORY_INPUT_UNSUPPORTED');
             $input = filled($path) ? $this->readInput($path) : [];
-            if (! in_array($action, ['inventory', 'catalog', 'install', 'status'], true) && $input === []) throw new InvalidArgumentException('METHOD_COMMAND_INPUT_REQUIRED');
+            if (! in_array($action, ['inventory', 'curriculum', 'catalog', 'install', 'status'], true) && $input === []) throw new InvalidArgumentException('METHOD_COMMAND_INPUT_REQUIRED');
             $result = match ($action) {
                 'inventory' => $library->inventory(),
+                'curriculum' => app(CuratedInstrumentMethodCatalogService::class)->operatingCurriculum(),
+                'teach' => $this->teach($input),
                 'catalog' => app(CuratedInstrumentMethodCatalogService::class)->catalog($input),
                 'install' => app(CuratedInstrumentMethodCatalogService::class)->install($input),
                 'source' => $this->option('fetch') ? $sources->fetchSource($input) : $sources->registerSource($input),
@@ -87,6 +89,14 @@ class ResearchInstrumentMethods extends Command
             throw new InvalidArgumentException('METHOD_COMMAND_EXACT_META_REFERENCE_REQUIRED');
         }
         return $this->hashField($input, $field);
+    }
+
+    private function teach(array $input): array
+    {
+        if (array_keys($input) !== ['recipe_hashes'] || ! is_array($input['recipe_hashes'])) {
+            throw new InvalidArgumentException('OPERATING_EXACT_RECIPE_ROSTER_REQUIRED');
+        }
+        return app(CuratedInstrumentMethodCatalogService::class)->teachingPack($input['recipe_hashes']);
     }
 
     private function attachMetaModel(array $input): array

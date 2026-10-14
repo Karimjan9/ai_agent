@@ -12,6 +12,7 @@ paths:
   - ai-service-python/app/strategies/confirmation_entry.py
   - ai-service-python/app/services/multitimeframe_stack.py
   - ai-service-python/app/services/backtester.py
+  - ai-service-python/tests/test_temporal_closed_observation.py
   - backend-laravel/app/Services/ConfirmationEntryContractService.php
   - backend-laravel/app/Services/MtfPlaybookFrozenControlService.php
   - backend-laravel/app/Services/MultiTimeframePilotService.php
@@ -30,6 +31,7 @@ invariants:
   - Context, setup, confirmation and trigger are distinct gates.
   - Missing or invalid closed-stream evidence resolves to WAIT.
   - Fill-time admission rechecks executable geometry.
+  - Current-open temporal admission uses only the preceding completed observation; a probe born at index zero is not omitted.
 flows:
   - flows/entry-decision.md
 docs:
@@ -37,6 +39,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_temporal_closed_observation.py
   - backend-laravel/tests/Feature/MtfPilotContractTest.php
   - backend-laravel/tests/Feature/MtfPlaybookFrozenControlServiceTest.php
   - backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php

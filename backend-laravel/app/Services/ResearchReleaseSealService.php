@@ -67,6 +67,14 @@ class ResearchReleaseSealService
         'ai-service-python/tests/test_instrument_method_quote_alias.py',
         'ai-service-python/tests/test_instrument_method_pullback_retest.py',
         'ai-service-python/tests/test_volume_none_confidence_compatibility.py',
+        // Exact source-taught curriculum and focused proofs, never a resource/data glob.
+        'backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/model-v1.json',
+        'backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php',
+        'backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php',
+        'ai-service-python/tests/test_instrument_operating_skill_exercises.py',
+        'ai-service-python/tests/test_temporal_closed_observation.py',
         // Explicit synthetic software fixtures only; no provider/dataset CSV glob.
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.csv',
         'ai-service-python/tests/fixtures/observed_quote_canonical_synthetic.provenance.json',

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T09:08:37.414Z",
-  "source_digest": "7c50ecd98a32aaec42eebef226dd4c32858adea97650e0378aaa111c49b768e3",
-  "source_file_count": 1690,
-  "git_head": "5700994b7ad9ab8290b576275b40c18e05afeb44",
+  "generated_at": "2026-10-14T11:54:23.563Z",
+  "source_digest": "c59be6b0b660f434b77712f80e516010f8936c5470f65eb4fea90b4fd12d0709",
+  "source_file_count": 1695,
+  "git_head": "751c54d5ed85b6200fc57a904bd5d3feb02bec5d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -43,6 +43,13 @@
         "backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php",
         "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
         "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
+        "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+        "backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json",
+        "backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json",
+        "backend-laravel/resources/research/instrument-operating-skills/model-v1.json",
+        "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+        "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+        "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
         "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
         "backend-laravel/resources/research/instrument-methods/curated-v1.json",
         "backend-laravel/resources/research/instrument-methods/curated-v2.json",
@@ -458,6 +465,9 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+        "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+        "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
         "backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php",
         "backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php",
         "ai-service-python/tests/test_source_grounded_method_features.py",
@@ -555,7 +565,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 190,
+      "source_file_count": 194,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -574,6 +584,7 @@
         "ai-service-python/app/strategies/confirmation_entry.py",
         "ai-service-python/app/services/multitimeframe_stack.py",
         "ai-service-python/app/services/backtester.py",
+        "ai-service-python/tests/test_temporal_closed_observation.py",
         "backend-laravel/app/Services/ConfirmationEntryContractService.php",
         "backend-laravel/app/Services/MtfPlaybookFrozenControlService.php",
         "backend-laravel/app/Services/MultiTimeframePilotService.php"
@@ -595,9 +606,11 @@
       "invariants": [
         "Context, setup, confirmation and trigger are distinct gates.",
         "Missing or invalid closed-stream evidence resolves to WAIT.",
-        "Fill-time admission rechecks executable geometry."
+        "Fill-time admission rechecks executable geometry.",
+        "Current-open temporal admission uses only the preceding completed observation; a probe born at index zero is not omitted."
       ],
       "tests": [
+        "ai-service-python/tests/test_temporal_closed_observation.py",
         "backend-laravel/tests/Feature/MtfPilotContractTest.php",
         "backend-laravel/tests/Feature/MtfPlaybookFrozenControlServiceTest.php",
         "backend-laravel/tests/Unit/ConfirmationEntryContractServiceTest.php",
@@ -608,7 +621,7 @@
       "flows": [
         ".project-map/modules/confirmation-entry/flows/entry-decision.md"
       ],
-      "source_file_count": 6,
+      "source_file_count": 7,
       "map": ".project-map/modules/confirmation-entry/module.yaml"
     },
     {

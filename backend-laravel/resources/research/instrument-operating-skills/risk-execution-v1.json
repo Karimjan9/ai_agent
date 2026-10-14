@@ -1,0 +1,384 @@
+{
+  "protocol": "instrument_operating_skill_lessons_v1",
+  "part_key": "risk_execution_v1",
+  "revision": 1,
+  "reviewed_on": "2026-10-14",
+  "sources": [
+    {
+      "source_id": "risk_cme_liquidity",
+      "url": "https://www.cmegroup.com/education/articles-and-reports/understanding-the-cme-liquidity-tool-methodology",
+      "title": "Understanding the CME Liquidity Tool Methodology",
+      "publisher": "CME Group",
+      "medium": "official_education_article",
+      "reviewed_scope": "Public text on bid/ask availability, order-book spread and quantity-dependent cost to trade; curator paraphrase only.",
+      "not_reviewed": ["complete_exchange_message_data", "webinar_or_video", "strategy_performance"]
+    },
+    {
+      "source_id": "risk_ctrader_symbol",
+      "url": "https://help.ctrader.com/ctrader-algo/references/MarketData/Symbols/Symbol/",
+      "title": "Symbol: Bid, Ask, Spread, PipSize and TickSize",
+      "publisher": "Spotware cTrader",
+      "medium": "official_api_documentation",
+      "reviewed_scope": "Public Symbol property definitions and example unit conversion for quoted spread; no API code copied or executed.",
+      "not_reviewed": ["broker_specific_quote_quality", "historical_quote_dataset", "webinar_or_video"]
+    },
+    {
+      "source_id": "risk_tradingview_atr",
+      "url": "https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/",
+      "title": "Average True Range (ATR)",
+      "publisher": "TradingView",
+      "medium": "official_indicator_documentation",
+      "reviewed_scope": "Public definition, true-range calculation, nondirectional interpretation and default RMA versus selectable alternative smoothing.",
+      "not_reviewed": ["Wilder_full_book", "publisher_code", "profitable_parameter_settings"]
+    },
+    {
+      "source_id": "risk_cme_position_size",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/proper-position-size",
+      "title": "Proper Position Size",
+      "publisher": "CME Group",
+      "medium": "official_education_lesson",
+      "reviewed_scope": "Accessible lesson text: logical stop location, predetermined account risk and position quantity derived from loss per contract.",
+      "not_reviewed": ["embedded_video_or_webinar", "broker_contract_specifications", "strategy_performance"]
+    },
+    {
+      "source_id": "risk_cme_trade_plan",
+      "url": "https://www.cmegroup.com/education/courses/building-a-trade-plan/risk-management-and-your-trade-plan",
+      "title": "Step 3. Risk Management and Your Trade Plan",
+      "publisher": "CME Group",
+      "medium": "official_education_lesson",
+      "reviewed_scope": "Accessible text on predetermined leverage, trade/day loss, simultaneous positions and maximum account exposure; examples are not universal limits.",
+      "not_reviewed": ["embedded_video_or_webinar", "personal_risk_suitability", "strategy_performance"]
+    },
+    {
+      "source_id": "risk_cme_two_percent",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule",
+      "title": "The 2% Rule",
+      "publisher": "CME Group",
+      "medium": "official_education_lesson",
+      "reviewed_scope": "Public text and examples of fixed-fraction account risk; the source explicitly treats the percentage threshold as arbitrary.",
+      "not_reviewed": ["embedded_video_or_webinar", "optimal_risk_fraction", "guaranteed_maximum_fill_loss"]
+    },
+    {
+      "source_id": "risk_quinto_plan_excerpt",
+      "url": "https://www.cmegroup.com/content/dam/cmegroup/education/interactive/tradingplan/trading_plan_document.pdf",
+      "title": "Jeff Quinto's Trading Plan: Risk and Holding-Time Excerpts",
+      "publisher": "Jeff Quinto, hosted by CME Group",
+      "medium": "author_plan_pdf_excerpt",
+      "reviewed_scope": "Only PDF pages 2 and 3: the author's example break after consecutive losses, size discipline and planned holding-time rules. This is a bounded author-plan excerpt, not a reviewed book or universal strategy.",
+      "not_reviewed": ["full_book", "full_document_as_training_course", "author_webinars", "author_track_record", "market_outcome_validation"]
+    },
+    {
+      "source_id": "risk_sklearn_calibration",
+      "url": "https://scikit-learn.org/stable/modules/calibration.html",
+      "title": "Probability Calibration",
+      "publisher": "scikit-learn developers",
+      "medium": "official_library_documentation",
+      "reviewed_scope": "Public sections defining calibrated probabilities, reliability diagrams, separate calibration data and limitations of probability scores; no model fitted.",
+      "not_reviewed": ["all_linked_research_papers", "trading_probability_validation", "external_model_training"]
+    },
+    {
+      "source_id": "risk_tradingview_repainting",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+      "title": "Repainting: Historical Versus Realtime Calculations",
+      "publisher": "TradingView",
+      "medium": "official_language_documentation",
+      "reviewed_scope": "Public discussion of fluid current-bar high/low/close values and confirmed-bar alternatives; no source code copied.",
+      "not_reviewed": ["all_Pine_runtime_features", "webinar_or_video", "market_outcome_validation"]
+    },
+    {
+      "source_id": "risk_tradingview_trailing",
+      "url": "https://www.tradingview.com/support/solutions/43000754965-introduction-to-trailing-stops/",
+      "title": "Introduction to Trailing Stops",
+      "publisher": "TradingView",
+      "medium": "official_order_documentation",
+      "reviewed_scope": "Public trailing-stop behavior and the tradeoff between tight and loose distances; this does not qualify the lab's exact ATR or time-stop settings.",
+      "not_reviewed": ["broker_specific_order_implementation", "webinar_or_video", "strategy_performance"]
+    },
+    {
+      "source_id": "risk_cme_partial_exits",
+      "url": "https://www.cmegroup.com/education/courses/futures-trading-mechanics-and-regulation/futures-order-types",
+      "title": "Futures Order Types: Partial Position Exits",
+      "publisher": "CME Group",
+      "medium": "official_education_lesson",
+      "reviewed_scope": "Accessible text describing exit of part of a multi-contract position at one price and the remainder at another; no optimal allocation or ATR schedule inferred.",
+      "not_reviewed": ["embedded_video_or_webinar", "broker_execution_trace", "optimal_partial_exit_settings"]
+    },
+    {
+      "source_id": "risk_chartschool_chandelier",
+      "url": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/chandelier-exit",
+      "title": "Chandelier Exit",
+      "publisher": "StockCharts ChartSchool",
+      "medium": "publisher_indicator_reference",
+      "reviewed_scope": "Public calculation and interpretation sections: rolling high/low, ATR buffer and daily 22/3 example. The publisher attribution to Le Beau/Elder is metadata, not a review of their full books.",
+      "not_reviewed": ["full_book", "chart_outcomes_as_evidence", "linked_spreadsheets", "M5_parameter_validation"]
+    }
+  ],
+  "lessons": [
+    {
+      "instrument_key": "cost_firewall",
+      "group": "risk",
+      "definition": "A pre-entry execution-quality check that can veto an existing direction when a declared observed-cost condition is unavailable or exceeds its limit; it does not supply an entry signal.",
+      "established_uses": ["Distinguish a contemporaneous ask-minus-bid spread from configured execution costs.", "Evaluate transaction-cost and liquidity constraints before committing risk."],
+      "source_refs": ["risk_cme_liquidity", "risk_ctrader_symbol", "risk_tradingview_atr", "risk_tradingview_repainting"],
+      "operating_steps": [
+        "Keep the original strategy direction, physical spread/slippage/commission, account limits and immutable method context unchanged.",
+        "Use only the closed-feature owner's validated original bid, ask and spread: positive finite quotes, spread agreement, quote-in-candle timestamp and exact closed-bar availability.",
+        "Require fourteen completed true ranges and a positive simple arithmetic ATR14 for the observed ratio; do not replace missing quote evidence with modeled spread.",
+        "Compute observed spread/closed ATR in the same price units, then require method_quote_available AND method_spread_atr strictly less than 0.10.",
+        "Record confirmation, WAIT reason and source-input receipt. A true result only permits the existing proposal to continue through all other gates.",
+        "Treat the older max_spread_atr_ratio parameter adapter as fresh construction, not a runtime change to the new observed-quote operator."
+      ],
+      "primary_method_ref": "internet_observed_quote_cost_firewall@1",
+      "additional_method_refs": ["internet_observed_spread_atr_cap_v1@1"],
+      "calculation_convention": "Observed spread is ask-minus-bid in price units; the supplement normalizes by the simple mean of fourteen completed true ranges. The native legacy cost gate instead calculates configured spread_points*point_size/managementATR and checks modeled round-trip cost against target space. Those two inputs are not interchangeable.",
+      "source_vs_lab": "Sources support quote units and transaction-cost awareness. The strict 0.10 ratio, closed-quote provenance contract, ATR normalization and declared trend-up/London/normal scope are lab conventions, not publisher-qualified profitable settings. The older catalog's observed-spread wording does not turn its modeled native gate into observed BID/ASK evidence.",
+      "inputs": ["method_quote_available: owner-validated boolean", "method_spread_atr: finite observed price-spread/closed ATR ratio", "Original closed OHLC, BID/ASK/spread and availability timestamps", "Unchanged physical execution and account contract"],
+      "wait_when": ["Quote, positive mature ATR or exact availability/provenance is unavailable or inconsistent.", "Observed ratio is 0.10 or greater.", "The existing proposal is outside the immutable recipe context or any upstream guard refuses."],
+      "common_mistakes": ["Calling configured spread an observed quote.", "Interpreting missing quote data as zero spread.", "Mixing points, pips and price units.", "Calling a confirmation event a BUY/SELL instruction or measured market edge."],
+      "agent_practice": ["Explain the observed-versus-modeled distinction and reproduce the strict boundary without requiring profit.", "Apply the bound operator on synthetic inputs, then separately check the real closed feature producer and context.", "Learn later when this filter is useful from own immutable outcomes; never fill missing source data or relax external risk."],
+      "exercises": [
+        {"name": "positive_valid_quote_below_cap", "inputs": {"method_quote_available": true, "method_spread_atr": 0.09}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_valid_quote_above_cap", "inputs": {"method_quote_available": true, "method_spread_atr": 0.11}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_equal_cap_waits", "inputs": {"method_quote_available": true, "method_spread_atr": 0.10}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "unavailable_quote_cannot_be_rescued_by_small_ratio", "inputs": {"method_quote_available": false, "method_spread_atr": 0.01}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "high_volatility_firewall",
+      "group": "risk",
+      "definition": "A volatility-aware restraint on an existing entry or its exposure. Volatility magnitude does not itself identify trade direction.",
+      "established_uses": ["Use range-based volatility to assess whether ordinary movement can reach a stop.", "Recalculate quantity when valid stop distance changes instead of enlarging the permitted loss."],
+      "source_refs": ["risk_tradingview_atr", "risk_cme_position_size", "risk_cme_trade_plan"],
+      "operating_steps": [
+        "Compute true range as max(high-low, abs(high-previousClose), abs(low-previousClose)) using observed closed prices.",
+        "Identify the actual ATR owner and its smoothing, maturity and units before comparing a limit.",
+        "For the primary typed revision evaluate the bound closed management ATR strictly below 30.0 price units; equality or a larger value does not confirm.",
+        "If using the native high-volatility label path, distinguish an avoid_high_volatility entry veto from a high_volatility_risk_multiplier exposure reduction.",
+        "Keep baseline stop validity, account risk and leverage caps intact; approved schema multipliers only reduce or preserve risk.",
+        "Record the precise method revision and existing proposal/context rather than calling an absolute ATR ceiling a cross-market rule."
+      ],
+      "primary_method_ref": "internet_closed_atr_absolute_ceiling_v1@1",
+      "additional_method_refs": ["internet_closed_atr_absolute_ceiling_v1@2"],
+      "calculation_convention": "Native _management_atr is a rolling simple mean of fourteen true ranges with min_periods=1. TradingView's default ATR uses RMA; these are not identical seeds or smoothers. Primary revision1 tests ATR<30.0; revision2 tests ATR<20.0. Neither typed ceiling generates direction or changes the physical stop.",
+      "source_vs_lab": "ATR's nondirectional interpretation and stop-first sizing principle are source grounded. Absolute 30/20 ceilings, native regime labels, period/seed choices and the 0.1..1 approved reduction range are local conventions, not published optima.",
+      "inputs": ["_management_atr: finite closed-row ATR in instrument price units", "Existing direction and immutable context", "Native volatility label if using its separate gate", "Unchanged risk budget, executable stop and leverage limit"],
+      "wait_when": ["The required bound ATR is unavailable or invalid; never substitute a fabricated observation.", "Primary ATR is 30.0 or greater.", "A separately enabled native high-volatility veto or external risk guard refuses."],
+      "common_mistakes": ["Using ATR as a bullish/bearish indicator.", "Calling native SMA14 a Wilder RMA14 implementation.", "Comparing the same absolute ATR number across prices/timeframes without checking units.", "Widening the stop while keeping quantity unchanged and thereby increasing loss budget."],
+      "agent_practice": ["Calculate true range, identify the smoothing owner and apply positive/negative/equality cases correctly.", "Demonstrate that increased executable stop risk reduces uncapped quantity for the same budget.", "Learn context usefulness separately from mastery of the calculation; no profitable result is required to understand this restraint."],
+      "exercises": [
+        {"name": "positive_atr_below_revision1_ceiling", "inputs": {"_management_atr": 29.9}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_atr_above_revision1_ceiling", "inputs": {"_management_atr": 30.1}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_atr_equal_ceiling_waits", "inputs": {"_management_atr": 30.0}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "transition_protection",
+      "group": "risk",
+      "definition": "A finite WAIT rule after an observed change in a declared regime state; the classifier label is an input, not proof of a new economic regime.",
+      "established_uses": ["Make operating conditions and risk responses explicit before trading.", "Revalidate a proposal when its observed context no longer matches the trade plan."],
+      "source_refs": ["risk_cme_trade_plan", "risk_tradingview_repainting"],
+      "operating_steps": [
+        "Obtain a recognized closed regime label from the existing owner, not a future relabel or a caller-supplied method_* column.",
+        "The closed-feature counter starts at age0 for a recognized new label and increments on subsequent same-label closed rows; unknown labels reset availability.",
+        "Require method_transition_available AND method_transition_age>4 for the primary typed confirmation.",
+        "Apply the result only to an existing candidate in its immutable recipe context; WAIT does not force an opposite trade.",
+        "Do not substitute native transition behavior: its boundary compares regime OR volatility labels, its optional duration is clamped1..6, and it separately halves boundary exposure.",
+        "A passed elapsed-bar rule cannot bypass source validity, account limits or current admission guards."
+      ],
+      "primary_method_ref": "internet_closed_transition_wait_v2@1",
+      "additional_method_refs": [],
+      "calculation_convention": "The primary owner counts observed closed rows of the same recognized regime, not wall-clock hours and not only explicit transition labels. Boundary age0 and equality age4 fail the strict >4 operator. Native optional transition wait and typed elapsed-regime-age confirmation are different algorithms.",
+      "source_vs_lab": "Trade-plan discipline and the confirmed-versus-fluid-data distinction are source grounded. Regime classifiers, greater-than-four-bar readiness, native boundary half-risk and context mapping are local policies; no source is represented as recommending this exact state machine.",
+      "inputs": ["method_transition_available: recognized closed regime availability", "method_transition_age: observed closed-row same-label age", "Original regime labels with point-in-time availability", "Existing direction and immutable method context"],
+      "wait_when": ["Regime availability is false.", "Closed regime age is four or fewer rows.", "Context changes make the original proposal or recipe inapplicable."],
+      "common_mistakes": ["Using future regime labels at an earlier decision.", "Treating an unknown label as a stable known regime.", "Counting weekend hours as observed candles.", "Confusing native volatility-boundary waits with this regime-only counter."],
+      "agent_practice": ["Reconstruct the label counter on a short closed sequence and explain a reset.", "Test exact age4/age5 behavior and unavailable-state refusal.", "Learn later which declared contexts benefit from waiting without redefining the base rule or gaining admission authority."],
+      "exercises": [
+        {"name": "positive_available_age_five", "inputs": {"method_transition_available": true, "method_transition_age": 5}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_unavailable_regime", "inputs": {"method_transition_available": false, "method_transition_age": 5}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_age_four_waits", "inputs": {"method_transition_available": true, "method_transition_age": 4}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "new_label_age_zero_waits", "inputs": {"method_transition_available": true, "method_transition_age": 0}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "loss_streak_cooldown",
+      "group": "risk",
+      "definition": "A predeclared finite admission pause based on this replay account's completed loss sequence, not a prediction that the next trade will lose.",
+      "established_uses": ["Plan a response to consecutive losses before the adverse sequence occurs.", "Keep recovery discipline separate from escalating position size."],
+      "source_refs": ["risk_quinto_plan_excerpt", "risk_cme_trade_plan", "risk_tradingview_repainting"],
+      "operating_steps": [
+        "Use only the current owner's uncensored completed positions after their execution bar has closed; an empty fresh own journal is known empty, not borrowed parent performance.",
+        "Count strictly negative mature net closes as losses; a nonnegative close resets this closed-feature streak. This differs from native WIN-if-positive/LOSS-otherwise bookkeeping.",
+        "Compute bars since the last mature loss from actual closed observations, not calendar minutes or session gaps.",
+        "Require history availability AND (loss_streak<3 OR bars_since_loss>12).",
+        "At three or more losses and exactly twelve elapsed closed bars continue WAIT; the strict operator admits only after twelve.",
+        "Treat native global/context waits and reduced-risk recovery probes as separate configured policies; do not silently replace their thresholds with this typed revision."
+      ],
+      "primary_method_ref": "internet_mature_loss_streak_wait_v2@1",
+      "additional_method_refs": [],
+      "calculation_convention": "Primary loss means mature net PnL<0; only uncensored owned closes update state. The boolean OR permits a streak below3 regardless of bars since loss, but requires >12 bars for a streak>=3. Mature availability, observed-bar counting and strict inequality are part of correct use.",
+      "source_vs_lab": "Quinto's bounded plan excerpt supports having a break-after-losses rule, not a universal twelve-bar cooldown. The three-loss threshold, own-journal semantics, strict twelve-bar boundary and recovery-probe mechanics are lab conventions. No full author book or track record was reviewed.",
+      "inputs": ["method_loss_history_available: owner's mature journal availability", "method_loss_streak: consecutive mature negative-close count", "method_bars_since_loss: actual closed observations since last mature loss", "Original position identity, net close result and available_at"],
+      "wait_when": ["Owned mature-history availability is false.", "Loss streak is at least three and bars since last mature loss are at most twelve.", "A close is future, censored, unowned or not yet observable; it cannot update counters."],
+      "common_mistakes": ["Counting a vetoed shadow as an owned loss.", "Using end-of-data censored returns or future close results.", "Treating native break-even-as-LOSS and typed nonnegative-reset conventions as identical.", "Doubling risk after the pause to recover previous losses."],
+      "agent_practice": ["Track a synthetic mature journal, including a nonnegative reset and a future close that remains excluded.", "Explain why source-supported loss discipline and this exact bar rule are different layers.", "Learn context-specific usefulness from later own outcomes, without requiring profit to demonstrate counter correctness."],
+      "exercises": [
+        {"name": "positive_streak_below_three", "inputs": {"method_loss_history_available": true, "method_loss_streak": 2, "method_bars_since_loss": 0}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_three_losses_before_wait_expires", "inputs": {"method_loss_history_available": true, "method_loss_streak": 3, "method_bars_since_loss": 11}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_three_losses_twelve_bars_still_waits", "inputs": {"method_loss_history_available": true, "method_loss_streak": 3, "method_bars_since_loss": 12}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "positive_thirteen_bars_after_mature_loss", "inputs": {"method_loss_history_available": true, "method_loss_streak": 3, "method_bars_since_loss": 13}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "unavailable_journal_refuses_even_small_streak", "inputs": {"method_loss_history_available": false, "method_loss_streak": 0, "method_bars_since_loss": 0}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "confidence_firewall",
+      "group": "risk",
+      "definition": "A score or evidence-quality restraint on an already proposed entry. A strength score, calibrated event probability and expected net value are different quantities.",
+      "established_uses": ["Assess whether claimed probabilities match observed frequencies on appropriate separate data.", "Make the distinction between classification score, payoff distribution and cost-inclusive expected value explicit."],
+      "source_refs": ["risk_sklearn_calibration", "risk_cme_trade_plan"],
+      "operating_steps": [
+        "Identify the original strategy score, its range and its missing-value behavior; never relabel a raw score as a trained probability.",
+        "For primary revision1 require the genuine bound signal_confidence strictly greater than0.7; revision2's0.8 boundary is a different immutable rule.",
+        "A passed score gate may only confirm an existing candidate after its ordinary eligibility gates; it does not generate direction or positive expected value.",
+        "For the separate native online assessment use only previously closed real-trade observations, minimum at least15, same-context evidence where sufficient and disclosed global fallback otherwise.",
+        "Distinguish empirical win frequency and Wilson lower bound from a validated out-of-sample calibrator; global sparse-context fallback is not eligible for a hard new-context veto.",
+        "Disclose that native EV averages already-net historical profit_percent and subtracts current modeled cost again; do not present it as a universally correct gross-payoff estimator.",
+        "Keep any future fitting, fixed chronological calibration, dataset exposure and later unseen evaluation separate from completing this base operating lesson."
+      ],
+      "primary_method_ref": "internet_signal_score_veto_0_7_v1@1",
+      "additional_method_refs": ["internet_signal_score_veto_0_7_v1@2"],
+      "calculation_convention": "The typed primary is score>0.7, not probability>70%. Native assessment selects closed history near the score within0.20, with bounded context/global fallback, estimates wins/n and a Wilson lower probability, then computes p*averageWin-(1-p)*averageLoss-currentCost. Historical payoff samples are already net, so the extra current-cost subtraction is a disclosed local conservative convention.",
+      "source_vs_lab": "Calibration theory supports separate data and frequency-based reliability checks. It does not validate the native strategy's score, the0.7/0.8 thresholds, fifteen-sample threshold, context pooling, nearby band or local EV veto. Base mastery means understanding these distinctions and executing the bound gate correctly, not claiming a calibrated trading probability.",
+      "inputs": ["signal_confidence: genuine native score bound by the selected method", "Original candidate direction, score units and missing-value convention", "Previously closed own trade confidence/net outcomes for the separate native diagnostic", "Immutable physical costs and context identity"],
+      "wait_when": ["The primary required score is unavailable or invalid; no probability may be invented.", "Revision1 score is0.7 or less.", "A separately enabled same-context native lower-EV gate refuses with sufficient eligible evidence."],
+      "common_mistakes": ["Calling score0.8 an80% win probability.", "Using future labels or the final test set to calibrate or select the threshold.", "Treating sparse global fallback as evidence against an unseen context.", "Ignoring payoff magnitude/costs or counting modeled costs twice without disclosure."],
+      "agent_practice": ["Demonstrate score, empirical frequency and expected value on clearly synthetic arithmetic examples.", "Pass the exact typed score boundaries without claiming model fitting or market evidence.", "Learn later WHEN/HOW to use a score gate through separately owned policy outcomes; never upgrade base correctness to learned probability authority."],
+      "exercises": [
+        {"name": "positive_native_score_above_revision1_floor", "inputs": {"signal_confidence": 0.71}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_native_score_below_floor", "inputs": {"signal_confidence": 0.69}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_native_score_equal_floor_waits", "inputs": {"signal_confidence": 0.70}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "temporal_survival_filter",
+      "group": "risk",
+      "definition": "An explicit rule about how long an observed signal remains admissible. The taught closed-state persistence heuristic is not a fitted survival probability.",
+      "established_uses": ["Predetermine a trade or signal validity horizon instead of keeping a stale proposal indefinitely.", "Separate information known at decision time from later execution-bar extrema."],
+      "source_refs": ["risk_quinto_plan_excerpt", "risk_tradingview_repainting"],
+      "operating_steps": [
+        "Use the existing closed-feature owner and recognized BUY/SELL signal sequence; a WAIT or direction change resets the same-direction run.",
+        "Count the run age starting at1 and compute the deterministic persistence score1/(1+age/4).",
+        "Require availability AND age<3 AND score>0.5; a true result still cannot create direction or override the immutable context.",
+        "Describe this as finite persistence admission, not measured survival likelihood, probability of profit or a trained time-to-event model.",
+        "The original pre-fix native temporal follow-through path consumed current execution-bar extrema before current-open admission. The corrected future owner updates and registers only the preceding completed row and preserves source index zero; no old result is rewritten.",
+        "The separate native exponential confidence decay, follow-through rate, drift tests and timestamp-age conversion remain lab policies with different inputs. Closed-time correctness is not source endorsement, calibrated survival or economic qualification.",
+        "Judge synthetic operator correctness separately from closed-feature prefix tests, original replay coverage and later agent policy utility."
+      ],
+      "primary_method_ref": "internet_closed_signal_persistence_v2@1",
+      "additional_method_refs": [],
+      "calculation_convention": "Primary age is the number of consecutive closed rows with the same recognized direction, not the wall-clock age of an independently stored signal. Score=1/(1+age/4). The owner therefore yields0.8 at age1 and2/3 at age2; age3 fails the strict age<3 condition. The native half-life formula0.5^((age-1)/halfLife) is a different heuristic, and its follow-through path is not certified by this lesson.",
+      "source_vs_lab": "The author's bounded plan excerpt supports defining holding horizons; TradingView documents current-bar fluid values. Neither source supplies this persistence formula, thresholds or a probability interpretation. The typed primary is a distinct persistence heuristic. The future native kernel's closed-row timing correction has synthetic prefix tests; its original pre-fix receipts remain historical and no survival-probability or economic certification follows.",
+      "inputs": ["method_signal_available: owner-recognized closed BUY/SELL state", "method_signal_age: closed same-direction run length", "method_signal_survival: deterministic owner age score", "Original closed signal sequence, direction and immutable context"],
+      "wait_when": ["Signal availability is false.", "Closed run age is3 or greater.", "Persistence score is0.5 or less.", "The proposed path depends on unavailable future execution-bar high/low rather than closed observations."],
+      "common_mistakes": ["Calling deterministic persistence a calibrated survival probability.", "Using later intrabar extrema to decide at the same bar's open.", "Confusing run length with timestamp-based stale-signal age.", "Treating an author's example holding time as validation of this lab formula."],
+      "agent_practice": ["Reconstruct age and score for a synthetic direction sequence, including WAIT/opposite resets.", "Explain why the age boundary binds even when the deterministic score remains above0.5.", "Prove operator behavior and closed-feature prefix safety separately; later policy learning may assess usefulness without certifying the unsupported native timing path."],
+      "exercises": [
+        {"name": "positive_available_age_one_owner_score", "inputs": {"method_signal_available": true, "method_signal_age": 1, "method_signal_survival": 0.8}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_unavailable_signal", "inputs": {"method_signal_available": false, "method_signal_age": 1, "method_signal_survival": 0.8}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_age_three_waits_despite_owner_score", "inputs": {"method_signal_available": true, "method_signal_age": 3, "method_signal_survival": 0.5714285714285714}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "operator_leaf_boundary_score_equal_half_waits_not_claimed_owner_pair", "inputs": {"method_signal_available": true, "method_signal_age": 2, "method_signal_survival": 0.5}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "positive_age_two_owner_score", "inputs": {"method_signal_available": true, "method_signal_age": 2, "method_signal_survival": 0.6666666666666666}, "expected": true, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "dynamic_cooldown",
+      "group": "risk",
+      "definition": "A predeclared bounded recovery-wait function of mature owned loss history. Adaptivity here is a deterministic local policy, not discretion to escalate risk.",
+      "established_uses": ["Specify recovery discipline before an adverse sequence.", "Preserve the account-risk budget while reviewing changed trading conditions."],
+      "source_refs": ["risk_quinto_plan_excerpt", "risk_cme_trade_plan", "risk_tradingview_repainting"],
+      "operating_steps": [
+        "Use only this owner's completed uncensored closes after their declared available_at; future, parent and shadow outcomes cannot populate the typed mature-loss journal.",
+        "Count the consecutive strictly negative closes, resetting on a nonnegative mature close.",
+        "The closed owner sets ready when streak=0 OR actual closed bars since loss>=min(24,4*streak).",
+        "The primary AST requires method_loss_history_available AND method_dynamic_cooldown_ready; the underlying arithmetic belongs to the owner, not injected lesson fields.",
+        "At the exact owner wait boundary readiness is true. These boolean exercises test consumption, not a substitute implementation of the journal producer.",
+        "Keep the native regime/volatility schedule, streak increment and previous shadow-PF +/-1 adjustment separate; its1..6 clamp is not the typed4*streak/cap24 rule.",
+        "A recovery pause can change admission timing but cannot authorize martingale, risk increases after losses or a new trading direction."
+      ],
+      "primary_method_ref": "internet_mature_dynamic_recovery_v2@1",
+      "additional_method_refs": [],
+      "calculation_convention": "Typed producer wait=min(24,4*strictlyNegativeMatureStreak), with readiness at greater-than-or-equal elapsed observed bars; known empty fresh journal is available with streak0. The operator itself only ANDs history availability and readiness. Native shadow-PF cooldown is a distinct bounded policy, not evidence that the typed counter learned an optimal wait.",
+      "source_vs_lab": "Source material supports preplanned loss responses and exposure discipline. Four bars per mature loss, twenty-four-bar saturation, owner-only history, the native shadow-PF thresholds and schedule are lab choices; no author excerpt or webinar is represented as recommending them.",
+      "inputs": ["method_loss_history_available: own mature journal availability", "method_dynamic_cooldown_ready: source-owner computed boolean", "Producer-only mature loss streak and observed bars since loss", "Completed position identities, available_at and unchanged risk limits"],
+      "wait_when": ["Own mature-history availability is false.", "Owner-computed readiness is false.", "Only future, censored, borrowed or shadow observations are available to justify recovery."],
+      "common_mistakes": ["Injecting a ready flag or inventing parent history.", "Treating native shadow-PF and typed loss-streak readiness as the same method.", "Counting calendar gaps as completed bars.", "Using a cooldown expiration as permission to recover losses with a bigger position."],
+      "agent_practice": ["Explain producer arithmetic on streak0, streak3 and cap-saturated examples, then test the AST's two real bound booleans.", "Distinguish operator correctness from proof that a real owner produced those booleans.", "Learn future context usefulness separately without replacing the fixed base lesson or widening risk."],
+      "exercises": [
+        {"name": "positive_owned_history_ready", "inputs": {"method_loss_history_available": true, "method_dynamic_cooldown_ready": true}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_owned_history_not_ready", "inputs": {"method_loss_history_available": true, "method_dynamic_cooldown_ready": false}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_owner_streak_three_at_twelve_closed_bars_ready", "inputs": {"method_loss_history_available": true, "method_dynamic_cooldown_ready": true}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "unavailable_history_cannot_be_rescued_by_ready_flag", "inputs": {"method_loss_history_available": false, "method_dynamic_cooldown_ready": true}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "atr_risk_envelope",
+      "group": "execution",
+      "definition": "A stop-first risk-sizing envelope that translates an invalidation distance into bounded account exposure. The primary runtime method demonstrates fixed risk reduction, not a new ATR computation.",
+      "established_uses": ["Determine invalidation and permitted account loss before position quantity.", "Account for loss per unit, quantity limits and execution uncertainty instead of treating margin as risk."],
+      "source_refs": ["risk_cme_position_size", "risk_cme_two_percent", "risk_tradingview_atr", "risk_cme_trade_plan"],
+      "operating_steps": [
+        "Start with the unchanged strategy's valid structural or ATR/fixed stop and physical execution/account contract.",
+        "For native ATR distances identify SMA14 true-range management ATR; choose declared stop/target multipliers before construction, not during an already sealed replay.",
+        "Calculate executable stop return from cost-adjusted entry and stop-exit prices, plus commission; base multiple=min(max_leverage,risk_per_trade/executableStopReturnPercent).",
+        "Apply the primary typed constant factor0.5 to existing computed exposure; do not recalculate direction, prices, stop, target, balance or maximum risk.",
+        "Math practice: baseline multiple2 becomes1; baseline multiple0 remains0; a previous negative outcome still leaves the fixed factor0.5, never a recovery increase.",
+        "The CONST operator has no bound input leaves: its synthetic exercises intentionally all return0.5, and the separate arithmetic instruction checks the effect on baseline exposure.",
+        "Use internet_atr_stop_1_5_target_3_v1@1 only through fresh compatible EMA/RSI construction; preserve external hard guards and record actual initial executable risk."
+      ],
+      "primary_method_ref": "internet_fixed_half_risk_v2@1",
+      "additional_method_refs": ["internet_atr_stop_1_5_target_3_v1@1"],
+      "calculation_convention": "Primary AST is CONST(number,0.5), not ATR arithmetic and not a maximum-risk override. Native executable sizing includes spread/slippage and commission in the stopped return, caps base leverage, then applies declared reductions. Construction adapter stop1.5ATR/target3ATR uses the native SMA14 owner, not a silently substituted Wilder smoother.",
+      "source_vs_lab": "Stop-first quantity arithmetic and fixed-fraction discipline are source grounded. CME explicitly calls2% an arbitrary example, not a universal optimum. The0.5 factor,1.5/3ATR combination, smoothing choice and every configured account limit are disclosed lab/contract conventions; base correctness does not require profit or grant live authority.",
+      "inputs": ["No AST input leaves: primary is a number constant", "Existing executable entry/stop prices and commission for native sizing", "Unchanged account risk budget, leverage limit and baseline position multiple", "Closed management ATR and declared construction parameters if using the additional adapter"],
+      "wait_when": ["No valid original direction/invalidation or positive finite executable stop risk is available.", "External account, leverage, admission or source guards refuse the original entry.", "A construction adapter is offered for an already sealed/admitted model instead of a fresh compatible baseline."],
+      "common_mistakes": ["Calling fixed half-risk a distinct ATR algorithm.", "Choosing quantity first and distorting the stop to fit it.", "Calling margin or a nominal stop a guaranteed maximum executed loss.", "Letting previous losses change the fixed factor or weakening account guards."],
+      "agent_practice": ["Calculate synthetic stop risk and uncapped quantity, then apply0.5 without changing prices or limits.", "Explain why wider stop loss per unit requires less quantity at the same risk budget.", "Keep base calculation mastery separate from future selection of ATR multipliers or agent-owned policy utility."],
+      "exercises": [
+        {"name": "positive_constant_factor_math_base_multiple_two_becomes_one", "inputs": {}, "expected": 0.5, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_outcome_does_not_change_constant_recovery_factor", "inputs": {}, "expected": 0.5, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_zero_baseline_exposure_stays_zero_factor_unchanged", "inputs": {}, "expected": 0.5, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "cost_aware_exit",
+      "group": "execution",
+      "definition": "Owned-position management that requests an exit or applies a predeclared protective profile while preserving physical fill rules, costs and account ownership.",
+      "established_uses": ["Maintain predeclared protective/trailing exits without loosening protection when price reverses.", "Allow partial and remainder exits at different prices while distinguishing the actual simulator's bookkeeping from broker behavior."],
+      "source_refs": ["risk_tradingview_trailing", "risk_cme_partial_exits", "risk_chartschool_chandelier", "risk_tradingview_repainting", "risk_cme_trade_plan"],
+      "operating_steps": [
+        "Require an already owned position and its held BUY/SELL direction; an exit method cannot create a new entry or switch the position owner.",
+        "Primary adverse-regime method requests exit only when method_regime_available AND NOT method_regime_aligned; unavailable regime does not fabricate an exit.",
+        "Observe the previous closed row and execute an allowed method exit at the next opportunity. The existing hard gap-stop/target check still has first claim on pricing.",
+        "Preserve spread/slippage, commission, carry, executable risk and the full account chain; an exit request is not its fill receipt.",
+        "Native ATR trailing protection ratchets BUY max(oldStop,previousClose-multiplier*closedATR) or SELL min(oldStop,previousClose+multiplier*closedATR); it never loosens the stored stop.",
+        "Keep Chandelier22/3 separate: rolling22 high/low with arithmetic-seeded WilderATR22 and strictly positive ATR; a held-position closed price beyond its level requests exit, equality does not. The level is not itself a ratcheted broker stop.",
+        "The existing native-single-partial runner recipe internet_native_single_partial_atr_runner_recipe_v1@1 is fresh construction only: fraction0.50, current-candle native-ATR target1.0, prior-close trail2.0 and time stop24 execution bars.",
+        "Disclose native partial limits: one partial, changing current-bar ATR target, full/time exit precedence, weighted final-close return rather than independent realized-cash partial ledger, no capital release/size-field reduction and unchanged carry charging.",
+        "Judge lesson completion by correct owned phase, prices, invariants and receipts, not by whether this exit profile made money."
+      ],
+      "primary_method_ref": "internet_owned_adverse_regime_exit_v2@1",
+      "additional_method_refs": ["internet_atr_trailing_time_exit_v1@1", "internet_closed_chandelier_22_3_exit_v1@1", "internet_native_single_partial_atr_runner_v1@1"],
+      "calculation_convention": "Primary target is exit=regimeAvailable AND NOT regimeAligned, evaluated against the held direction. Native time-stop, hard gap/intrabar exits, cost-adjusted fill and settlement remain owners. ATR prior-close trail, rolling-extreme Chandelier close request and one-partial weighted-return construction are distinct algorithms and accounting conventions, not interchangeable names.",
+      "source_vs_lab": "Sources support trailing protection, partial position exits and the published rolling Chandelier formula. Adverse-regime exits, close-only execution timing, M5 adaptation, exact partial/trailing/time settings and current scope are lab choices. The author-attributed Chandelier page is not a review of Le Beau/Elder full books, and publisher examples do not establish profitable use here.",
+      "inputs": ["method_regime_available: recognized closed price-regime availability", "method_regime_aligned: owner comparison of regime with already held direction", "Owned position identity, entry index and held direction", "Original next-open OHLC, stop/target, physical costs and account limits", "Additional Chandelier/partial profiles require their separate closed feature or preconstructed parameter contract"],
+      "wait_when": ["No position is already owned, so the exit target is unreached.", "Primary regime availability is false or the held direction remains aligned.", "An additional profile lacks its genuine required feature or fresh construction binding.", "A method's context does not match; this never removes existing mandatory stop/target management."],
+      "common_mistakes": ["Executing an exit boolean as a BUY/SELL generator.", "Filling a gap at an old stop instead of the actual gap-open execution price.", "Loosening a trailing stop or calling Chandelier levels the native prior-close trail.", "Claiming the single partial is a fixed1R broker order or independent cash/capital-release ledger.", "Calling24 execution bars24 hours or changing construction genes during runtime."],
+      "agent_practice": ["Apply aligned/adverse/unavailable regime cases to a held direction and distinguish request from physical fill.", "Demonstrate monotonic BUY/SELL trailing protection, next-open exit timing and gap-stop precedence on synthetic software positions.", "Calculate a partial/remainder weighted return with unchanged costs while identifying the simplified accounting limits.", "Learn future exit-profile usefulness separately from base correct operation and preserve the original position's management owner."],
+      "exercises": [
+        {"name": "positive_known_adverse_regime_requests_owned_exit", "inputs": {"method_regime_available": true, "method_regime_aligned": false}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "negative_known_aligned_regime_does_not_request_exit", "inputs": {"method_regime_available": true, "method_regime_aligned": true}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "boundary_unavailable_regime_cannot_request_exit", "inputs": {"method_regime_available": false, "method_regime_aligned": false}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    }
+  ]
+}

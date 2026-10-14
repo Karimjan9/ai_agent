@@ -1,5 +1,17 @@
 # Integrations and runtime boundaries
 
+## Curator operating knowledge and agent practice
+
+The existing curated method owner reads three pinned instruction parts covering
+all 26 instruments. A teaching pack binds reviewed source scope, exact installed
+method/recipe hashes and declared operating examples; examples are synthetic
+correctness input, never replay observations or trained-model weights. The
+ordinary constructor can seal this pack into a NEW unused child's own policy
+provenance. Python still consumes only its existing separately validated finite
+runtime recipes and source-owned features. Original policy/hash -> actual method
+event -> owned mature outcome -> prospective preference remains the practice
+chain; teaching grants no qualification and does not rewrite old seals.
+
 ## Original method outcomes, deadline and historical advice
 
 The closed feature boundary additionally exposes exactly typed MACD12/26/9

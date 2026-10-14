@@ -1695,7 +1695,10 @@ def _run_prepared_simple_backtest(
         # assessment into an entry veto; otherwise the control would have a
         # missing temporal score and every candidate would beat zero by
         # construction.
-        _temporal_update_pending(temporal_state, candle, index, payload)
+        # Admission is at this candle's open: only the preceding fully closed
+        # bar may mature a follow-through probe. Both helper indices refer to
+        # the closed source bar, not the next-open execution decision.
+        _temporal_update_pending(temporal_state, signal_row, index - 1, payload)
         temporal_metrics = _temporal_context_metrics(
             signal_row, candle, temporal_state, index, payload
         )
@@ -2145,7 +2148,7 @@ def _run_prepared_simple_backtest(
             # and mutation arms. The control remains behaviorally frozen
             # because its assessment is telemetry-only.
             _temporal_register_signal(
-                temporal_state, signal_row, signal, index, execution_payload
+                temporal_state, signal_row, signal, index - 1, execution_payload
             )
             entry_funnel["risk_governor_evaluations"] += 1
             liquid, rejection_reason = _entry_eligibility(
@@ -6194,12 +6197,11 @@ def _temporal_update_pending(
     index: int,
     payload: SimpleBacktestRequest,
 ) -> None:
-    """Close only prior signal probes; the current candle cannot veto itself.
+    """Observe a fully closed bar at its own index, never an open decision bar.
 
-    Every pending probe was registered on an earlier decision candle. Its
-    favorable excursion is therefore safe to observe now and becomes usable
-    only on a later decision. This keeps follow-through evidence online and
-    prevents future candles from leaking into the current entry decision.
+    A probe starts at its closed signal bar. Only the next ``window`` closed
+    bars contribute excursion, and the result matures when the last closes.
+    Callers consume it at the following decision open, not at that bar's open.
     """
     pending = list(state.get("pending", []))
     if not pending:
@@ -6210,7 +6212,8 @@ def _temporal_update_pending(
         1, int(payload.parameters.get("temporal_followthrough_window", 3) or 3)
     )
     for item in pending:
-        start = int(item.get("start_index", index) or index)
+        start_value = item.get("start_index")
+        start = int(index if start_value is None else start_value)
         if index <= start:
             next_pending.append(item)
             continue
@@ -6245,6 +6248,7 @@ def _temporal_register_signal(
     index: int,
     payload: SimpleBacktestRequest,
 ) -> None:
+    """Register the signal's closed-bar index, not its later execution index."""
     if direction not in {"BUY", "SELL"}:
         return
     reference = float(signal_row.get("close", 0) or 0)

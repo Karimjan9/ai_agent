@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T09:08:37.414Z",
-  "source_digest": "7c50ecd98a32aaec42eebef226dd4c32858adea97650e0378aaa111c49b768e3",
-  "source_file_count": 1690,
-  "git_head": "5700994b7ad9ab8290b576275b40c18e05afeb44",
+  "generated_at": "2026-10-14T11:54:23.563Z",
+  "source_digest": "c59be6b0b660f434b77712f80e516010f8936c5470f65eb4fea90b4fd12d0709",
+  "source_file_count": 1695,
+  "git_head": "751c54d5ed85b6200fc57a904bd5d3feb02bec5d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -416,6 +416,13 @@
         "test_native_member_guard_validates_actual_member_parameters_and_policy",
         "test_false_scope_and_parameter_drift_reject_before_cache",
         "test_explicit_falsy_bindings_never_bypass_guard_or_reuse_legacy_cache"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "tests": [
+        "test_all_twenty_six_lessons_have_actual_executable_method_and_reviewed_instructions",
+        "test_lesson_programs_reject_future_observations_and_unowned_method_input_capability"
       ]
     },
     {
@@ -914,6 +921,16 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_temporal_closed_observation.py",
+      "tests": [
+        "test_zero_index_signal_matures_at_first_subsequent_closed_bar_for_both_directions",
+        "test_three_bar_window_counts_first_and_last_closed_observations_without_off_by_one",
+        "test_expired_probe_cannot_be_reclassified_by_a_later_closed_wick",
+        "test_ordinary_current_open_assessment_ignores_later_current_bar_extrema_then_matures_next_open",
+        "test_default_disabled_control_matches_explicit_disabled_ledger_costs_and_clock"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_volume_features.py",
       "tests": [
         "test_missing_source_marker_is_unavailable_not_low_volume",
@@ -1325,6 +1342,24 @@
       "tests": [
         "test_run_all_dispatches_canonical_lab_without_agent_mind_artifacts",
         "test_agent_mind_dashboard_renders"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "tests": [
+        "setUp",
+        "test_new_unused_child_receives_exact_code_owned_teaching_before_its_own_policy_seal",
+        "test_teaching_or_recipe_tampering_refuses_reinspection_without_granting_new_authority",
+        "test_meta_workflow_instruction_does_not_create_or_attach_trained_weights",
+        "test_same_genuine_source_cannot_substitute_a_familiar_method_implementation",
+        "test_caller_cannot_supply_instruction_pack_or_change_an_existing_child",
+        "test_even_a_fixture_resealed_handoff_cannot_change_the_pinned_instruction_contract",
+        "test_unmapped_custom_and_pack_absent_original_policies_remain_immutable_and_valid",
+        "test_blocked_or_invalid_mapped_instruction_rolls_back_instead_of_silently_downgrading",
+        "mappedRecipe",
+        "model",
+        "customRecipe",
+        "libraryBytes"
       ]
     },
     {
@@ -2685,6 +2720,15 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "tests": [
+        "test_all_instruments_receive_instructions_without_mutating_an_agent_or_claiming_profit",
+        "test_each_primary_teaches_exact_original_program_and_all_exercises_execute_php_compiled_operators",
+        "test_teaching_reopens_originals_and_refuses_tampering_and_unsupported_recipe",
+        "install"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/InstrumentPolicyConsumptionTest.php",
       "tests": [
         "test_legacy_gene_only_policy_and_hash_labels_are_not_delta_consumption",
@@ -3954,6 +3998,8 @@
         "test_actual_source_bytes_have_a_reproducible_idempotent_content_address_not_fake_git_or_worker_proof",
         "test_curated_method_bytes_are_sealed_and_drift_does_not_rewrite_old_artifact",
         "test_exact_method_supplements_and_synthetic_software_fixtures_are_archived_but_provider_and_private_files_are_not",
+        "test_exact_operating_curriculum_bytes_and_proofs_are_archived_without_private_or_provider_files",
+        "test_each_pinned_operating_lesson_drift_refuses_current_source_but_keeps_original_archive_immutable",
         "test_each_new_method_declaration_drift_retires_current_pointer_without_rewriting_the_verified_old_archive",
         "test_alternative_catalog_drift_is_a_new_release_not_a_rewrite_of_v1",
         "test_append_only_meta_recipe_drift_retires_current_artifact_not_the_original_bytes",

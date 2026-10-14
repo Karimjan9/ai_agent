@@ -123,3 +123,75 @@ or Champion Council. Runtime/registry deployment must use a drained sealed
 release and fresh loaded-worker proof, never a hot-fix to an active generation.
 All2026 and later data remains paper-only. No YouTube transcript was reviewed
 in this batch and no unrestricted crawler or independent holdout was fabricated.
+
+## Subsequent all-instrument operating curriculum acceptance
+
+The user's corrected goal is a source-taught operating corpus for ALL existing
+tools, separately from agent-owned contextual practice. The three pinned parts
+now cover26 lessons in five groups,34 scoped reference records and90 finite
+operator exercises. Reference records include metadata-only book resources;
+they are not34 fully read books/videos. The relevant official Fidelity webinar
+transcript passage, creator rules, exchange/broker instruction, author trading
+plan excerpts and primary model/calibration documentation are explicitly scoped.
+
+Every lesson teaches calculation/conventions, operating steps, alternate uses,
+data and timing requirements, WAIT/misuse conditions and agent practice. Its
+primary and additional method identities resolve to existing executable code.
+The actual PHP-compiled primary operators pass all90 synthetic exercises. This
+demonstrates the taught decision-rule mechanics, not original market feature
+availability, a fitted model, profitable use or an agent's Master qualification.
+
+A NEW unused ordinary child can receive a server-derived exact teaching pack
+inside its signed existing generation handoff before its own policy is sealed.
+Only its selected recipes are taught/active; discovery of26 manuals does not
+give each child26 active recipes. Original own events and uncensored cost-inclusive
+outcomes still develop agent preference independently of the curator corpus.
+Old models, policies, receipts and catalog bytes are unchanged. A same-source
+familiar-key method with a substituted threshold refuses despite valid registry
+hashes. Teaching neither fits weights nor borrows economic authority.
+
+### Original actual reused-archive panel
+
+Before any outcome, control plus26 typed primary variants were frozen in
+`.runtime/instrument-operating-skills-20261014/.runtime/operating-original-panel-20261014/`.
+SpecSHA256`486aa3451b03069c366f989c0803172d60977eddc6f449a1d82cec6ae46d4470`;
+original summarySHA256`ecdd97d615ae150c6293dd12af0996408ad6188c42bc6d6d34345b4a846d6c66`.
+The66 declared kernel/curator/helper bytes matched before and after execution.
+
+All27 actual products completed in their single declared120-second caps. They
+use the unchanged registered EMA baseline, physical parameters/account/cost/risk
+and the same original512 rows, SHA256
+`185b7c360ad1bf5dcf26a1c02534144577c79b9e057397c6598c06f9c819d008`.
+Source coverage is2025-10-13 07:10 through2025-10-15 03:45UTC;200 execution warmup
+rows are excluded, leaving312 actual decision rows beginning2025-10-14 00:50UTC.
+The clock, account, original event framing and method receipts were verified.
+It is already-seen archive diagnostic evidence, not independent validation or
+native MTF/full/paper qualification; observed quote/volume availability is not
+manufactured to activate a rule.
+
+| Variant | Trades / mature / censored | Net cash | Actual method use / behavior changes |
+| --- | --- | ---: | --- |
+| Unchanged control |17 /17 /0 |+305.10 |0 /0 |
+| Owned adverse-regime exit |17 /17 /0 |+305.10 |13 /0 |
+| Each other25 primary variants |17 /17 /0 |+305.10 |0 /0 |
+
+The positive account result belongs to the common baseline, NOT26 proven useful
+skills. Most variants did not reach a matching applicable entry target, and the
+observed exit conditions were false. All26 have90 program-level operating checks;
+this market slice does NOT provide26 exercised trade effects or agent practice.
+Context/data/target reach remains a prerequisite of later predeclared practice,
+not a reason to widen predicates retrospectively. No original is rewritten or
+replayed to select success, and no local result is inserted as production credit.
+
+The native temporal helper also had a real timing defect: its original ordinary
+path observed current execution-bar extrema before the current open assessment.
+Future update/registration now use the prior completed row/index, preserve index
+zero, and pass prefix/maturity/expiry/default-control parity tests. Old original
+results remain historical; this fix is not a new economic edge claim.
+
+Final scoped suites:23 PHP tests/881 assertions for curriculum/teaching/generation;
+27 source-artifact tests/701 assertions for exact instruction packaging and
+historical archive immutability. Python90 exercises,15 feature-owner tests and
+9 focused temporal cases passed. Safe production delivery still requires the
+actual artifact, cold idle boundary and fresh loaded-worker proofs. All2026+
+market observations remain paper-only.

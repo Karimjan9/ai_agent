@@ -8,6 +8,8 @@ use RuntimeException;
 /** Code-owned Internet hypotheses, never an agent policy or an earned skill. */
 class CuratedInstrumentMethodCatalogService
 {
+    use InstrumentOperatingSkillCurriculumTrait;
+
     public const PROTOCOL = 'curated_instrument_method_catalog_v1';
     public const CATALOG_KEY = 'internet_instrument_methods_20261013_v1';
     public const CATALOG_SHA256 = 'ef8e53d5549ccbb55800dc4ec2f25e3d7d466b8eb64faf325d4202314e497e20';

@@ -121,6 +121,7 @@ class AgentMethodGenerationService
     {
         if (! Schema::hasTable('agent_method_policy_revisions')) return $this->dependency('METHOD_GENERATION_MIGRATION_REQUIRED');
         try {
+            $this->need(! array_key_exists('teaching_pack', $constructor), 'METHOD_GENERATION_CODE_OWNED_TEACHING_PACK_REQUIRED');
             return DB::transaction(function () use ($child, $parent, $constructor): array {
                 if ($parent !== null) {
                     $parent = ModelVersion::find($parent->id);
@@ -167,6 +168,21 @@ class AgentMethodGenerationService
                     'rules' => $definition['rules'], 'default_action' => $definition['default_action'],
                     'physical_hash' => $this->hash($baseline), 'constructor' => $constructor,
                     'lineage_depth' => $depth, ...$this->ceiling()];
+                // Instruction is pinned separately from learned selection. It
+                // cannot install a model asset or change a physical treatment.
+                $catalog = app(CuratedInstrumentMethodCatalogService::class);
+                $teaching = $catalog->teachingPack($definition['library_contract']['recipe_hashes']);
+                if (($teaching['status'] ?? null) === 'operating_rules_taught') {
+                    $this->need($catalog->verifyTeachingPack($teaching, $definition['library_contract']['recipe_hashes']),
+                        'METHOD_GENERATION_TEACHING_PACK_INVALID');
+                    $proof['teaching_pack'] = $teaching;
+                } else {
+                    // Existing custom recipes retain the original handoff;
+                    // corrupt or incompletely installed mapped lessons refuse.
+                    $this->need(($teaching['status'] ?? null) === 'unmapped'
+                        && ($teaching['reason'] ?? null) === 'OPERATING_RECIPE_NOT_IN_REVIEWED_LESSONS',
+                        'METHOD_GENERATION_TEACHING_PACK_REQUIRED');
+                }
                 $proof['handoff_hash'] = $this->hash($proof);
                 $proof['server_seal'] = $this->seal($proof);
                 $child->update(['metadata' => [...(array) $child->metadata, self::METADATA => $proof]]);
@@ -215,6 +231,12 @@ class AgentMethodGenerationService
                 || $this->hash((array) ($body['rules'] ?? [])) !== $this->hash($proof['rules'])
                 || ($body['default_action'] ?? null) !== $proof['default_action']) return false;
             if (($this->library->verifyLibrary(['library_contract' => $proof['library_contract'], 'library_hash' => $proof['library_hash']])['valid'] ?? false) !== true) return false;
+            // Old proofs have no instruction pack and remain byte-for-byte
+            // valid. New packs must belong to this exact, pinned recipe pool.
+            if (array_key_exists('teaching_pack', $proof)
+                && (! is_array($proof['teaching_pack'])
+                    || ! app(CuratedInstrumentMethodCatalogService::class)->verifyTeachingPack(
+                        $proof['teaching_pack'], $proof['library_contract']['recipe_hashes']))) return false;
             if ($proof['mode'] === 'curated_default') {
                 if ($proof['source_model_id'] !== null || $proof['source_policy_hash'] !== null || $proof['source_proposal_hash'] !== null || $proof['lineage_depth'] !== 0) return false;
                 foreach ($proof['library_contract']['recipe_hashes'] as $hash) $this->typedRecipe($hash);

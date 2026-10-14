@@ -91,6 +91,17 @@ class ResearchSourceArtifactTest extends TestCase
         '.runtime/private-method-panel.py',
         'docs/task-final-notes.md',
     ];
+    private const OPERATING_CURRICULUM_SOURCE_FILES = [
+        'backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/model-v1.json',
+        // App source is recursively collected; it needs no explicit allowlist entry.
+        'backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php',
+        'backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php',
+        'backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php',
+        'ai-service-python/tests/test_instrument_operating_skill_exercises.py',
+        'ai-service-python/tests/test_temporal_closed_observation.py',
+    ];
     private string $root;
     private FixtureResearchSourceArtifactOwner $owner;
 
@@ -126,6 +137,12 @@ class ResearchSourceArtifactTest extends TestCase
         foreach ([...$this->methodSupplementPaths(), ...self::EXCLUDED_METHOD_SOURCE_FILES] as $path) {
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
+        }
+        $projectRoot = dirname(base_path());
+        foreach (self::OPERATING_CURRICULUM_SOURCE_FILES as $path) {
+            if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
+            File::ensureDirectoryExists(dirname($this->root.'/'.$path));
+            if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
         }
         $this->owner = new FixtureResearchSourceArtifactOwner($this->root);
     }
@@ -266,6 +283,65 @@ class ResearchSourceArtifactTest extends TestCase
         $this->assertTrue($provenance['software_fixture_only']);
         $this->assertFalse($archive['scientific_evidence']);
         $this->assertFalse($archive['promotion_evidence']);
+    }
+
+    public function test_exact_operating_curriculum_bytes_and_proofs_are_archived_without_private_or_provider_files(): void
+    {
+        $this->assertCount(8, self::OPERATING_CURRICULUM_SOURCE_FILES);
+        $projectRoot = dirname(base_path());
+        $unlisted = 'backend-laravel/resources/research/instrument-operating-skills/unlisted.json';
+        File::put($this->root.'/'.$unlisted, '{"fixture":"not an allowlisted lesson"}');
+        $archive = $this->owner->buildSourceArtifact();
+        $verified = $this->owner->verifySourceArtifact($archive['reference'], true);
+        $this->assertSame('verified', $verified['status']);
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($this->zipPath($archive['reference'])));
+        try {
+            foreach (self::OPERATING_CURRICULUM_SOURCE_FILES as $path) {
+                $sha = hash_file('sha256', $projectRoot.'/'.$path);
+                $this->assertSame($sha, hash_file('sha256', $this->root.'/'.$path));
+                $this->assertArrayHasKey($path, $archive['manifest']['files']);
+                $this->assertSame($sha, $archive['manifest']['files'][$path]['sha256']);
+                $bytes = $zip->getFromName($path);
+                $this->assertIsString($bytes);
+                $this->assertSame($sha, hash('sha256', $bytes));
+            }
+            foreach ([...self::EXCLUDED_METHOD_SOURCE_FILES, $unlisted] as $path) {
+                $this->assertArrayNotHasKey($path, $archive['manifest']['files']);
+                $this->assertFalse($zip->getFromName($path));
+            }
+        } finally { $zip->close(); }
+        $this->assertFalse($archive['scientific_evidence']);
+        $this->assertFalse($archive['promotion_evidence']);
+    }
+
+    public function test_each_pinned_operating_lesson_drift_refuses_current_source_but_keeps_original_archive_immutable(): void
+    {
+        $archive = $this->owner->buildSourceArtifact();
+        $reference = $archive['reference'];
+        $zipHash = hash_file('sha256', $this->zipPath($reference));
+        $pointerPath = $this->root.'/.runtime/research-source-artifacts/current.json';
+        $pointer = File::get($pointerPath);
+        foreach (array_slice(self::OPERATING_CURRICULUM_SOURCE_FILES, 0, 3) as $path) {
+            $original = File::get($this->root.'/'.$path);
+            try {
+                File::put($this->root.'/'.$path, $original."\n");
+                $this->assertNull($this->owner->currentSourceArtifact(), $path);
+                $verified = $this->owner->verifySourceArtifact($reference);
+                $this->assertSame('verified', $verified['status']);
+                $this->assertSame($archive['manifest'], $verified['manifest']);
+                $this->assertSame($zipHash, hash_file('sha256', $this->zipPath($reference)));
+                $this->assertSame($pointer, File::get($pointerPath));
+                try {
+                    $this->owner->verifySourceArtifact($reference, true);
+                    $this->fail('Changed '.$path.' must not certify current curriculum bytes.');
+                } catch (RuntimeException $error) {
+                    $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $error->getMessage());
+                }
+                $this->assertSame(hash('sha256', $original), $verified['manifest']['files'][$path]['sha256']);
+            } finally { File::put($this->root.'/'.$path, $original); }
+            $this->assertSame($reference, $this->owner->currentSourceArtifact());
+        }
     }
 
     public function test_each_new_method_declaration_drift_retires_current_pointer_without_rewriting_the_verified_old_archive(): void

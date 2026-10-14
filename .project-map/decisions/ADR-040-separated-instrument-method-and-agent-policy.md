@@ -1,5 +1,22 @@
 # ADR-040: Separate instrument methods from agent selection learning
 
+## Operating-knowledge extension (2026-10-14)
+
+Base skill means correct declared calculation, interpretation, safe use and
+refusal; it does not require positive PnL. The existing curated owner publishes
+all-26 source-scoped operating lessons and exact installed-recipe teaching packs.
+Media review scope is explicit (text, bounded transcript, author excerpt or
+metadata-only), never assumed from a link. Known lab conventions, physical
+consumer differences and unavailable observations stay visible.
+
+Only a new eligible unused-child generation handoff may bind a code-owned pack
+before its own policy seal. Teaching remains a distinct provenance component,
+not earned-agent or trading authority. Its selected recipes are revalidated;
+old handoffs without a pack remain valid under their original owner. Actual
+practice and its contextual preferences use the existing immutable outcomes,
+not tutorial exercise labels. No extra scheduler, corpus-driven automatic order
+path, active model rebinding or risk/epoch relaxation is introduced.
+
 Date: 2026-10-13
 
 ## Context

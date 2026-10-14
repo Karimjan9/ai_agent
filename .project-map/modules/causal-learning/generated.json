@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T09:08:37.414Z",
-  "source_digest": "7c50ecd98a32aaec42eebef226dd4c32858adea97650e0378aaa111c49b768e3",
-  "source_file_count": 1690,
-  "git_head": "5700994b7ad9ab8290b576275b40c18e05afeb44",
+  "generated_at": "2026-10-14T11:54:23.563Z",
+  "source_digest": "c59be6b0b660f434b77712f80e516010f8936c5470f65eb4fea90b4fd12d0709",
+  "source_file_count": 1695,
+  "git_head": "751c54d5ed85b6200fc57a904bd5d3feb02bec5d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -30,6 +30,13 @@
     "backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php",
     "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
+    "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+    "backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json",
+    "backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json",
+    "backend-laravel/resources/research/instrument-operating-skills/model-v1.json",
+    "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+    "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+    "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
     "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
     "backend-laravel/resources/research/instrument-methods/curated-v1.json",
     "backend-laravel/resources/research/instrument-methods/curated-v2.json",
@@ -264,6 +271,7 @@
     "ai-service-python/tests/test_instrument_method_quote_alias.py",
     "ai-service-python/tests/test_instrument_method_session_runtime.py",
     "ai-service-python/tests/test_instrument_method_transport.py",
+    "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
     "ai-service-python/tests/test_observed_quote_method.py",
     "ai-service-python/tests/test_parameter_preserving_composition.py",
     "ai-service-python/tests/test_source_grounded_method_features.py",
@@ -330,6 +338,7 @@
     "backend-laravel/app/Services/InstrumentMethodSourceService.php",
     "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
     "backend-laravel/app/Services/InstrumentMethodStudyService.php",
+    "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
     "backend-laravel/app/Services/InstrumentPolicyConsumptionService.php",
     "backend-laravel/app/Services/InstrumentPosteriorAuthorityService.php",
     "backend-laravel/app/Services/InstrumentResearchWindowService.php",
@@ -400,6 +409,7 @@
     "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
     "backend-laravel/tests/Feature/AgentMethodOwnedOutcomeTest.php",
     "backend-laravel/tests/Feature/AgentMethodVerificationScopeTest.php",
+    "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
     "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
     "backend-laravel/tests/Feature/CalibratedMetaMethodDeclarationTest.php",
     "backend-laravel/tests/Feature/CausalProgressRatchetGovernorServiceTest.php",
@@ -414,6 +424,7 @@
     "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
+    "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
     "backend-laravel/tests/Feature/InstrumentValidationEpochTest.php",
     "backend-laravel/tests/Feature/LearningTruthProtocolTest.php",
     "backend-laravel/tests/Feature/MultiModalLearningPortfolioTest.php",
@@ -2661,6 +2672,42 @@
       "line": 86
     },
     {
+      "symbol": "declarations",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 19
+    },
+    {
+      "symbol": "operator",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 30
+    },
+    {
+      "symbol": "lessons",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 43
+    },
+    {
+      "symbol": "InstrumentOperatingSkillExerciseTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 50
+    },
+    {
+      "symbol": "test_all_twenty_six_lessons_have_actual_executable_method_and_reviewed_instructions",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 51
+    },
+    {
+      "symbol": "test_lesson_programs_reject_future_observations_and_unowned_method_input_capability",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "line": 73
+    },
+    {
       "symbol": "test_original_replay_missing_and_wide_quotes_wait_while_narrow_preserves_exact_cost_result",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_observed_quote_method.py",
@@ -2985,52 +3032,58 @@
       "line": 16
     },
     {
-      "symbol": "settleStudy",
+      "symbol": "attachMetaModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 101
+      "line": 102
     },
     {
-      "symbol": "registerStudyExecution",
+      "symbol": "settleStudy",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
       "line": 111
     },
     {
-      "symbol": "compile",
+      "symbol": "registerStudyExecution",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
       "line": 121
     },
     {
+      "symbol": "compile",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
+      "line": 131
+    },
+    {
       "symbol": "status",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 133
+      "line": 143
     },
     {
       "symbol": "originalRun",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 145
+      "line": 155
     },
     {
       "symbol": "hashField",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 154
+      "line": 164
     },
     {
       "symbol": "integer",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 160
+      "line": 170
     },
     {
       "symbol": "readInput",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 166
+      "line": 176
     },
     {
       "symbol": "ResearchInstrumentMethods",
@@ -3042,19 +3095,19 @@
       "symbol": "sanitizeReasons",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 200
+      "line": 210
     },
     {
       "symbol": "reason",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 215
+      "line": 225
     },
     {
       "symbol": "render",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 220
+      "line": 230
     },
     {
       "symbol": "handle",
@@ -3066,13 +3119,13 @@
       "symbol": "onlyHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 84
+      "line": 86
     },
     {
-      "symbol": "attachMetaModel",
+      "symbol": "teach",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/ResearchInstrumentMethods.php",
-      "line": 92
+      "line": 94
     },
     {
       "symbol": "handle",
@@ -3906,25 +3959,19 @@
       "symbol": "registrationInput",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 187
+      "line": 203
     },
     {
       "symbol": "verifyProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 200
+      "line": 216
     },
     {
       "symbol": "curatedDefault",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 244
-    },
-    {
-      "symbol": "ownedOutcomeProposalOnce",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 262
+      "line": 266
     },
     {
       "symbol": "__construct",
@@ -3933,10 +3980,16 @@
       "line": 27
     },
     {
-      "symbol": "preferOwnedOutcomeProposal",
+      "symbol": "ownedOutcomeProposalOnce",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
       "line": 284
+    },
+    {
+      "symbol": "preferOwnedOutcomeProposal",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
+      "line": 306
     },
     {
       "symbol": "proposeFromOriginalRun",
@@ -3948,61 +4001,61 @@
       "symbol": "typedRecipe",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 328
+      "line": 350
     },
     {
       "symbol": "physical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 337
+      "line": 359
     },
     {
       "symbol": "protected",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 344
+      "line": 366
     },
     {
       "symbol": "unused",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 349
+      "line": 371
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 355
+      "line": 377
     },
     {
       "symbol": "dependency",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 358
+      "line": 380
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 359
+      "line": 381
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 360
+      "line": 382
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 361
+      "line": 383
     },
     {
       "symbol": "safeReason",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/AgentMethodGenerationService.php",
-      "line": 367
+      "line": 389
     },
     {
       "symbol": "originalRunUsesOwnedOutcomes",
@@ -6216,85 +6269,85 @@
       "symbol": "selectedDeclaration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 168
+      "line": 170
     },
     {
       "symbol": "declaration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 180
+      "line": 182
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 19
+      "line": 21
     },
     {
       "symbol": "sourceInput",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 231
+      "line": 233
     },
     {
       "symbol": "expectedSourceHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 243
+      "line": 245
     },
     {
       "symbol": "methodInput",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 251
+      "line": 253
     },
     {
       "symbol": "singleRecipeKey",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 261
+      "line": 263
     },
     {
       "symbol": "methodRef",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 262
+      "line": 264
     },
     {
       "symbol": "requireStatus",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 263
+      "line": 265
     },
     {
       "symbol": "counts",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 267
-    },
-    {
-      "symbol": "catalog",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 27
+      "line": 269
     },
     {
       "symbol": "base",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 284
+      "line": 286
+    },
+    {
+      "symbol": "catalog",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
+      "line": 29
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 290
+      "line": 292
     },
     {
       "symbol": "install",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 40
+      "line": 42
     },
     {
       "symbol": "CuratedInstrumentMethodCatalogService",
@@ -6306,7 +6359,7 @@
       "symbol": "installedSelection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
-      "line": 92
+      "line": 94
     },
     {
       "symbol": "reconcileAuthoritySelectionEvidence",
@@ -8287,6 +8340,54 @@
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyService.php",
       "line": 89
+    },
+    {
+      "symbol": "verifyTeachingPack",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 139
+    },
+    {
+      "symbol": "operatingDeclaredMethod",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 147
+    },
+    {
+      "symbol": "operatingCeiling",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 165
+    },
+    {
+      "symbol": "operatingNeed",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 171
+    },
+    {
+      "symbol": "operatingBlocked",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 172
+    },
+    {
+      "symbol": "operatingCurriculum",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 21
+    },
+    {
+      "symbol": "InstrumentOperatingSkillCurriculumTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 9
+    },
+    {
+      "symbol": "teachingPack",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+      "line": 91
     },
     {
       "symbol": "InstrumentPolicyConsumptionService",
@@ -14019,6 +14120,90 @@
       "line": 93
     },
     {
+      "symbol": "test_same_genuine_source_cannot_substitute_a_familiar_method_implementation",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 119
+    },
+    {
+      "symbol": "test_caller_cannot_supply_instruction_pack_or_change_an_existing_child",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 161
+    },
+    {
+      "symbol": "test_even_a_fixture_resealed_handoff_cannot_change_the_pinned_instruction_contract",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 179
+    },
+    {
+      "symbol": "AgentOperatingSkillTeachingTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 19
+    },
+    {
+      "symbol": "test_unmapped_custom_and_pack_absent_original_policies_remain_immutable_and_valid",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 200
+    },
+    {
+      "symbol": "test_blocked_or_invalid_mapped_instruction_rolls_back_instead_of_silently_downgrading",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 227
+    },
+    {
+      "symbol": "setUp",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 23
+    },
+    {
+      "symbol": "mappedRecipe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 250
+    },
+    {
+      "symbol": "model",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 259
+    },
+    {
+      "symbol": "customRecipe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 268
+    },
+    {
+      "symbol": "libraryBytes",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 289
+    },
+    {
+      "symbol": "test_new_unused_child_receives_exact_code_owned_teaching_before_its_own_policy_seal",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 31
+    },
+    {
+      "symbol": "test_teaching_or_recipe_tampering_refuses_reinspection_without_granting_new_authority",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 68
+    },
+    {
+      "symbol": "test_meta_workflow_instruction_does_not_create_or_attach_trained_weights",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "line": 90
+    },
+    {
       "symbol": "AutonomousLearningProgressDirectorTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/AutonomousLearningProgressDirectorTest.php",
@@ -15001,6 +15186,36 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
       "line": 93
+    },
+    {
+      "symbol": "test_teaching_reopens_originals_and_refuses_tampering_and_unsupported_recipe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "line": 103
+    },
+    {
+      "symbol": "install",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "line": 127
+    },
+    {
+      "symbol": "InstrumentOperatingSkillCurriculumTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "line": 15
+    },
+    {
+      "symbol": "test_all_instruments_receive_instructions_without_mutating_an_agent_or_claiming_profit",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "line": 19
+    },
+    {
+      "symbol": "test_each_primary_teaches_exact_original_program_and_all_exercises_execute_php_compiled_operators",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "line": 47
     },
     {
       "symbol": "test_different_delta_or_epoch_cannot_borrow_independent_windows",
@@ -16458,6 +16673,13 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
+      "tests": [
+        "test_all_twenty_six_lessons_have_actual_executable_method_and_reviewed_instructions",
+        "test_lesson_programs_reject_future_observations_and_unowned_method_input_capability"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_instrument_research.py",
       "tests": [
         "test_snapshot_volatility_label_matches_runtime_volatility_without_widening_scope",
@@ -16753,6 +16975,24 @@
         "test_completed_nested_transaction_preserves_the_parent_read_context_and_memo",
         "policyJson",
         "hash"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
+      "tests": [
+        "setUp",
+        "test_new_unused_child_receives_exact_code_owned_teaching_before_its_own_policy_seal",
+        "test_teaching_or_recipe_tampering_refuses_reinspection_without_granting_new_authority",
+        "test_meta_workflow_instruction_does_not_create_or_attach_trained_weights",
+        "test_same_genuine_source_cannot_substitute_a_familiar_method_implementation",
+        "test_caller_cannot_supply_instruction_pack_or_change_an_existing_child",
+        "test_even_a_fixture_resealed_handoff_cannot_change_the_pinned_instruction_contract",
+        "test_unmapped_custom_and_pack_absent_original_policies_remain_immutable_and_valid",
+        "test_blocked_or_invalid_mapped_instruction_rolls_back_instead_of_silently_downgrading",
+        "mappedRecipe",
+        "model",
+        "customRecipe",
+        "libraryBytes"
       ]
     },
     {
@@ -17057,6 +17297,15 @@
         "test_original_non_success_http_retains_typed_timeout_before_technical_close_without_raw_detail",
         "test_transport_timeout_classifier_does_not_retain_arbitrary_detail_or_invent_timeout",
         "newLongWork"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
+      "tests": [
+        "test_all_instruments_receive_instructions_without_mutating_an_agent_or_claiming_profit",
+        "test_each_primary_teaches_exact_original_program_and_all_exercises_execute_php_compiled_operators",
+        "test_teaching_reopens_originals_and_refuses_tampering_and_unsupported_recipe",
+        "install"
       ]
     },
     {

@@ -1,5 +1,13 @@
 # Causal-learning history
 
+## 2026-10-14 - Source-taught operating rules, separately earned practice
+
+ADR-040's operating curriculum extension covers all 26 tools with pinned
+instruction, source-review boundaries and actual finite correctness examples.
+Existing generation handoffs bind taught recipes before a new own policy seal;
+original experience continues to develop agent preference independently. No
+exercise or tutorial replaces economic or independent qualification.
+
 ## 2026-10-13 - Separated instrument methods and agent policies
 
 ADR-040 separates immutable source/method/recipe library revisions from

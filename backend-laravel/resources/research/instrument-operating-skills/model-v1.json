@@ -1,0 +1,106 @@
+{
+  "protocol": "instrument_operating_skill_lessons_v1",
+  "part_key": "model_v1",
+  "revision": 1,
+  "reviewed_on": "2026-10-14",
+  "sources": [
+    {
+      "source_id": "model_lopez_de_prado_innovations",
+      "url": "https://www.quantresearch.org/Innovations.htm",
+      "title": "Meta-labeling and Tactical Algorithmic Factories",
+      "publisher": "Marcos Lopez de Prado",
+      "medium": "primary_author_web_reference",
+      "reviewed_scope": "Author definitions of a secondary supervised predictor of primary bets and regime-dependent strategy selection; original curator paraphrase only.",
+      "not_reviewed": ["Linked book chapters and unavailable SSRN slides were not read.", "No publisher performance result establishes this repository's model or router."]
+    },
+    {
+      "source_id": "model_sklearn_calibration",
+      "url": "https://scikit-learn.org/stable/modules/calibration.html",
+      "title": "Probability calibration",
+      "publisher": "scikit-learn",
+      "medium": "primary_documentation",
+      "reviewed_scope": "Disjoint classifier-fit and calibration data, probability reliability bins, and the distinction between calibration and discrimination in Brier loss.",
+      "not_reviewed": ["No scikit-learn implementation is copied or used by the finite repository model.", "The repository's finite bins, sample floors and admission threshold are local contracts."]
+    },
+    {
+      "source_id": "model_sklearn_leakage",
+      "url": "https://scikit-learn.org/stable/common_pitfalls.html",
+      "title": "Common pitfalls: data leakage",
+      "publisher": "scikit-learn",
+      "medium": "primary_documentation",
+      "reviewed_scope": "Keep evaluation information out of fitting and preprocessing; a software exercise is not untouched financial evidence.",
+      "not_reviewed": ["No independent financial generalization or profitability follows from this documentation."]
+    },
+    {
+      "source_id": "model_fidelity_ema",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+      "title": "Exponential Moving Average",
+      "publisher": "Fidelity",
+      "medium": "primary_indicator_reference",
+      "reviewed_scope": "EMA emphasizes recent prices and describes delayed trend direction; this reference does not define the repository's complete classifier.",
+      "not_reviewed": ["EMA50/200, ADX gating, initialization variants and routing accuracy are not publisher-validated rules for this runtime."]
+    },
+    {
+      "source_id": "model_tradingview_closed_data",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+      "title": "Repainting and confirmed data",
+      "publisher": "TradingView",
+      "medium": "primary_documentation",
+      "reviewed_scope": "Distinguish completed observations from changing realtime values; use point-in-time information rather than a future regime label.",
+      "not_reviewed": ["No Pine code is executed.", "Confirmed data does not prove regime classification accuracy."]
+    },
+    {
+      "source_id": "model_contextual_policy_evaluation",
+      "url": "https://proceedings.mlr.press/r10/dudik12a.html",
+      "title": "Sample-efficient Nonstationary Policy Evaluation for Contextual Bandits",
+      "publisher": "Dudik, Erhan, Langford and Li / Proceedings of Machine Learning Research",
+      "medium": "primary_research_paper",
+      "reviewed_scope": "The authors' abstract defines offline policy evaluation in an exploration-learning setting. Current deterministic owned outcomes are not such exploration receipts.",
+      "not_reviewed": ["The full evaluator is not implemented here.", "Unchosen recipes and WAIT decisions receive no invented reward or causal credit."]
+    }
+  ],
+  "lessons": [
+    {
+      "instrument_key": "regime_router",
+      "group": "model",
+      "definition": "Use a causally available closed-price regime to constrain the already-proposed specialist direction; learning which compatible recipe to prefer remains a separate agent-owned policy task.",
+      "established_uses": ["Match a strategy's operating context to a declared regime.", "Separate context classification from reward-based strategy selection.", "Abstain when the context or applicable specialist is unknown."],
+      "source_refs": ["model_lopez_de_prado_innovations", "model_fidelity_ema", "model_tradingview_closed_data", "model_contextual_policy_evaluation"],
+      "operating_steps": ["Receive the ordinary runtime's preceding completed candle and its point-in-time market_regime classification.", "Let the closed feature owner map trend_up/uptrend to +1, trend_down/downtrend to -1, range/ranging to 0 and transition to 2; an unknown token is unavailable.", "For an existing BUY require available regime code +1; for an existing SELL require available regime code -1.", "Compile the exact single recipe only in its declared trend_up/london/normal, hour context and preserve the baseline's direction, parameters, physical costs and risk.", "Record the actual original selection and confirmation event; let subsequent own-policy revisions adapt recipe preference from eligible owned experience, never by editing this lesson or library."],
+      "primary_method_ref": "internet_closed_regime_alignment_v2@1",
+      "additional_method_refs": [],
+      "calculation_convention": "The method computes availability AND directional alignment. The ordinary frozen price classifier uses its owned EMA50/200 and ADX14 boundary (20), with explicitly named local variants; this lesson adds no classifier or trained weights. Range and transition are known codes but do not align with BUY/SELL.",
+      "source_vs_lab": "Regime-dependent selection, EMA trend interpretation and completed-data discipline are sourced ideas. The runtime's precise classifier, trend_up/london/normal applicability and alignment veto are local research contracts, not a learned router, order-book observation or profitable publisher recipe.",
+      "inputs": ["method_regime_available", "method_regime_aligned"],
+      "wait_when": ["The owner-computed regime is unavailable or unknown.", "The available regime does not align with the existing direction.", "Outside the declared recipe context the method is not applicable; the existing policy's BASELINE/WAIT default retains ownership."],
+      "common_mistakes": ["Calling a closed price heuristic a trained classifier.", "Using the current unfinished or future candle to label an earlier decision.", "Treating a frequent invocation as evidence that its selected recipe is profitable.", "Giving unchosen recipes or WAIT vetoes a made-up counterfactual return."],
+      "agent_practice": ["Pin the taught exact method and single-recipe revision in a new unused agent-owned policy.", "Preserve original request, policy/library identities, actual closed timestamps and used/changed/reason events.", "Distinguish available-but-false vetoes, positive confirmations and unreached contexts in practice coverage.", "Use mature own cost-inclusive position episodes only as observed association; require separate controls for causal/economic claims."],
+      "exercises": [
+        {"name": "known_aligned_existing_direction", "inputs": {"method_regime_available": true, "method_regime_aligned": true}, "expected": true, "kind": "synthetic_operator_exercise"},
+        {"name": "known_opposing_or_range_direction", "inputs": {"method_regime_available": true, "method_regime_aligned": false}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "missing_closed_regime", "inputs": {"method_regime_available": false, "method_regime_aligned": false}, "expected": false, "kind": "synthetic_operator_exercise"}
+      ]
+    },
+    {
+      "instrument_key": "meta_label_filter",
+      "group": "model",
+      "definition": "Fit and calibrate a finite secondary success model on original matured outcomes of a fixed primary strategy, then admit that strategy's existing direction only when an exact causally available model score passes the declared gate.",
+      "established_uses": ["Predict conditional success of a primary algorithm's proposed bet without generating a new direction.", "Calibrate model scores against observed positive-label fractions on separate data.", "Keep training, seen calibration, actual use and independent economic evaluation distinct."],
+      "source_refs": ["model_lopez_de_prado_innovations", "model_sklearn_calibration", "model_sklearn_leakage"],
+      "operating_steps": ["Before fitting, use the existing meta-register owner to freeze a bounded original-run roster, exact physical baseline, native confidence bins, chronological nonoverlapping training/calibration ranges and sample floors.", "Reopen original accepted entry features and the same position's uncensored mature net-cash result. Exclude duplicate physical entries, conflicting outcomes, premature labels and any label available in 2026 or later.", "Use meta-fit once on the fixed roster. Require at least 20 unique training and 10 calibration episodes, both success classes in each split, and the registered per-cell floors; otherwise retain underpowered with no fabricated classifier.", "The finite model estimates smoothed success fractions in exact regime/volatility/session/direction/confidence cells, then maps trained scores through separately observed calibration bins. Brier loss is a diagnostic, not standalone proof of calibration or economics.", "Attach the independently signed original model with meta-attach to an unused plain compatible child BEFORE its own policy seal; keep original training binding and actual evaluation binding distinct.", "Compile the exact calibrated recipe in trend_up/london/normal, hour context. At entry require genuine native finite signal_confidence, past closed context, matching trained/calibration cells, and an observation strictly after every training/calibration label cutoff.", "Confirm only if model availability is true AND calibrated score is strictly greater than 0.70. Missing, premature, mismatched or underpowered models remain unavailable WAIT.", "Retain actual model hash, training/calibration provenance and original entry/WAIT receipts. Subsequent agent selection learning may propose a new policy; it must not rewrite this base model, lesson or historical outcomes."],
+      "primary_method_ref": "internet_calibrated_meta_score@1",
+      "additional_method_refs": ["internet_await_verified_meta_model_v2@1"],
+      "calculation_convention": "Finite trained and calibration cell score=(wins+smoothing)/(count+2*smoothing). Registered smoothing defaults1, trained cell floor5 and calibration cell floor3; global floors20/10 and both classes are required. Confirmation is available AND score>0.70. These are repository contracts, not copied scikit-learn code. The additional availability-only guard is not a trained classifier.",
+      "source_vs_lab": "The secondary-model role, calibration discipline and leakage prevention are source-grounded. Fixed bins, net-cash-positive labels, sample floors and0.70 are local research choices. Teaching the workflow or passing a synthetic boolean exercise neither creates trained weights nor qualifies market prediction, bet sizing, Master or order-book capability.",
+      "inputs": ["method_meta_model_available", "method_meta_score"],
+      "wait_when": ["No original signed trained model and target-owned attachment exist.", "Unique mature labels, both classes or registered context-cell power are insufficient.", "Native signal_confidence is absent, malformed, nonfinite or outside[0,1]; the legacy gate's missing-confidence fallback is not model evidence.", "The current decision precedes the calibration cutoff or last available label.", "The exact physical/effective-policy binding or closed context differs.", "Calibrated score is at or below0.70."],
+      "common_mistakes": ["Claiming the availability-only v2 guard is a trained meta-label model.", "Supplying a CSV probability or treating a legacy confidence fallback as a genuine classifier input.", "Fitting calibration on the same labels as training, or borrowing future/paper-epoch outcomes.", "Calling a low Brier score independent market qualification.", "Treating a synthetic passing score as an available original runtime model."],
+      "agent_practice": ["Show separately: reviewed workflow, synthetic operator correctness, original model fitted or underpowered, and actual runtime model consumption.", "Retain registration/model hashes, unique label counts, calibration bins and original model-attachment proof.", "Collect actual availability/score-status/entry-veto events before claiming the method was exercised.", "Link only the same owned accepted position's mature cost-inclusive result; a WAIT has unknown utility without a valid counterfactual.", "Keep all source/library, teaching and trained-model receipts research-only; no exercise or fit grants economic skill credit."],
+      "exercises": [
+        {"name": "missing_model_stays_false", "inputs": {"method_meta_model_available": false}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "threshold_equality_waits", "inputs": {"method_meta_model_available": true, "method_meta_score": 0.70}, "expected": false, "kind": "synthetic_operator_exercise"},
+        {"name": "synthetic_score_above_threshold_only", "inputs": {"method_meta_model_available": true, "method_meta_score": 0.75}, "expected": true, "kind": "synthetic_operator_exercise"}
+      ]
+    }
+  ]
+}

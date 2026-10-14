@@ -2,6 +2,15 @@
 
 ## Instrument methods and agent-owned policies (ADR-040)
 
+All 26 curator lessons are `operating_skill_curriculum`, not earned agent skills.
+Exact installed recipes can yield `operating_rules_taught`; missing or altered
+mapped originals block, while unrelated custom methods are `unmapped`. Synthetic
+exercise correctness has no economic authority. A new unused ordinary child
+may seal a code-owned teaching pack before its initial own policy. Actual use
+and mature own outcomes remain separate practice; old handoffs have no new
+mandatory pack and are not relabelled. Teaching never expands the active roster
+or substitutes observations, trained weights, independent confirmation or credit.
+
 New source-grounded MACD/RSI confirmations and Chandelier close exits retain
 the same registered_research_only state. Positive history availability is not
 a signal or economic proof. Missing history/equality does not confirm or exit.

@@ -5,6 +5,41 @@ Champion Council. Sources, library versions and agent skill have separate owners
 
 ## Inventory and input
 
+The operating curriculum separates **taught base knowledge** from **earned
+agent practice**. It covers all 26 existing instruments: six tactics, nine
+market lenses, seven risk tools, two management/sizing tools and two model/router
+tools. Each pinned lesson contains sourced operating steps, exact implementation
+and smoothing conventions, legitimate alternatives, required observations,
+WAIT conditions, misuse examples, and finite executable exercises. It is not
+another set of usage cards or a claim that all methods are profitable.
+
+`php artisan trading:instrument-methods curriculum --json` reads this complete
+curator-owned instruction corpus without registry/model writes. `teach` accepts
+only `{ "recipe_hashes": ["<exact installed hash>"] }`: it reopens original
+source/method/recipe identities and returns the relevant frozen teaching pack.
+Missing or altered mapped declarations fail closed; a genuinely unrelated
+custom method is explicitly unmapped. Operator exercises are synthetic
+correctness evidence, not backtest profit, trained meta weights or market labels.
+
+New eligible ordinary constructor children bind the code-owned pack into their
+existing signed generation handoff **before** their own policy is sealed. Caller
+teaching flags and copied packs cannot establish that handoff. Old policies and
+active generations remain unchanged. The full curriculum is available; the
+existing bounded selected recipe roster stays separate and is not silently
+expanded to execute all 26 tools at every decision.
+
+Practice subsequently follows the existing original policy/recipe event and
+owned mature outcome chain. Library instructions are not rewritten when an
+agent proposes a new contextual selection policy. A useful instruction can be
+technically correct while losing money in a given context; passing a lesson
+never grants Master, mentor, credit, promotion, paper or live authority.
+
+Reviewed media are scoped honestly: creator-published rules, official technical
+documentation and exchange/broker instructional text, an official webinar's
+related transcript passage, and an author's trading-plan excerpts. Book resource
+metadata is labelled metadata-only; no full book or inaccessible video is claimed
+as reviewed. External pages remain references, never executable trusted code.
+
 The 2026-10-14 source-grounded supplement adds conventional MACD12/26/9 closed
 crossing, seeded Wilder RSI14 30/70 recovery, Chandelier22/3 owned close-exit,
 one MACD/Chandelier hybrid and native single-partial ATR-runner construction.

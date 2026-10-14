@@ -31,6 +31,13 @@ paths:
   - backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php
   - backend-laravel/tests/Feature/InstrumentMethodMetaBindingTest.php
   - backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php
+  - backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php
+  - backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json
+  - backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json
+  - backend-laravel/resources/research/instrument-operating-skills/model-v1.json
+  - backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php
+  - backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php
+  - ai-service-python/tests/test_instrument_operating_skill_exercises.py
   - backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php
   - backend-laravel/resources/research/instrument-methods/curated-v1.json
   - backend-laravel/resources/research/instrument-methods/curated-v2.json
@@ -447,6 +454,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php
+  - backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php
+  - ai-service-python/tests/test_instrument_operating_skill_exercises.py
   - backend-laravel/tests/Feature/SourceGroundedMethodDeclarationTest.php
   - backend-laravel/tests/Feature/NativeSinglePartialMethodDeclarationTest.php
   - ai-service-python/tests/test_source_grounded_method_features.py
