@@ -11,6 +11,7 @@ class StrategyParameterSchemaService
         'atr_stop_multiplier' => ['numeric', 0.5, 4.0],
         'atr_target_multiplier' => ['numeric', 0.75, 8.0],
         'trailing_atr_multiplier' => ['numeric', 0.0, 4.0],
+        'trailing_activation_r' => ['numeric', 0.0, 4.0],
         'time_stop_candles' => ['integer', 0, 240],
         'high_volatility_risk_multiplier' => ['numeric', 0.1, 1.0],
         'max_spread_atr_ratio' => ['numeric', 0.01, 0.5],
@@ -299,6 +300,9 @@ class StrategyParameterSchemaService
         if ($includeExplicitResearch && isset($schema['entry_topology_variant'])) {
             $schema['entry_topology_variant'][1][] = 'source_ema_pretrend_pullback_v1';
         }
+        // This prospective management treatment must not enter ordinary
+        // random construction, mutation or historical novelty rosters.
+        if (! $includeExplicitResearch) unset($schema['trailing_activation_r']);
         return $schema;
     }
 
@@ -330,7 +334,7 @@ class StrategyParameterSchemaService
         return $canonical;
     }
 
-    public function defaults(string $strategy): array
+    public function defaults(string $strategy, bool $includeExplicitResearch = false): array
     {
         $defaults = match ($this->family($strategy)) {
             'breakout' => ['lookback' => 20, 'atr_period' => 14, 'atr_multiplier' => 0.2, 'confirmation_candles' => 1, 'retest_required' => true, 'trend_strength_min' => 20.0],
@@ -405,7 +409,11 @@ class StrategyParameterSchemaService
             default => [],
         };
 
-        return $defaults ? [...$defaults, ...$this->executionDefaults()] : [];
+        if (! $defaults) return [];
+        $parameters = [...$defaults, ...$this->executionDefaults()];
+        // Preserve legacy complete vectors and hashes unless explicitly asked
+        // for the prospective research surface. Omission means zero at runtime.
+        return $includeExplicitResearch ? [...$parameters, 'trailing_activation_r' => 0.0] : $parameters;
     }
 
     public function validate(string $strategy, array $parameters): array
@@ -432,6 +440,7 @@ class StrategyParameterSchemaService
             };
             $outOfRange = in_array($type, ['integer', 'numeric'], true)
                 && $min !== null && ($value < $min || $value > $max);
+            if ($key === 'trailing_activation_r' && $validType && ! is_finite((float) $value)) $outOfRange = true;
             if (! $validType || $outOfRange) {
                 throw new InvalidArgumentException("{$family}.{$key} schema talabiga mos emas.");
             }

@@ -12,6 +12,7 @@ aliases:
 paths:
   - backend-laravel/app/Services/StrategyParameterSchemaService.php
   - ai-service-python/app/services/parameter_schema.py
+  - ai-service-python/tests/test_trailing_activation.py
   - ai-service-python/app/strategies/laboratory.py
   - backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php
   - ai-service-python/tests/test_source_ema_pretrend_entry.py
@@ -249,6 +250,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_trailing_activation.py
   - backend-laravel/tests/Feature/RescueCircuitBreakerTest.php
   - backend-laravel/tests/Feature/CausalEdgeAccountingTest.php
   - backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php

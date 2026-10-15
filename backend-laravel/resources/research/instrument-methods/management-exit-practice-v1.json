@@ -1,0 +1,93 @@
+{
+  "protocol": "curator_management_practice_design_v1",
+  "key": "curator_management_lifecycle_20261015_v1",
+  "revision": 1,
+  "owner": "curator_source_research_not_agent_owned_experience",
+  "instrument_key": "cost_aware_exit",
+  "research_only": true,
+  "independent_validation": false,
+  "qualification_granted": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "regimes": ["trend_up", "trend_down", "range", "transition"],
+  "sessions": ["asia", "london", "overlap", "new_york"],
+  "volatilities": ["normal", "high"],
+  "sources": [
+    {
+      "source_id": "stockcharts_chandelier_exit",
+      "kind": "url",
+      "reference": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/chandelier-exit",
+      "content": "Curator paraphrase of StockCharts Calculation and Interpretation: the long Chandelier level subtracts three ATR values from the highest high over twenty-two periods; the short level adds three ATR values to the lowest low. ATR uses Wilder smoothing. Twenty-two and three are conventional daily defaults, not universal settings. Rolling extrema and changing volatility can move a long line down or a short line up; this calculation is not a favorable-only monotonic stop ratchet. Chandelier supplies an exit framework that complements an independently chosen entry method. It does not establish the profitability of an entry or a shorter execution timeframe.",
+      "metadata": {
+        "license": "Original limited curator paraphrase; publisher retains rights. No copied code or complete publication.",
+        "access": "public",
+        "title": "Chandelier Exit",
+        "publisher": "StockCharts ChartSchool",
+        "reviewed_on": "2026-10-15",
+        "reviewed_scope": "Calculation and Interpretation sections relevant to levels, daily defaults, changing lines and complementary entries.",
+        "not_reviewed": ["complete book", "complete video", "independent historical performance validation"],
+        "representation": "curator_paraphrase_not_page_snapshot",
+        "exposure": {"complete_inventory": false, "prior_agent_access": "unknown", "independent_validation": false}
+      }
+    },
+    {
+      "source_id": "fidelity_plan_your_escape",
+      "kind": "url",
+      "reference": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/100721_Plan_%20your_escape_TRANSCRIPT.pdf",
+      "content": "Curator paraphrase of the reviewed Plan Your Escape transcript pages: a trailing stop follows favorable movement while avoiding movement that increases the permitted loss. A stop trigger does not guarantee its execution price; market conditions and gaps affect fills. A stop-limit adds a price constraint and may remain unfilled. Position sizing connects an explicit cash amount at risk with the distance between entry and stop. These considerations distinguish a management plan from a guarantee of loss containment or profit. They support risk and execution literacy; they do not prescribe the laboratory's fixed twenty-two-period Chandelier, its three-ATR multiplier or its M5 closing rule.",
+      "metadata": {
+        "license": "Original limited curator paraphrase of selected public transcript pages; publisher retains rights.",
+        "access": "public",
+        "title": "Plan Your Escape transcript",
+        "publisher": "Fidelity Investments",
+        "reviewed_on": "2026-10-15",
+        "reviewed_scope": "PDF pages 8-18 and 34-37 only: favorable-only trailing stops, stop/limit execution risk and sizing by cash risk and stop distance.",
+        "not_reviewed": ["remaining transcript pages", "complete video", "complete book", "independent performance validation"],
+        "representation": "curator_paraphrase_not_transcript_snapshot",
+        "role": "supporting_management_risk_instruction_not_chandelier_algorithm_source",
+        "exposure": {"complete_inventory": false, "prior_agent_access": "unknown", "independent_validation": false}
+      }
+    }
+  ],
+  "operating_steps": [
+    "Keep the independent frozen entry, initial risk, protective stop and final target. Evaluate this exit only on an already owned position using original completed OHLC.",
+    "Compute rolling highest high and lowest low over twenty-two observations and arithmetic-seeded Wilder ATR22. Require complete finite levels and strictly positive ATR.",
+    "For a BUY-held position, a closed price strictly below highest-high22 minus three ATR22 requests a full close; for SELL, a closed price strictly above lowest-low22 plus three ATR22 requests it. Equality waits.",
+    "Apply the selected scalar regime/session/volatility predicate to the CURRENT exit-decision context, not the position's entry context. The same position may cross those boundaries.",
+    "Execute a requested close at the following indexed open through the existing executor and its native open-gap stop/target guard. Retain native protection when this exit is unavailable or outside scope.",
+    "Compare cost-inclusive realized cash on each whole continuous account with its exact control. Preserve initial geometry, physical costs, missing inputs, maturity and every original outcome."
+  ],
+  "wait_when": [
+    "No owned position, incomplete original OHLC or clock, immature levels, nonfinite values, nonpositive ATR or equality at the Chandelier boundary cannot request a typed close.",
+    "Low volatility or missing/unknown regime, session or volatility uses policy BASELINE; native protective stop and take-profit remain active.",
+    "Outside an exact scalar method scope uses BASELINE. This does not classify the omitted context as safe, harmful or economically qualified."
+  ],
+  "limitations": [
+    "The executable method is the existing fixed 22/3 Chandelier closed-price full-exit operator, not a new entry algorithm or a favorable-only ratcheting stop. Its rolling line may fall or rise as the window and ATR change.",
+    "Daily defaults applied to M5 observations and a closed-price cross followed by execution at the following open are explicit laboratory adaptations, not reproduced publisher market results. Equality and missing observations cannot trigger a typed exit.",
+    "Each append-only alternative covers one current exit-decision regime, legacy session and normal/high volatility. Context is not frozen at entry; low or missing context uses BASELINE with the native protective stop/TP retained. Transition is an eligible management context, not permission to create a transition entry.",
+    "Native prior-closed ATR trailing ratchets the protective stop and is a separate algorithm. The hybrid combines that physical ratchet with the typed Chandelier exit, retaining native gap-stop/target pricing. Time-stop precedence and existing OHLC intrabar assumptions remain unchanged.",
+    "Initial stop 1.5 management ATR, final target 2.5 management ATR, partial fraction zero and time stop zero stay identical across the declared arms. Only native_atr_ratchet and hybrid set trailing ATR multiplier to 2.0. Entry parameters, sizing/risk rules, initial account, leverage and execution costs are unchanged; realized entry sequence and sizes can diverge through existing account state, position availability and adaptive cooldown after different exits.",
+    "This panel uses full closes only. Existing weighted partial bookkeeping is not a genuine realized-cash partial-close ledger, releases no partial cash and does not support per-leg fee/carry or fill claims.",
+    "Primary economics are cost-inclusive realized cash at close, not marked-equity drawdown. Ordinary cash equity curves sample completed closes; full exit-bar MFE/MAE are OHLC bounds with unknown path order, not true intrabar capture or stop-efficiency proof.",
+    "Legacy London excludes overlap; overlap takes calendar precedence. Asia and remaining new_york labels retain the existing calendar and IANA/DST interpretation; scopes never force a candle into a desired session.",
+    "The proposed four-window panel uses previously seen pre-2026 archive. Windows, contexts and sixteen originals do not establish independent validation, causal or earned skill, Master status, economic credit, stronger-child qualification, promotion, paper or live authority. All 2026 and later market data remain paper-only.",
+    "Every original is attempted at most once. Technical failure, timeout, cancellation or insufficient maturity remains retained history; no automatic retry, replacement original or outcome-based budget renewal is authorized."
+  ],
+  "panel": {
+    "windows": ["october_pre_dst", "october_uk_us_offset_mismatch", "november_standard", "december_standard"],
+    "arms_per_window": ["control", "native_atr_ratchet", "chandelier_close", "hybrid"],
+    "baseline": "same frozen EMA/RSI entry and physical account/control; current-context management only",
+    "shared_management_parameters": {"atr_stop_multiplier": 1.5, "atr_target_multiplier": 2.5, "partial_take_profit_fraction": 0.0, "time_stop_candles": 0},
+    "trailing_atr_multiplier_by_arm": {"control": 0.0, "native_atr_ratchet": 2.0, "chandelier_close": 0.0, "hybrid": 2.0},
+    "typed_chandelier_by_arm": {"control": false, "native_atr_ratchet": false, "chandelier_close": true, "hybrid": true},
+    "warmup_rows": 200,
+    "max_originals": 16,
+    "per_original_timeout_seconds": 600,
+    "global_timeout_seconds": 10400,
+    "max_attempts_per_arm": 1,
+    "automatic_retry": false,
+    "economic_ranking_or_autopromotion": false,
+    "keep_all_outcomes": true
+  }
+}

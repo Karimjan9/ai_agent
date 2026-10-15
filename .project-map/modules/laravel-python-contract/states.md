@@ -1,5 +1,13 @@
 # Cross-runtime contract states
 
+The explicit offline curator activation prototype passes float-valued
+`trailing_activation_r` through PHP and Python validation without expanding
+ordinary mutation/default rosters. Zero/omitted same-input legacy behavior is
+verified. An offline call-preserving witness links actual management calls to
+original accepted entries, keeps shadow calls separate and classifies valid
+holds separately from unavailable inputs or pre-entry bars. No new trading
+receipt, independent authority or old-source compatibility is asserted.
+
 Scoped future assessment follows `prospective intrinsic recipe and physical UTC
 roster -> actual original four-CSV binding -> signed full request -> private
 runtime witness -> exact original stateful window or durable selector partition ->

@@ -808,3 +808,15 @@ Fourteen pure export-validator tests are software fixtures, not market cases.
 Focused PHP lint, Python compilation and Project Map impact/generate/check
 passed. No full-project suite, broker-demo, production activation, market
 qualification or independent compounding acceptance is claimed.
+
+### Separate management-practice follow-through, 2026-10-15
+
+The next curator batch studied source-described trailing/Chandelier mechanics
+and executed sixteen new originals: four management arms in each of the same
+four already-seen 2025 weeks. All sixteen completed; negative and positive
+continuous-account cash contrasts, current-context exit use, costs, closed-cash
+drawdown and EOF censoring remain explicit. No old DMI result was replaced.
+See [the management operating guide](curator-management-practice-2026-10-15.md)
+for formulas, timing, exact declared comparisons, original hashes and limits.
+An optional profit-delayed trailing question is separate prospective discovery,
+not a larger-budget retry or independent validation of the original sixteen.

@@ -6572,6 +6572,44 @@ def _advance_trailing_stop(
     management_parameters = effective_management_parameters(
         payload.composition_runtime_contract, payload.parameters
     )
+    activation_r = management_parameters.get("trailing_activation_r", 0) or 0
+    if activation_r:
+        # The explicit treatment observes only this preceding completed close.
+        # Its price-R uses executable entry and immutable initial price risk,
+        # not net cash risk, current-bar extrema or the position's MFE journal.
+        try:
+            activation_r = float(activation_r)
+            entry = float(position["entry_price"])
+            close = float(previous_candle["close"])
+            stop = float(position["stop_loss"])
+            observed_at = pd.Timestamp(previous_candle["time"])
+            entry_at = pd.Timestamp(position["entry_time"])
+            direction = str(position["direction"])
+            risk = position.get("initial_risk_distance")
+            if risk is None:
+                initial_stop = float(position["initial_stop_loss"])
+                risk = entry - initial_stop if direction == "BUY" else initial_stop - entry
+            risk = float(risk)
+            atr_value = float(previous_candle.get("_management_atr", 0) or 0)
+            trail = float(management_parameters.get("trailing_atr_multiplier", 0) or 0)
+            if (direction not in {"BUY", "SELL"}
+                    or not all(math.isfinite(value) for value in (activation_r, entry, close, stop, risk, atr_value, trail))
+                    or activation_r <= 0 or entry <= 0 or close <= 0 or risk <= 0 or atr_value <= 0 or trail <= 0
+                    or pd.isna(observed_at) or pd.isna(entry_at)
+                    or observed_at.tzinfo is None or entry_at.tzinfo is None or observed_at < entry_at):
+                return
+            threshold = entry + activation_r * risk if direction == "BUY" else entry - activation_r * risk
+            if not math.isfinite(threshold):
+                return
+        except (KeyError, TypeError, ValueError, OverflowError):
+            # Missing original geometry/closed clock leaves native hard stops
+            # intact; it cannot manufacture a tighter trailing stop.
+            return
+        if not position.get("trailing_activation_armed", False):
+            reached = close >= threshold if direction == "BUY" else close <= threshold
+            if not reached:
+                return
+            position["trailing_activation_armed"] = True
     multiplier = float(management_parameters.get("trailing_atr_multiplier", 0) or 0)
     atr = float(previous_candle.get("_management_atr", 0) or 0)
     if multiplier <= 0 or atr <= 0:
@@ -7143,6 +7181,16 @@ def _open_shadow_position(
         % 100
         < 5
     )
+    initial_geometry = {}
+    activation_r = effective_management_parameters(
+        payload.composition_runtime_contract, payload.parameters
+    ).get("trailing_activation_r", 0)
+    if (isinstance(activation_r, (int, float)) and not isinstance(activation_r, bool)
+            and math.isfinite(activation_r) and 0 < activation_r <= 4):
+        # This is counterfactual geometry, not a live fill. Retain it only for
+        # explicit activation; legacy shadow structures remain byte-identical.
+        initial_geometry = {"initial_stop_loss": stop_loss,
+            "initial_risk_distance": abs(entry_price - stop_loss)}
     return {
         "veto_reason": veto_reason,
         "direction": direction,
@@ -7177,6 +7225,7 @@ def _open_shadow_position(
             or 0
         ),
         "partial_exit_price": None,
+        **initial_geometry,
     }
 
 

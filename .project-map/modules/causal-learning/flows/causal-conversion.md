@@ -1,5 +1,21 @@
 # Causal conversion loop
 
+Explicit management source review -> append-only scalar Chandelier exit
+catalog -> existing bounded policy/compiler -> all four frozen entry/risk/cost
+contracts -> one original per arm/window -> retained raw response and offline
+entry-linked full-close witness -> whole-account and factorial contrasts ->
+curator practical guide. Native ATR ratchet is a separate declared physical
+gene, not the Chandelier line. Low/unknown current context retains native
+protection. This offline research path creates no scheduler, own-agent
+experience, partial-cash ledger, independent authority or promotion permission.
+
+Contradictory completed management observations may inform a separately
+declared profit-delayed ratchet question. The same twelve new-source originals
+must cover control/immediate/closed-price-R activation across four exposed
+windows. A call-preserving observer separates actual entry-linked activation
+from counterfactual shadows; no cross-version arm substitution, old-result
+replacement or independent evidence is created.
+
 ## Separate observational agent-method outcome learning
 
 Reviewed use-specific references -> pinned curator-practice profiles/exercises

@@ -1,5 +1,17 @@
 # Laboratory lifecycle states
 
+## Explicit curator trailing activation
+
+An optional `trailing_activation_r` is admitted only through the explicit
+research schema. Ordinary sampling/default vectors and capability cards remain
+unchanged. Missing/zero preserves the legacy ratchet and shadow state. Positive
+activation uses an owned position's immutable initial price-risk distance and
+the prior completed close during its holding period; it latches once reached.
+Unavailable original geometry, clock or ATR does not tighten a stop. Explicit
+counterfactual shadows retain separate initial geometry, not actual fills.
+The offline curator prototype grants no general adapter, native council,
+meta-model transfer, canonical deadline or agent-inheritance support.
+
 ## Explicit source-backed entry topology
 
 Only a fresh, explicitly constructed trend20/50 model may use

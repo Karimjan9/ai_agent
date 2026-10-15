@@ -1,5 +1,32 @@
 # Causal learning states
 
+Completed offline curator management/activation originals are retained as
+append-only research observations, not agent-owned outcomes. Their derived
+calendar usage retains missing raw session fields, uses prior candle-open
+point membership, separates actual and shadow calls and reconciles all twelve
+case totals. It supplies no context PnL, automatic preference, Master status,
+independent credit or trading authority. Old observed/default curricula stay
+unchanged; a later agent needs its own original admitted practice.
+
+## Explicit curator full-close management practice
+
+`managementPracticeCatalog()` is read-only. Explicit
+`installManagementPractice()` appends 32 exact current-context recipes for one
+Chandelier algorithm through the existing source/method/recipe owners; it does
+not attach policies, admit models or dispatch research. Sixteen bounded
+regime/session rules can select the two scalar volatility alternatives each.
+Low/unknown context keeps BASELINE and native protective stops/targets.
+
+The separately declared four-arm full-close question distinguishes native
+prior-closed ATR ratcheting, typed Chandelier close requests and their hybrid.
+All original outcomes, unknowns and EOF exposure remain separate from curator
+instruction. The offline process-local witness reopens original entry-linked
+stages and exact close/cost/cash math without changing the executor response.
+Cash-close drawdown is not marked equity; producer excursion bounds are not
+observed intrabar paths. Existing partial-price weighting is not a realized
+partial-cash ledger. No registry or observation grants own-agent experience,
+independent skill, credit, promotion or paper/live authority.
+
 ## Instrument methods and agent-owned policies (ADR-040)
 
 Explicit curator-practice v3 keeps all v1/v2 instruction identities and retains

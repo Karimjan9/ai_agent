@@ -1,0 +1,1006 @@
+{
+  "protocol": "curator_activation_session_usage_v1",
+  "curator_owned_not_agent_experience": true,
+  "research_only": true,
+  "original_raw_context_unchanged": true,
+  "calendar_context_not_proven_decision_consumed": true,
+  "timestamp_basis": "preceding_completed_candle_OPEN_point_not_close_timestamp_or_full_candle",
+  "calendar_duration_minutes": 0,
+  "calendar_rulebook_not_independent_historical_holiday_verification": true,
+  "calendar_protocol": "market_session_calendar_v2",
+  "calendar_version": "xauusd_market_sessions_2026_v2",
+  "tzdata_package_version": "2026.1",
+  "source_binding": {
+    "before_outcome_spec_sha256": "a4dbdc292f9239e8f5fd298a647be8449dcd55112f82ef8c3976bce50b02335e",
+    "calendar_owner_path": "ai-service-python/app/services/market_sessions.py",
+    "calendar_owner_sha256": "9be02e674c3be9f5949b8e0ca983c5676e18de48e7cfe849794257aa76015c4b",
+    "diagnostic_helper_sha256": "303a1daa8b6f723b2ffa1f6517d914032fc98516f44bd9d0e0979f36a0ce3638",
+    "ordinary_edge_owner_path": "ai-service-python/app/services/backtester.py",
+    "ordinary_edge_owner_sha256": "57806ccdc76507fb036213363174017e7194b4f2ac9f3d6842b3f6078a36e8c2",
+    "original_panel_verifier_sha256": "70ca69d241514cebb3b87fbda5f89eed3975bee9d22a038f95a09adf962b603a",
+    "original_summary_sha256": "54d9565735f6ec24a404c075b033b60c96ce9604498efee725230ef484ac016c",
+    "source_archive_sha256": "7f0c0fb495d4be4a548aaee313044693ca03b51107700a02a72c790e416e150e",
+    "source_snapshot_sha256": "2f2448fce4251a1f858f4c18e7738f1b1133d3af8a337da99c0d5b7d8690111f",
+    "upstream_calendar_audit_sha256": "56939bbdb421f9ad810a3caebe3a07b15cc73112275df013d7fb92477ed41b05"
+  },
+  "original_calendar_projection_sha256": "b4a08c552bed72eee9e159a7f7cafa2577e0c4b4e29fda9e06c095908291f193",
+  "original_observation_resource_sha256": "cd7e00d0c31d1cc35990434660f1f5de3bf8b46103dc7579bfba63027cf95594",
+  "all_12_completed_original_case_totals_reconciled": true,
+  "accepted_and_shadow_calls_separate": true,
+  "counts_are_not_exclusive_profitable_trades": true,
+  "original_raw_missing_context_retained_in_bound_original_artifacts": true,
+  "raw_context_completion_claim": false,
+  "session_or_phase_PnL_attribution": false,
+  "independent_validation": false,
+  "economic_skill": false,
+  "credit": false,
+  "mastery": false,
+  "economic_authority": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "automatic_agent_preference": false,
+  "original_case_totals": [
+    {
+      "case_key": "october_pre_dst__control",
+      "status": "completed",
+      "actual_calls": 936,
+      "shadow_calls": 1674,
+      "armed": 0,
+      "tightened": 0
+    },
+    {
+      "case_key": "october_pre_dst__immediate_atr2",
+      "status": "completed",
+      "actual_calls": 775,
+      "shadow_calls": 2140,
+      "armed": 0,
+      "tightened": 216
+    },
+    {
+      "case_key": "october_pre_dst__closed_1r_atr2",
+      "status": "completed",
+      "actual_calls": 827,
+      "shadow_calls": 1797,
+      "armed": 33,
+      "tightened": 70
+    },
+    {
+      "case_key": "october_uk_us_offset_mismatch__control",
+      "status": "completed",
+      "actual_calls": 794,
+      "shadow_calls": 943,
+      "armed": 0,
+      "tightened": 0
+    },
+    {
+      "case_key": "october_uk_us_offset_mismatch__immediate_atr2",
+      "status": "completed",
+      "actual_calls": 668,
+      "shadow_calls": 797,
+      "armed": 0,
+      "tightened": 139
+    },
+    {
+      "case_key": "october_uk_us_offset_mismatch__closed_1r_atr2",
+      "status": "completed",
+      "actual_calls": 709,
+      "shadow_calls": 911,
+      "armed": 25,
+      "tightened": 37
+    },
+    {
+      "case_key": "november_standard__control",
+      "status": "completed",
+      "actual_calls": 853,
+      "shadow_calls": 347,
+      "armed": 0,
+      "tightened": 0
+    },
+    {
+      "case_key": "november_standard__immediate_atr2",
+      "status": "completed",
+      "actual_calls": 756,
+      "shadow_calls": 480,
+      "armed": 0,
+      "tightened": 172
+    },
+    {
+      "case_key": "november_standard__closed_1r_atr2",
+      "status": "completed",
+      "actual_calls": 845,
+      "shadow_calls": 334,
+      "armed": 18,
+      "tightened": 29
+    },
+    {
+      "case_key": "december_standard__control",
+      "status": "completed",
+      "actual_calls": 1020,
+      "shadow_calls": 369,
+      "armed": 0,
+      "tightened": 0
+    },
+    {
+      "case_key": "december_standard__immediate_atr2",
+      "status": "completed",
+      "actual_calls": 734,
+      "shadow_calls": 375,
+      "armed": 0,
+      "tightened": 151
+    },
+    {
+      "case_key": "december_standard__closed_1r_atr2",
+      "status": "completed",
+      "actual_calls": 932,
+      "shadow_calls": 208,
+      "armed": 20,
+      "tightened": 31
+    }
+  ],
+  "descriptive_session_usage": [
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 362,
+      "newly_armed": 9,
+      "tightened": 16
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 212,
+      "newly_armed": 6,
+      "tightened": 9
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 268,
+      "newly_armed": 3,
+      "tightened": 4
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 90,
+      "newly_armed": 2,
+      "tightened": 2
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 44,
+      "newly_armed": 1,
+      "tightened": 4
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 24,
+      "newly_armed": 3,
+      "tightened": 3
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 96,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 44,
+      "newly_armed": 2,
+      "tightened": 2
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 412,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 215,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 303,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 90,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 135,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 61,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 129,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 44,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 279,
+      "newly_armed": 0,
+      "tightened": 56
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 180,
+      "newly_armed": 0,
+      "tightened": 34
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 199,
+      "newly_armed": 0,
+      "tightened": 48
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 76,
+      "newly_armed": 0,
+      "tightened": 13
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 42,
+      "newly_armed": 0,
+      "tightened": 5
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 127,
+      "newly_armed": 0,
+      "tightened": 43
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 167,
+      "newly_armed": 0,
+      "tightened": 13
+    },
+    {
+      "window": "december_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 39,
+      "newly_armed": 0,
+      "tightened": 7
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 338,
+      "newly_armed": 6,
+      "tightened": 12
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 183,
+      "newly_armed": 3,
+      "tightened": 6
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 243,
+      "newly_armed": 3,
+      "tightened": 4
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 81,
+      "newly_armed": 6,
+      "tightened": 7
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 76,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 16,
+      "newly_armed": 1,
+      "tightened": 2
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 237,
+      "newly_armed": 11,
+      "tightened": 14
+    },
+    {
+      "window": "november_standard",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 5,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 340,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 180,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 249,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 84,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 88,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 16,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 237,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 6,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 325,
+      "newly_armed": 0,
+      "tightened": 61
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 156,
+      "newly_armed": 0,
+      "tightened": 30
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 197,
+      "newly_armed": 0,
+      "tightened": 59
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 78,
+      "newly_armed": 0,
+      "tightened": 22
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 81,
+      "newly_armed": 0,
+      "tightened": 8
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 80,
+      "newly_armed": 0,
+      "tightened": 7
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 314,
+      "newly_armed": 0,
+      "tightened": 84
+    },
+    {
+      "window": "november_standard",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 5,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 402,
+      "newly_armed": 17,
+      "tightened": 31
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 183,
+      "newly_armed": 6,
+      "tightened": 19
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 167,
+      "newly_armed": 6,
+      "tightened": 15
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 75,
+      "newly_armed": 4,
+      "tightened": 5
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 578,
+      "newly_armed": 29,
+      "tightened": 63
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 84,
+      "newly_armed": 1,
+      "tightened": 1
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 1117,
+      "newly_armed": 28,
+      "tightened": 51
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 18,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 433,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 233,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 188,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 82,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 489,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 4,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 1163,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 18,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 372,
+      "newly_armed": 0,
+      "tightened": 110
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 164,
+      "newly_armed": 0,
+      "tightened": 46
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 166,
+      "newly_armed": 0,
+      "tightened": 45
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 73,
+      "newly_armed": 0,
+      "tightened": 15
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 746,
+      "newly_armed": 0,
+      "tightened": 279
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 362,
+      "newly_armed": 0,
+      "tightened": 111
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 943,
+      "newly_armed": 0,
+      "tightened": 228
+    },
+    {
+      "window": "october_pre_dst",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 89,
+      "newly_armed": 0,
+      "tightened": 8
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 302,
+      "newly_armed": 11,
+      "tightened": 14
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 123,
+      "newly_armed": 4,
+      "tightened": 7
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 192,
+      "newly_armed": 7,
+      "tightened": 13
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 92,
+      "newly_armed": 3,
+      "tightened": 3
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 292,
+      "newly_armed": 7,
+      "tightened": 10
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 6,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 558,
+      "newly_armed": 10,
+      "tightened": 16
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "closed_1r_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 55,
+      "newly_armed": 3,
+      "tightened": 4
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 324,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 123,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 255,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 92,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 401,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 6,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 474,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "control",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 62,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "asia",
+      "calls": 293,
+      "newly_armed": 0,
+      "tightened": 60
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "london",
+      "calls": 122,
+      "newly_armed": 0,
+      "tightened": 31
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "new_york",
+      "calls": 160,
+      "newly_armed": 0,
+      "tightened": 35
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "accepted_original",
+      "session": "overlap",
+      "calls": 93,
+      "newly_armed": 0,
+      "tightened": 13
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "asia",
+      "calls": 145,
+      "newly_armed": 0,
+      "tightened": 31
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "london",
+      "calls": 6,
+      "newly_armed": 0,
+      "tightened": 0
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "new_york",
+      "calls": 601,
+      "newly_armed": 0,
+      "tightened": 67
+    },
+    {
+      "window": "october_uk_us_offset_mismatch",
+      "arm": "immediate_atr2",
+      "scope": "shadow_counterfactual",
+      "session": "overlap",
+      "calls": 45,
+      "newly_armed": 0,
+      "tightened": 12
+    }
+  ]
+}

@@ -36,6 +36,18 @@ paths:
   - backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php
   - backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php
   - backend-laravel/app/Services/InstrumentContextPracticeTrait.php
+  - backend-laravel/app/Services/InstrumentManagementPracticeTrait.php
+  - backend-laravel/resources/research/instrument-methods/management-exit-practice-v1.json
+  - backend-laravel/resources/research/instrument-operating-skills/curator-management-observations-v1.json
+  - backend-laravel/resources/research/instrument-operating-skills/curator-activation-observations-v1.json
+  - backend-laravel/resources/research/instrument-operating-skills/curator-activation-session-usage-v1.json
+  - ai-service-python/tests/test_curator_management_observations.py
+  - backend-laravel/tests/Feature/CuratorManagementPracticeTest.php
+  - ai-service-python/scripts/curator_management_witness.py
+  - ai-service-python/scripts/curator_activation_witness.py
+  - ai-service-python/tests/test_curator_activation_witness.py
+  - ai-service-python/tests/test_curator_management_witness.py
+  - ai-service-python/tests/test_curator_management_mechanics.py
   - backend-laravel/resources/research/instrument-methods/context-adx-dmi-v1.json
   - backend-laravel/tests/Feature/CuratorContextPracticeTest.php
   - backend-laravel/tests/Feature/CuratorContextKnowHowTest.php
@@ -306,6 +318,8 @@ entry_points:
   - AgentMethodCandidateService::evolve
   - CuratedInstrumentMethodCatalogService::catalog
   - CuratedInstrumentMethodCatalogService::install
+  - CuratedInstrumentMethodCatalogService::managementPracticeCatalog
+  - CuratedInstrumentMethodCatalogService::installManagementPractice
   - AgentMethodGenerationService::prepareConstructorChild
   - AgentMethodGenerationService::proposeFromOriginalRun
   - InstrumentMethodStudyExecutionService::registerWork
@@ -498,7 +512,13 @@ docs:
   - idea.md
   - states.md
   - history.md
+  - ../../../docs/operations/curator-management-practice-2026-10-15.md
 tests:
+  - ai-service-python/tests/test_curator_management_observations.py
+  - ai-service-python/tests/test_curator_activation_witness.py
+  - backend-laravel/tests/Feature/CuratorManagementPracticeTest.php
+  - ai-service-python/tests/test_curator_management_witness.py
+  - ai-service-python/tests/test_curator_management_mechanics.py
   - backend-laravel/tests/Feature/CuratorContextPracticeTest.php
   - backend-laravel/tests/Feature/CuratorContextKnowHowTest.php
   - ai-service-python/tests/test_closed_dmi_adx_method.py

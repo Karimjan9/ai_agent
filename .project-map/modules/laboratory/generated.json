@@ -2,15 +2,16 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T13:21:33.310Z",
-  "source_digest": "cdf9b8090ae045be2d965cc21cc6fb53eb1368fef36c3d0ad4215312b3bd5ecc",
-  "source_file_count": 1721,
-  "git_head": "b3546223b84a94fd2290c886c5c46e3c2a27ae04",
+  "generated_at": "2026-10-15T17:57:22.459Z",
+  "source_digest": "d8cb9992c1b6cb0c58193e5e18f1e77e1571457ff0e5082d7006216dc2e0a667",
+  "source_file_count": 1730,
+  "git_head": "0aaa7e367ac1272181220440561e69630b01147f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
     "backend-laravel/app/Services/StrategyParameterSchemaService.php",
     "ai-service-python/app/services/parameter_schema.py",
+    "ai-service-python/tests/test_trailing_activation.py",
     "ai-service-python/app/strategies/laboratory.py",
     "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
@@ -126,6 +127,7 @@
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/app/strategies/laboratory.py",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+    "ai-service-python/tests/test_trailing_activation.py",
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
     "backend-laravel/app/Console/Commands/BuildLabGeneration.php",
     "backend-laravel/app/Console/Commands/ContinueInterruptedLabConstruction.php",
@@ -239,25 +241,25 @@
       "symbol": "_normalise_strategy_identity",
       "kind": "python_function",
       "path": "ai-service-python/app/services/parameter_schema.py",
-      "line": 377
+      "line": 380
     },
     {
       "symbol": "_strategy_family_alias",
       "kind": "python_function",
       "path": "ai-service-python/app/services/parameter_schema.py",
-      "line": 385
+      "line": 388
     },
     {
       "symbol": "strategy_family",
       "kind": "python_function",
       "path": "ai-service-python/app/services/parameter_schema.py",
-      "line": 408
+      "line": 411
     },
     {
       "symbol": "validate_strategy_parameters",
       "kind": "python_function",
       "path": "ai-service-python/app/services/parameter_schema.py",
-      "line": 421
+      "line": 424
     },
     {
       "symbol": "apply_volatility_breakout_strategy",
@@ -450,6 +452,132 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
       "line": 99
+    },
+    {
+      "symbol": "test_activation_latches_and_ratchet_never_loosens_after_unfavorable_close",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 109
+    },
+    {
+      "symbol": "test_activation_uses_executable_entry_and_immutable_initial_stop_fallback",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 125
+    },
+    {
+      "symbol": "test_missing_invalid_geometry_atr_and_clock_do_not_change_hard_stop",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 138
+    },
+    {
+      "symbol": "test_current_or_prior_extrema_and_mfe_cannot_activate_below_closed_threshold",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 158
+    },
+    {
+      "symbol": "test_zero_or_missing_retains_exact_legacy_function_state_and_return",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 166
+    },
+    {
+      "symbol": "test_complete_same_request_response_matches_legacy_for_missing_and_zero",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 179
+    },
+    {
+      "symbol": "test_actual_synthetic_loop_waits_for_completed_one_r_before_arming",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 196
+    },
+    {
+      "symbol": "observe",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 199
+    },
+    {
+      "symbol": "legacy_trail",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 20
+    },
+    {
+      "symbol": "test_new_parameter_is_explicit_bounded_and_finite_in_python",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 224
+    },
+    {
+      "symbol": "test_shadow_initial_geometry_is_explicit_only_and_keeps_legacy_structure",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 234
+    },
+    {
+      "symbol": "test_actual_shadow_lifecycle_uses_preentry_guard_equality_and_latched_initial_r",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 255
+    },
+    {
+      "symbol": "test_php_explicit_schema_parity_without_expanding_ordinary_sampling_or_defaults",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 288
+    },
+    {
+      "symbol": "position",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 40
+    },
+    {
+      "symbol": "closed",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 47
+    },
+    {
+      "symbol": "request",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 51
+    },
+    {
+      "symbol": "software_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 63
+    },
+    {
+      "symbol": "software_signal",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 75
+    },
+    {
+      "symbol": "replay",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 83
+    },
+    {
+      "symbol": "TrailingActivationTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 93
+    },
+    {
+      "symbol": "test_buy_sell_reject_preentry_bar_and_arm_at_prior_close_equality",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "line": 94
     },
     {
       "symbol": "handle",
@@ -7793,55 +7921,55 @@
       "symbol": "family",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 254
+      "line": 255
     },
     {
       "symbol": "runtimeBaseStrategy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 274
+      "line": 275
     },
     {
       "symbol": "schema",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 292
+      "line": 293
     },
     {
       "symbol": "canonicalizeForIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 311
+      "line": 315
     },
     {
       "symbol": "defaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 333
+      "line": 337
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 411
+      "line": 419
     },
     {
       "symbol": "normalizeForGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 455
+      "line": 464
     },
     {
       "symbol": "clamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 495
+      "line": 504
     },
     {
       "symbol": "executionDefaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 517
+      "line": 526
     },
     {
       "symbol": "StrategyParameterSchemaService",
@@ -10551,6 +10679,23 @@
     }
   ],
   "tests": [
+    {
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "tests": [
+        "test_buy_sell_reject_preentry_bar_and_arm_at_prior_close_equality",
+        "test_activation_latches_and_ratchet_never_loosens_after_unfavorable_close",
+        "test_activation_uses_executable_entry_and_immutable_initial_stop_fallback",
+        "test_missing_invalid_geometry_atr_and_clock_do_not_change_hard_stop",
+        "test_current_or_prior_extrema_and_mfe_cannot_activate_below_closed_threshold",
+        "test_zero_or_missing_retains_exact_legacy_function_state_and_return",
+        "test_complete_same_request_response_matches_legacy_for_missing_and_zero",
+        "test_actual_synthetic_loop_waits_for_completed_one_r_before_arming",
+        "test_new_parameter_is_explicit_bounded_and_finite_in_python",
+        "test_shadow_initial_geometry_is_explicit_only_and_keeps_legacy_structure",
+        "test_actual_shadow_lifecycle_uses_preentry_guard_equality_and_latched_initial_r",
+        "test_php_explicit_schema_parity_without_expanding_ordinary_sampling_or_defaults"
+      ]
+    },
     {
       "path": "backend-laravel/tests/Feature/AcademyCleanDiscoveryHandoffTest.php",
       "tests": [

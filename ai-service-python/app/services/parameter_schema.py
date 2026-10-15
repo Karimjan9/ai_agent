@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -284,6 +285,8 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
     "atr_stop_multiplier": {"type": float, "min": 0.5, "max": 4.0},
     "atr_target_multiplier": {"type": float, "min": 0.75, "max": 8.0},
     "trailing_atr_multiplier": {"type": float, "min": 0.0, "max": 4.0},
+    # Explicit request only; PHP omits this key from ordinary sampling schemas.
+    "trailing_activation_r": {"type": float, "min": 0.0, "max": 4.0, "default": 0.0, "finite": True},
     "time_stop_candles": {"type": int, "min": 0, "max": 240},
     "high_volatility_risk_multiplier": {"type": float, "min": 0.1, "max": 1.0},
     "max_spread_atr_ratio": {"type": float, "min": 0.01, "max": 0.5},
@@ -456,7 +459,7 @@ def validate_strategy_parameters(
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"{family}.{key} raqam bo'lishi kerak")
         numeric = expected(value)
-        if numeric < rule["min"] or numeric > rule["max"]:
+        if numeric < rule["min"] or numeric > rule["max"] or (rule.get("finite") and not math.isfinite(numeric)):
             raise ValueError(
                 f"{family}.{key} {rule['min']}..{rule['max']} oralig'ida bo'lishi kerak"
             )

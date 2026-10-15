@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T13:21:33.310Z",
-  "source_digest": "cdf9b8090ae045be2d965cc21cc6fb53eb1368fef36c3d0ad4215312b3bd5ecc",
-  "source_file_count": 1721,
-  "git_head": "b3546223b84a94fd2290c886c5c46e3c2a27ae04",
+  "generated_at": "2026-10-15T17:57:22.459Z",
+  "source_digest": "d8cb9992c1b6cb0c58193e5e18f1e77e1571457ff0e5082d7006216dc2e0a667",
+  "source_file_count": 1730,
+  "git_head": "0aaa7e367ac1272181220440561e69630b01147f",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -262,6 +262,63 @@
       "tests": [
         "test_sparse_fine_cells_backoff_to_an_evidence_backed_regime",
         "test_under_sampled_envelopes_do_not_pass"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_activation_witness.py",
+      "tests": [
+        "test_complete_response_parity_missing_zero_and_one",
+        "test_delayed_preentry_threshold_equality_and_latch_for_buy_and_sell",
+        "test_preentry_missing_input_and_valid_below_threshold_are_distinct",
+        "test_zero_multiplier_is_unchanged_and_legacy_preentry_formula_preserved",
+        "test_raw_market_session_unknown_and_missing_context_are_preserved",
+        "test_rehashed_early_activation_and_loosened_stop_refused",
+        "test_rehashed_state_discontinuity_refused",
+        "test_parameter_entry_stop_maturity_and_digest_tampering_refused",
+        "test_optional_raw_entry_link_exact_geometry",
+        "test_no_position_empty_stream_is_explicitly_unactivated",
+        "test_positive_shadow_geometry_and_scope_remain_separate",
+        "test_nested_exception_and_original_exception_restore_exact_callable"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_management_mechanics.py",
+      "tests": [
+        "test_buy_and_sell_stops_ratchet_without_mutating_risk_or_target",
+        "test_disabled_or_unavailable_atr_preserves_native_stop",
+        "test_prior_closed_ratchet_can_gap_at_next_open_not_fill_at_old_line",
+        "test_existing_conservative_same_bar_stop_target_precedence_is_retained",
+        "test_chandelier_line_is_not_a_monotonic_ratchet"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_management_observations.py",
+      "tests": [
+        "test_versioned_original_artifacts_and_older_knowledge_are_unchanged",
+        "test_original_completion_does_not_grant_authority_or_own_agent_outcomes",
+        "test_factorial_arithmetic_retains_both_positive_and_negative_interaction",
+        "test_new_source_controls_are_originally_executed_not_old_arm_substitution",
+        "test_session_projection_reconciles_all_actual_and_shadow_counts_without_profit_claim",
+        "test_open_eof_and_null_context_never_turn_into_settled_utility"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_management_witness.py",
+      "tests": [
+        "test_exact_complete_ordinary_response_parity_and_restore",
+        "test_independent_stage_hash_and_own_receipt_sha_refuse_tamper",
+        "test_position_size_entry_link_tamper_refuses_after_reseal",
+        "test_explicit_cost_math_tamper_refuses_after_reseal",
+        "test_partial_fraction_or_fill_refused_after_reseal",
+        "test_strict_maturity_counts_forced_close_unknown_and_open",
+        "test_cash_balance_and_drawdown_tampering_refuse",
+        "test_nonzero_drawdown_uses_public_curve_rounding_but_retains_exact_metric",
+        "test_initial_stop_risk_tamper_refuses_after_reseal",
+        "test_censored_exit_reason_never_becomes_mature",
+        "test_nested_capture_refused_and_exception_restores_original",
+        "test_original_producer_exception_restores_exact_callable",
+        "test_unavailable_snapshot_without_completed_original_call_refuses",
+        "test_metrics_do_not_mislabel_cost_or_unobserved_stop_path"
       ]
     },
     {
@@ -1072,6 +1129,23 @@
         "test_expired_probe_cannot_be_reclassified_by_a_later_closed_wick",
         "test_ordinary_current_open_assessment_ignores_later_current_bar_extrema_then_matures_next_open",
         "test_default_disabled_control_matches_explicit_disabled_ledger_costs_and_clock"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_trailing_activation.py",
+      "tests": [
+        "test_buy_sell_reject_preentry_bar_and_arm_at_prior_close_equality",
+        "test_activation_latches_and_ratchet_never_loosens_after_unfavorable_close",
+        "test_activation_uses_executable_entry_and_immutable_initial_stop_fallback",
+        "test_missing_invalid_geometry_atr_and_clock_do_not_change_hard_stop",
+        "test_current_or_prior_extrema_and_mfe_cannot_activate_below_closed_threshold",
+        "test_zero_or_missing_retains_exact_legacy_function_state_and_return",
+        "test_complete_same_request_response_matches_legacy_for_missing_and_zero",
+        "test_actual_synthetic_loop_waits_for_completed_one_r_before_arming",
+        "test_new_parameter_is_explicit_bounded_and_finite_in_python",
+        "test_shadow_initial_geometry_is_explicit_only_and_keeps_legacy_structure",
+        "test_actual_shadow_lifecycle_uses_preentry_guard_equality_and_latched_initial_r",
+        "test_php_explicit_schema_parity_without_expanding_ordinary_sampling_or_defaults"
       ]
     },
     {
@@ -2147,6 +2221,16 @@
         "test_append_only_install_is_idempotent_and_not_an_agent_policy_or_dispatch",
         "test_existing_policy_compiler_handles_exact_multi_scope_pool_without_genome_change",
         "test_source_drift_is_refused_by_original_owner_and_cannot_be_copied_as_confirmation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CuratorManagementPracticeTest.php",
+      "tests": [
+        "test_preview_is_read_only_and_contains_exactly_thirty_two_full_exit_scopes",
+        "test_append_only_install_is_idempotent_without_agents_dispatch_or_old_resource_changes",
+        "test_all_thirty_two_recipes_compile_without_physical_change_including_transition",
+        "test_original_source_drift_is_refused_without_authority",
+        "assertSyntheticRuntime"
       ]
     },
     {

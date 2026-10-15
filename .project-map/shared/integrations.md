@@ -1,5 +1,17 @@
 # Integrations and runtime boundaries
 
+## Offline curator profit-delayed ratchet prototype
+
+PHP explicit research schema and Python validation admit finite
+`trailing_activation_r` in 0..4; ordinary PHP sampling/defaults omit it and
+zero/omitted replay behavior remains unchanged. Positive activation observes
+the preceding owned closed price against initial price-risk distance, not MFE
+or future intrabar prices. Its offline observer calls the existing stop owner
+once unchanged and independently verifies actual entry links and stop updates;
+shadow opportunities stay separate. Source-pinned reused-archive observations
+are curator knowledge, not agent-owned outcomes, economic authority, generic
+adapter/native council support or a new canonical dispatch/deadline route.
+
 ## Read-only replay liveness contract
 
 `ReplayLivenessProbeService` accepts integer nonnegative `active_requests` and
@@ -233,6 +245,18 @@ computed observations. Generic typed operators cannot enable these inputs via
 a copied wire marker: only the checked method runtime grants the non-wire
 capability. Missing observed volume/quotes or a trained meta model remains a
 typed conservative WAIT. OHLC liquidity proxies are not observed order flow.
+
+Explicit curator management practice uses those existing Chandelier boolean
+inputs without a new wire feature or executor. Thirty-two scalar recipe
+contexts fit the existing pool and sixteen bounded regime/session rules.
+Selection uses current exit context, not position entry context; low/unknown
+volatility matches neither recipe and retains native stops/targets. The native
+prior-closed ATR ratchet remains a separate physical gene. An offline-only
+single-thread witness temporarily observes `_decision_identity_receipt`,
+restores its callable on exit and independently checks entry-linked stage
+hashes plus full-close cost/cash math. It never activates the private authorized
+SOLO account path, persists agent outcomes or claims actual intrabar fills,
+marked equity, a partial-cash ledger or market qualification.
 
 The same reserved closed-feature owner now publishes `method_dmi_available`,
 `method_dmi_aligned`, `method_adx_strong`, `method_adx_weak`, `method_adx14`,
