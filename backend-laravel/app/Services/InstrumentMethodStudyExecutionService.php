@@ -458,7 +458,7 @@ class InstrumentMethodStudyExecutionService
     }
 
     /**
-     * Repair only an already-spent original four-arm mutable agent projection.
+     * Repair only an already-spent original matrix's mutable agent projection.
      * Historical requests are reopened, never recompiled under today's source.
      * No work, run, assessment, barrier, scientific budget or credit is rewritten.
      */
@@ -511,8 +511,7 @@ class InstrumentMethodStudyExecutionService
                     && (int) $current->population_size === 4
                     && (app(ImmutableGenerationContractService::class)->validate($current)['valid'] ?? false),
                     'METHOD_STUDY_TERMINAL_COHORT_REQUIRED');
-                $this->need((int) LabGeneration::where('ai_laboratory_id', $current->ai_laboratory_id)->latest('id')->value('id') === (int) $current->id,
-                    'METHOD_STUDY_TERMINAL_LATEST_GENERATION_REQUIRED');
+                $this->assertLaterGenerationsTerminal($current);
                 $seal = (array) data_get($current->trigger_context, 'research_release', []); $identity = $seal;
                 unset($identity['release_hash'], $identity['sealed_at'], $identity['promotion_evidence']);
                 $this->need(($seal['protocol'] ?? null) === ResearchReleaseSealService::PROTOCOL
@@ -529,19 +528,43 @@ class InstrumentMethodStudyExecutionService
                 $actual = $agents->pluck('model_version_id')->map('intval')->sort()->values()->all();
                 $checkpoints = (array) data_get($work->result, 'original_arms', []);
                 $actualArms = array_keys($checkpoints); $expectedArms = self::ARMS; sort($actualArms); sort($expectedArms);
-                $this->need($actual === $expected && $actualArms === $expectedArms,
+                $this->need($actual === $expected && $actualArms !== [] && array_diff($actualArms, $expectedArms) === [],
                     'METHOD_STUDY_TERMINAL_FOUR_ORIGINALS_REQUIRED');
-                $facts = [];
+                $partial = count($checkpoints) < 4; $facts = []; $technicalOriginal = false;
+                $key = 'instrument_method_study_projection_terminal'; $prior = data_get($current->trigger_context, $key);
+                $this->need(! $partial || data_get($work->result, 'queued_arm') === null,
+                    'METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED');
                 foreach (self::ARMS as $arm) {
-                    $agent = $agents->firstWhere('model_version_id', $design['arms'][$arm]['model_id']); $checkpoint = $checkpoints[$arm];
+                    $agent = $agents->firstWhere('model_version_id', $design['arms'][$arm]['model_id']);
                     $model = $agent->modelVersion;
                     $this->need($model !== null && $this->hash((array) $model->parameters) === $design['arms'][$arm]['parameter_hash']
                         && $this->hash($this->evidence->modelRuntimeBasis($model)) === $design['arms'][$arm]['model_runtime_basis_hash'],
                         'METHOD_STUDY_ORIGINAL_MODEL_DRIFT');
-                    $runs = LabEvaluationRun::where('model_version_id', $agent->model_version_id)->limit(2)->get();
+                    $runs = LabEvaluationRun::where(fn ($query) => $query->where('model_version_id', $agent->model_version_id)
+                        ->orWhere('lab_agent_id', $agent->id))->limit(2)->get();
+                    if (! array_key_exists($arm, $checkpoints)) {
+                        $priorAbsent = is_array($prior) && ($prior['protocol'] ?? null) === self::PROTOCOL
+                            && ($prior['work_id'] ?? null) === $workId && ($prior['study_hash'] ?? null) === $registration['study_hash']
+                            && in_array($arm, (array) ($prior['unattempted_arms'] ?? []), true);
+                        $this->need($runs->isEmpty()
+                            && ! \App\Models\LabEvidenceArtifact::where('lab_agent_id', $agent->id)->exists()
+                            && ! LabAgent::where('model_version_id', $agent->model_version_id)->where('id', '!=', $agent->id)->exists()
+                            && ($agent->lifecycle_status === 'draft' || ($agent->lifecycle_status === 'technical_quarantine'
+                                && ($priorAbsent || $this->originalAbsentProjectionEvent($agent, $current, $work)))),
+                            'METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED');
+                        $facts[$arm] = ['model_id' => (int) $agent->model_version_id, 'agent_id' => (int) $agent->id, 'original_absent' => true];
+                        continue;
+                    }
+                    $checkpoint = $checkpoints[$arm];
+                    $this->need(is_array($checkpoint) && count($checkpoint) === 3
+                        && array_diff(array_keys($checkpoint), ['run_id', 'model_id', 'request_hash']) === []
+                        && is_string($checkpoint['run_id'] ?? null) && is_int($checkpoint['model_id'] ?? null)
+                        && preg_match('/^[a-f0-9]{64}$/D', (string) ($checkpoint['request_hash'] ?? null)) === 1,
+                        'METHOD_STUDY_TERMINAL_ORIGINAL_CHECKPOINT_REQUIRED');
                     $this->need($runs->count() === 1, 'METHOD_STUDY_TERMINAL_ONE_ORIGINAL_REQUIRED'); $run = $runs[0];
                     $legacyCompletedOwner = $this->legacyCompletedOwnerShape($run);
                     $this->need($run->run_id === ($checkpoint['run_id'] ?? null) && ($checkpoint['model_id'] ?? null) === (int) $agent->model_version_id
+                        && (int) $run->model_version_id === (int) $agent->model_version_id
                         && (int) $run->lab_generation_id === (int) $current->id && (int) $run->lab_agent_id === (int) $agent->id
                         && $run->phase === 'screening' && $run->finished_at !== null && in_array($run->status, ['completed', 'technical_error'], true)
                         && data_get($run->metadata, 'source') === self::class && $run->code_hash === $registration['php_source_hash']
@@ -561,10 +584,10 @@ class InstrumentMethodStudyExecutionService
                         && data_get($request, 'policy_context.instrument_method_study.arm') === $arm
                         && data_get($request, 'research_release.release_hash') === $seal['release_hash']
                         && data_get($request, 'execution_hash') === $design['execution_hash'], 'METHOD_STUDY_TERMINAL_ORIGINAL_BYTES_REQUIRED');
-                    if ($legacyCompletedOwner) {
+                    if ($legacyCompletedOwner || $partial) {
                         // Historical settlement discarded original_barrier as
-                        // well as completed marker.work_id. Reopen all four
-                        // checkpoint-bound original requests; never manufacture
+                        // well as completed marker.work_id. Reopen every
+                        // checkpoint-bound original request; never manufacture
                         // a retained barrier or recompile under current source.
                         $this->need(data_get($run->metadata, 'research_release_hash') === $seal['release_hash']
                             && ($request['evaluation_mode'] ?? null) === 'incremental'
@@ -585,20 +608,74 @@ class InstrumentMethodStudyExecutionService
                     }
                     $facts[$arm] = ['run_id' => $run->run_id, 'status' => $run->status, 'request_hash' => $run->request_hash,
                         'response_hash' => $run->response_hash, 'request_artifact_hash' => $requests[0]->sha256, 'response_artifact_hash' => $responses[0]->sha256];
+                    $technicalOriginal = $technicalOriginal || $run->status === 'technical_error';
                 }
+                $this->need(! $partial || $technicalOriginal, 'METHOD_STUDY_TERMINAL_PARTIAL_TECHNICAL_ORIGINAL_REQUIRED');
                 $this->assertTerminalProjectionIdle($work);
-                $changed = $this->projectTechnicalAgents($current, $work, (string) data_get($work->result, 'reason_code'));
-                $key = 'instrument_method_study_projection_terminal';
                 $projection = ['protocol' => self::PROTOCOL, 'work_id' => $workId, 'study_hash' => $registration['study_hash'],
                     'original_proof_hash' => $this->hash($facts), 'original_results_unchanged' => true, ...$this->ceiling()];
-                $prior = data_get($current->trigger_context, $key);
+                if ($partial) {
+                    $projection['attempted_arms'] = array_values(array_intersect(self::ARMS, array_keys($checkpoints)));
+                    $projection['unattempted_arms'] = array_values(array_diff(self::ARMS, array_keys($checkpoints)));
+                }
                 $this->need($prior === null || $prior === $projection, 'METHOD_STUDY_TERMINAL_PROJECTION_DRIFT');
+                $changed = $this->projectTechnicalAgents($current, $work, (string) data_get($work->result, 'reason_code'));
                 if ($prior === null) $current->update(['trigger_context' => [...(array) $current->trigger_context, $key => $projection]]);
                 return ['status' => 'recorded', 'closed' => $changed > 0 || $prior === null, 'changed_agents' => $changed,
                     'generation_id' => (int) $current->id, 'reason_code' => 'METHOD_STUDY_TERMINAL_PROJECTION_RECONCILED', ...$this->ceiling()];
             });
         } catch (Throwable $error) { return $this->blocked($error) + ['closed' => false]; }
         finally { if ($ownsLane) $lane->release(); if ($ownsWork) $lock->release(); }
+    }
+
+    /** A future early technical close has already neutralized unused drafts. */
+    private function originalAbsentProjectionEvent(LabAgent $agent, LabGeneration $generation, ResearchExperimentWorkItem $work): bool
+    {
+        $events = \App\Models\LabLifecycleEvent::where('lab_agent_id', $agent->id)
+            ->where('event_type', 'instrument_method_study_terminal_projection')->limit(2)->get();
+        if ($events->count() !== 1) return false;
+        $event = $events[0];
+        $payload = ['reason_code' => data_get($work->result, 'reason_code'), 'work_id' => (int) $work->id,
+            'original_results_unchanged' => true, ...$this->ceiling()];
+        $actual = $event->payload;
+        if (! is_array($actual) || count($actual) !== count($payload)) return false;
+        foreach ($payload as $field => $value) {
+            // JSON object key order is not evidence. Primitive types and the
+            // entire exact key set still belong to the original code owner.
+            if (! array_key_exists($field, $actual) || $actual[$field] !== $value) return false;
+        }
+        return (int) $event->lab_generation_id === (int) $generation->id
+            && $event->source === self::class && $event->phase === 'screening' && $event->run_id === null
+            && $event->attempt === null && $event->from_status === 'draft' && $event->to_status === 'technical_quarantine'
+            && $event->reason_code === $payload['reason_code']
+            && $event->error_class === null && $event->error_message === null
+            && $event->occurred_at !== null && $event->created_at !== null
+            && $generation->completed_at !== null && $work->completed_at !== null
+            && $event->occurred_at->greaterThanOrEqualTo($generation->completed_at)
+            && $event->occurred_at->greaterThanOrEqualTo($work->completed_at)
+            && $event->occurred_at->lessThanOrEqualTo(now())
+            && $event->created_at->greaterThanOrEqualTo($work->completed_at)
+            && $event->created_at->lessThanOrEqualTo(now());
+    }
+
+    /** An older spent projection cannot cross later live or unknown ownership. */
+    private function assertLaterGenerationsTerminal(LabGeneration $generation): void
+    {
+        $later = LabGeneration::where('ai_laboratory_id', $generation->ai_laboratory_id)->where('id', '>', $generation->id)
+            ->lockForUpdate()->get(['id', 'status', 'completed_at']);
+        $this->need($later->every(fn ($item) => $item->completed_at !== null
+            && in_array($item->status, LabPopulationService::TERMINAL_GENERATION_STATUSES, true)),
+            'METHOD_STUDY_TERMINAL_LATER_GENERATION_ACTIVE');
+        $ids = $later->pluck('id')->all();
+        $terminalAgents = ['screened', 'technical_quarantine', 'quarantined', 'legacy_quarantine', 'abandoned', 'failed'];
+        $this->need(! LabAgent::whereIn('lab_generation_id', $ids)->where(fn ($query) => $query->whereNull('lifecycle_status')
+            ->orWhereNotIn('lifecycle_status', $terminalAgents))->exists(), 'METHOD_STUDY_TERMINAL_LATER_AGENT_ACTIVE');
+        $laterAgents = LabAgent::whereIn('lab_generation_id', $ids)->get(['id', 'model_version_id']);
+        $this->need(! LabEvaluationRun::where(fn ($query) => $query->whereIn('lab_generation_id', $ids)
+            ->orWhereIn('lab_agent_id', $laterAgents->pluck('id')->all())
+            ->orWhereIn('model_version_id', $laterAgents->pluck('model_version_id')->all()))->where(fn ($query) => $query->whereNull('finished_at')
+            ->orWhereNotIn('status', LabImmutableEvidenceService::TERMINAL_RUN_STATUSES))->exists(),
+            'METHOD_STUDY_TERMINAL_LATER_ORIGINAL_ACTIVE');
     }
 
     /** Only the exact old completed publication shape may omit its owner id. */

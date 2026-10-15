@@ -3,14 +3,21 @@
 A spent, declared original method study can have terminal technical history
 while a failed arm's mutable agent projection still says screening. The existing
 terminal boundary now routes only that technical method purpose to its original
-owner. All four immutable originals/checkpoints, receipt, cohort and historical
-source are reopened; STOP, no live lease, empty constructor/replay queues,
+owner. The sealed four-carrier plan, its exact nonempty attempted subset,
+immutable originals/checkpoints, receipt and historical source are reopened.
+Omitted arms must prove no original run or artifact and remain explicitly
+unexecuted, not zero-trade results. A previously projected unused draft requires
+the exact prior partial marker or its unique original code-owned terminal event
+with strict typed payload, timing and no-authority guards. Older terminal scopes also require every
+later cohort, agent and run to be terminal. STOP, no live lease, empty constructor/replay queues,
 owned work/replay mutexes and authenticated idle are required. Only the owned
 unfinished agent projections and a diagnostic projection marker change.
 Successful agents, runs, barriers, budgets, comparison and authority stay exact.
+The existing model lifecycle-sync projection follows an agent state change;
+that operational metadata is not the frozen parameter/runtime basis.
 Legacy completed method publication overwrote its nested run marker and omitted
 the work ID. Only that exact absent-key completion shape can be rejoined through
-all four immutable checkpoint/request chains and the original source owner.
+all actually attempted immutable checkpoint/request chains and the original source owner.
 Present null/wrong IDs, omitted technical owners or changed original bytes fail
 closed. This does not recreate a discarded work-result barrier or alter history.
 Idempotent `--settle-only --expected-generation-id` always exits without a

@@ -403,15 +403,25 @@ locked claim, construction and every original publication stay fresh.
 Original technical method closure now terminalizes its unfinished owned agent
 projections as technical quarantine, including unattempted drafts without
 invented runs. Successful screened arms and immutable results stay unchanged.
-For a previously spent four-original study, the existing expected-generation
+For a previously spent study with a sealed four-carrier plan, the existing expected-generation
 settle-only lifecycle route can reconcile a stale projection after reopening
-all original request/response bytes, receipt, cohort, checkpoints and historical
+all attempted original request/response bytes, receipt, cohort, checkpoints and historical
 release. STOP, known empty relevant constructor/replay queues, no live work
 lease, owned work/replay mutexes and authenticated idle are mandatory. This
-invocation never admits a successor or renews an original arm. Unknown/corrupt
+invocation never admits a successor or renews an original arm. Partial history
+requires a nonempty exact original subset and proves that every omitted arm has
+no run or artifact; unattempted arms remain explicitly unexecuted. An
+early technical close may already have projected an unused draft: only its
+unique original code-owned lifecycle event (strict owner, typed fields, timing
+and authority ceiling) or the exact prior partial marker can establish that.
+An older terminal generation can be projected only when every later cohort, agent and
+run is terminal. Partial diagnostic markers retain attempted/unattempted lists.
+The existing model lifecycle-sync metadata follows the repaired agent state;
+frozen model parameters/runtime basis and original products stay unchanged.
+Unknown/corrupt
 or incomplete proof remains blocked, not manually relabelled as success.
 The legacy completed publisher replaced its nested marker without `work_id`.
-Only the exact absent-key completed shape is accepted after verifying all four
+Only the exact absent-key completed shape is accepted after verifying all
 original checkpoints, immutable request/response bytes and historical source
 owner. A present null/wrong ID or missing technical-run owner remains blocked.
 The old terminal work result did not retain its original request barrier;

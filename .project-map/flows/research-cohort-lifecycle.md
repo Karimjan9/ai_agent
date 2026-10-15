@@ -20,10 +20,12 @@ Lane-owned data readiness (validated historical archive or live continuity)
 
 Typed research diagnostics do not traverse the ordinary economic/paper chain.
 An already-terminal unassessable method study may reconcile a stale arm projection
-only through its original owner after immutable four-original/receipt/cohort
+only through its original owner after immutable original-subset/receipt/four-carrier
 proof and STOP/idle/queue/mutex guards. The expected-generation settle-only
 invocation exits without a successor, replay, renewed budget or scientific claim.
-The exact legacy completed-marker omission is verified against the four original
+Unattempted arms require explicit no-run/no-artifact proof; their absence is
+not a fabricated result. Historical projection cannot cross a later active
+cohort/agent/run. The exact legacy completed-marker omission is verified against the original
 checkpoint/request chains, never caller flags, a rewritten run or a fabricated
 retained barrier. New completion preserves its original publication owner.
 An original native depth purpose executes its cheap carrier, seals the actual
