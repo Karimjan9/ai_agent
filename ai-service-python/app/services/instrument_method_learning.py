@@ -471,15 +471,21 @@ class InstrumentMethodLearning:
                         try:
                             output = program.evaluate(row, decision_at=decision_at, observed_at=observed_at)
                         except ValueError as error:
+                            # Some native strategies deliberately emit no score.
+                            # The admission lane's compatibility fallback is not
+                            # an observed confidence and must never fill it.
+                            native_score_unavailable = ('signal_confidence' in program.bindings.values()
+                                and row.get('signal_confidence') is None)
                             if (str(error) != 'DECISION_OPERATOR_INPUT_TYPE_REQUIRED'
-                                    or not any(field.startswith('method_') and field not in row
-                                        for field in program.bindings.values())):
+                                    or not (native_score_unavailable
+                                        or any(field.startswith('method_') and field not in row
+                                            for field in program.bindings.values()))):
                                 raise
                             # Missing genuine observation/model is a typed
                             # dependency and conservative decision, not an
                             # invented feature or unrelated technical failure.
                             output = {'confirmation': False, 'risk_multiplier': 0.0, 'exit': False}[program.target]
-                            reason = 'method_input_unavailable'
+                            reason = 'method_native_score_unavailable' if native_score_unavailable else 'method_input_unavailable'
                         if program.target == 'confirmation' and output is False and feature_inputs is not None:
                             missing = [field for field in program.bindings.values()
                                 if field.endswith('_available') and row.get(field) is False]
@@ -496,6 +502,7 @@ class InstrumentMethodLearning:
                         program.changed_decisions += int(changed)
                         used = True
                 if reason not in {'method_input_unavailable', 'method_model_unavailable',
+                        'method_native_score_unavailable',
                         'method_meta_score_unavailable',
                         'method_observed_volume_unavailable', 'method_observed_quote_unavailable',
                         'method_context_underpowered'}:

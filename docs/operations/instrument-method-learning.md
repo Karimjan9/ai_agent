@@ -522,3 +522,158 @@ for a passing result. Older contracts retain their original semantics.
 This delivery does not claim26 empirically mastered instruments. Quotes/volume/
 meta-model practice needs actual observations or a real fitted original asset;
 zero-use tests cannot replace them. All2026-and-later market data remain paper-only.
+
+## Curator practical know-how v3 (2026-10-15)
+
+The explicitly selected curriculum
+`curator_practical_knowhow_20261015_v3` retains reviewed operating practice for
+all 26 existing instruments. Its two append-only instruction resources,
+`curator-price-practice-v3.json` and `curator-risk-practice-v3.json`, contain
+26 primary profiles and 82 executable synthetic cases, plus a separately bound
+BandWidth supplement with three more cases (85 new cases total). Their 27 reviewed-source
+records refer to 25 distinct exact URLs: references repeated across the two
+parts are counted as separate records, not additional independent sources.
+These counts describe the new primary profiles, not the unchanged 90 v1
+primary exercises, the two v2 profiles or focused Python test methods.
+
+Each v3 primary profile binds the exact existing method revision, target,
+context and input fields. It adds concrete arithmetic/setup, closed/as-of
+conditions, actions, WAIT or invalidation conditions, alternatives and
+source-versus-lab limitations. Reviewed sources are bounded public sections,
+including the creator's Method I manual excerpt, official documentation and
+Wiley's published book excerpt. A reviewed lesson page or excerpt is not a
+watched embedded video, full transcript, full book or publisher-performance
+verification. Missing quotes, volume, depth, outcomes or model weights remain
+missing. An alternative marked as an implementation gap is a research
+question, not an installed or qualified algorithm.
+
+Three knowledge owners remain separate. Reviewed source practice establishes
+what the curator read and how a declared operation is taught. The retained
+state is `curator_practical_research`, with qualification state
+`unqualified_curator_research`; it does not issue an independently qualified
+`internet_skill`. That qualification still requires its separate existing
+verification and issuer. An agent-owned skill additionally needs that agent's
+original contextual policy use and eligible mature own outcomes. Curator
+examples, synthetic answers and reused archive comparisons cannot populate
+that agent's outcome history, create skill credit or grant economic authority.
+
+V3 is optional. The earlier recipe-only `teach` input remains valid; an
+explicit request can additionally provide the curriculum key:
+
+```json
+{
+  "recipe_hashes": ["<exact installed immutable recipe hash>"],
+  "curriculum_key": "curator_practical_knowhow_20261015_v3"
+}
+```
+
+Pass that JSON file to
+`php artisan trading:instrument-methods teach --input=teach-v3.json --json`.
+The command reopens installed original recipes and builds the code-owned
+pack; it does not install methods, fit models, attach a policy or dispatch
+research. The `curriculum` CLI action still uses its default curriculum;
+it has no `--curriculum-key` option. The service interface can inspect v3 with
+`operatingCurriculum('curator_practical_knowhow_20261015_v3')`.
+
+For an eligible fresh ordinary constructor child, an already requested
+`trigger_context.instrument_method_generation_learning` may include
+`curriculum_key` alongside its existing `enabled` and `recipe_hashes` fields.
+The owner forwards that field into the constructor handoff. The direct
+`AgentMethodGenerationService::prepareFreshChild` interface likewise accepts
+the optional key in its constructor array. It derives and verifies the
+teaching pack before sealing the child's policy; caller-supplied
+`teaching_pack` bytes are refused. The selected recipe roster, physical
+strategy/account/cost/risk contract and protected seats are not expanded by
+choosing v3. Omitted keys preserve the existing v1/v2 selection. Original
+v1/v2 resource bytes, packs, policies and historical receipts remain unchanged.
+
+The v3 pack pins both its before-outcome declaration and a separate
+curator-observation envelope. Missing or altered originals block construction
+of that pack; caller labels cannot supply the evidence. A local comparison
+must retain exact method/source, request/response, dataset/cost and
+trade/cost/ledger references, plus separate reached, available, activated and
+changed-decision counts. The evidence owner derives the retained grade:
+
+- `local_provisional_positive`, `local_null` and `local_negative` describe
+  matched seen-archive net-cash differences after actual behavior changed.
+  A positive result remains a bounded research lead; null or negative evidence
+  remains a useful constraint on the tested context.
+- `no_behavior_change` records available execution without changed decisions;
+  it does not establish incremental utility. A prospective `no_effect` policy
+  comparison likewise does not invent an additional experiment.
+- `unactivated` means the method was not reached; `unavailable` means the
+  required observations were absent. Neither is a tested strategy loss.
+- `partially_unavailable` means some reached operations lacked usable inputs;
+  their WAIT effect is not ranked as complete rule utility.
+- `technical_or_incomplete` and unresolved provenance remain execution or
+  evidence dependencies, not economic conclusions.
+
+These categories explain how evidence is retained; they assert no particular
+market result for the new panel. Positive, null, negative, no-effect,
+unactivated and missing-input cases stay available for bounded later research
+with their exact scope and limitations. They neither create a global method
+ban nor permit outcome-selected rewriting, independent confirmation, agent
+credit, promotion, paper admission or live trading.
+
+A fresh explicit-v3 **default** policy can use these observations rather than
+merely carry a document. The existing constructor derives a separately sealed
+`curator_advice` preference from the selected method comparisons. Only recipes
+with identical context, typed target roles and measured-window sets can exchange
+positions; signs are counted once per seen window. Missing, partial, technical,
+unactivated and no-behavior-change cases do not vote. Unknown positions remain
+fixed, the entire original recipe pool remains eligible, and fallback stays
+BASELINE. The original initial order, exact case references, grades and advice
+hash are rederived on inspection; caller preference or claimed grades cannot
+supply that proof. Parent-owned learned proposals retain their existing owner
+and are not reranked by curator advice. Research preference is not a hard ban,
+expected-profit model, agent-earned outcome or trading authority.
+
+The native confidence dependency is likewise explicit. A strategy that emits
+no genuine `signal_confidence` produces conservative WAIT with
+`method_native_score_unavailable` for an operator requiring that score. It does
+not receive an invented 1.0 score from compatibility admission. Genuine numeric
+native scores are unchanged; present malformed/nonfinite values still refuse.
+
+The original 56-arm observations, the explicitly approved two-risk technical
+completion, and the two fresh four-arm dependency studies have separate pinned
+resources. Completion and follow-up findings are projected into only relevant
+selected lessons, not counted as additional advice votes or independent
+windows. Original technical/unavailable rows remain unchanged. For example,
+the later quote study distinguishes actual observed-spread vetoes from the
+original missing-quote WAITs; the native-score study distinguishes six missing
+EMA inputs from an unactivated trend recipe. These observations remain useful
+training material without inventing a qualified skill or recipient experience.
+
+On the observed sample, a smaller raw spread was not necessarily cheaper: the
+December spread was a greater fraction of the last 14 closed true ranges than
+October's. The executable primary uses the arithmetic TR mean and exact strict
+`spread / mean < 0.10`, not a rounded threshold or Wilder ATR. All nine reached
+observed-quote decisions vetoed; no pass example was observed. The threshold
+itself remains a laboratory hypothesis, not a publisher-certified profitable
+rule. See the linked source-grounded backtest report for original evidence and
+both the worse October and less-negative December outcomes.
+
+The separately declared
+`internet_closed_bandwidth_squeeze_breakout_v1@1` is a normalized BandWidth
+alternative for `compression_expansion`, distinct from its unchanged disjoint
+5/20 true-range contraction/expansion proxy. It computes SMA20 plus/minus twice
+the population standard deviation, then
+`BandWidth = (upper - lower) / positive middle`. Its rolling low needs 125
+mature widths, not 125 raw bars. The laboratory adaptation uses a zero buffer
+including ties and a squeeze on any of the previous five completed rows.
+An existing BUY requires the previous close inside or on BOTH of its own bands and a
+current close strictly above its own upper band and the preceding close; SELL
+is symmetric. The last six timestamps must be contiguous at the configured
+bar duration. First availability is index 144; flat historical width may be a
+squeeze, but contact, an opposite candidate or a continuing outside close is
+not a fresh breakout. These 125/5, zero-buffer and timing choices do not claim
+the manual's proprietary implementation or default 3-percent buffer.
+
+`test_closed_bandwidth_squeeze.py` has 12 passing synthetic test methods for
+maturity, formula, direction, equality, freshness, five-bar expiry, continuity,
+future-prefix and scale invariance, nonpositive denominator refusal, opposite-outside
+crossing refusal, and original-row/flag spoof resistance.
+They establish software behavior on fixtures, not profitable squeeze trading
+or empirical agent mastery. The new method retains its own exact
+trend-up/London/normal predicate and external guards. All 2026-and-later market
+data remain paper-only.

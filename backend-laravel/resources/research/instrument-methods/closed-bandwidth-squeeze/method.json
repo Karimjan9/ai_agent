@@ -1,0 +1,25 @@
+{
+  "instrument_key": "compression_expansion",
+  "method_key": "internet_closed_bandwidth_squeeze_breakout_v1",
+  "revision": 1,
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["8d45dccc45f3567f1a1c8e32357581eab978f5a16171c47c48944fa641f11dd4"],
+  "known_limitations": [
+    "Twenty completed closes, population standard deviation and two deviations form the bands. BandWidth=(upper-lower)/positive middle. Rolling minimum requires 125 mature BandWidths, not 125 raw bars. First current availability is observation index 144; zero-width history may be a squeeze, but an actual strict breakout still needs a price move.",
+    "Zero buffer including ties, previous-five-observation squeeze, fresh strict current breakout and last-six contiguous bars are laboratory adaptations. They do not reproduce the manual's proprietary implementation or default three-percent buffer. Older history uses observed bars, not a claim of continuous calendar coverage.",
+    "BUY needs previous close at or below its upper band then current close strictly above its own upper band and previous close; SELL is symmetric. A band tag, repeated outside close, opposite-direction candidate, missing or immature observation does not confirm entry.",
+    "This is a distinct normalized BandWidth alternative to the old disjoint 5/20 true-range proxy, not a silent replacement. Original closed OHLC and observation clock are authoritative; supplied method columns cannot create observations.",
+    "The exact trend-up/London/normal scope, periods and signal conditions are prospective research hypotheses. Risk, leverage, stops, target, spread, slippage, commission and other eligibility guards remain unchanged. Research on reused pre-2026 data is not untouched validation, Master, useful causal skill, credit or paper/live permission. All 2026 and later market data remain paper-only."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {"op": "AND", "args": [
+      {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+      {"op": "BOOL", "input_key": "breakout", "available_at": "2000-01-01T00:00:00Z"}
+    ]},
+    "input_bindings": {"available": "method_bandwidth_squeeze_available", "breakout": "method_bandwidth_squeeze_breakout"},
+    "budget": {"cpu_seconds": 0.5, "max_calls": 4096, "max_node_evaluations": 32768}
+  }
+}

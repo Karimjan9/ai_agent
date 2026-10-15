@@ -28,6 +28,18 @@ class AgentMethodGenerationService
         private InstrumentMethodLibraryService $library, private InstrumentMethodResearchBindingService $binding,
         private StrategyParameterSchemaService $schemas, private ResearchPaperEpochContractService $hashes) {}
 
+    /** Freeze an explicit instruction version once; resumed generations never reread it. */
+    public function prospectiveCurriculumDeclaration(): array
+    {
+        $key = config('services.instrument_methods.generation_curriculum_key');
+        if ($key === null) return [];
+        $this->need(is_string($key) && in_array($key, [CuratedInstrumentMethodCatalogService::OPERATING_CURRICULUM_KEY,
+            CuratedInstrumentMethodCatalogService::SOURCE_PRACTICE_CURRICULUM_KEY,
+            CuratedInstrumentMethodCatalogService::CURATOR_PRACTICE_CURRICULUM_KEY], true),
+            'METHOD_GENERATION_CURRICULUM_KEY_REQUIRED');
+        return ['curriculum_key' => $key];
+    }
+
     /** Called only after immutable original observations have been projected by the existing owner. */
     public function proposeFromOriginalRun(LabEvaluationRun $run, ?array $learned = null): array
     {
@@ -106,6 +118,8 @@ class AgentMethodGenerationService
         $constructor = ['generation_id' => (int) $generation->id, 'slot' => $slot,
             'curated_recipe_hashes' => data_get($generation->trigger_context, 'instrument_method_generation_learning.recipe_hashes',
                 [])];
+        $curriculum = data_get($generation->trigger_context, 'instrument_method_generation_learning.curriculum_key');
+        if ($curriculum !== null) $constructor['curriculum_key'] = $curriculum;
         if ($parent && data_get($parent->metadata, InstrumentMethodResearchBindingService::METADATA.'.policy_hash') !== null) {
             if (! $this->unused($child)) return $this->dependency('METHOD_GENERATION_UNUSED_CONSTRUCTOR_CHILD_REQUIRED');
             $selection = $this->preferOwnedOutcomeProposal($parent);
@@ -122,6 +136,7 @@ class AgentMethodGenerationService
         if (! Schema::hasTable('agent_method_policy_revisions')) return $this->dependency('METHOD_GENERATION_MIGRATION_REQUIRED');
         try {
             $this->need(! array_key_exists('teaching_pack', $constructor), 'METHOD_GENERATION_CODE_OWNED_TEACHING_PACK_REQUIRED');
+            $this->need(! array_key_exists('curator_advice', $constructor), 'METHOD_GENERATION_CODE_OWNED_CURATOR_ADVICE_REQUIRED');
             $this->need(! array_key_exists('meta_asset_binding', $constructor), 'METHOD_GENERATION_CODE_OWNED_META_ASSET_REQUIRED');
             return DB::transaction(function () use ($child, $parent, $constructor): array {
                 if ($parent !== null) {
@@ -181,11 +196,22 @@ class AgentMethodGenerationService
                 // Instruction is pinned separately from learned selection. It
                 // cannot install a model asset or change a physical treatment.
                 $catalog = app(CuratedInstrumentMethodCatalogService::class);
-                $teaching = $catalog->teachingPack($definition['library_contract']['recipe_hashes']);
+                $curriculum = $constructor['curriculum_key'] ?? null;
+                $this->need($curriculum === null || is_string($curriculum), 'METHOD_GENERATION_CURRICULUM_KEY_REQUIRED');
+                $teaching = $curriculum === null
+                    ? $catalog->teachingPack($definition['library_contract']['recipe_hashes'])
+                    : $catalog->teachingPack($definition['library_contract']['recipe_hashes'], $curriculum);
                 if (($teaching['status'] ?? null) === 'operating_rules_taught') {
                     $this->need($catalog->verifyTeachingPack($teaching, $definition['library_contract']['recipe_hashes']),
                         'METHOD_GENERATION_TEACHING_PACK_INVALID');
                     $proof['teaching_pack'] = $teaching;
+                    if ($proposal === null && $curriculum === CuratedInstrumentMethodCatalogService::CURATOR_PRACTICE_CURRICULUM_KEY) {
+                        $advice = $catalog->curatorPracticeAdvice($teaching, $proof['rules']);
+                        $this->need(($advice['status'] ?? null) === 'curator_research_preference_advice',
+                            'METHOD_GENERATION_CURATOR_ADVICE_REQUIRED');
+                        $proof['rules'] = $advice['rules'];
+                        $proof['curator_advice'] = $advice;
+                    }
                 } else {
                     // Existing custom recipes retain the original handoff;
                     // corrupt or incompletely installed mapped lessons refuse.
@@ -255,7 +281,17 @@ class AgentMethodGenerationService
             if ($proof['mode'] === 'curated_default') {
                 if ($proof['source_model_id'] !== null || $proof['source_policy_hash'] !== null || $proof['source_proposal_hash'] !== null || $proof['lineage_depth'] !== 0) return false;
                 foreach ($proof['library_contract']['recipe_hashes'] as $hash) $this->typedRecipe($hash);
+                if (data_get($proof, 'teaching_pack.curriculum_key') === CuratedInstrumentMethodCatalogService::CURATOR_PRACTICE_CURRICULUM_KEY) {
+                    $originalOrder = data_get($proof, 'curator_advice.initial_recipe_order');
+                    if (! is_array($originalOrder)) return false;
+                    $initial = $this->curatedDefault($originalOrder);
+                    $advice = app(CuratedInstrumentMethodCatalogService::class)->curatorPracticeAdvice($proof['teaching_pack'], $initial['rules']);
+                    if (($advice['status'] ?? null) !== 'curator_research_preference_advice'
+                        || $this->hash($advice) !== $this->hash($proof['curator_advice'])
+                        || $this->hash($advice['rules']) !== $this->hash($proof['rules'])) return false;
+                } elseif (array_key_exists('curator_advice', $proof)) return false;
             } elseif (in_array($proof['mode'], ['original_parent_observation', 'original_parent_owned_outcome'], true)) {
+                if (array_key_exists('curator_advice', $proof)) return false;
                 $parent = ModelVersion::find($proof['source_model_id']);
                 if (! $parent || $parent->id >= $target->id || $this->protected($parent)
                     || $this->physical($parent)['family'] !== $this->physical($target)['family']

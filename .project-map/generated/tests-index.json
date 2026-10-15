@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T07:13:17.877Z",
-  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
-  "source_file_count": 1711,
-  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
+  "generated_at": "2026-10-15T10:05:01.719Z",
+  "source_digest": "62ad514e4e02d28c1c035df8c88cf99739e484b359feda2e8edb0c39a5a31b14",
+  "source_file_count": 1715,
+  "git_head": "b60569def9b16870348293e66ede71ddaf54ba4d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -147,6 +147,23 @@
         "test_source_rule_admits_equality_and_rejects_strictly_greater_without_a_direction",
         "test_zero_atr_and_nonpositive_close_are_unavailable_not_fake_ratios",
         "test_future_suffix_and_supplied_method_columns_cannot_rewrite_original_prefix"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
+      "tests": [
+        "test_crossing_from_opposite_outside_band_is_not_the_declared_inside_breakout",
+        "test_nonpositive_current_middle_does_not_supply_normalized_availability",
+        "test_prior_125_mature_widths_require_index_144_before_confirmation",
+        "test_buy_and_sell_fresh_crossings_use_population_std_normalized_width",
+        "test_flat_equal_band_contact_does_not_break_out",
+        "test_repeated_or_continuing_outside_close_is_not_a_fresh_breakout",
+        "test_squeeze_alert_can_be_used_on_fifth_later_bar_but_not_sixth",
+        "test_each_of_last_five_timestamp_intervals_must_be_contiguous",
+        "test_future_suffix_cannot_rewrite_any_closed_prefix_observation",
+        "test_positive_price_scaling_preserves_normalized_width_and_confirmation",
+        "test_original_closed_time_is_required_and_ohlc_spoof_is_rejected",
+        "test_frame_and_caller_method_flags_cannot_replace_owner_observations"
       ]
     },
     {
@@ -565,6 +582,18 @@
         "test_specialist_runtime_enforces_liquidity_transition_and_maintenance_abstention",
         "test_specialist_preserves_raw_signal_and_missing_measured_liquidity_reason",
         "test_specialist_direction_veto_is_not_reported_as_owned_context"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_method_native_score_binding.py",
+      "tests": [
+        "test_actual_scoreless_ema_reaches_london_and_waits_without_fabricated_score",
+        "test_actual_trend_generated_closed_adx_score_is_consumed_unchanged",
+        "test_source_confidence_spoof_cannot_override_genuine_trend_computation",
+        "test_absent_or_none_score_is_typed_dependency_for_each_method_target",
+        "test_present_malformed_bool_string_or_nonfinite_score_remains_strict",
+        "test_genuine_numerical_zero_equality_and_score_above_floor_keep_their_meaning",
+        "test_other_missing_owned_observation_retains_existing_conservative_wait"
       ]
     },
     {
@@ -1900,6 +1929,13 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php",
+      "tests": [
+        "test_original_declared_method_compiles_to_actual_closed_python_bandwidth",
+        "input"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ClosedTrendMethodDeclarationTest.php",
       "tests": [
         "test_existing_cli_registers_two_append_only_hypotheses_without_catalog_or_agent_mutation",
@@ -2029,6 +2065,33 @@
         "test_real_php_to_python_typed_revisions_change_veto_at_declared_boundaries",
         "test_catalog_and_install_commands_are_discovered_without_input_or_network_fetch",
         "baselineParameters"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php",
+      "tests": [
+        "setUp",
+        "test_labelled_synthetic_local_positive_null_and_negative_are_retained_without_any_authority",
+        "test_unactivated_missing_data_unmatched_provenance_and_incomplete_execution_never_become_strategy_losses",
+        "test_labelled_synthetic_case_roster_refuses_extra_missing_duplicate_and_substituted_cases",
+        "test_labelled_synthetic_one_method_projection_retains_only_its_cases_and_keeps_the_full_declaration",
+        "test_v3_structured_alternatives_are_bounded_documents_not_install_or_execution_authority",
+        "test_prospective_curriculum_is_explicit_strict_and_frozen_before_ambient_configuration_changes",
+        "test_explicit_v3_keeps_all_original_lessons_and_default_packs_and_teaches_the_exact_new_cases",
+        "test_actual_fifty_six_original_rows_stay_immutable_and_two_technical_completions_are_separate_nonvoting_instruction",
+        "test_actual_eight_dependency_diagnostics_retain_readiness_and_mixed_local_results_without_new_windows",
+        "test_selected_diagnostic_packs_project_exact_methods_keep_bounded_notes_and_add_no_advice_votes",
+        "test_diagnostic_parser_refuses_case_source_control_and_authority_substitution",
+        "test_selected_risk_pack_retains_completion_facts_without_counting_them_as_new_advice_votes",
+        "test_twenty_six_practical_profiles_execute_their_actual_php_compiled_operators",
+        "test_original_v2_production_recipe_pack_hash_remains_exact",
+        "test_real_unused_child_explicitly_receives_v3_with_immutable_proof_and_no_original_outcomes",
+        "test_labelled_synthetic_curator_advice_keeps_unscored_positions_and_deduplicates_seen_windows",
+        "test_labelled_synthetic_advice_changes_actual_compiled_policy_recipe_and_veto_without_claiming_market_benefit",
+        "syntheticAdviceFixture",
+        "syntheticObservation",
+        "installOriginals",
+        "assertNoLearningOrAuthority"
       ]
     },
     {
@@ -4180,6 +4243,7 @@
         "test_exact_replay_idle_probe_source_and_regression_are_archived",
         "test_native_meta_original_issuer_target_and_php_python_regressions_are_exact_archive_bytes",
         "test_source_practice_additions_are_exact_bytes_without_private_market_products_or_unlisted_sources",
+        "test_curator_practice_resources_and_actual_software_proofs_are_exactly_archived_without_private_products",
         "tearDown",
         "test_archive_byte_fence_rehashes_actual_bytes_and_original_reference_without_claiming_full_verification",
         "test_archive_byte_fence_refuses_changed_reference_bytes_even_with_original_zip",

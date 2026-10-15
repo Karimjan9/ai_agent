@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_closed_bandwidth_squeeze_recipe_v1",
+  "revision": 1,
+  "method_hashes": ["000162aee868bbed96a681dbbbc1ad09d5e5bb44b7182002f2848f0d16b7036f"],
+  "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"}
+}

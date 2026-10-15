@@ -96,10 +96,12 @@ class ResearchInstrumentMethods extends Command
 
     private function teach(array $input): array
     {
-        if (array_keys($input) !== ['recipe_hashes'] || ! is_array($input['recipe_hashes'])) {
+        if (array_diff(array_keys($input), ['recipe_hashes', 'curriculum_key']) !== []
+            || ! is_array($input['recipe_hashes'] ?? null)
+            || (array_key_exists('curriculum_key', $input) && ! is_string($input['curriculum_key']))) {
             throw new InvalidArgumentException('OPERATING_EXACT_RECIPE_ROSTER_REQUIRED');
         }
-        return app(CuratedInstrumentMethodCatalogService::class)->teachingPack($input['recipe_hashes']);
+        return app(CuratedInstrumentMethodCatalogService::class)->teachingPack($input['recipe_hashes'], $input['curriculum_key'] ?? null);
     }
 
     private function attachMetaModel(array $input): array

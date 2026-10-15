@@ -730,6 +730,7 @@ trait LabPopulationConstructionTrait
                             'protocol' => AgentMethodGenerationService::PROTOCOL,
                             'enabled' => true,
                             'recipe_hashes' => config('services.instrument_methods.generation_recipe_hashes', []),
+                            ...app(AgentMethodGenerationService::class)->prospectiveCurriculumDeclaration(),
                             'protected_comparative_seats_unchanged' => true,
                             'research_only' => true, 'promotion_evidence' => false,
                         ] : null,

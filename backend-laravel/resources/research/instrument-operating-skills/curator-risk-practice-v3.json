@@ -1,0 +1,1817 @@
+{
+  "protocol": "instrument_curator_practical_knowhow_v1",
+  "part_key": "curator_risk_practice_v3",
+  "revision": 1,
+  "curriculum_key": "curator_practical_knowhow_20261015_v3",
+  "reviewed_on": "2026-10-15",
+  "purpose": "Append-only curator practical know-how for twelve existing instrument methods; source learning and laboratory practice remain separate from agent-owned skill.",
+  "acceptance": {
+    "old_v1_v2_resources": "preserved_byte_exact",
+    "new_method_or_model_installed": false,
+    "exercise_scope": "existing_declared_AST_semantics_only",
+    "archive_practice": "Root-owned separate pinned new panel; no outcome is fabricated in this instruction file.",
+    "positive_unconfirmed_knowhow": "retain_for_prospective_research_without_authority",
+    "independent_validation": false,
+    "economic_authority": false,
+    "agent_owned_skill_granted": false,
+    "promotion_or_live_authority": false,
+    "all_2026_and_later_market_data": "paper_only"
+  },
+  "runtime_authorities": [
+    "backend-laravel/resources/research/instrument-methods/curated-v1.json",
+    "backend-laravel/resources/research/instrument-methods/curated-v2.json",
+    "backend-laravel/resources/research/instrument-methods/observed-quote-firewall/method.json",
+    "backend-laravel/resources/research/instrument-methods/calibrated-meta-score/method.json",
+    "ai-service-python/app/services/instrument_method_features.py",
+    "ai-service-python/app/services/instrument_method_learning.py",
+    "ai-service-python/app/services/instrument_method_meta_model.py",
+    "ai-service-python/app/services/backtester.py"
+  ],
+  "source_boundaries": {
+    "web_review": "Public text/sections listed under each source were actually opened and read on2026-10-15. Paraphrase only; no source code executed.",
+    "book_review": "Only Wiley excerpt printed pages13,15,17 sections listed below, not chapter3/full book.",
+    "video_review": "No video or webinar was viewed; an embedded player or lesson text is not represented as a watched video/transcript.",
+    "data": "No observed volume, quote, depth, mature outcome or model was manufactured. Numeric exercises are synthetic fixtures.",
+    "new_algorithm_gaps": "Alternatives marked research_gap remain unimplemented questions, not registered/qualified library methods."
+  },
+  "sources": [
+    {
+      "source_id": "curator_risk_tick",
+      "url": "https://help.ctrader.com/ctrader-algo/references/Indicators/TickVolume/",
+      "title": "TickVolume",
+      "publisher": "Spotware cTrader",
+      "medium": "official_api_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Definition, Remarks, and public C#/Python closed-bar examples only.",
+      "reviewed_evidence": "Tick volume counts ticks per bar. The example corroborates an existing price direction with an increase from the preceding bar; it does not use this repository's prior20 ratio.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation"
+      ]
+    },
+    {
+      "source_id": "curator_risk_liquidity",
+      "url": "https://www.cmegroup.com/education/articles-and-reports/understanding-the-cme-liquidity-tool-methodology",
+      "title": "Understanding the CME Liquidity Tool Methodology",
+      "publisher": "CME Group",
+      "medium": "official_exchange_methodology",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Bid-Ask Spread, Cost To Trade/Buy/Sell and aggregation sections; text only, not formula images.",
+      "reviewed_evidence": "A missing bid or ask prevents a spread measure. Quantity-dependent trading cost consumes successive book levels; insufficient orders leave that cost unavailable. The 2024 methodology change is disclosed.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "formula_images",
+        "raw_order_book_messages"
+      ]
+    },
+    {
+      "source_id": "curator_risk_atr",
+      "url": "https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/",
+      "title": "Average True Range (ATR)",
+      "publisher": "TradingView",
+      "medium": "official_indicator_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Definition, Calculation and Using Absolute Value sections.",
+      "reviewed_evidence": "True range includes gaps from the preceding close. ATR measures magnitude rather than direction. TradingView defaults to RMA; absolute ATR values are not portable across differently priced securities.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "Wilder_1978_book",
+        "embedded_youtube"
+      ]
+    },
+    {
+      "source_id": "curator_risk_repaint",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+      "title": "Repainting",
+      "publisher": "TradingView",
+      "medium": "official_language_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Historical vs realtime calculations / Fluid data values section; confirmed-bar alternatives.",
+      "reviewed_evidence": "Unclosed HLC changes during a bar; waiting for confirmation or using the preceding completed row delays the decision but avoids using fluid HLC as historical facts.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "all_Pine_features",
+        "linked_videos"
+      ]
+    },
+    {
+      "source_id": "curator_risk_plan",
+      "url": "https://www.cmegroup.com/education/courses/building-a-trade-plan/risk-management-and-your-trade-plan",
+      "title": "Step 3. Risk Management and Your Trade Plan",
+      "publisher": "CME Group",
+      "medium": "official_education_text",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Accessible lesson text and risk-approach questions only.",
+      "reviewed_evidence": "A plan should set leverage, maximum trade/day loss, simultaneous positions and account exposure in advance. Published example percentages are examples.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "embedded_two_minute_video",
+        "video_transcript"
+      ]
+    },
+    {
+      "source_id": "curator_risk_quinto",
+      "url": "https://www.cmegroup.com/content/dam/cmegroup/education/interactive/tradingplan/trading_plan_document.pdf",
+      "title": "Jeff Quinto's Trading Plan",
+      "publisher": "Jeff Quinto, hosted by CME Group",
+      "medium": "official_author_plan_pdf_excerpt",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "PDF pages 2 and 3 only: Risk and Goals; no full-document review.",
+      "reviewed_evidence": "The author's simulator plan pauses after three consecutive losses and specifies different holding treatment for winners versus scratches/losers. It supplies no twelve-bar wait, four-times-streak rule or calibrated survival estimate.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "author_track_record",
+        "pages_1_4_5_as_instruction"
+      ]
+    },
+    {
+      "source_id": "curator_risk_size",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/proper-position-size",
+      "title": "Proper Position Size",
+      "publisher": "CME Group",
+      "medium": "official_education_text",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Accessible stop-first sizing explanation and contract/tick arithmetic.",
+      "reviewed_evidence": "Position quantity depends on a logical stop and predetermined account risk; loss per contract comes from stop ticks times tick value.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "embedded_video",
+        "current_broker_contract_specifications"
+      ]
+    },
+    {
+      "source_id": "curator_risk_fraction",
+      "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule",
+      "title": "The 2% Rule",
+      "publisher": "CME Group",
+      "medium": "official_education_text",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Accessible fixed-fraction examples and explicit arbitrariness statement.",
+      "reviewed_evidence": "The percentage is a chosen risk convention. A wider stop requires fewer contracts to keep the same cash risk.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "embedded_video",
+        "optimal_risk_fraction"
+      ]
+    },
+    {
+      "source_id": "curator_risk_calibration",
+      "url": "https://scikit-learn.org/stable/modules/calibration.html",
+      "title": "Probability calibration",
+      "publisher": "scikit-learn developers",
+      "medium": "official_library_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Sections 1.16.1 Calibration curves, 1.16.2 Calibrating a classifier, and class-presence caveats in 1.16.3.",
+      "reviewed_evidence": "Reliability compares binned predicted scores with observed positive fractions. Fitting a calibrator on a classifier's own training predictions is biased; Brier loss alone does not establish calibration.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "all_linked_papers",
+        "any_external_model_fit"
+      ]
+    },
+    {
+      "source_id": "curator_risk_timeseries",
+      "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html",
+      "title": "TimeSeriesSplit",
+      "publisher": "scikit-learn developers",
+      "medium": "official_api_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Class description and gap parameter, with gap=2 worked indices.",
+      "reviewed_evidence": "Splits preserve temporal order; gap removes a fixed number of rows before each test interval. Equal spacing is needed for comparable time duration. A row gap alone is not a trade-label overlap audit.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "implementation_source",
+        "empirical_trading_validation"
+      ]
+    },
+    {
+      "source_id": "curator_risk_dmi",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/DMI",
+      "title": "Directional Movement Index (DMI)",
+      "publisher": "Fidelity",
+      "medium": "official_indicator_education",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Description, How this indicator works, and Calculation sections.",
+      "reviewed_evidence": "ADX concerns strength; directional information belongs to directional movement components. The guide illustrates strong versus weak trend thresholds, which are not this runtime's qualified classifier.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "Wilder_book",
+        "backtests"
+      ]
+    },
+    {
+      "source_id": "curator_risk_ema",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+      "title": "Exponential Moving Average (EMA)",
+      "publisher": "Fidelity",
+      "medium": "official_indicator_education",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Description, trend/support interpretation and EMA recurrence.",
+      "reviewed_evidence": "EMA weights recent prices, lags turns and can change more often than SMA. Rising/falling EMA offers trend context rather than exact turning points.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "linked_webinars",
+        "profitable_period_selection"
+      ]
+    },
+    {
+      "source_id": "curator_risk_trail",
+      "url": "https://www.tradingview.com/support/solutions/43000754965-introduction-to-trailing-stops/",
+      "title": "Introduction to trailing stops",
+      "publisher": "TradingView",
+      "medium": "official_order_education",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "What is a trailing stop and distance tradeoffs; no broker connection.",
+      "reviewed_evidence": "A trailing stop follows favorable movement and stops retreating on reversal. Tight distances can exit routine pullbacks; loose distances give back gains.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "broker_specific_fills",
+        "linked_broker_comparison"
+      ]
+    },
+    {
+      "source_id": "curator_risk_chandelier",
+      "url": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/chandelier-exit",
+      "title": "Chandelier Exit",
+      "publisher": "StockCharts ChartSchool",
+      "medium": "publisher_indicator_reference",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Calculation and interpreting sections only; text formulas, no spreadsheet/chart outcome claims.",
+      "reviewed_evidence": "Long level uses rolling high minus ATR buffer; short uses rolling low plus it. The daily22/3 illustration is not a validated M5 setting and its rolling level can fall as inputs change.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "Le_Beau_or_Elder_full_books",
+        "spreadsheets",
+        "live_charts"
+      ]
+    },
+    {
+      "source_id": "curator_risk_survival",
+      "url": "https://lifelines.readthedocs.io/en/latest/Survival%20analysis%20with%20lifelines.html",
+      "title": "Estimating univariate models",
+      "publisher": "lifelines developers",
+      "medium": "official_library_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Kaplan-Meier definition/fit, confidence intervals and durations/event-observed format only.",
+      "reviewed_evidence": "A fitted survival curve uses event durations and censoring. Kaplan-Meier multiplies one-minus-event/risk-set fractions and reports uncertainty; a deterministic age transform is not that estimate.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "all_parametric_models",
+        "any_trade_survival_fit"
+      ]
+    },
+    {
+      "source_id": "curator_risk_book",
+      "url": "https://catalogimages.wiley.com/images/db/pdf/9781119482086.excerpt.pdf",
+      "title": "Advances in Financial Machine Learning: official chapter-one excerpt",
+      "publisher": "Marcos Lopez de Prado / Wiley",
+      "medium": "official_book_excerpt",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Printed page13 pitfall table; page15 meta-layer FAQ and independent-data paragraph; page17 backtest-overfitting FAQ. No chapter3 algorithm or entire book reviewed.",
+      "reviewed_evidence": "The excerpt distinguishes side/size and meta-layer concepts, flags leakage/overfitting, and discusses later independent testing. It does not specify this repository's finite-bin estimator, training floors or threshold.",
+      "not_reviewed": [
+        "complete_book",
+        "full_video_or_webinar",
+        "market_performance_validation",
+        "full_chapter_one",
+        "chapter_three",
+        "remaining_chapters",
+        "book_videos"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "profile_key": "curator_volume_confirmation_operating_practice_v3",
+      "instrument_key": "volume_confirmation",
+      "method_ref": "internet_observed_relative_volume_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_tick"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_tick",
+          "url": "https://help.ctrader.com/ctrader-algo/references/Indicators/TickVolume/",
+          "reviewed_scope": "Definition, Remarks, and public C#/Python closed-bar examples only."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_volume_ratio": "method_volume_ratio",
+          "method_volume_available": "method_volume_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "ratio = current closed observed volume / mean(previous20 closed observed volumes); confirmation = available AND ratio > 1.2.",
+      "setup": "An existing London trend-up normal-volatility candidate has a provider-identified activity series on its own timeframe.",
+      "operating_steps": [
+        "Read the provider/unit and volume_available on each observation before interpreting activity. Tick count is not contracts, not notional volume and not order-book depth.",
+        "Require current volume>0 plus twenty prior positive available volumes. Shift before rolling; the current closed bar cannot inflate its own baseline.",
+        "Example: prior20 all100 ticks and current130 ticks gives ratio1.30. Bind only owner-published method_volume_available/method_volume_ratio and apply strict >1.2.",
+        "If confirmed, continue the original candidate through costs/risk; if unavailable or ratio<=1.2, WAIT. Record provider, bar close and baseline window.",
+        "Invalidate comparison on a provider/unit change or immature baseline. Do not claim increased ticks identify buy-versus-sell aggression."
+      ],
+      "inputs": [
+        "method_volume_available:boolean from canonical availability and positive current/prior20 observations",
+        "method_volume_ratio:dimensionless",
+        "Underlying closed volume and volume_available, provider, unit and timeframe"
+      ],
+      "wait_when": [
+        "No genuine observed activity/availability or fewer than20 valid preceding bars.",
+        "Ratio<=1.2.",
+        "Provider or unit changes make the rolling comparison incomparable; preserve unavailable state."
+      ],
+      "alternatives": [
+        {
+          "use": "Closed price rise/fall plus tick increase over one preceding bar, matching the cTrader educational example.",
+          "status": "research_gap_not_installed_as_this_method",
+          "difference": "Two-bar activity comparison has a different denominator and variance; it cannot be relabelled as the prior20 rule."
+        },
+        {
+          "use": "Compare activity to the same time-of-session baseline when studying normal intraday activity seasonality.",
+          "status": "separate_existing_native_volume_lane",
+          "difference": "Native seasonality normalization and its thresholds are distinct. Reuse its actual owner only when selected; no missing volume is backfilled."
+        },
+        {
+          "use": "Exchange contract-volume corroboration on a homogeneous exchange feed.",
+          "status": "data_conditional_research",
+          "difference": "Requires observed exchange contracts and roll/session definitions; present provider tick series cannot supply it."
+        }
+      ],
+      "invalidation": "A price invalidation, loss of source availability, a new closed ratio failing the rule, or leaving frozen context ends this confirmation opportunity.",
+      "pitfalls": [
+        "A high ratio can occur on a reversal; the original direction remains separately owned.",
+        "Mixing provider ticks with exchange volume creates a meaningless baseline.",
+        "A volume_lane=none NOOP is not proof that this method was used."
+      ],
+      "source_vs_lab": "The cTrader source establishes tick units and a distinct two-bar corroboration example. Prior20, strict1.2, positive-volume availability and this context are repository hypotheses. No source or synthetic pass establishes profitable participation or agent skill.",
+      "exercises": [
+        {
+          "name": "v3_volume_prior20_100_current130",
+          "inputs": {
+            "method_volume_available": true,
+            "method_volume_ratio": 1.3
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic20 prior bars all100 observed ticks; closed current130 ->130/100=1.3.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_volume_prior20_100_current120_equal_cap",
+          "inputs": {
+            "method_volume_available": true,
+            "method_volume_ratio": 1.2
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic20 prior bars all100 and current120 ->1.2; strict equality waits.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_volume_missing_marker_large_number_unusable",
+          "inputs": {
+            "method_volume_available": false,
+            "method_volume_ratio": 1.3
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic numerical ratio is supplied solely to exercise the AST leaf; a missing canonical availability marker means it cannot rescue confirmation.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_cost_firewall_operating_practice_v3",
+      "instrument_key": "cost_firewall",
+      "method_ref": "internet_observed_quote_cost_firewall@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_liquidity",
+        "curator_risk_atr"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_liquidity",
+          "url": "https://www.cmegroup.com/education/articles-and-reports/understanding-the-cme-liquidity-tool-methodology",
+          "reviewed_scope": "Bid-Ask Spread, Cost To Trade/Buy/Sell and aggregation sections; text only, not formula images."
+        },
+        {
+          "source_id": "curator_risk_atr",
+          "url": "https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/",
+          "reviewed_scope": "Definition, Calculation and Using Absolute Value sections."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "quote_available": "method_quote_available",
+          "spread_atr": "method_spread_atr"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "spread=ask_close-bid_close in price units; mature simpleATR14=mean(last14 true ranges); ratio=spread/ATR14; confirmation=quote_available AND ratio<0.10.",
+      "setup": "A permission-reached entry has original closed OHLC plus provenance-bearing bid-close/ask-close and quote timestamps.",
+      "operating_steps": [
+        "Check canonical spread or legacy bid_ask_spread, spread_available, bid_close, ask_close, quote_time_utc and quote_available_after_utc. If both spread aliases exist they must agree exactly.",
+        "Verify ask>=bid, nonnegative spread, abs((ask-bid)-spread)<=0.000001 and abs(bid-close)<=0.000001. The feature code checks these relationships; it does not itself prove provider authenticity or a positive-price market.",
+        "Require quote_time within [barOpen,barClose) and quote_available_after equal actual barClose; require14 completed true ranges and positive SMA14. No quote is inferred from OHLC/configured spread.",
+        "Example: bid2000, ask2000.20 and ATR4 gives0.20/4=0.05; the exact old method passes only below0.10.",
+        "Preserve the separate physical spread/slippage/commission contract after confirmation. Reject stale/inconsistent data and record source availability separately from economic outcome."
+      ],
+      "inputs": [
+        "method_quote_available:boolean from exact quote/clock/ATR owner",
+        "method_spread_atr:dimensionless observed price spread / mature SMA14",
+        "Closed OHLC and original quote aliases, flags and UTC timestamps"
+      ],
+      "wait_when": [
+        "Missing/inconsistent quote fields, aliases, timestamps or positive mature ATR.",
+        "Observed ratio>=0.10, including equality.",
+        "Only configured execution spread is available."
+      ],
+      "alternatives": [
+        {
+          "use": "Quantity-sensitive liquidity veto.",
+          "status": "research_gap_no_installed_depth_algorithm",
+          "rule_math": "For requestedQ, walk observed ask/bid levels and compare quantity-weighted cost to the opposite top quote; insufficient availableQ is unavailable.",
+          "requirements": [
+            "Timestamped observed depth/quantities",
+            "Contract tick size, requestedQ and units",
+            "Point-in-time cancellations/sequence integrity"
+          ],
+          "difference": "Top-of-book spread/ATR contains no depth or market-impact evidence."
+        },
+        {
+          "use": "Legacy max_spread_atr_ratio construction cap.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_observed_spread_atr_cap_v1@1",
+          "difference": "Source wording notwithstanding, native modeled-cost execution gate uses configured spread_points*point_size/managementATR; it does not instantiate observed quotes."
+        }
+      ],
+      "invalidation": "Quote staleness or alias/clock disagreement withdraws availability; exceeding the cap withdraws this confirmation, without changing the underlying entry owner.",
+      "pitfalls": [
+        "Points/pips must be converted to price units before division.",
+        "Zero modeled spread is not evidence of a free observed market.",
+        "A small top spread says nothing about enough depth to execute requested size."
+      ],
+      "source_vs_lab": "CME supports missing-side unavailability and quantity-aware liquidity analysis; ATR documentation establishes smoothing/unit distinctions. The0.10 normalization, exact quote clock/alias contract and contextual recipe are local choices, not a qualified exchange strategy.",
+      "exercises": [
+        {
+          "name": "v3_cost_observed_20c_over_atr4",
+          "inputs": {
+            "method_quote_available": true,
+            "method_spread_atr": 0.05
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic validated bid2000/ask2000.20, price spread0.20, SMA14=4 ->0.05.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_cost_observed_40c_over_atr4_equal_cap",
+          "inputs": {
+            "method_quote_available": true,
+            "method_spread_atr": 0.1
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic spread0.40 and ATR4 ->0.10; equality waits.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_cost_small_modeled_spread_cannot_rescue_quote",
+          "inputs": {
+            "method_quote_available": false,
+            "method_spread_atr": 0.01
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic missing quote ownership stays unavailable even if a fixture includes a small number; no observed spread is invented.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_high_volatility_firewall_operating_practice_v3",
+      "instrument_key": "high_volatility_firewall",
+      "method_ref": "internet_closed_atr_absolute_ceiling_v1@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_atr",
+        "curator_risk_size"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_atr",
+          "url": "https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/",
+          "reviewed_scope": "Definition, Calculation and Using Absolute Value sections."
+        },
+        {
+          "source_id": "curator_risk_size",
+          "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/proper-position-size",
+          "reviewed_scope": "Accessible stop-first sizing explanation and contract/tick arithmetic."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "closed_atr": "_management_atr"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "TR=max(H-L,abs(H-prevClose),abs(L-prevClose)); native management ATR=rolling mean14(TR), min_periods=1; primary confirmation=ATR<30.0 price units.",
+      "setup": "Use the preceding completed row's native management ATR for the exact symbol/timeframe; absolute30 is a local XAUUSD-style cap.",
+      "operating_steps": [
+        "Identify the source: native _management_atr uses arithmetic rolling14 with early min_periods1. Do not substitute a default RMA chart or the mature14 quote feature.",
+        "Calculate gap-inclusive TR and compare the genuine finite closed value strictly below30.0. Example29.5 passes while30.0 waits.",
+        "A high ATR is unsigned movement magnitude, not SELL or BUY. Only confirm or veto the original candidate in its frozen context.",
+        "Disclose that this AST has no positive-ATR or mature14 availability guard: zero satisfies<30 and early native ATR can exist. Any stricter maturity/data-quality requirement needs a separately declared method rather than fabricated current behavior.",
+        "For stop sizing, retain a valid invalidation and reduce quantity when per-unit executable stop loss increases; retain account/leverage caps."
+      ],
+      "inputs": [
+        "_management_atr:finite number in instrument price units from the native closed owner",
+        "Original native TR window, symbol/timeframe and unchanged risk contract"
+      ],
+      "wait_when": [
+        "ATR>=30.0.",
+        "No finite bound native ATR: typed input refusal cannot be replaced by a friendly number.",
+        "Original candidate or another physical/account guard refuses."
+      ],
+      "alternatives": [
+        {
+          "use": "Stricter prospectively declared absolute ceiling.",
+          "status": "existing_distinct_revision",
+          "method_ref": "internet_closed_atr_absolute_ceiling_v1@2",
+          "difference": "Revision2 uses20.0; its smaller threshold does not itself prove greater utility."
+        },
+        {
+          "use": "Scale-aware volatility comparisons across price levels.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_closed_sma_atr_percent_cap_v1@1",
+          "difference": "100*SMA14(TR)/close uses percent units and its own immutable context; never silently replace this absolute30 rule."
+        },
+        {
+          "use": "Volatility-tail or session-aware veto instead of one absolute threshold.",
+          "status": "research_gap_not_installed_as_primary",
+          "requirements": [
+            "Past-only rolling distribution, fixed window/quantile and sample floor",
+            "Regime/session ownership"
+          ],
+          "difference": "A calibrated tail cutoff would require a new immutable algorithm and separate outcome evaluation."
+        }
+      ],
+      "invalidation": "Leaving declared symbol/timeframe/context or changing the ATR smoother changes the question; a new high ATR may veto the next entry but does not loosen an existing stop.",
+      "pitfalls": [
+        "Absolute30 is not30 percent.",
+        "Native min_periods1 is not mature14 or Wilder smoothing.",
+        "A low/zero ATR numerical pass is not a source-quality certificate."
+      ],
+      "source_vs_lab": "ATR's unsigned interpretation and stop-first sizing are source supported. Native SMA seed, absolute30/20 limits, fixed scope and any optional native regime risk reduction are local policies; no training or calibrated volatility model is claimed.",
+      "exercises": [
+        {
+          "name": "v3_high_volatility_closed_atr29_5",
+          "inputs": {
+            "_management_atr": 29.5
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic native closed management ATR29.5 price units, unchanged existing entry.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_high_volatility_absolute30_equality",
+          "inputs": {
+            "_management_atr": 30
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic absolute ATR30.0; strict<30 fails.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_high_volatility_closed_atr31",
+          "inputs": {
+            "_management_atr": 31
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic absolute ATR31; veto existing candidate, no opposite direction generated.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_transition_protection_operating_practice_v3",
+      "instrument_key": "transition_protection",
+      "method_ref": "internet_closed_transition_wait_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_plan",
+        "curator_risk_repaint",
+        "curator_risk_dmi"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_plan",
+          "url": "https://www.cmegroup.com/education/courses/building-a-trade-plan/risk-management-and-your-trade-plan",
+          "reviewed_scope": "Accessible lesson text and risk-approach questions only."
+        },
+        {
+          "source_id": "curator_risk_repaint",
+          "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+          "reviewed_scope": "Historical vs realtime calculations / Fluid data values section; confirmed-bar alternatives."
+        },
+        {
+          "source_id": "curator_risk_dmi",
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/DMI",
+          "reviewed_scope": "Description, How this indicator works, and Calculation sections."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_transition_age": "method_transition_age",
+          "method_transition_available": "method_transition_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "On recognized same raw regime token age=previousAge+1; on a new recognized token age=0; unknown clears state. confirmation=available AND age>4.",
+      "setup": "A closed label sequence enters trend_up during London/normal while its source labels remain available.",
+      "operating_steps": [
+        "Read the actual closed market_regime/regime token, not a later relabel. Accepted codes include trend_up/uptrend, trend_down/downtrend, range/ranging and transition.",
+        "Start a recognized new token atage0 and count actual subsequent observed rows. Example trend_up atages0,1,2,3,4 waits; the sixth same-token observation atage5 can pass.",
+        "The code compares raw lowercase tokens for age: trend_up to uptrend resets even though both map to+1. A synonym is not silently canonicalized for this counter.",
+        "Unknown tokens reset availability and the prior-token memory. A fresh recognized token after unknown restarts0; weekend clock time adds no observed rows.",
+        "Evaluate the exact >4 AST only if the current immutable context selects it. A passed waiting period confirms no trend accuracy or economic edge."
+      ],
+      "inputs": [
+        "method_transition_available:boolean",
+        "method_transition_age:count of actual closed same-token rows since age0",
+        "Point-in-time raw regime tokens and UTC source row clocks"
+      ],
+      "wait_when": [
+        "Availabilityfalse.",
+        "Age<=4, including equality.",
+        "Context changes outside trend_up/london/normal; this primary is inapplicable there."
+      ],
+      "alternatives": [
+        {
+          "use": "Native boundary risk reduction plus optional transition wait.",
+          "status": "separate_existing_native_policy",
+          "difference": "Native boundary compares regime OR volatility and has a clamped wait/reduction schedule; it is not this regime-token age rule."
+        },
+        {
+          "use": "Hysteresis between strong/weak trend labels to reduce rapid switching.",
+          "status": "research_gap_no_installed_hysteresis_method",
+          "rule_math": "One possible preregistered design enters a trend state above an upper strength boundary and leaves below a lower boundary.",
+          "requirements": [
+            "Past-only strength/direction observations",
+            "Chosen distinct thresholds and prior state",
+            "Gap/unknown reset policy"
+          ],
+          "difference": "Fidelity's strength examples motivate a question; they do not install a local state machine or qualify its thresholds."
+        }
+      ],
+      "invalidation": "A different raw recognized token restarts age0; unknown clears availability. The current direction/context must still be eligible after the pause.",
+      "pitfalls": [
+        "Age0 counts the boundary observation, so >4 is not the fifth row.",
+        "A volatility-only change does not reset this regime-only counter.",
+        "Canonical-looking synonyms can reset raw-token age."
+      ],
+      "source_vs_lab": "The reviewed trade-plan and closed-bar sections support explicit operating conditions and observation timing. The exact raw-token counter, >4 boundary and native half-risk behavior are repository conventions rather than a sourced transition detector.",
+      "exercises": [
+        {
+          "name": "v3_transition_sixth_same_token_closed_row",
+          "inputs": {
+            "method_transition_available": true,
+            "method_transition_age": 5
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic trend_up repeated six observed rows since age0 ->age5.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_transition_fifth_row_age4",
+          "inputs": {
+            "method_transition_available": true,
+            "method_transition_age": 4
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic fifth same-token row ->age4; equality waits.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_transition_unknown_cannot_supply_safe_age",
+          "inputs": {
+            "method_transition_available": false,
+            "method_transition_age": 99
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic false availability with deliberately large numeric leaf verifies that unavailable state cannot be rescued;99 is not claimed as an owner-produced unknown age.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_loss_streak_cooldown_operating_practice_v3",
+      "instrument_key": "loss_streak_cooldown",
+      "method_ref": "internet_mature_loss_streak_wait_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_quinto",
+        "curator_risk_plan"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_quinto",
+          "url": "https://www.cmegroup.com/content/dam/cmegroup/education/interactive/tradingplan/trading_plan_document.pdf",
+          "reviewed_scope": "PDF pages 2 and 3 only: Risk and Goals; no full-document review."
+        },
+        {
+          "source_id": "curator_risk_plan",
+          "url": "https://www.cmegroup.com/education/courses/building-a-trade-plan/risk-management-and-your-trade-plan",
+          "reviewed_scope": "Accessible lesson text and risk-approach questions only."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_bars_since_loss": "method_bars_since_loss",
+          "method_loss_streak": "method_loss_streak",
+          "method_loss_history_available": "method_loss_history_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "confirmation=ownHistoryAvailable AND (strictNegativeMatureStreak<3 OR actualClosedBarsSinceLastLoss>12).",
+      "setup": "Only this replay account's accepted mature uncensored close journal can supply the streak; native break-even bookkeeping is separate.",
+      "operating_steps": [
+        "Reopen owner position identity, final net PnL and available_at. A close updates this journal only once and only after publication; future/censored/shadow/parent results do not become owned history.",
+        "Increment on netPnL<0; a zero or positive mature close resets streak. Stable publication order resolves simultaneous closes; changing identifier spelling cannot reorder them.",
+        "Count actual closed source observations since the latest loss. Three mature negatives followed by12 bars still waits;13 can pass.",
+        "Below3 losses the OR branch can pass independent of elapsed bars. The owner's known-empty fresh journal is available with0 losses; do not borrow parent performance to initialize it.",
+        "On expiration continue the same risk budget and all other gates; never increase quantity to recover lost cash. Record whether an entry was actually vetoed, not just a computed counter."
+      ],
+      "inputs": [
+        "method_loss_history_available:boolean from own mature journal",
+        "method_loss_streak:nonnegative mature consecutive-loss count",
+        "method_bars_since_loss:actual closed-observation count, only producer-defined after a mature loss",
+        "Original position IDs, net cash result, mature flag and available_at"
+      ],
+      "wait_when": [
+        "History unavailable.",
+        "Streak>=3 AND barsSinceLoss<=12.",
+        "A proposed journal update depends on future/censored/unowned outcome."
+      ],
+      "alternatives": [
+        {
+          "use": "Author's operational break after three losses.",
+          "status": "sourced_manual_example_not_bar_algorithm",
+          "difference": "Quinto specifies a meaningful break; translating it to12 observed bars is a separate lab choice."
+        },
+        {
+          "use": "Gradually longer deterministic recovery.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_mature_dynamic_recovery_v2@1",
+          "difference": "min(24,4*streak) readiness uses>=, so streak3/bar12 passes dynamic while it fails this strict>12 rule."
+        },
+        {
+          "use": "Hard daily loss/exposure limit.",
+          "status": "external_risk_guard_not_replaceable",
+          "difference": "Cooldown expiration cannot override the independently configured account stop."
+        }
+      ],
+      "invalidation": "A nonnegative mature close resets this typed streak; a new mature negative changes last-loss age. No same-bar premature outcome may update past decisions.",
+      "pitfalls": [
+        "Vetoed opportunities are not owned losing positions.",
+        "Net0 resets here; native nonpositive LOSS bookkeeping can differ.",
+        "Calendar minutes/session closure are not observed-bar count."
+      ],
+      "source_vs_lab": "The author-plan excerpt supplies a concrete loss-break example; the plan lesson supplies risk discipline. Strictly negative own maturity, bars>12 and journal ordering are local executable semantics, not a published optimal cooldown.",
+      "exercises": [
+        {
+          "name": "v3_loss_two_owned_losses_recent_last_loss",
+          "inputs": {
+            "method_loss_history_available": true,
+            "method_loss_streak": 2,
+            "method_bars_since_loss": 1
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic two mature net-negative closes; low-streak OR branch passes after one actual closed bar.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_loss_three_owned_losses_exact12",
+          "inputs": {
+            "method_loss_history_available": true,
+            "method_loss_streak": 3,
+            "method_bars_since_loss": 12
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic three mature negatives and12 later closed observations; strict>12 waits.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_loss_three_owned_losses13",
+          "inputs": {
+            "method_loss_history_available": true,
+            "method_loss_streak": 3,
+            "method_bars_since_loss": 13
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Same synthetic three-loss streak with13 actual closed observations can pass timing only.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_confidence_firewall_operating_practice_v3",
+      "instrument_key": "confidence_firewall",
+      "method_ref": "internet_signal_score_veto_0_7_v1@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_calibration",
+        "curator_risk_timeseries"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_calibration",
+          "url": "https://scikit-learn.org/stable/modules/calibration.html",
+          "reviewed_scope": "Sections 1.16.1 Calibration curves, 1.16.2 Calibrating a classifier, and class-presence caveats in 1.16.3."
+        },
+        {
+          "source_id": "curator_risk_timeseries",
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html",
+          "reviewed_scope": "Class description and gap parameter, with gap=2 worked indices."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "native_score": "signal_confidence"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "confirmation = finite genuine native signal_confidence > 0.7; this threshold has no probability calibration.",
+      "setup": "An already-generated eligible entry includes its original native score. Do not fill absent confidence from a compatibility default or CSV method flag.",
+      "operating_steps": [
+        "Identify native score ownership/range and preceding closed observation. A score0.72 is not evidence of72% success.",
+        "Bind genuine signal_confidence to native_score and apply strict>0.7. Equality waits; revision2's0.8 is a different rule.",
+        "The AST contains no calibrator, payoff estimate or sample count. A missing/nonfinite non-method score can trigger typed-input refusal; it is never synthesized as a harmless pass.",
+        "For a separate empirical calibration study, freeze success-label definition, chronological fit/calibration/evaluation windows and outcome-availability cutoffs before inspecting results.",
+        "Inspect binned reliability with counts and cost-sensitive errors. A lower Brier loss can reflect discrimination rather than improved calibration; the primary gate remains an uncalibrated veto."
+      ],
+      "inputs": [
+        "signal_confidence:genuine finite native numerical score",
+        "Native score's original closed row and availability",
+        "For separate calibration only: mature labels, chronological data scope and unmodified cost contract"
+      ],
+      "wait_when": [
+        "Genuine finite score absent: typed dependency/refusal, no invented confidence.",
+        "Score<=0.7.",
+        "Current scope/candidate fails another admission guard."
+      ],
+      "alternatives": [
+        {
+          "use": "Stricter raw score gate.",
+          "status": "existing_distinct_revision",
+          "method_ref": "internet_signal_score_veto_0_7_v1@2",
+          "difference": "Exact threshold0.8; not80% probability and not established superiority."
+        },
+        {
+          "use": "Finite trained/calibrated success model.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_calibrated_meta_score@1",
+          "difference": "Requires signed fitted asset and genuine chronological cell support; raw score threshold alone cannot provide it."
+        },
+        {
+          "use": "Chronological score calibration with fixed separation gap.",
+          "status": "research_protocol_not_installed_primary",
+          "difference": "TimeSeriesSplit gap counts rows. Overlapping trade labels also need their actual available-at/interval audit; a generic row gap does not establish independence."
+        }
+      ],
+      "invalidation": "A new original score below/equal floor withdraws confirmation; source drift or absent score cannot be patched with a guessed probability.",
+      "pitfalls": [
+        "Selecting a threshold after viewing archive profit leaks outcome information.",
+        "Thresholded score is not a calibrated probability or positive expected value.",
+        "An available native online Wilson/EV heuristic is a separate algorithm with its own net-cost accounting."
+      ],
+      "source_vs_lab": "Calibration and temporal-split documents explain evaluation requirements. The raw0.7/0.8 thresholds, native score scale and contextual mapping are local choices. No fit, new model asset or calibrated trading claim is created by these exercises.",
+      "exercises": [
+        {
+          "name": "v3_confidence_original_score_0_72",
+          "inputs": {
+            "signal_confidence": 0.72
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic genuine-shaped native score0.72; output permits only continuing the existing entry.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_confidence_original_score_0_70_equal",
+          "inputs": {
+            "signal_confidence": 0.7
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic score exactly0.70; strict> boundary waits.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_confidence_original_score_0_40",
+          "inputs": {
+            "signal_confidence": 0.4
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic score0.40; no score-probability interpretation and no opposite signal.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_temporal_survival_filter_operating_practice_v3",
+      "instrument_key": "temporal_survival_filter",
+      "method_ref": "internet_closed_signal_persistence_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_quinto",
+        "curator_risk_repaint",
+        "curator_risk_survival"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_quinto",
+          "url": "https://www.cmegroup.com/content/dam/cmegroup/education/interactive/tradingplan/trading_plan_document.pdf",
+          "reviewed_scope": "PDF pages 2 and 3 only: Risk and Goals; no full-document review."
+        },
+        {
+          "source_id": "curator_risk_repaint",
+          "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+          "reviewed_scope": "Historical vs realtime calculations / Fluid data values section; confirmed-bar alternatives."
+        },
+        {
+          "source_id": "curator_risk_survival",
+          "url": "https://lifelines.readthedocs.io/en/latest/Survival%20analysis%20with%20lifelines.html",
+          "reviewed_scope": "Kaplan-Meier definition/fit, confidence intervals and durations/event-observed format only."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_signal_survival": "method_signal_survival",
+          "method_signal_age": "method_signal_age",
+          "method_signal_available": "method_signal_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "Recognized closed BUY/SELL same-direction run age starts1; score=1/(1+age/4). confirmation=available AND age<3 AND score>0.5.",
+      "setup": "The already-generated candidate is evaluated on the original closed signal sequence, not on the later execution-bar high/low.",
+      "operating_steps": [
+        "Read recognized closed signal strings exactly BUY/SELL. WAIT/unrecognized resets run memory; a change BUY toSELL starts a newage1.",
+        "Compute source-owner run ages and deterministic score. Ages1/2/3 yield0.8,2/3,4/7. The age<3 branch already rejectsage3 despite score>0.5.",
+        "Apply only the exact contextual confirmation to the existing direction. It measures run persistence, not wall-clock time since a separately stored signal.",
+        "Never use execution-bar extrema that were unknown at the opening decision. The separate corrected native follow-through owner uses preceding completed observations; old pre-fix receipts remain historical.",
+        "If studying real time-to-invalidation, specify origin/event/censoring and collect durations first. Do not rename the deterministic score as a fitted survival curve."
+      ],
+      "inputs": [
+        "method_signal_available:boolean",
+        "method_signal_age:closed same-direction run length starting1",
+        "method_signal_survival:dimensionless deterministic1/(1+age/4)",
+        "Original closed signal sequence and explicit UTC availability"
+      ],
+      "wait_when": [
+        "Signal unavailable.",
+        "Age>=3 or score<=0.5.",
+        "A requested follow-through fact requires current/future execution-bar HLC."
+      ],
+      "alternatives": [
+        {
+          "use": "Native exponential age decay/follow-through assessment.",
+          "status": "separate_existing_native_heuristic",
+          "difference": "0.5^((age-1)/halfLife) and follow-through evidence have different owners and are not this formula or a trained survival model."
+        },
+        {
+          "use": "Fitted time until proposal invalidation.",
+          "status": "research_gap_no_installed_survival_asset",
+          "rule_math": "Kaplan-Meier S(t)=product over event times of(1-d_i/n_i).",
+          "requirements": [
+            "Explicit proposal-origin and invalidation event definition",
+            "Duration/event-observed flag and censor time",
+            "Point-in-time nonduplicated episodes, uncertainty and later unseen evaluation"
+          ],
+          "difference": "Censored proposals stay censored in a separate survival dataset; they must not become winning/losing mature trades in the current journal."
+        },
+        {
+          "use": "Fixed planned holding horizon.",
+          "status": "sourced_manual_example_not_signal_probability",
+          "difference": "Quinto's holding instructions concern positions and simulator setup, not this signal-run age."
+        }
+      ],
+      "invalidation": "WAIT resets the closed run; opposite direction beginsage1. Repeated same-direction signals age out even if their deterministic score remains abovehalf.",
+      "pitfalls": [
+        "Calling persistence score calibrated survival or probability of profit.",
+        "Counting market-closed hours as run observations.",
+        "Using a post-bar close to justify the same bar's opening entry."
+      ],
+      "source_vs_lab": "Closed-bar timing and predefined horizons are sourced disciplines. The1/(1+age/4), age<3 and score>0.5 combination is a repository heuristic. Lifelines supplies a distinct fitted survival method whose data/model asset is absent here, retained only as a research gap.",
+      "exercises": [
+        {
+          "name": "v3_temporal_second_closed_buy_score_two_thirds",
+          "inputs": {
+            "method_signal_available": true,
+            "method_signal_age": 2,
+            "method_signal_survival": 0.6666666666666666
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic BUY,BUY ->age2 and score1/(1+2/4)=2/3.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_temporal_third_buy_age_guard_binds",
+          "inputs": {
+            "method_signal_available": true,
+            "method_signal_age": 3,
+            "method_signal_survival": 0.5714285714285714
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic BUY,BUY,BUY ->age3; score4/7>0.5 but age<3 fails.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_temporal_unavailable_cannot_use_old_age",
+          "inputs": {
+            "method_signal_available": false,
+            "method_signal_age": 1,
+            "method_signal_survival": 0.8
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic availabilityfalse with stale-looking leaves; the values exercise consumption only and are not claimed as owner outputs after WAIT.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_dynamic_cooldown_operating_practice_v3",
+      "instrument_key": "dynamic_cooldown",
+      "method_ref": "internet_mature_dynamic_recovery_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_quinto",
+        "curator_risk_plan"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_quinto",
+          "url": "https://www.cmegroup.com/content/dam/cmegroup/education/interactive/tradingplan/trading_plan_document.pdf",
+          "reviewed_scope": "PDF pages 2 and 3 only: Risk and Goals; no full-document review."
+        },
+        {
+          "source_id": "curator_risk_plan",
+          "url": "https://www.cmegroup.com/education/courses/building-a-trade-plan/risk-management-and-your-trade-plan",
+          "reviewed_scope": "Accessible lesson text and risk-approach questions only."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_dynamic_cooldown_ready": "method_dynamic_cooldown_ready",
+          "method_loss_history_available": "method_loss_history_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "Producer wait=min(24,4*strictNegativeMatureStreak); ready=(streak==0 OR actualClosedBarsSinceLoss>=wait). AST=historyAvailable AND ready.",
+      "setup": "An owner-only mature journal schedules deterministic recovery before entry evaluation; no market-trained optimum is claimed.",
+      "operating_steps": [
+        "Use the same strictly-negative, mature, uncensored own-close journal; a nonnegative close resetsstreak and no parent/shadow trade initializes it.",
+        "Calculate wait in observed closed bars: streak1=>4, streak3=>12, streak6=>24 and streak7 stays24. Zero losses is immediately ready.",
+        "At exact elapsed wait the producer setsreadytrue. Thus three losses/bar12 passes dynamic recovery while the separate strict>12 loss-streak method still waits.",
+        "Consume only owner-computed historyAvailable/ready booleans in this primary AST. Exercise annotations explain producer math; injecting a ready flag does not prove production maturity.",
+        "Keep risk fixed after waiting; expiration changes timing only. Distinguish native regime/volatility/shadow-PF schedule clamped1..6 from this4*streak/cap24 producer."
+      ],
+      "inputs": [
+        "method_loss_history_available:boolean",
+        "method_dynamic_cooldown_ready:boolean from original mature-journal producer",
+        "Producer-only streak and actual closed bars since loss; immutable position IDs and available_at"
+      ],
+      "wait_when": [
+        "History unavailable.",
+        "Owner readinessfalse.",
+        "Recovery argument depends on censored/future/parent/shadow outcome or fabricated clock bars."
+      ],
+      "alternatives": [
+        {
+          "use": "Constant three-loss break.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_mature_loss_streak_wait_v2@1",
+          "difference": "It allowsstreak<3 immediately but waits strictly>12 whenstreak>=3, unlike the gradual dynamic schedule."
+        },
+        {
+          "use": "Native schedule adjusted by prior shadow-PF.",
+          "status": "separate_existing_native_policy",
+          "difference": "Different evidence owner and1..6 clamp; it cannot be called learned proof that4*streak is optimal."
+        },
+        {
+          "use": "Estimate a recovery horizon from chronological context outcomes.",
+          "status": "research_gap_no_trained_recovery_model",
+          "requirements": [
+            "Predeclared observable state, mature own episodes and unchanged costs",
+            "Adequate later unseen comparisons against fixed pauses"
+          ],
+          "difference": "A positive archive association could remain provisional guidance; it cannot tune this sealed rule retrospectively."
+        }
+      ],
+      "invalidation": "A fresh mature loss resets last-loss timing and may increase the capped wait; a nonnegative close resets streak. All external account stops remain binding.",
+      "pitfalls": [
+        ">= readiness differs from the fixed cooldown's strict>12.",
+        "Twenty-four is a cap in observed bars, not24 hours.",
+        "Duplicated close IDs cannot provide extra streak samples."
+      ],
+      "source_vs_lab": "The author plan provides loss-break discipline and CME provides precommitted risk planning. The4*streak,24 cap, owner journal and exact-boundary readiness are local deterministic policies; no author or trained model endorses the schedule.",
+      "exercises": [
+        {
+          "name": "v3_dynamic_streak3_bar12_exact_ready",
+          "inputs": {
+            "method_loss_history_available": true,
+            "method_dynamic_cooldown_ready": true
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic producer scenario streak3 and12 observed bars ->wait12, readytrue; AST consumes its boolean.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_dynamic_streak7_bar23_below_saturated_wait",
+          "inputs": {
+            "method_loss_history_available": true,
+            "method_dynamic_cooldown_ready": false
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic producer scenario streak7 ->min(24,28)=24,23 bars ->readyfalse.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_dynamic_missing_history_ready_flag_no_proof",
+          "inputs": {
+            "method_loss_history_available": false,
+            "method_dynamic_cooldown_ready": true
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic false journal availability cannot be rescued by an asserted ready flag; this is an AST adversarial leaf case, not an original journal.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_atr_risk_envelope_operating_practice_v3",
+      "instrument_key": "atr_risk_envelope",
+      "method_ref": "internet_fixed_half_risk_v2@1",
+      "target": "risk_multiplier",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_size",
+        "curator_risk_fraction",
+        "curator_risk_atr"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_size",
+          "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/proper-position-size",
+          "reviewed_scope": "Accessible stop-first sizing explanation and contract/tick arithmetic."
+        },
+        {
+          "source_id": "curator_risk_fraction",
+          "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule",
+          "reviewed_scope": "Accessible fixed-fraction examples and explicit arbitrariness statement."
+        },
+        {
+          "source_id": "curator_risk_atr",
+          "url": "https://www.tradingview.com/support/solutions/43000501823-average-true-range-atr/",
+          "reviewed_scope": "Definition, Calculation and Using Absolute Value sections."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {},
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "0.5 reduces existing computed exposure; no prices, direction or external risk limits are overridden."
+      },
+      "rule_math": "Primary AST=CONST(number,0.5). Resulting exposure=existing computed exposure*0.5; it does not compute ATR. Stop-first quantity Q<=cashRisk/executableLossPerUnit precedes the reduction.",
+      "setup": "A valid existing strategy entry already has stop, account risk, costs and leverage limits; this method reduces only the resulting risk multiplier.",
+      "operating_steps": [
+        "Choose a valid invalidation under the original strategy, then express stop distance and tick/contract value in matching units. Include the original executable spread/slippage/commission owner.",
+        "Illustrative sizing: cash risk100 divided by executable loss/unit20 permits5 units before quantity/leverage constraints; if loss/unit doubles40, uncapped quantity falls2.5. These are arithmetic fixtures, not broker fills.",
+        "Apply constant0.5 after native sizing/reductions in the existing runtime's sequence. A baseline multiple2 becomes1; zero remains0.",
+        "The primary has no bound inputs and all its executable exercises necessarily return0.5. Their different sizing scenarios teach interpretation, not three independent dynamic algorithms.",
+        "Only fresh compatible construction may use the separate1.5ATR stop/3ATR target adapter. It cannot retrofit an admitted model or change a sealed account budget."
+      ],
+      "inputs": [
+        "No AST input leaves for the primary constant",
+        "For interpretation: existing risk multiple, executable stop loss per unit and unchanged account/leverage limits",
+        "For separate construction: genuine native SMA14 ATR and fixed declared stop/target multipliers"
+      ],
+      "wait_when": [
+        "Original entry lacks valid direction/stop or positive finite executable stop risk; external owner must refuse it.",
+        "Any account/leverage/source guard refuses.",
+        "A proposed construction adapter changes an already sealed/admitted baseline."
+      ],
+      "alternatives": [
+        {
+          "use": "ATR stop/target construction.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_atr_stop_1_5_target_3_v1@1",
+          "difference": "Fresh EMA/RSI construction sets stop1.5ATR/target3ATR under the native SMA owner; it is not the primary constant."
+        },
+        {
+          "use": "Maintain fixed cash risk through changing stop distances.",
+          "status": "stop_first_sizing_arithmetic",
+          "difference": "The account owner sizes positions before this half-risk factor; margin is not executable loss."
+        },
+        {
+          "use": "Calibrated volatility-target exposure.",
+          "status": "research_gap_no_installed_volatility_target_asset",
+          "requirements": [
+            "A specified volatility estimator/horizon, target and cap",
+            "Past-only source history and separate prospective evaluation"
+          ],
+          "difference": "A constant0.5 cannot be advertised as a trained volatility-targeting model."
+        }
+      ],
+      "invalidation": "An invalid stop or exhausted risk budget invalidates the underlying entry. A prior loss does not alter this immutable constant.",
+      "pitfalls": [
+        "Describing CONST0.5 as an ATR algorithm.",
+        "Choosing size first then distorting the invalidation to fit it.",
+        "Nominal stop distance does not guarantee worst-case fill loss through a gap."
+      ],
+      "source_vs_lab": "CME supports stop-first/fixed-fraction arithmetic and explicitly calls2% arbitrary. The0.5 factor,1.5/3ATR profile and native smoothing are local choices. Lower exposure may reduce returns as well as losses; no optimality or skill follows.",
+      "exercises": [
+        {
+          "name": "v3_half_risk_baseline_multiple2_to1",
+          "inputs": {},
+          "expected": 0.5,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "risk_multiplier",
+          "setup": "Synthetic baseline multiple2; declared operator returns0.5 and native multiplication gives1. This interpretation does not inject baseline into CONST.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_half_risk_zero_baseline_stays_zero",
+          "inputs": {},
+          "expected": 0.5,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "risk_multiplier",
+          "setup": "Synthetic baseline0; operator still returns0.5, native exposure remains0. CONST never fabricates an entry.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_half_risk_wider_stop_reduces_presized_quantity",
+          "inputs": {},
+          "expected": 0.5,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "risk_multiplier",
+          "setup": "Synthetic fixed risk100, executable loss/unit40 ->uncapped2.5 units before account limits, then half factor; the AST itself remains0.5.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_cost_aware_exit_operating_practice_v3",
+      "instrument_key": "cost_aware_exit",
+      "method_ref": "internet_owned_adverse_regime_exit_v2@1",
+      "target": "exit",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_ema",
+        "curator_risk_trail",
+        "curator_risk_chandelier"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_ema",
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+          "reviewed_scope": "Description, trend/support interpretation and EMA recurrence."
+        },
+        {
+          "source_id": "curator_risk_trail",
+          "url": "https://www.tradingview.com/support/solutions/43000754965-introduction-to-trailing-stops/",
+          "reviewed_scope": "What is a trailing stop and distance tradeoffs; no broker connection."
+        },
+        {
+          "source_id": "curator_risk_chandelier",
+          "url": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/chandelier-exit",
+          "reviewed_scope": "Calculation and interpreting sections only; text formulas, no spreadsheet/chart outcome claims."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "exit",
+        "input_bindings": {
+          "method_regime_aligned": "method_regime_aligned",
+          "method_regime_available": "method_regime_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true requests an exit of an already-owned position; false adds no exit. Fill, hard protection and costs remain native owners."
+      },
+      "rule_math": "exitRequest=regimeAvailable AND NOT regimeAligned, assessed against held BUY/SELL. Any known nonaligned regime satisfies the raw AST, subject to exact recipe context.",
+      "setup": "Only an already-owned position reaches exit phase. The exact primary is scoped trend_up/london/normal; a reachable adverse example is heldSELL while current closed regime is trend_up in that scope.",
+      "operating_steps": [
+        "Pin held position owner/direction and preceding closed regime. A method exit cannot generate a replacement direction or manage an unrelated account position.",
+        "Map code+1 to alignment forBUY, code-1 forSELL. If known but nonaligned, the AST requests exit; unknown adds no exit.",
+        "Check actual recipe selection before inferring behavior. A BUY changing totrend_down/range leaves this primary's trend_up predicate, so its raw AST truth does not prove a reached exit. Do not teach a universal reversal exit from this scoped recipe.",
+        "Let native hard gap/stop/target checks and fill/account settlement retain their precedence and original costs. An exit signal is not a cheaper fill receipt.",
+        "For a distinct trailing variant, BUY ratchet=max(oldStop,previousClose-k*closedATR), SELL=min(oldStop,previousClose+k*closedATR). A long oldStop1990, previousClose2000, k2 andATR4 tightens1992; a later lower candidate cannot loosen it.",
+        "For the separate Chandelier variant use rolling22 high/low and seeded WilderATR22 with strict closed price beyond its level. Its rolling level is not automatically a ratcheted broker stop."
+      ],
+      "inputs": [
+        "method_regime_available:boolean",
+        "method_regime_aligned:boolean computed relative to held direction",
+        "Original owned position, current-phase recipe selection and original native cost/fill contract"
+      ],
+      "wait_when": [
+        "For this exit target false means HOLD/no additional exit, not a new entry WAIT.",
+        "Unknown regime yields no additional exit; hard native protection still applies.",
+        "No owned position, outside frozen recipe context or wrong phase makes this method inapplicable."
+      ],
+      "alternatives": [
+        {
+          "use": "Closed native ATR trailing plus time stop.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_atr_trailing_time_exit_v1@1",
+          "difference": "Ratchets stored stop and uses native time/fill owner; not the adverse-regime boolean."
+        },
+        {
+          "use": "Rolling-extreme ATR exit level.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_closed_chandelier_22_3_exit_v1@1",
+          "difference": "Long rollingHigh22-3*WilderATR22, short rollingLow22+3*ATR; equality adds no exit; its level can move both ways."
+        },
+        {
+          "use": "One partial target followed by runner.",
+          "status": "existing_construction_only_method",
+          "method_ref": "internet_native_single_partial_atr_runner_v1@1",
+          "difference": "Single partial with weighted final-return accounting and original carry/full-exit precedence; not independently realized/released partial cash."
+        },
+        {
+          "use": "Size/depth-aware choice between exit venues/order types.",
+          "status": "research_gap_no_observed_execution_model",
+          "requirements": [
+            "Observed quotes/depth, actual fill timestamps and costs",
+            "Specified urgency/adverse-selection objective"
+          ],
+          "difference": "A closed regime flag contains no quote depth or proved cost reduction."
+        }
+      ],
+      "invalidation": "Source/ownership loss prevents method management; hard protection persists. Leaving the predicate means this recipe is not selected, requiring a separately declared alternative for broader coverage.",
+      "pitfalls": [
+        "A raw exit boolean pass is not proof the phase/context reached it.",
+        "Known range/transition is nonalignment in raw features, but those contexts do not match this primary recipe.",
+        "Closing a trade can realize a loss; the name cost_aware does not prove cheaper execution."
+      ],
+      "source_vs_lab": "EMA/trailing/Chandelier documents describe distinct contextual and protective uses. The held-regime boolean, narrow context, execution precedence and local22/3 implementation are repository contracts, not a source-certified cost optimizer or profitable exit.",
+      "exercises": [
+        {
+          "name": "v3_exit_owned_sell_in_scoped_trend_up",
+          "inputs": {
+            "method_regime_available": true,
+            "method_regime_aligned": false
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "exit",
+          "setup": "Synthetic ownedSELL with known trend_up London/normal is nonaligned and within declared context; request exit only.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_exit_owned_buy_aligned_scoped_trend_up",
+          "inputs": {
+            "method_regime_available": true,
+            "method_regime_aligned": true
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "exit",
+          "setup": "Synthetic ownedBUY in scoped trend_up is aligned; no additional exit.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_exit_unknown_regime_no_fabricated_exit",
+          "inputs": {
+            "method_regime_available": false,
+            "method_regime_aligned": false
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "exit",
+          "setup": "Synthetic unknown regime produces no additional method exit. This operator case alone does not claim unknown context reaches the recipe.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_regime_router_operating_practice_v3",
+      "instrument_key": "regime_router",
+      "method_ref": "internet_closed_regime_alignment_v2@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_ema",
+        "curator_risk_dmi"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_ema",
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+          "reviewed_scope": "Description, trend/support interpretation and EMA recurrence."
+        },
+        {
+          "source_id": "curator_risk_dmi",
+          "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/DMI",
+          "reviewed_scope": "Description, How this indicator works, and Calculation sections."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "method_regime_aligned": "method_regime_aligned",
+          "method_regime_available": "method_regime_available"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "regime codes: trend_up/uptrend=>+1, trend_down/downtrend=>-1, range/ranging=>0, transition=>2; confirmation=available AND code==(BUY?+1:-1).",
+      "setup": "An existing candidate is considered only under the exact frozen trend_up/london/normal recipe; the primary does not route arbitrary specialist portfolios.",
+      "operating_steps": [
+        "Read the preceding closed ordinary runtime regime label and preserve the classifier/source version. Unknown tokens publish unavailable; a caller-supplied method_regime_aligned cannot override owner computation.",
+        "Translate the recognized code relative to the existing candidate direction. Scoped trend_up withBUY aligns; scoped trend_up withSELL does not.",
+        "Recognized range/transition is available but nonaligned forBUY/SELL in raw feature semantics. Those contexts are outside this primary recipe and cannot be counted as reached veto evidence without a separately matching method.",
+        "Use the primary only as confirmation. It selects neither a new direction nor new EMA/ADX classifier weights, strategy family, account allocation or specialist.",
+        "Record original classifier token, direction, policy choice and actual reached output. Later contextual associations may propose prospective selection changes but do not rewrite this base recipe."
+      ],
+      "inputs": [
+        "method_regime_available:boolean",
+        "method_regime_aligned:boolean relative to original direction",
+        "Original past-only regime label, classifier version, current-phase policy context"
+      ],
+      "wait_when": [
+        "Unknown regime or no genuine source classification.",
+        "Known scoped trend_up against an existingSELL is nonaligned.",
+        "Outside primary predicate: classify inapplicable rather than claiming a confirmed specialist route."
+      ],
+      "alternatives": [
+        {
+          "use": "Separate trend strength from directional alignment.",
+          "status": "source_supported_analysis_not_new_primary",
+          "difference": "ADX strength and directional/EMA signs answer different questions; a high ADX alone does not sayBUY."
+        },
+        {
+          "use": "Hysteretic trend/range specialist routing.",
+          "status": "research_gap_no_new_specialist_router",
+          "requirements": [
+            "Prospectively fixed strength/state thresholds",
+            "Exact specialist permission/allocation contracts",
+            "Observed transitions and out-of-context evaluations"
+          ],
+          "difference": "The current boolean recipe supplies no stateful specialist selection or trained regime posterior."
+        },
+        {
+          "use": "Broader declared downtrend/range contexts.",
+          "status": "research_gap_requires_new_immutable_scope",
+          "difference": "Do not broaden this trend_up predicate in place; direction-symmetric raw feature math does not grant context-symmetric method authority."
+        }
+      ],
+      "invalidation": "A missing/changed label or leaving session/volatility context withdraws applicability; classifier lag and transitions remain possible errors.",
+      "pitfalls": [
+        "Label availability is not classification accuracy.",
+        "A passed alignment does not prove superior specialist transfer.",
+        "Known range is not unknown and is not directional."
+      ],
+      "source_vs_lab": "Fidelity supports trend direction/lag and trend strength distinctions. Exact code mapping, native classifier boundaries and frozen context are local runtime semantics; no classifier was trained or qualified by reading them.",
+      "exercises": [
+        {
+          "name": "v3_router_existing_buy_scoped_trend_up",
+          "inputs": {
+            "method_regime_available": true,
+            "method_regime_aligned": true
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic current closed trend_up code+1 and existingBUY under exact recipe context.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_router_existing_sell_scoped_trend_up",
+          "inputs": {
+            "method_regime_available": true,
+            "method_regime_aligned": false
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic current closed trend_up code+1 and existingSELL; actual scoped nonalignment veto.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_router_unknown_label_unavailable",
+          "inputs": {
+            "method_regime_available": false,
+            "method_regime_aligned": false
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic unknown raw label; operator false only, not a claim that the unknown context reached this frozen recipe.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    },
+    {
+      "profile_key": "curator_meta_label_filter_operating_practice_v3",
+      "instrument_key": "meta_label_filter",
+      "method_ref": "internet_calibrated_meta_score@1",
+      "target": "confirmation",
+      "context_predicate": {
+        "regime": "trend_up",
+        "session": "london",
+        "volatility": "normal"
+      },
+      "horizon": "hour",
+      "source_refs": [
+        "curator_risk_calibration",
+        "curator_risk_timeseries",
+        "curator_risk_book"
+      ],
+      "source_reviews": [
+        {
+          "source_id": "curator_risk_calibration",
+          "url": "https://scikit-learn.org/stable/modules/calibration.html",
+          "reviewed_scope": "Sections 1.16.1 Calibration curves, 1.16.2 Calibrating a classifier, and class-presence caveats in 1.16.3."
+        },
+        {
+          "source_id": "curator_risk_timeseries",
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html",
+          "reviewed_scope": "Class description and gap parameter, with gap=2 worked indices."
+        },
+        {
+          "source_id": "curator_risk_book",
+          "url": "https://catalogimages.wiley.com/images/db/pdf/9781119482086.excerpt.pdf",
+          "reviewed_scope": "Printed page13 pitfall table; page15 meta-layer FAQ and independent-data paragraph; page17 backtest-overfitting FAQ. No chapter3 algorithm or entire book reviewed."
+        }
+      ],
+      "runtime_conditions": {
+        "phase": "entry",
+        "input_bindings": {
+          "available": "method_meta_model_available",
+          "score": "method_meta_score"
+        },
+        "as_of": "Use the original completed row only when row.time + actual bar duration <= observed_at <= decision_at; explicit UTC clocks, immutable OHLC and original source owners are required.",
+        "scope": "The exact method predicate is trend_up/london/normal and the immutable policy/scope must select this recipe in the current phase. Outside-context cases are inapplicable, not a measured filter failure.",
+        "output_meaning": "true permits only the already-created candidate to continue; false is an additional veto, never a new BUY/SELL."
+      },
+      "rule_math": "Finite training-cell score=(wins+s)/(count+2s); map it through a separately observed chronological calibration-bin score with the same smoothing. confirmation=modelAvailable AND calibratedScore>0.70.",
+      "setup": "A signed original finite model must be bound to a fresh physically compatible target before policy seal. A source URL/availability flag alone is not a model.",
+      "operating_steps": [
+        "Preregister original-run roster, exact physical account/execution/policy identity, confidence/context bins, split cutoffs, smoothing and sample floors before fitting.",
+        "Reopen actual accepted entry and that same position's uncensored mature cost-inclusive close. Deduplicate physical entries; exclude conflicting, future and2026+ labels. Training and calibration must both contain wins/losses.",
+        "Use the existing finite owner once. Typical registered defaults are smoothing1, total floors20 training/10 calibration, cell floors5/3; the actual signed registration/asset controls exact admissibility.",
+        "Illustrative training cell wins7/count8 withs1 yields8/10=0.80. A calibration bin wins8/count10 yields9/12=0.75; only genuine supported cells can publish this score. Those numbers are teaching fixtures, not a fitted asset.",
+        "Attach by the original issuer to an unused compatible target, then verify actual execution binding. Ordinary and native shared-account asset protocols cannot be interchanged.",
+        "At entry require finite native confidence in[0,1], genuine regime/volatility/session/direction, eligible matching cells and observed_at strictly after calibration_cutoff and last_label_available_at.",
+        "Consume available AND score>0.70. Missing asset/cell/chronological support remains unavailable; equality waits. Retain seen archive positives provisionally without turning them into independent model or agent authority."
+      ],
+      "inputs": [
+        "method_meta_model_available:boolean from signed attached finite-model owner",
+        "method_meta_score:finite[0,1] calibrated-bin fraction",
+        "Genuine native confidence plus closed context, signed asset/attachment, original source/label cutoffs",
+        "Actual training/calibration cell counts, class support and immutable physical/policy binding"
+      ],
+      "wait_when": [
+        "No verified asset/target attachment or exact matching supported training/calibration cell.",
+        "Observation not strictly later than all label cutoffs, or genuine confidence/context unavailable.",
+        "Calibrated score<=0.70.",
+        "Any label available2026+ is not eligible for historical learning; all2026+ data stays paper-only."
+      ],
+      "alternatives": [
+        {
+          "use": "Missing-model availability guard.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_await_verified_meta_model_v2@1",
+          "difference": "It tests availability only and must not be described as fitting/classification/calibration."
+        },
+        {
+          "use": "Raw native score veto.",
+          "status": "existing_distinct_method",
+          "method_ref": "internet_signal_score_veto_0_7_v1@1",
+          "difference": "No trained success-probability layer; same numeric threshold means a different quantity."
+        },
+        {
+          "use": "Separate chronological reliability diagnostic by score bin and label interval.",
+          "status": "research_protocol_not_independent_confirmation",
+          "difference": "Sklearn explains calibration separation; TimeSeriesSplit gap does not purge variable trade-label intervals automatically. This repository's finite model is not copied sklearn code."
+        },
+        {
+          "use": "Richer meta-label model conditional on a fixed primary direction.",
+          "status": "research_gap_no_new_model",
+          "requirements": [
+            "Frozen primary model and real mature cost-inclusive labels",
+            "Leakage-aware chronological fitting and genuinely later assessment",
+            "Signed trained asset with exact feature/account identity"
+          ],
+          "difference": "The Wiley excerpt introduces the meta-layer concept only; chapter3 algorithms and full-book qualification were not reviewed or installed."
+        }
+      ],
+      "invalidation": "Any changed physical/policy identity, absent cell support, premature observation or invalid attachment withdraws model availability. Seen archive performance cannot refresh the asset in place.",
+      "pitfalls": [
+        "Source registered_reference_only is not trained weights.",
+        "Calibration is diagnostic seen data; positive payoff does not establish calibration alone.",
+        "Generating three synthetic score cases does not create three model samples or independent outcomes."
+      ],
+      "source_vs_lab": "Official calibration documentation and the bounded Wiley excerpt motivate score/label separation and leakage awareness. Finite cell algorithm, signed attachment, floors,0.70 and pre2026 rules are repository contracts. The exercise is not a new fitted model, full-book implementation, independent skill or economic qualification.",
+      "exercises": [
+        {
+          "name": "v3_meta_supported_synthetic_calibrated_bin_9_over12",
+          "inputs": {
+            "method_meta_model_available": true,
+            "method_meta_score": 0.75
+          },
+          "expected": true,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic supported-shape calibration cell wins8/count10/smoothing1 ->9/12=0.75. Availability is a fixture only, not an asserted trained asset.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_meta_score_0_70_exact_boundary",
+          "inputs": {
+            "method_meta_model_available": true,
+            "method_meta_score": 0.7
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic supported-shape score exactly0.70; strict> fails.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        },
+        {
+          "name": "v3_meta_absent_asset_high_number_no_model",
+          "inputs": {
+            "method_meta_model_available": false,
+            "method_meta_score": 0.95
+          },
+          "expected": false,
+          "kind": "synthetic_operator_exercise",
+          "operator_target": "confirmation",
+          "setup": "Synthetic absent asset with deliberately high score leaf; no real model/weights/calibration is inferred.",
+          "evidence_boundary": "Synthetic declared-operator exercise; numbers and producer scenario are teaching fixtures, not observed archive/agent outcomes."
+        }
+      ]
+    }
+  ]
+}

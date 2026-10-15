@@ -2,6 +2,19 @@
 
 ## Separate observational agent-method outcome learning
 
+Reviewed use-specific references -> pinned curator-practice profiles/exercises
+-> prospective exact archive declaration -> original matched products ->
+source/method/data/cost-bound retained practical observations -> explicitly
+versioned selected teaching pack -> NEW unused constructor child. Local
+knowledge remains useful for research even without independent qualification;
+its recipient must still generate its own actual method/outcome receipts.
+For fresh default-v3 policies only: selected original comparisons -> scoped
+stable preference advice -> sealed policy order -> ordinary own-agent practice.
+Missing/partial inputs and technical cases do not vote as strategy successes
+or failures. Parent proposals are not reranked by the curator owner.
+All 2026-and-later market data remain paper-only. Closed normalized BandWidth
+is an append-only Squeeze alternative, not a renaming of the older TR proxy.
+
 Reviewed scoped source instruction -> all-26 immutable operating curriculum ->
 exact installed recipe teaching pack -> server-signed unused-child generation
 or fresh own-policy candidate/four-carrier preparation -> actual physical

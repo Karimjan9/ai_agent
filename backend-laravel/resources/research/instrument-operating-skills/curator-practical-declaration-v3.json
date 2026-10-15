@@ -1,0 +1,621 @@
+{
+  "protocol": "curator_practical_declaration_v1",
+  "part_key": "curator_practical_declaration_v3",
+  "revision": 1,
+  "curriculum_key": "curator_practical_knowhow_20261015_v3",
+  "declaration_order": "checked_in_before_original_panel_prepare_and_market_outcomes",
+  "outcomes_observed_at_declaration": false,
+  "attribution": "curator_research_design_not_agent_owned_outcome",
+  "purpose": "Retain bounded practical instruction from the exact twenty-six existing primary methods plus one distinct normalized BandWidth alternative, including positive, null, negative, unactivated, unavailable and technical results.",
+  "exposure": "reused_seen_pre_2026_archive_not_untouched_or_independent_validation",
+  "upstream_seen_spec_sha256": "59c143cdd1469a929e588d345554bd534c582b3eb3c59f742b9f4ebfc43ccea0",
+  "baseline": {
+    "identity": "unchanged_upstream_ema_50_200_rsi_14_physical_baseline",
+    "symbol": "XAUUSD",
+    "timeframe": "M5",
+    "allowed_sessions_utc": [
+      "7-16"
+    ],
+    "execution_hash": "387e25433c5b8405baa1287864b4f8b89f2d010ef147c58ef11e99073e4f6ce6",
+    "physical_controls": "unchanged_risk_confidence_cost_account_admission_and_management_owners",
+    "comparison": "one_exact_baseline_control_per_seen_window_no_reselection_or_retries"
+  },
+  "windows": {
+    "october_seen": {
+      "dataset_sha256": "284687751d172c343dfd6842604b6e88dbadd129b95c89b37fd2a7bfd7052ba9",
+      "loaded_rows": 1024,
+      "warmup_rows": 200,
+      "decision_rows": 824,
+      "start_utc": "2025-10-13T07:10:00Z",
+      "evaluated_start_utc": "2025-10-14T00:50:00Z",
+      "end_utc": "2025-10-17T00:25:00Z"
+    },
+    "december_seen": {
+      "dataset_sha256": "9aff463da71df809e8c61abc7621dcbe113a55d3cbe318868eab3ff24600a5d0",
+      "loaded_rows": 1024,
+      "warmup_rows": 200,
+      "decision_rows": 824,
+      "start_utc": "2025-12-03T21:00:00Z",
+      "evaluated_start_utc": "2025-12-04T14:40:00Z",
+      "end_utc": "2025-12-09T15:00:00Z"
+    }
+  },
+  "caps": {
+    "original_requests": 56,
+    "requests_per_window": 28,
+    "per_request_wall_seconds": 300,
+    "global_wall_seconds": 5400,
+    "parallel_requests": 1,
+    "native_compute_threads": 1,
+    "scientific_retries": 0
+  },
+  "helpers": {
+    ".runtime-prepare-curator-panel.php": "80224a47b939fc9a3ec4312e2f5a737c27f56a24e27dbcbd1a274f142f4d0771",
+    ".runtime-curator-panel.py": "0b716f57dea44363ee28ff7a0c2cf7d32f1a8ab9022d9529b30efb5b916e12eb"
+  },
+  "instruction_parts": {
+    "curator_price_practice_v3": "abcf2388ff29d31c258aba1f54ed6d8ea2ef985adac78f32fb7340ee793e5f33",
+    "curator_risk_practice_v3": "c3fd59f128fea4042c58e52792bc3c63ecfd340618bb804a64d107df8ed1acd6"
+  },
+  "case_roster": {
+    "october_seen__control": {
+      "kind": "control",
+      "instrument_key": null,
+      "method_ref": null,
+      "target": null,
+      "source_keys": []
+    },
+    "october_seen__adaptive_entry_topology": {
+      "kind": "method",
+      "instrument_key": "adaptive_entry_topology",
+      "method_ref": "internet_closed_break_or_reclaim_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__atr_risk_envelope": {
+      "kind": "method",
+      "instrument_key": "atr_risk_envelope",
+      "method_ref": "internet_fixed_half_risk_v2@1",
+      "target": "risk_multiplier",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b"
+      ]
+    },
+    "october_seen__bos_event": {
+      "kind": "method",
+      "instrument_key": "bos_event",
+      "method_ref": "internet_confirmed_structure_break_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__breakout_retest": {
+      "kind": "method",
+      "instrument_key": "breakout_retest",
+      "method_ref": "internet_closed_donchian_retest_20_3_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "5d89c6ade98b8d3ece16d713569f4bc575f9cb85eda7f0dcdd47b698e946db67"
+      ]
+    },
+    "october_seen__choch_event": {
+      "kind": "method",
+      "instrument_key": "choch_event",
+      "method_ref": "internet_confirmed_opposite_structure_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__compression_expansion": {
+      "kind": "method",
+      "instrument_key": "compression_expansion",
+      "method_ref": "internet_closed_compression_expansion_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "9ab614e6c9f3303cdc8f0232c6f9f671af4ce62f88528ba8ca90766c15ff38c2",
+        "c2e401e19ccfd7f3516699deb1f35f698203aed82d57bac1e9e3173236b1d108"
+      ]
+    },
+    "october_seen__confidence_firewall": {
+      "kind": "method",
+      "instrument_key": "confidence_firewall",
+      "method_ref": "internet_signal_score_veto_0_7_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "c25c03dbb500b448610ead1554e189d5d263f28427d044e0d4a89b873b05ded0"
+      ]
+    },
+    "october_seen__confirmed_swing": {
+      "kind": "method",
+      "instrument_key": "confirmed_swing",
+      "method_ref": "internet_confirmed_swing_range_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b"
+      ]
+    },
+    "october_seen__cost_aware_exit": {
+      "kind": "method",
+      "instrument_key": "cost_aware_exit",
+      "method_ref": "internet_owned_adverse_regime_exit_v2@1",
+      "target": "exit",
+      "source_keys": [
+        "13c910c2727d5c7ff3562443ab41a6605661f03a45d2399c362b28169e31ecff",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "october_seen__cost_firewall": {
+      "kind": "method",
+      "instrument_key": "cost_firewall",
+      "method_ref": "internet_observed_quote_cost_firewall@1",
+      "target": "confirmation",
+      "source_keys": [
+        "6f30ee62684fd9d29d58ed7fc4cfb40bf0a2abe73dd023ae4c3fd7b82ba8a030",
+        "d7eef36f3aca847123b24592921058200f9ae57dc4b6ce2117f3edb54e65415a"
+      ]
+    },
+    "october_seen__dynamic_cooldown": {
+      "kind": "method",
+      "instrument_key": "dynamic_cooldown",
+      "method_ref": "internet_mature_dynamic_recovery_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "655cfc3c1cc0473452ca11dbc06f65954278cb90aafd79247c79544a0bf5d1c5"
+      ]
+    },
+    "october_seen__dynamic_fibonacci_zone": {
+      "kind": "method",
+      "instrument_key": "dynamic_fibonacci_zone",
+      "method_ref": "internet_confirmed_fib_pullback_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "c0e774c0f548d895f8bfc65e764ad05e698b41f6b8bfea011d7adb7c2b379ecf"
+      ]
+    },
+    "october_seen__high_volatility_firewall": {
+      "kind": "method",
+      "instrument_key": "high_volatility_firewall",
+      "method_ref": "internet_closed_atr_absolute_ceiling_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b",
+        "fe05bb68bbd7dc4c021e004b77ac5d48bb5fbfa92408250cf0e4595f90af36cf"
+      ]
+    },
+    "october_seen__liquidity_pool": {
+      "kind": "method",
+      "instrument_key": "liquidity_pool",
+      "method_ref": "internet_closed_equal_level_proxy_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__liquidity_sweep": {
+      "kind": "method",
+      "instrument_key": "liquidity_sweep",
+      "method_ref": "internet_closed_excursion_reclaim_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__loss_streak_cooldown": {
+      "kind": "method",
+      "instrument_key": "loss_streak_cooldown",
+      "method_ref": "internet_mature_loss_streak_wait_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "655cfc3c1cc0473452ca11dbc06f65954278cb90aafd79247c79544a0bf5d1c5"
+      ]
+    },
+    "october_seen__meta_label_filter": {
+      "kind": "method",
+      "instrument_key": "meta_label_filter",
+      "method_ref": "internet_calibrated_meta_score@1",
+      "target": "confirmation",
+      "source_keys": [
+        "d3f86298e4343b4f116811e68d09700c718711c72b74e5295068c882b900b5f2"
+      ]
+    },
+    "october_seen__range_reentry": {
+      "kind": "method",
+      "instrument_key": "range_reentry",
+      "method_ref": "internet_closed_band_reentry_20_2_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "cf02f74c9bb1f072d4e729e3916143a346bef36a4cd455ed7feec8b60d09c5bd"
+      ]
+    },
+    "october_seen__regime_router": {
+      "kind": "method",
+      "instrument_key": "regime_router",
+      "method_ref": "internet_closed_regime_alignment_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "13c910c2727d5c7ff3562443ab41a6605661f03a45d2399c362b28169e31ecff",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "october_seen__session_breakout": {
+      "kind": "method",
+      "instrument_key": "session_breakout",
+      "method_ref": "internet_closed_session_break_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "9a6f9a38f1b9c985128d65acab74f41614cdca81a704f4e01efa852f5c5534ab",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__session_range": {
+      "kind": "method",
+      "instrument_key": "session_range",
+      "method_ref": "internet_closed_session_width_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b",
+        "9a6f9a38f1b9c985128d65acab74f41614cdca81a704f4e01efa852f5c5534ab"
+      ]
+    },
+    "october_seen__support_resistance_zone": {
+      "kind": "method",
+      "instrument_key": "support_resistance_zone",
+      "method_ref": "internet_confirmed_touched_zone_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "october_seen__temporal_survival_filter": {
+      "kind": "method",
+      "instrument_key": "temporal_survival_filter",
+      "method_ref": "internet_closed_signal_persistence_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "october_seen__transition_protection": {
+      "kind": "method",
+      "instrument_key": "transition_protection",
+      "method_ref": "internet_closed_transition_wait_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "october_seen__trend_pullback": {
+      "kind": "method",
+      "instrument_key": "trend_pullback",
+      "method_ref": "internet_closed_ema_pullback_20_50_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "3ab3d22426a0babdb6a5e10f3b5ae228611483f89262e15c4e2805dfeb5573a6"
+      ]
+    },
+    "october_seen__volume_confirmation": {
+      "kind": "method",
+      "instrument_key": "volume_confirmation",
+      "method_ref": "internet_observed_relative_volume_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "70aca200ec8ccb3e49b74b48b4be6fcad40c161b781b42ba519628c9fbdfdbe7"
+      ]
+    },
+    "october_seen__bandwidth_squeeze": {
+      "kind": "method",
+      "instrument_key": "compression_expansion",
+      "method_ref": "internet_closed_bandwidth_squeeze_breakout_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "8d45dccc45f3567f1a1c8e32357581eab978f5a16171c47c48944fa641f11dd4"
+      ]
+    },
+    "december_seen__control": {
+      "kind": "control",
+      "instrument_key": null,
+      "method_ref": null,
+      "target": null,
+      "source_keys": []
+    },
+    "december_seen__adaptive_entry_topology": {
+      "kind": "method",
+      "instrument_key": "adaptive_entry_topology",
+      "method_ref": "internet_closed_break_or_reclaim_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__atr_risk_envelope": {
+      "kind": "method",
+      "instrument_key": "atr_risk_envelope",
+      "method_ref": "internet_fixed_half_risk_v2@1",
+      "target": "risk_multiplier",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b"
+      ]
+    },
+    "december_seen__bos_event": {
+      "kind": "method",
+      "instrument_key": "bos_event",
+      "method_ref": "internet_confirmed_structure_break_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__breakout_retest": {
+      "kind": "method",
+      "instrument_key": "breakout_retest",
+      "method_ref": "internet_closed_donchian_retest_20_3_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "5d89c6ade98b8d3ece16d713569f4bc575f9cb85eda7f0dcdd47b698e946db67"
+      ]
+    },
+    "december_seen__choch_event": {
+      "kind": "method",
+      "instrument_key": "choch_event",
+      "method_ref": "internet_confirmed_opposite_structure_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__compression_expansion": {
+      "kind": "method",
+      "instrument_key": "compression_expansion",
+      "method_ref": "internet_closed_compression_expansion_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "9ab614e6c9f3303cdc8f0232c6f9f671af4ce62f88528ba8ca90766c15ff38c2",
+        "c2e401e19ccfd7f3516699deb1f35f698203aed82d57bac1e9e3173236b1d108"
+      ]
+    },
+    "december_seen__confidence_firewall": {
+      "kind": "method",
+      "instrument_key": "confidence_firewall",
+      "method_ref": "internet_signal_score_veto_0_7_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "c25c03dbb500b448610ead1554e189d5d263f28427d044e0d4a89b873b05ded0"
+      ]
+    },
+    "december_seen__confirmed_swing": {
+      "kind": "method",
+      "instrument_key": "confirmed_swing",
+      "method_ref": "internet_confirmed_swing_range_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b"
+      ]
+    },
+    "december_seen__cost_aware_exit": {
+      "kind": "method",
+      "instrument_key": "cost_aware_exit",
+      "method_ref": "internet_owned_adverse_regime_exit_v2@1",
+      "target": "exit",
+      "source_keys": [
+        "13c910c2727d5c7ff3562443ab41a6605661f03a45d2399c362b28169e31ecff",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "december_seen__cost_firewall": {
+      "kind": "method",
+      "instrument_key": "cost_firewall",
+      "method_ref": "internet_observed_quote_cost_firewall@1",
+      "target": "confirmation",
+      "source_keys": [
+        "6f30ee62684fd9d29d58ed7fc4cfb40bf0a2abe73dd023ae4c3fd7b82ba8a030",
+        "d7eef36f3aca847123b24592921058200f9ae57dc4b6ce2117f3edb54e65415a"
+      ]
+    },
+    "december_seen__dynamic_cooldown": {
+      "kind": "method",
+      "instrument_key": "dynamic_cooldown",
+      "method_ref": "internet_mature_dynamic_recovery_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "655cfc3c1cc0473452ca11dbc06f65954278cb90aafd79247c79544a0bf5d1c5"
+      ]
+    },
+    "december_seen__dynamic_fibonacci_zone": {
+      "kind": "method",
+      "instrument_key": "dynamic_fibonacci_zone",
+      "method_ref": "internet_confirmed_fib_pullback_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "c0e774c0f548d895f8bfc65e764ad05e698b41f6b8bfea011d7adb7c2b379ecf"
+      ]
+    },
+    "december_seen__high_volatility_firewall": {
+      "kind": "method",
+      "instrument_key": "high_volatility_firewall",
+      "method_ref": "internet_closed_atr_absolute_ceiling_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b",
+        "fe05bb68bbd7dc4c021e004b77ac5d48bb5fbfa92408250cf0e4595f90af36cf"
+      ]
+    },
+    "december_seen__liquidity_pool": {
+      "kind": "method",
+      "instrument_key": "liquidity_pool",
+      "method_ref": "internet_closed_equal_level_proxy_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__liquidity_sweep": {
+      "kind": "method",
+      "instrument_key": "liquidity_sweep",
+      "method_ref": "internet_closed_excursion_reclaim_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__loss_streak_cooldown": {
+      "kind": "method",
+      "instrument_key": "loss_streak_cooldown",
+      "method_ref": "internet_mature_loss_streak_wait_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "655cfc3c1cc0473452ca11dbc06f65954278cb90aafd79247c79544a0bf5d1c5"
+      ]
+    },
+    "december_seen__meta_label_filter": {
+      "kind": "method",
+      "instrument_key": "meta_label_filter",
+      "method_ref": "internet_calibrated_meta_score@1",
+      "target": "confirmation",
+      "source_keys": [
+        "d3f86298e4343b4f116811e68d09700c718711c72b74e5295068c882b900b5f2"
+      ]
+    },
+    "december_seen__range_reentry": {
+      "kind": "method",
+      "instrument_key": "range_reentry",
+      "method_ref": "internet_closed_band_reentry_20_2_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "cf02f74c9bb1f072d4e729e3916143a346bef36a4cd455ed7feec8b60d09c5bd"
+      ]
+    },
+    "december_seen__regime_router": {
+      "kind": "method",
+      "instrument_key": "regime_router",
+      "method_ref": "internet_closed_regime_alignment_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "13c910c2727d5c7ff3562443ab41a6605661f03a45d2399c362b28169e31ecff",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "december_seen__session_breakout": {
+      "kind": "method",
+      "instrument_key": "session_breakout",
+      "method_ref": "internet_closed_session_break_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "9a6f9a38f1b9c985128d65acab74f41614cdca81a704f4e01efa852f5c5534ab",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__session_range": {
+      "kind": "method",
+      "instrument_key": "session_range",
+      "method_ref": "internet_closed_session_width_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "30552a44f57acf95da04ea4d2c6080058186529d33a9be78e2a6552683cf902b",
+        "9a6f9a38f1b9c985128d65acab74f41614cdca81a704f4e01efa852f5c5534ab"
+      ]
+    },
+    "december_seen__support_resistance_zone": {
+      "kind": "method",
+      "instrument_key": "support_resistance_zone",
+      "method_ref": "internet_confirmed_touched_zone_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "1216422564fb6e6dbb9e05fe9fbb5a994919ae45c5d6e4ba4e995f988cf7fdb7",
+        "f5d1ceae1a989292cca36f8b7b6cb9ec3376c63bcfdf0af20a50ee36eb1eec3c"
+      ]
+    },
+    "december_seen__temporal_survival_filter": {
+      "kind": "method",
+      "instrument_key": "temporal_survival_filter",
+      "method_ref": "internet_closed_signal_persistence_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "december_seen__transition_protection": {
+      "kind": "method",
+      "instrument_key": "transition_protection",
+      "method_ref": "internet_closed_transition_wait_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "06a6f374e576a09244bf6ce81386bf235684c28c3c48373922e53735a4278356",
+        "d6e5ba8b53762748a98cbd0472c828c412778989710bb146121523e3f6ba4f2a"
+      ]
+    },
+    "december_seen__trend_pullback": {
+      "kind": "method",
+      "instrument_key": "trend_pullback",
+      "method_ref": "internet_closed_ema_pullback_20_50_v2@2",
+      "target": "confirmation",
+      "source_keys": [
+        "3ab3d22426a0babdb6a5e10f3b5ae228611483f89262e15c4e2805dfeb5573a6"
+      ]
+    },
+    "december_seen__volume_confirmation": {
+      "kind": "method",
+      "instrument_key": "volume_confirmation",
+      "method_ref": "internet_observed_relative_volume_v2@1",
+      "target": "confirmation",
+      "source_keys": [
+        "70aca200ec8ccb3e49b74b48b4be6fcad40c161b781b42ba519628c9fbdfdbe7"
+      ]
+    },
+    "december_seen__bandwidth_squeeze": {
+      "kind": "method",
+      "instrument_key": "compression_expansion",
+      "method_ref": "internet_closed_bandwidth_squeeze_breakout_v1@1",
+      "target": "confirmation",
+      "source_keys": [
+        "8d45dccc45f3567f1a1c8e32357581eab978f5a16171c47c48944fa641f11dd4"
+      ]
+    }
+  },
+  "interpretation": {
+    "source_rule": "bounded_reviewed_provenance_not_publisher_profitability",
+    "synthetic_exercises": "operator_correctness_not_market_benefit",
+    "reach": "available_at_most_reached_activated_at_most_available_changed_at_most_reached",
+    "activation": "available_actual_invocations_including_false_veto_outputs",
+    "economic_comparison": "only_matched_original_request_response_source_target_cost_and_ledger_references",
+    "positive": "local_provisional_research_not_a_skill_certificate",
+    "unactivated": "not_tested_negative",
+    "unavailable": "missing_data_not_bad_strategy",
+    "own_agent_learning": "separate_original_agent_outcomes_never_relabel_curator_observations"
+  },
+  "research_only": true,
+  "own_agent_outcome": false,
+  "independent_validation": false,
+  "qualification_granted": false,
+  "agent_skill_earned": false,
+  "economic_authority": false,
+  "skill_credit": false,
+  "paper_authority": false,
+  "live_authority": false
+}
+

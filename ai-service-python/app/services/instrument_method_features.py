@@ -26,6 +26,7 @@ BOOL_FIELDS = {
     "method_pullback_available", "method_pullback_confirmed",
     "method_pullback_pretrend_available", "method_pullback_pretrend_confirmed",
     "method_atr_percent_available",
+    "method_bandwidth_squeeze_available", "method_bandwidth_squeeze_breakout",
     "method_retest_available", "method_retest_confirmed",
     "method_macd_available", "method_macd_cross", "method_rsi_available", "method_rsi_recovery",
     "method_chandelier_available", "method_chandelier_exit",
@@ -38,6 +39,7 @@ NUMBER_FIELDS = {
     "method_signal_age", "method_signal_survival", "method_regime_code", "method_meta_score",
     "method_spread_atr",
     "method_atr_percent",
+    "method_bandwidth",
 }
 FIELDS = BOOL_FIELDS | NUMBER_FIELDS
 
@@ -137,6 +139,12 @@ class ClosedInstrumentMethodFeatures:
         band_deviation = close.rolling(20, min_periods=20).std(ddof=0)
         band_lower = band_mean - 2.0 * band_deviation
         band_upper = band_mean + 2.0 * band_deviation
+        # A distinct normalized Squeeze observation, not the older TR proxy.
+        # The zero-buffer low, prior-five-bar alert and fresh closed crossing
+        # are fixed lab adaptations of Bollinger's public Method I description.
+        bandwidth = ((band_upper - band_lower) / band_mean).where(band_mean.gt(0))
+        bandwidth_low = bandwidth.rolling(125, min_periods=125).min()
+        squeeze = bandwidth.le(bandwidth_low) & bandwidth_low.notna()
         # cTrader's EMA recursion uses alpha=2/(n+1); dynamic EMA support and
         # prior-channel breakouts are reference ideas, not profitability proof.
         # These periods, maturity floor and three-bar retest cap are fixed lab
@@ -201,6 +209,25 @@ class ClosedInstrumentMethodFeatures:
                     reentry_direction = "SELL"
             output.update({"method_band_available": band_ready, "_band_lower": lower,
                 "_band_upper": upper, "_band_reentry_direction": reentry_direction})
+            width = _number(bandwidth.iloc[index])
+            squeeze_ready = bool(index >= 144 and width is not None
+                and _number(bandwidth_low.iloc[index - 1]) is not None
+                and all(stamp_value - self.stamps[position - 1] == self.duration
+                    for position, stamp_value in enumerate(self.stamps[max(0, index - 4):index + 1],
+                        start=max(0, index - 4)))
+                and previous_lower is not None and previous_upper is not None)
+            breakout_direction = None
+            if (squeeze_ready and bool(squeeze.iloc[index - 5:index].any())
+                    and previous_lower <= close.iloc[index - 1] <= previous_upper):
+                previous = close.iloc[index - 1]
+                if previous <= previous_upper and close.iloc[index] > upper and close.iloc[index] > previous:
+                    breakout_direction = "BUY"
+                elif previous >= previous_lower and close.iloc[index] < lower and close.iloc[index] < previous:
+                    breakout_direction = "SELL"
+            output.update({"method_bandwidth_squeeze_available": squeeze_ready,
+                "_bandwidth_breakout_direction": breakout_direction})
+            if width is not None:
+                output["method_bandwidth"] = width
             fast, trend = _number(ema20.iloc[index]), _number(ema50.iloc[index])
             previous_fast = _number(ema20.iloc[index - 1]) if index else None
             previous_trend = _number(ema50.iloc[index - 1]) if index else None
@@ -448,6 +475,7 @@ class ClosedInstrumentMethodFeatures:
         buy = direction == "BUY"
         if direction in {"BUY", "SELL"}:
             output["method_band_reentry"] = source["_band_reentry_direction"] == direction
+            output["method_bandwidth_squeeze_breakout"] = source["_bandwidth_breakout_direction"] == direction
             output["method_pullback_confirmed"] = source["_pullback_direction"] == direction
             output["method_pullback_pretrend_confirmed"] = source["_pretrend_pullback_direction"] == direction
             output["method_retest_confirmed"] = source["_retest_direction"] == direction

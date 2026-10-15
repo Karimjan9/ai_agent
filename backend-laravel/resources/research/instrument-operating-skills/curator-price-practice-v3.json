@@ -1,0 +1,636 @@
+{
+  "protocol": "instrument_curator_practical_knowhow_v1",
+  "part_key": "curator_price_practice_v3",
+  "revision": 1,
+  "curriculum_key": "curator_practical_knowhow_20261015_v3",
+  "reviewed_on": "2026-10-15",
+  "knowledge_status": "provisional_curator_practical_knowhow",
+  "acceptance": {
+    "purpose": "Retain curator-reviewed operating procedures and concrete exercises for later research; do not discard them merely because an archive trial is null, harmful or underpowered.",
+    "source_skill": "Separately established correctness of declared source-informed operation; these notes do not issue that acceptance.",
+    "agent_skill": "Separate original agent-owned contextual use and mature outcomes; these curator cases are not agent experience.",
+    "exercises_are_market_outcomes": false,
+    "independent_validation": false,
+    "mastery_proven": false,
+    "economic_authority": false,
+    "all_2026_and_later_market_data": "paper_only",
+    "external_source_text": "untrusted_reference_never_executable"
+  },
+  "shared_execution_convention": {
+    "owner": "ai-service-python/app/services/instrument_method_features.py::ClosedInstrumentMethodFeatures",
+    "clock": "Rows carry original UTC bar-open time. An observation is consumable only at or after row.time + configured bar_duration_seconds; illustrative M5 clocks below use 300 seconds.",
+    "exercise_scope": "Synthetic, conditional arithmetic cases. Stated mature EMA, band, ATR and pivot snapshots are premises to inspect, not claimed market observations or a replacement for the original OHLC feature owner.",
+    "action": "All fourteen primary methods target confirmation. True can only let an already existing same-direction candidate continue through its other guards. False or unavailable means WAIT/veto for this additional gate; neither result creates an entry, risk change, fill, PnL or reward.",
+    "normalization": "Unless stated otherwise, ATR in these primary methods means the local arithmetic mean of fourteen gap-aware true ranges, in price units; ratios are dimensionless. This differs from Wilder ATR smoothing in the reviewed Fidelity reference.",
+    "scope": "The exact method context remains authoritative. A use described as an alternative is not an installed method or expanded context. Runtime booleans are computed by the owner, never injected from a source page or user-supplied method column."
+  },
+  "sources": [
+    {
+      "source_id": "v3_bollinger_method_i",
+      "url": "https://www.bollingerbands.com/_files/ugd/58be43_f5e967053af44fa083340cacfc5e6226.pdf",
+      "reviewed_scope": "Curator reviewed John Bollinger's public Method I manual pages 1-3: normalized BandWidth, the 125-period Squeeze and the buffer/lookback discussion, together with the public Band Rules 6-9,12,14,18-22. The source declaration is an original bounded paraphrase; no proprietary code or economic result was imported.",
+      "not_reviewed": ["complete_book", "paid_video", "TradeStation_EasyLanguage_source", "publisher_strategy_outcomes"],
+      "source_key": "8d45dccc45f3567f1a1c8e32357581eab978f5a16171c47c48944fa641f11dd4",
+      "source_path": "research/instrument-methods/closed-bandwidth-squeeze/source.json",
+      "source_file_sha256": "493d3547a33e75a4a1a717adc3f269ea0b9985304b07d33253468bed8537b338"
+    },
+    {
+      "source_id": "v3_fidelity_ema",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+      "title": "Exponential Moving Average",
+      "publisher": "Fidelity",
+      "medium": "official_indicator_reference",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read Description, interpretation bullets and Calculation: weighting, direction, pullback location, lag, recursive EMA and the stated SMA initial seed.",
+      "reviewed_sections": ["Description", "Interpretation bullets following Description", "Calculation: EMA=(K*(C-P))+P"],
+      "not_reviewed": ["full_book", "full_video", "publisher_strategy_profitability"]
+    },
+    {
+      "source_id": "v3_cme_levels",
+      "url": "https://www.cmegroup.com/education/courses/technical-analysis/support-and-resistance",
+      "title": "Support and Resistance",
+      "publisher": "CME Group",
+      "medium": "official_video_lesson_published_text",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read published lesson text on moving averages, prior highs/lows, level role reversal, trend lines and zones. The embedded recording was not watched.",
+      "reviewed_sections": ["Moving Averages", "Previous Highs and Lows", "Price Levels", "Trend Lines and final zone caution"],
+      "not_reviewed": ["full_video", "complete_video_transcript", "XAUUSD_empirical_transfer"]
+    },
+    {
+      "source_id": "v3_stockcharts_channels",
+      "url": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/price-channels",
+      "title": "Price Channels",
+      "publisher": "StockCharts ChartSchool",
+      "medium": "official_product_algorithm_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read the product's channel calculation, explicit exclusion of the most recent bar, trend interpretation, timeframe and whipsaw discussion. No displayed historical result was reproduced.",
+      "reviewed_sections": ["Calculating Price Channels", "Interpreting Price Channels", "Identifying Trends With Price Channels", "Identifying Overbought/Oversold Levels"],
+      "not_reviewed": ["Donchian_original_manuscripts", "recommended_books", "historical_chart_outcome_replication"]
+    },
+    {
+      "source_id": "v3_bollinger_rules",
+      "url": "https://www.bollingerbands.com/bollinger-band-rules",
+      "title": "Bollinger Bands Rules",
+      "publisher": "John Bollinger",
+      "medium": "creator_authored_operating_rules",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read published rules, focusing on band location, correlated indicators, tags, band walking, outside closes, defaults, distribution assumptions and normalized width.",
+      "reviewed_sections": ["Rules 1-4", "Rules 6-14", "Rules 18-22"],
+      "not_reviewed": ["full_book", "full_video", "complete_W_bottom_M_top_system"]
+    },
+    {
+      "source_id": "v3_bollinger_method_i_manual",
+      "url": "https://www.bollingerbands.com/_files/ugd/58be43_f5e967053af44fa083340cacfc5e6226.pdf",
+      "title": "Bollinger Bands Volatility Breakout (Method I) Manual",
+      "publisher": "John Bollinger",
+      "medium": "creator_published_public_source_pdf",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read PDF pages 1-3, About Method I and Indicator Explanations: bands, normalized BandWidth, 125-period low, adjustable 3-percent buffer and squeeze-followed-by-band-break alert. No software subscription or video was consumed.",
+      "reviewed_sections": ["PDF page 1: About Method I", "PDF page 2: Bollinger Bands and BandWidth", "PDF page 3: buffer, %BandWidth and Squeeze Breakout/Method I"],
+      "not_reviewed": ["pages_4_5", "full_book", "full_video", "TradeStation_source_code", "exact_proprietary_buffer_implementation"]
+    },
+    {
+      "source_id": "v3_fidelity_atr",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr",
+      "title": "Average True Range",
+      "publisher": "Fidelity",
+      "medium": "official_indicator_reference",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read Description, How this indicator works and Calculation: gap-aware true range, volatility without direction and Wilder recurrence.",
+      "reviewed_sections": ["Description", "How this indicator works", "Calculation"],
+      "not_reviewed": ["full_Wilder_book", "full_video", "lab_threshold_profitability"]
+    },
+    {
+      "source_id": "v3_fidelity_fibonacci",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/fibonacci-retracement",
+      "title": "Fibonacci Retracement",
+      "publisher": "Fidelity",
+      "medium": "official_indicator_reference",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read Description and How this indicator works: two-extreme anchor construction and percentage locations as possible support/resistance.",
+      "reviewed_sections": ["Description", "How this indicator works"],
+      "not_reviewed": ["full_book", "full_video", "lab_pivot_algorithm_validation"]
+    },
+    {
+      "source_id": "v3_fidelity_charting_transcript",
+      "url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Mastering%20charting%20features_v2.pdf",
+      "title": "Mastering the charting features in Active Trader Pro",
+      "publisher": "Fidelity Trading Strategy Desk",
+      "medium": "official_webinar_transcript_pdf",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read PDF pages 12-17 (printed pages 12-17): trend-line discussion through two-point Fibonacci anchors, optional 78.6-percent level and potential-area cautions. These are bounded transcript passages, not a watched recording or complete transcript review.",
+      "reviewed_sections": ["PDF pages 12-14: trend lines, peaks and troughs", "PDF pages 15-16: two-extreme retracement construction and additional level", "PDF page 17: areas are not absolute barriers"],
+      "not_reviewed": ["full_video", "full_recording", "complete_38_page_transcript", "historical_chart_outcome_replication"]
+    },
+    {
+      "source_id": "v3_tradingview_asof",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/",
+      "title": "Repainting",
+      "publisher": "TradingView",
+      "medium": "official_platform_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read Fluid data values and Plotting in the past: historical OHLC lacks intermediary movement; confirmed values and delayed pivot publication differ from retrospective plotting.",
+      "reviewed_sections": ["Historical vs realtime calculations / Fluid data values", "Plotting in the past"],
+      "not_reviewed": ["all_platform_execution_modes", "all_documentation_sections", "full_video"]
+    },
+    {
+      "source_id": "v3_tradingview_sessions",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/sessions/",
+      "title": "Sessions",
+      "publisher": "TradingView",
+      "medium": "official_platform_documentation",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read Creating time-based sessions and Using time-based sessions: interval/day specification, timezone interpretation, opening/closing membership and bar-boundary alignment.",
+      "reviewed_sections": ["Time-based sessions / Creating time-based sessions", "Using time-based sessions, including timezone and alignment notes"],
+      "not_reviewed": ["all_named_subsessions", "broker_calendar_certification", "full_video"]
+    },
+    {
+      "source_id": "v3_cme_liquidity",
+      "url": "https://www.cmegroup.com/education/articles-and-reports/how-traders-measure-liquidity",
+      "title": "How Traders Measure Liquidity",
+      "publisher": "CME Group",
+      "medium": "exchange_market_structure_reference",
+      "reviewed_on": "2026-10-15",
+      "reviewed_scope": "Read article paragraphs distinguishing spread, volume, open interest and bid/offer book size/depth. Those observations are absent from the installed equal-level proxy.",
+      "reviewed_sections": ["Friday Fun Fact: How Traders Measure Liquidity, paragraphs on futures liquidity gauges and depth"],
+      "not_reviewed": ["order_book_dataset", "actual_stop_executions", "spot_XAUUSD_to_futures_transfer", "full_video"]
+    }
+  ],
+  "supplemental_profiles": [
+    {
+      "profile_key": "curator_normalized_bandwidth_squeeze_breakout_v3",
+      "instrument_key": "compression_expansion",
+      "method_ref": "internet_closed_bandwidth_squeeze_breakout_v1@1",
+      "method_path": "research/instrument-methods/closed-bandwidth-squeeze/method.json",
+      "method_file_sha256": "3f6fb308e55c3c980ff75254232eb4e258235d693ceaf59dafcbd0bff4cf246d",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_bollinger_method_i"],
+      "source_reviews": [{
+        "url": "https://www.bollingerbands.com/_files/ugd/58be43_f5e967053af44fa083340cacfc5e6226.pdf",
+        "reviewed_scope": "Manual pages 1-3 explain BandWidth, a 125-period low and adjustable squeeze buffer/lookback. Public Band Rules supplied related context. The lab does not claim to reproduce the proprietary programme, the complete book, videos or publisher outcomes."
+      }],
+      "calculation_convention": "Use each completed twenty-close SMA and population standard deviation to calculate upper/lower bands at two deviations. BandWidth=(upper-lower)/positive middle. A squeeze is a BandWidth at its trailing125 mature-width minimum, including ties with zero buffer. One squeeze must occur in the previous five completed observations. The previous close must be inside its own lower and upper bands, including equality at either boundary. BUY now closes strictly above the current upper band and previous close; SELL mirrors below the lower band. The last six M5 bars must be contiguous. First possible current availability is index144 because the rolling minimum needs125 mature widths, not125 raw bars.",
+      "source_vs_lab": "The manual supports normalized BandWidth and a historical squeeze lookback. Population deviation, a zero buffer including ties, previous-five observation timing, fresh strict cross with directional price movement, six contiguous M5 bars and trend_up/London/normal are explicit lab hypotheses. The source's default three-percent buffer and proprietary implementation are not reproduced. The old disjoint5/20 true-range proxy remains its own primary method and evidence; a narrow true-range ratio is not a Bollinger BandWidth squeeze.",
+      "runtime_conditions": {
+        "input_bindings": {"available": "method_bandwidth_squeeze_available", "breakout": "method_bandwidth_squeeze_breakout"},
+        "feature_owner": "ClosedInstrumentMethodFeatures",
+        "diagnostic_value": "method_bandwidth",
+        "observation_clock": "original_closed_ohlc_asof_existing_candidate_decision",
+        "first_possible_current_index": 144,
+        "required_tail": "six_contiguous_M5_bars",
+        "direction_owner": "existing_strategy_candidate_not_this_confirmation"
+      },
+      "operating_steps": [
+        "Reopen the exact source, method and recipe revision and preserve its declared context. Start with an existing BUY or SELL proposal; this operator supplies no direction.",
+        "Read only original completed OHLC through the closed feature owner. Require twenty-close band maturity,125 mature BandWidths and six contiguous tail bars; CSV-provided method flags cannot fill missing history.",
+        "Locate a zero-buffer historical minimum in the previous five closed observations. Treat the squeeze as compression knowledge, not as an immediate direction or a trade.",
+        "Require the current strict fresh same-direction outside close from a previous inside-or-equal close. A tag, continued outside close, absent directional move or opposite candidate does not confirm.",
+        "Record target reach, availability, actual confirmation/veto, changed decisions and matched cost-inclusive ledger outcomes separately. Preserve original risk, stops, sizing, costs, admission and exit ownership."
+      ],
+      "inputs": ["original_closed_ohlc", "twenty_close_bands", "125_mature_bandwidth_observations", "previous_five_squeeze_states", "existing_candidate_direction", "method_bandwidth_squeeze_available:boolean", "method_bandwidth_squeeze_breakout:boolean", "method_bandwidth:diagnostic_number"],
+      "wait_when": [
+        "BandWidth history is immature, middle is nonpositive/nonfinite, or the last six M5 bars are not contiguous.",
+        "No squeeze exists in the previous five completed observations, or the current bar only touches its band.",
+        "The previous close was already outside the same directional band, the current price does not move in the candidate direction, or a complete breakout is absent.",
+        "Original context, data, risk, cost or admission guards refuse; unavailable observations never become invented passes."
+      ],
+      "alternatives": [
+        "Keep the old5/20 true-range ratio as a separately named compression proxy with its own exact rule and controls; do not pool its outcomes with normalized BandWidth.",
+        "A positive manual buffer, another lookback or an alternative breakout confirmation requires a separately declared prospective revision before new outcomes.",
+        "Use BASELINE or WAIT when the hypothesis has no matching valid opportunity; low sample size and failed availability remain research gaps."
+      ],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "immature_width_history_cannot_confirm", "inputs": {"method_bandwidth_squeeze_available": false, "method_bandwidth_squeeze_breakout": true}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "mature_without_fresh_directional_breakout_waits", "inputs": {"method_bandwidth_squeeze_available": true, "method_bandwidth_squeeze_breakout": false}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "owner_confirmed_complete_squeeze_breakout_continues", "inputs": {"method_bandwidth_squeeze_available": true, "method_bandwidth_squeeze_breakout": true}, "expected": true}
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "profile_key": "curator_trend_pullback_practice_v3",
+      "instrument_key": "trend_pullback",
+      "group": "tactic",
+      "method_ref": "internet_closed_ema_pullback_20_50_v2@2",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_fidelity_ema", "v3_cme_levels"],
+      "source_reviews": [{"url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema", "reviewed_scope": "Direction, dip/rally location and calculation reviewed; the exact two-bar condition below comes from the installed local owner."}],
+      "operating_steps": [
+        "At the closed decision clock, verify the existing direction and exact London/trend_up/normal context; obtain original mature EMA20/50 from the owner.",
+        "For BUY inspect t-1: low<=EMA20, EMA50<close<=EMA20 and EMA20>EMA50. Then require t close>its EMA20 and previous close, with fast still above slow. Mirror every comparison for SELL.",
+        "Require both adjacent EMA observations mature and exactly one configured bar apart; evaluate available AND bounce. A setup without the completed reclaim waits.",
+        "Record whether the candidate reached, had usable inputs, passed or was vetoed. Follow the original risk/execution guards after a pass; no entry is produced by this gate."
+      ],
+      "inputs": ["original_closed_ohlc", "ordered_unique_UTC_clock", "configured_bar_duration_seconds", "existing_candidate_direction", "method_pullback_available:boolean", "method_pullback_confirmed:boolean"],
+      "runtime_conditions": {"required_fields": ["method_pullback_available", "method_pullback_confirmed"], "rule": "available AND directional bounce", "ema": "EMA20/50 adjust=False, first-observed-close seed, both min_periods=50; first possible two-bar confirmation index50", "units": "EMA and closes in identical price units", "timing": "t-1 and t contiguous; earlier EMA history may have gaps"},
+      "wait_when": ["Either EMA snapshot is immature or the immediate pair has a time gap.", "The touch, between-average location or strict reclaim comparison fails.", "The recipe context or actual proposal direction does not match."],
+      "invalidation": ["A close at or below EMA50 invalidates this BUY pullback geometry; a new later touch/reclaim must be evaluated afresh.", "A current close exactly at EMA20 is not a strict reclaim."],
+      "alternatives": ["The existing internet_closed_ema_pretrend_pullback_20_50_v1@1 additionally checks both EMA slopes at t-3 to t-2 before touch/reclaim; its exact context is New York. A current rising EMA alone cannot establish that prior trend.", "A slower SMA or longer EMA is a source-informed alternative requiring a new declared method and seed/maturity convention; internet_ema_21_55_trend_v1@1 is a separate construction adapter."],
+      "source_vs_lab": "The reference supports directional moving-average use. EMA20/50, first-close seed, two-bar geometry, strict comparisons and this context are local declarations; Fidelity states an SMA initial seed. Curator operation is distinct from agent preference and profitable use.",
+      "common_mistakes": ["Calling proximity a reclaim", "Adding a redundant current-EMA-rise test as proof of pretrend", "Silently replacing London two-bar use with New York four-bar use"],
+      "agent_practice": ["Reconstruct the prior setup and current trigger separately, explain the WAIT reason and retain later own observations under their original identities."],
+      "implementation_gaps": ["A user-selected source SMA-seeded EMA would require a separate feature/method revision; the current seed is explicit and unchanged."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "mature_buy_touch_then_strict_reclaim", "inputs": {"method_pullback_available": true, "method_pullback_confirmed": true}, "expected": true, "derivation": "Conditional mature snapshots: t-1 EMA20=100, EMA50=98, low=98.8, close=99; t close=101 gives recursive EMA20=100.095238 and EMA50=98.117647. At consecutive M5 closes10:05Z/10:10Z, BUY satisfies every inequality.", "case_reason": "The method can continue the existing BUY after10:10Z; no order or outcome is asserted."},
+        {"kind": "synthetic_operator_exercise", "name": "touch_without_reclaim_waits", "inputs": {"method_pullback_available": true, "method_pullback_confirmed": false}, "expected": false, "derivation": "With the same prior snapshots, t close=99.5 gives EMA20=99.952381. Although close rose from99, it remains below EMA20.", "case_reason": "Improvement from the prior close alone is insufficient."},
+        {"kind": "synthetic_operator_exercise", "name": "gap_between_touch_and_reclaim_waits", "inputs": {"method_pullback_available": false, "method_pullback_confirmed": false}, "expected": false, "derivation": "Mature rows open10:00Z and10:10Z with duration300 omit10:05Z. Even attractive prices cannot provide the immediate pair.", "case_reason": "Availability is owned by the actual clock, not price appearance."}
+      ]
+    },
+    {
+      "profile_key": "curator_breakout_retest_practice_v3",
+      "instrument_key": "breakout_retest",
+      "group": "tactic",
+      "method_ref": "internet_closed_donchian_retest_20_3_v2@2",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_stockcharts_channels", "v3_cme_levels"],
+      "source_reviews": [{"url": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/price-channels", "reviewed_scope": "Read prior-period channel construction and close-based break discussion; frozen level and next-three-bar retest are local state choices."}],
+      "operating_steps": [
+        "Build high/low extrema from twenty closed bars preceding the breakout bar. Verify the previous close lies on or inside the relevant boundary before the current strict crossing.",
+        "On BUY crossing previous_close<=prior_high<close, freeze that high and breakout index. Do not confirm on this same bar; SELL mirrors the low.",
+        "During only the next one to three contiguous bars, BUY requires low<=frozen_level and close>frozen_level; SELL mirrors it. Consume the event once.",
+        "Opposing close, gap or expiry clears the pending setup. Require method_retest_available AND same-direction method_retest_confirmed before the existing proposal can continue."
+      ],
+      "inputs": ["prior20_closed_highs_lows", "previous_and_current_close", "pending_frozen_level_and_index", "existing_candidate_direction", "method_retest_available:boolean", "method_retest_confirmed:boolean"],
+      "runtime_conditions": {"required_fields": ["method_retest_available", "method_retest_confirmed"], "rule": "available AND directional later retest", "units": "frozen level and OHLC in price units", "timing": "breakout cannot retest itself; next1..3 configured contiguous bars only; a consumed confirmation cannot rearm itself"},
+      "wait_when": ["No mature prior20 channel or adjacent previous bar.", "Only a breakout has occurred, or a later candle has not touched and reclaimed the frozen level.", "A close equals the boundary, the third-bar window expires or direction differs."],
+      "invalidation": ["BUY close below the frozen level cancels; SELL close above cancels.", "A source time gap or a fourth following bar cancels the pending breakout."],
+      "alternatives": ["A close-only channel breakout can be studied without a retest, as a different declared treatment.", "internet_closed_breakout_retest_v1@1 is a construction adapter with moving-boundary behavior; its native one-bar retest and continuation branches are not this frozen event."],
+      "source_vs_lab": "The product reference defines a preceding-period channel; CME discusses broken-level role change. Period20, frozen-level storage, three-bar expiry, strict close and single consumption are local choices, with no asserted successful transfer.",
+      "common_mistakes": ["Recomputing the level after the breakout", "Counting the breakout wick as its own retest", "Reusing a consumed signal on several candidate bars"],
+      "agent_practice": ["Keep separate logs for arm, pending WAIT, retest, cancellation and actual reached candidate use."],
+      "implementation_gaps": ["A longer retest window, ATR buffer or repeated retests require a separately declared state machine rather than changing this method's interpretation."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "later_touch_of_frozen_110_can_continue", "inputs": {"method_retest_available": true, "method_retest_confirmed": true}, "expected": true, "derivation": "Prior20 high110; prior close109; breakout close111 at10:05Z arms110. Next M5 candle low109.8 and close110.4 at10:10Z confirms BUY even if the rolling high has meanwhile become111.", "case_reason": "Touch uses the frozen110, not the new rolling high."},
+        {"kind": "synthetic_operator_exercise", "name": "breakout_candle_alone_waits", "inputs": {"method_retest_available": true, "method_retest_confirmed": false}, "expected": false, "derivation": "The first closed candle crosses110 and closes111; no later candle has completed.", "case_reason": "Armed state is not consumed retest state."},
+        {"kind": "synthetic_operator_exercise", "name": "opposing_close_cancels_setup", "inputs": {"method_retest_available": true, "method_retest_confirmed": false}, "expected": false, "derivation": "After arming BUY110, the next closed candle has low109 and close109.9. It touched but closed below110.", "case_reason": "A later bounce cannot resurrect this cancelled breakout without a new crossing."},
+        {"kind": "synthetic_operator_exercise", "name": "fourth_bar_retest_is_expired", "inputs": {"method_retest_available": true, "method_retest_confirmed": false}, "expected": false, "derivation": "The first three post-break bars remain strictly above110 without touching; bar4 low109.9/close110.4 arrives after expiry and has no fresh crossing.", "case_reason": "Price geometry does not override the elapsed-bar state limit."}
+      ]
+    },
+    {
+      "profile_key": "curator_compression_expansion_practice_v3",
+      "instrument_key": "compression_expansion",
+      "group": "tactic",
+      "method_ref": "internet_closed_compression_expansion_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_fidelity_atr", "v3_bollinger_rules", "v3_bollinger_method_i_manual"],
+      "source_reviews": [{"url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr", "reviewed_scope": "Read true-range calculation and nondirectional volatility interpretation."}, {"url": "https://www.bollingerbands.com/_files/ugd/58be43_f5e967053af44fa083340cacfc5e6226.pdf", "reviewed_scope": "Read PDF pages1-3, band/width formulas and squeeze-break alert. This primary TR method does not implement that band algorithm."}],
+      "operating_steps": [
+        "Compute each completed true range as max(high-low, abs(high-prior_close), abs(low-prior_close)); first row uses high-low.",
+        "At t compare meanTR[t-5..t-1] with the disjoint meanTR[t-25..t-6]. The current expansion bar belongs to neither baseline.",
+        "Require prior5<0.7*preceding20 and currentTR>1.5*prior5, plus positive mature local ATR14 history. Both comparisons are strict.",
+        "Pass only the existing directional candidate's confirmation. A large range does not itself assign BUY/SELL, and a small ATR is not a completed expansion event."
+      ],
+      "inputs": ["original_closed_true_ranges", "preceding20_mean_TR", "prior5_mean_TR", "current_TR", "method_history_available:boolean", "method_compression_expansion:boolean"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_compression_expansion"], "rule": "history AND prior5<0.7*preceding20 AND currentTR>1.5*prior5", "units": "TR means in price units;0.7 and1.5 dimensionless", "timing": "twenty-five prior observations plus the current completed bar; baseline is not necessarily gap-free elapsed time"},
+      "wait_when": ["The disjoint25-bar history is immature or ATR14 is nonpositive.", "The contraction or expansion condition is false or exactly equal.", "Only an intrabar range expansion exists; the current bar has not closed."],
+      "invalidation": ["This is a one-bar event gate with no persistent arming state; recompute at the next completed bar.", "A past narrow period cannot be carried indefinitely as permission for a later unrelated expansion."],
+      "alternatives": ["A genuine BandWidth setup first computes SMA20+/-2 standard deviations and BW=(upper-lower)/middle, then compares BW with its own historical low before a band break. The separately declared internet_closed_bandwidth_squeeze_breakout_v1@1 uses the lab's population deviation,125-bar low, prior-five squeeze search, zero buffer and strict directional outside close; it is not the manual's complete Method I or default3-percent buffer.", "A pure ATR contraction threshold and a Donchian-channel break are separate hypotheses; neither may be renamed a Bollinger Squeeze."],
+      "source_vs_lab": "True-range volatility and normalized band dispersion are distinct measurements. The local5/20 TR proxy,0.7/1.5 thresholds and context are laboratory choices; the creator manual's buffer details do not specify this proxy. Both approaches need actual usage evidence separately.",
+      "common_mistakes": ["Putting currentTR into the compression baseline", "Treating a quiet market as a directional trigger", "Calling TR contraction a complete Method I implementation"],
+      "agent_practice": ["Calculate both disjoint means by hand, then explain which measurement a selected recipe really consumes."],
+      "implementation_gaps": ["The old method has no Bollinger BandWidth feature; a genuine normalized-width method requires its own implementation and identity, supplied separately rather than relabelling this proxy.", "The reviewed manual mentions a default3-percent adjustable buffer; exact proprietary semantics were not verified and must not be invented."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "distinct_contraction_then_expansion", "inputs": {"method_history_available": true, "method_compression_expansion": true}, "expected": true, "derivation": "Preceding20 TR mean2.0, prior5 mean1.0, currentTR1.6:1.0<1.4 and1.6>1.5. Mature ATR14 is positive.", "case_reason": "This is the local TR proxy event, irrespective of whether normalized BandWidth made a low."},
+        {"kind": "synthetic_operator_exercise", "name": "expansion_equality_waits", "inputs": {"method_history_available": true, "method_compression_expansion": false}, "expected": false, "derivation": "Same baselines2.0/1.0 but currentTR1.5 equals1.5*prior5.", "case_reason": "Strict expansion excludes equality."},
+        {"kind": "synthetic_operator_exercise", "name": "compression_equality_waits", "inputs": {"method_history_available": true, "method_compression_expansion": false}, "expected": false, "derivation": "Preceding20 mean2.0, prior5 mean1.4 and currentTR3.0. The expansion passes, but1.4 is not below0.7*2.0.", "case_reason": "Large current range cannot compensate for absent prior contraction."}
+      ]
+    },
+    {
+      "profile_key": "curator_session_breakout_practice_v3",
+      "instrument_key": "session_breakout",
+      "group": "tactic",
+      "method_ref": "internet_closed_session_break_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_tradingview_sessions", "v3_stockcharts_channels"],
+      "source_reviews": [{"url": "https://www.tradingview.com/pine-script-docs/concepts/sessions/", "reviewed_scope": "Read interval/day, timezone and bar-membership sections; the local20-bar growing-prefix break is independently specified in code."}],
+      "operating_steps": [
+        "Resolve the canonical selection calendar and explicit session instance before collecting extrema. Preserve an explicitly unknown identity as unavailable.",
+        "Save current-group high/low before inserting t, then update extrema and same-group observed-bar count using the completed t candle.",
+        "Once count>=20 and ATR14>0, BUY distance=(close-prior_prefix_high)/ATR; SELL distance=(prior_prefix_low-close)/ATR. Current prefix width=(high-low)/ATR.",
+        "Require session availability, distance>0 and0.25<width<4. A pass only confirms the existing direction. Reset on a new session instance."
+      ],
+      "inputs": ["original_closed_OHLC_and_UTC_clock", "canonical_session_instance", "positive_local_ATR14", "existing_candidate_direction", "method_session_available:boolean", "method_session_distance_atr:number", "method_session_range_atr:number"],
+      "runtime_conditions": {"required_fields": ["method_session_available", "method_session_distance_atr", "method_session_range_atr"], "rule": "available AND distance>0 AND width>0.25 AND width<4", "units": "distance and width in current ATR multiples", "timing": "twenty observed group bars, not a frozen opening interval; current width includes t, crossed extreme excludes t"},
+      "wait_when": ["Fewer than20 actual group observations, unknown identity or nonpositive ATR.", "Close is at/inside the prior extreme, or width is at/outside either strict boundary.", "The source candle is not closed or the requested context differs."],
+      "invalidation": ["New instance/date-session grouping discards prior prefix state.", "A future session extreme cannot revise the earlier decision."],
+      "alternatives": ["Freeze an opening interval only after its declared final candle closes, then test later crossings under a separately declared opening-range method.", "A prior completed-session high/low or a rolling20-bar channel uses another level owner and must keep that identity."],
+      "source_vs_lab": "The platform documentation supplies session-time handling concerns; twenty observations, UTC grouping and0.25/4 ATR boundaries are local. Fixed UTC London labels are not certified exchange or broker daylight-saving sessions.",
+      "common_mistakes": ["Using final session high before the session ends", "Comparing a close with an extreme that already includes that close's bar", "Calling20 observations a complete100-minute interval when there are missing bars"],
+      "agent_practice": ["Print the instance, count, prior extreme and current width at each candidate clock before judging the break."],
+      "implementation_gaps": ["Frozen opening-range and previous-completed-session state are not implemented by this growing-prefix method.", "A completeness requirement across session gaps would need its own declared guard; existing count is observation-based."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "twentieth_bar_breaks_prior_prefix", "inputs": {"method_session_available": true, "method_session_distance_atr": 0.2, "method_session_range_atr": 2.4}, "expected": true, "derivation": "On same-instance bar20, prior high101, current close101.2/high101.4, session low99 and ATR1 produce distance0.2 and width2.4.", "case_reason": "The crossed level comes from the first19 bars, while width includes the20th."},
+        {"kind": "synthetic_operator_exercise", "name": "boundary_close_has_no_break", "inputs": {"method_session_available": true, "method_session_distance_atr": 0, "method_session_range_atr": 2.4}, "expected": false, "derivation": "Same known session and width, but close equals prior high101.", "case_reason": "A touch is not distance>0."},
+        {"kind": "synthetic_operator_exercise", "name": "four_atr_width_is_excluded", "inputs": {"method_session_available": true, "method_session_distance_atr": 0.2, "method_session_range_atr": 4}, "expected": false, "derivation": "Current prefix width4 price units with ATR1 is exactly4, although the close crosses the prior extreme.", "case_reason": "Both width guards remain required."},
+        {"kind": "synthetic_operator_exercise", "name": "nineteen_bar_prefix_waits", "inputs": {"method_session_available": false, "method_session_distance_atr": 0.2, "method_session_range_atr": 2.4}, "expected": false, "derivation": "Only19 observed bars belong to the instance; displayed ratios are hypothetical arithmetic and cannot establish owner availability.", "case_reason": "Premature ratios cannot replace the availability guard."}
+      ]
+    },
+    {
+      "profile_key": "curator_range_reentry_practice_v3",
+      "instrument_key": "range_reentry",
+      "group": "tactic",
+      "method_ref": "internet_closed_band_reentry_20_2_v2@2",
+      "target": "confirmation",
+      "context_predicate": {"regime": "range", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_bollinger_rules", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.bollingerbands.com/bollinger-band-rules", "reviewed_scope": "Read rules6-14 on touches, trends, outside closes and calculation choices; the two-bar inward reentry is a bounded local interpretation."}],
+      "operating_steps": [
+        "For t-1 and t separately compute SMA20 and2*population standard deviation from each bar's own twenty completed closes; require both positive-width windows.",
+        "BUY needs t-1 close below its own lower band, t close strictly inside its own bands and t close>t-1 close. SELL mirrors the upper-band excursion and downward inward move.",
+        "At t close evaluate method_band_available AND same-direction method_band_reentry for the existing range/London/normal candidate.",
+        "If it fails, wait for a new complete qualifying pair. Do not impose a midpoint target or assume a touched band mandates reversal."
+      ],
+      "inputs": ["two_mature_closed_SMA20_population_SD_windows", "previous_and_current_close", "existing_candidate_direction", "method_band_available:boolean", "method_band_reentry:boolean"],
+      "runtime_conditions": {"required_fields": ["method_band_available", "method_band_reentry"], "rule": "available AND directional strict outside-to-inside movement", "units": "bands in price units;SD multiplier2 dimensionless", "timing": "both windows include their own completed endpoint; unlike EMA/retest this feature has no explicit adjacency-gap check"},
+      "wait_when": ["Either twenty-close band is immature or has zero width.", "Prior close only touches the band, current close remains outside/equal, or price has not moved inward.", "A matching strategy proposal and exact range context are absent."],
+      "invalidation": ["Continuing outside closes do not complete a reentry.", "Changing band width around a stationary close cannot satisfy the price-movement comparison."],
+      "alternatives": ["A momentum-confirmed band continuation and a multi-swing W-bottom/M-top pattern require separate conditions and state.", "internet_closed_wilder_rsi_14_recovery_v1@1 is a separately declared oscillator recovery; internet_band_reentry_20_2_v1@1 is a legacy construction adapter."],
+      "source_vs_lab": "Creator rules distinguish relative location from a signal. Population SD, exact20/2 pair, two-window inward geometry and range context are local. This operation is neither a normal-distribution probability nor the creator's complete reversal system.",
+      "common_mistakes": ["Fading a persistent trend merely because it tags a band", "Using today's bands to judge yesterday's close", "Treating band widening as inward price movement"],
+      "agent_practice": ["Draw both historical envelopes and annotate actual close movement separately before classifying a case."],
+      "implementation_gaps": ["A gap-free consecutive-bar variant would need an explicit new availability guard; the current band pair uses consecutive observations.", "Multi-swing W/M pattern state is absent from this two-bar method."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "buy_reenters_its_current_envelope", "inputs": {"method_band_available": true, "method_band_reentry": true}, "expected": true, "derivation": "Conditional mature envelopes: prior lower98, close97.5; current lower98.2/upper102 and close98.5. The prior close was outside, current close is strictly inside and rose.", "case_reason": "Each close is compared with its own envelope."},
+        {"kind": "synthetic_operator_exercise", "name": "widening_around_stationary_close_waits", "inputs": {"method_band_available": true, "method_band_reentry": false}, "expected": false, "derivation": "Prior lower98/close97.5; current lower97/upper103 but close remains97.5. It is now inside solely because the envelope changed.", "case_reason": "The strict inward price comparison fails."},
+        {"kind": "synthetic_operator_exercise", "name": "current_close_exactly_lower_band_waits", "inputs": {"method_band_available": true, "method_band_reentry": false}, "expected": false, "derivation": "Prior outside close97.5, current lower98.2 and close98.2, with positive mature widths.", "case_reason": "Current inside means greater than the lower band, not equality."}
+      ]
+    },
+    {
+      "profile_key": "curator_adaptive_topology_practice_v3",
+      "instrument_key": "adaptive_entry_topology",
+      "group": "tactic",
+      "method_ref": "internet_closed_break_or_reclaim_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_levels", "v3_bollinger_rules"],
+      "source_reviews": [{"url": "https://www.cmegroup.com/education/courses/technical-analysis/support-and-resistance", "reviewed_scope": "Read potential-level and break/role-reversal use; the finite OR topology is a local composition, not a published optimization system."}],
+      "operating_steps": [
+        "Verify positive closed history and the exact proposal context before checking either route.",
+        "Route A is a new directional crossing of a previously known pivot level; route B is directional excursion-and-close reclaim of the owner's selected level.",
+        "Compute history_available AND (method_bos OR method_sweep_reclaim). One qualifying route is sufficient; zero routes waits.",
+        "Record which route was present and whether it changed actual candidate behavior. Let a later own policy learn route preference from its own evidence."
+      ],
+      "inputs": ["existing_candidate_direction", "original_closed_level_events", "method_history_available:boolean", "method_bos:boolean", "method_sweep_reclaim:boolean"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_bos", "method_sweep_reclaim"], "rule": "history AND (BOS OR reclaim)", "units": "boolean routes; price-level details remain with their feature owners", "timing": "completed events available at the decision clock; no continuously learned weights"},
+      "wait_when": ["History is unavailable, even if route flags are supplied.", "Neither direction-aligned route is true.", "An attractive route belongs to another direction or context."],
+      "invalidation": ["Do not retain a previous one-bar BOS/reclaim as a current event unless another declared owner stores that state."],
+      "alternatives": ["Requiring both routes is an AND intervention with different coverage, not an interpretation of the installed OR.", "A native specialist consensus/router uses separate voters and state. Correlated price-derived routes are not independent evidence just because there are two labels."],
+      "source_vs_lab": "Source material informs level analysis and cautions about redundant indicators; the Boolean union, exact events and context are local. The method adapts allowed route topology only, without estimating an optimal selector.",
+      "common_mistakes": ["Requiring both OR branches", "Counting correlated routes as independent confirmations", "Giving the OR method authority to invent direction"],
+      "agent_practice": ["Tabulate break-only, reclaim-only, neither and unavailable-history cases, then keep route coverage separate from economic usefulness."],
+      "implementation_gaps": ["A learned route-weight policy requires a separate trained or agent-owned artifact; no such optimizer exists in this AST."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "break_only_route_can_continue", "inputs": {"method_history_available": true, "method_bos": true, "method_sweep_reclaim": false}, "expected": true, "derivation": "Known high110, previous close109, current close111 supplies BUY BOS. Current low remains above known support, so no reclaim occurred.", "case_reason": "OR accepts the break route alone."},
+        {"kind": "synthetic_operator_exercise", "name": "reclaim_only_route_can_continue", "inputs": {"method_history_available": true, "method_bos": false, "method_sweep_reclaim": true}, "expected": true, "derivation": "Known support100, current low99.7 and close100.4 supplies BUY reclaim; no known high was crossed.", "case_reason": "OR also accepts the reclaim route alone."},
+        {"kind": "synthetic_operator_exercise", "name": "neither_route_waits", "inputs": {"method_history_available": true, "method_bos": false, "method_sweep_reclaim": false}, "expected": false, "derivation": "Current price remains between known levels, with neither a strict crossing nor excursion/reclaim.", "case_reason": "Available history alone is not confirmation."},
+        {"kind": "synthetic_operator_exercise", "name": "unavailable_history_blocks_both_flags", "inputs": {"method_history_available": false, "method_bos": true, "method_sweep_reclaim": true}, "expected": false, "derivation": "The exercise deliberately supplies route flags with an unavailable history owner.", "case_reason": "This guard case must refuse inconsistent supplied flags."}
+      ]
+    },
+    {
+      "profile_key": "curator_fibonacci_practice_v3",
+      "instrument_key": "dynamic_fibonacci_zone",
+      "group": "market_lens",
+      "method_ref": "internet_confirmed_fib_pullback_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_fidelity_fibonacci", "v3_fidelity_charting_transcript", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Mastering%20charting%20features_v2.pdf", "reviewed_scope": "Read PDF pages15-17 on peak/trough anchors, optional retracement levels and potential-area cautions; no recorded video or historical chart outcome was consumed."}],
+      "operating_steps": [
+        "At the actual decision clock retrieve latest known unique2-left/2-right high and low. Require both, high>low and positive current ATR; confirmation arrives two observations after the pivot.",
+        "Compute BUY fraction=(high-close)/(high-low), SELL fraction=(close-low)/(high-low). Use the already existing proposal's direction.",
+        "Require swing_available AND0.382<fraction<0.618. The fraction is location context, with no automatic reversal trigger or price target.",
+        "Record the two anchor prices and confirmation clocks. If the owner replaces an anchor, recompute prospectively without rewriting the old decision."
+      ],
+      "inputs": ["owner_known_high_and_low_with_confirmation_clocks", "current_closed_close", "existing_candidate_direction", "method_swing_available:boolean", "method_fib_retracement:number"],
+      "runtime_conditions": {"required_fields": ["method_swing_available", "method_fib_retracement"], "rule": "available AND fraction>0.382 AND fraction<0.618", "units": "fraction of positive high-low width, not percent-number38.2", "timing": "latest confirmed high/low, not necessarily a strictly alternating impulse pair"},
+      "wait_when": ["One anchor is unknown, high<=low, ATR is unavailable or the decision precedes confirmation.", "Fraction equals either boundary, lies outside the zone or is supplied in percentage-number units."],
+      "invalidation": ["An anchor replacement changes the current zone; earlier signals remain bound to their original anchors.", "A broken high/low can put fraction outside0..1; do not clip it to manufacture zone membership."],
+      "alternatives": ["The transcript discusses23.6 and78.6-percent locations as alternatives; each requires separate declared bounds if made executable.", "A chronological alternating low-to-high impulse selector could track one completed swing leg; that is a new anchor algorithm, absent from this primary owner."],
+      "source_vs_lab": "References explain two-extreme retracement areas. Unique2+2 pivots, latest-high/latest-low storage and the strict0.382..0.618 gate are local. The code does not enforce strict pivot alternation despite shorthand catalog wording about an opposite pair.",
+      "common_mistakes": ["Using the eventual peak before it was known", "Entering solely because a retracement fraction is near a familiar number", "Claiming latest independent extrema are necessarily one chronological impulse"],
+      "agent_practice": ["Show anchor availability on a timeline, calculate BUY/SELL fractions and explain why location still needs an actual proposal and trigger."],
+      "implementation_gaps": ["Strictly alternating chronological impulse anchors would need a separate state machine and tests; the present owner retains independent latest extrema."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "half_retracement_inside_zone", "inputs": {"method_swing_available": true, "method_fib_retracement": 0.5}, "expected": true, "derivation": "Known high110 and low100, BUY close105: (110-105)/10=0.5. Both anchors were confirmed by the decision clock.", "case_reason": "A0.5 fraction supplies location confirmation, not an entry."},
+        {"kind": "synthetic_operator_exercise", "name": "exact_382_boundary_waits", "inputs": {"method_swing_available": true, "method_fib_retracement": 0.382}, "expected": false, "derivation": "For high110/low100 the mathematical BUY location close106.18 corresponds to fraction0.382; the exercise passes the exact AST input literal.", "case_reason": "The lower boundary is strict; decimal-price rounding is not a relaxation."},
+        {"kind": "synthetic_operator_exercise", "name": "right_side_confirmation_not_yet_known", "inputs": {"method_swing_available": false, "method_fib_retracement": 0.5}, "expected": false, "derivation": "The prospective high is visible at pivot t but only one right observation has completed; a visually plausible halfway location is merely hypothetical.", "case_reason": "Price geometry cannot backdate anchor availability."}
+      ]
+    },
+    {
+      "profile_key": "curator_confirmed_swing_practice_v3",
+      "instrument_key": "confirmed_swing",
+      "group": "market_lens",
+      "method_ref": "internet_confirmed_swing_range_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_tradingview_asof", "v3_fidelity_charting_transcript"],
+      "source_reviews": [{"url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/", "reviewed_scope": "Read Plotting in the past and Fluid data values; right-side confirmation delay informs the explicit local2+2 pivot timing."}],
+      "operating_steps": [
+        "Test candidate index p only at p+2 using two closed highs/lows on each side; the candidate must be the unique maximum/minimum of that five-observation window.",
+        "Store the pivot price with confirmation index p+2. Retain latest known high and low and require positive width and current local ATR14.",
+        "Compute (known_high-known_low)/ATR and require swing_available AND ratio>1.",
+        "Use adequate known range as confirmation context for the existing candidate; no separate direction or complete trend interpretation follows from this width gate."
+      ],
+      "inputs": ["unique_two_left_two_right_pivots", "confirmation_indices", "positive_current_local_ATR14", "method_swing_available:boolean", "method_swing_range_atr:number"],
+      "runtime_conditions": {"required_fields": ["method_swing_available", "method_swing_range_atr"], "rule": "available AND range/ATR>1", "units": "dimensionless current ATR multiples", "timing": "p+2 confirmation publication; indices count observations and do not enforce elapsed gap continuity or strict alternation"},
+      "wait_when": ["Two right observations have not closed or there is a tied extreme.", "Known positive high-low pair or ATR is absent.", "The normalized width is at or below1."],
+      "invalidation": ["A later pivot becomes a new current anchor; old decisions remain unchanged.", "A visually drawn backdated label is not evidence the pivot was consumable at p."],
+      "alternatives": ["A longer left/right span yields later, potentially coarser pivots and needs a new declared method.", "Prior rolling range extrema are available without right-side pivot confirmation but represent a different algorithm and time provenance."],
+      "source_vs_lab": "The platform demonstrates delayed pivot display. Unique2+2 extrema, a64-item journal, independently retained high/low and the one-ATR adequacy threshold are local; source review does not certify the resulting swing as useful.",
+      "common_mistakes": ["Trading at the pivot's printed historical location", "Allowing equal highs to count as the unique primary pivot", "Confusing bars since confirmation with bars since price extremum"],
+      "agent_practice": ["Annotate pivot-price time and confirmation time separately and calculate width under the current, rather than historical, ATR."],
+      "implementation_gaps": ["A strict alternating swing sequence and a gap-free pivot window are not present; either requirement needs a separate declared owner."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "confirmed_unique_pivot_has_two_atr_width", "inputs": {"method_swing_available": true, "method_swing_range_atr": 2}, "expected": true, "derivation": "Five closed highs108,109,110,109,108 confirm the central110 only after the fifth closes. A previously known low100 and current ATR5 yield width2.", "case_reason": "The range is adequate once both extrema and ATR are actually known."},
+        {"kind": "synthetic_operator_exercise", "name": "one_atr_width_equality_waits", "inputs": {"method_swing_available": true, "method_swing_range_atr": 1}, "expected": false, "derivation": "Known high110, low100 and current ATR10 give exactly1.", "case_reason": "Availability and width adequacy are separate."},
+        {"kind": "synthetic_operator_exercise", "name": "one_right_bar_is_still_unconfirmed", "inputs": {"method_swing_available": false, "method_swing_range_atr": 2}, "expected": false, "derivation": "At the fourth observation of108,109,110,109 only one bar lies to the right of110; the range2 shown here is hypothetical.", "case_reason": "The owner must wait for a second right observation."}
+      ]
+    },
+    {
+      "profile_key": "curator_bos_practice_v3",
+      "instrument_key": "bos_event",
+      "group": "market_lens",
+      "method_ref": "internet_confirmed_structure_break_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_levels", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.cmegroup.com/education/courses/technical-analysis/support-and-resistance", "reviewed_scope": "Read Previous Highs and Lows and broken-level role reversal; the modern BOS label and exact crossing convention below are explicitly local."}],
+      "operating_steps": [
+        "Read the preceding closed row's already confirmed high/low; a pivot first revealed on t cannot authorize a preceding crossing.",
+        "BUY event requires previous_close<=known_high<current_close. SELL event requires previous_close>=known_low>current_close.",
+        "Align that new event with the actual proposal direction, then require method_history_available AND method_bos.",
+        "Record the crossed price and its prior confirmation clock; remaining outside on later bars does not repeat this event."
+      ],
+      "inputs": ["previous_row_known_pivot_levels", "previous_and_current_closed_close", "existing_candidate_direction", "method_history_available:boolean", "method_bos:boolean"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_bos"], "rule": "history AND fresh direction-aligned known-level crossing", "units": "level comparisons in price units", "timing": "level from preceding feature row; crossing over consecutive observations, without a separate gap-contiguity guard"},
+      "wait_when": ["Relevant preceding known pivot is absent or history is immature.", "Close equals the level or previous close was already beyond it.", "The event direction differs from the existing candidate."],
+      "invalidation": ["The one-bar event is not persistent permission; later candles need their own qualifying event or separately declared pending state."],
+      "alternatives": ["A later frozen-level retest is the separate Donchian retest method, not part of BOS.", "Native structure.py's close-outside-prior-rolling-range state and displacement/ATR are distinct from a crossing of delayed pivots."],
+      "source_vs_lab": "Prior-extreme analysis is source-informed. BOS naming, unique2+2 anchor, fresh-cross inequality and context are local semantics, not a universal external standard or a calibrated false-break probability.",
+      "common_mistakes": ["Treating repeated outside closes as fresh BOS", "Using a newly revealed anchor to explain an earlier decision", "Promoting arithmetic break strength to a fitted probability"],
+      "agent_practice": ["Contrast the first cross, repeated outside state and later retest using the same frozen price diagram."],
+      "implementation_gaps": ["A gap-free crossing requirement, displacement buffer or structural hierarchy would need a new explicit feature/method; none is silently implied."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "first_closed_cross_of_known_high", "inputs": {"method_history_available": true, "method_bos": true}, "expected": true, "derivation": "Known prior-row high110, previous close109 and current close111 produce BUY; an existing BUY consumes it.", "case_reason": "A fresh crossing passes the direction-aligned event gate."},
+        {"kind": "synthetic_operator_exercise", "name": "already_outside_is_not_another_event", "inputs": {"method_history_available": true, "method_bos": false}, "expected": false, "derivation": "Known high110, previous close111 and current close112 are both beyond the same level.", "case_reason": "Outside location is not a new crossing."},
+        {"kind": "synthetic_operator_exercise", "name": "close_on_known_high_waits", "inputs": {"method_history_available": true, "method_bos": false}, "expected": false, "derivation": "Previous close109 and current close110 equal the known high110.", "case_reason": "Strict current close beyond the level is required."}
+      ]
+    },
+    {
+      "profile_key": "curator_choch_practice_v3",
+      "instrument_key": "choch_event",
+      "group": "market_lens",
+      "method_ref": "internet_confirmed_opposite_structure_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_levels", "v3_fidelity_charting_transcript", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Mastering%20charting%20features_v2.pdf", "reviewed_scope": "Read PDF pages12-14 trend-line and peak/trough discussion as context; it does not specify the local CHOCH state machine."}],
+      "operating_steps": [
+        "First identify the owner's last observed fresh break direction; absence of that state cannot be replaced by a hindsight trend label.",
+        "Detect a new closed crossing of a preceding-row known pivot using the same strict BOS geometry.",
+        "Set change direction only when the new break opposes an existing last_break, then update last_break. Match the change with the current candidate direction.",
+        "Require history_available AND method_choch. Interpret it as a local change event requiring later context assessment, without declaring a complete reversal."
+      ],
+      "inputs": ["owner_last_break_direction", "preceding_known_pivot_levels", "fresh_closed_crossing", "existing_candidate_direction", "method_history_available:boolean", "method_choch:boolean"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_choch"], "rule": "history AND fresh break opposite previous last_break AND direction match", "units": "event boolean backed by price-level comparisons", "timing": "last_break persists across observations; no expiry, pivot hierarchy or EMA-trend prior is imposed"},
+      "wait_when": ["No prior break direction exists, even if the first break is visually dramatic.", "The new break has the same direction as last_break or there is no fresh crossing.", "Current candidate direction differs from the change event."],
+      "invalidation": ["A subsequent break updates the local last-break state; repeated closes outside the level cannot repeat CHOCH."],
+      "alternatives": ["Native structure.py compares rolling-boundary breaks with previous EMA direction, a different prior-state owner.", "A multi-step reversal model could require a later higher low/lower high and continuation break; that sequence is not this one-event method."],
+      "source_vs_lab": "Peak/trough and level-change reasoning informs the research question. CHOCH nomenclature and the last-break-opposition algorithm are local; the fixed trend_up context does not silently expand to every transition regime.",
+      "common_mistakes": ["Calling the first break a change without a prior state", "Substituting EMA trend for last_break", "Treating one opposing break as a certified reversal"],
+      "agent_practice": ["Maintain a chronological break-state journal and show which exact prior event made an opposing crossing a change."],
+      "implementation_gaps": ["A reversal-confirmation sequence, expiring directional state or structural trend prior needs a separate owner and declared method."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "opposite_break_matches_existing_sell", "inputs": {"method_history_available": true, "method_choch": true}, "expected": true, "derivation": "Last_break=BUY; prior known low100, previous close101 and current close99 create a fresh SELL break. For an otherwise permitted existing SELL in the declared context, the direction matches.", "case_reason": "The prior break state supplies the opposition test; this exercise does not authorize the SELL itself."},
+        {"kind": "synthetic_operator_exercise", "name": "first_break_has_no_change_state", "inputs": {"method_history_available": true, "method_choch": false}, "expected": false, "derivation": "The same SELL crossing occurs when last_break is absent.", "case_reason": "It initializes direction but cannot oppose a missing prior break."},
+        {"kind": "synthetic_operator_exercise", "name": "same_direction_continuation_is_not_change", "inputs": {"method_history_available": true, "method_choch": false}, "expected": false, "derivation": "Last_break=BUY and a fresh crossing of another known high also produces BUY.", "case_reason": "A valid BOS need not be CHOCH."}
+      ]
+    },
+    {
+      "profile_key": "curator_support_resistance_practice_v3",
+      "instrument_key": "support_resistance_zone",
+      "group": "market_lens",
+      "method_ref": "internet_confirmed_touched_zone_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_levels", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.cmegroup.com/education/courses/technical-analysis/support-and-resistance", "reviewed_scope": "Read prior extremes and final caution that levels act as zones; numeric distance, count and age below are local proxies."}],
+      "operating_steps": [
+        "Require the owner's known high/low pair and positive ATR, then select latest low for BUY or latest high for SELL.",
+        "Compute absolute close-to-level distance/current ATR, bars since level confirmation and count same-side pivot prices in the bounded journal within0.15 current ATR of that level.",
+        "Require history, distance<0.5, count>1 and age<64. The count includes the selected pivot when present and represents confirmed pivots, not raw candle contacts.",
+        "Use this as a location confirmation for an existing candidate. Store level and confirmation index so a later changed ATR or anchor cannot rewrite the earlier decision."
+      ],
+      "inputs": ["known_directional_pivot", "same_side_confirmed_pivot_journal_max64_items", "current_ATR14_and_close", "method_history_available:boolean", "method_sr_distance_atr:number", "method_sr_touch_count:number", "method_sr_age:number"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_sr_distance_atr", "method_sr_touch_count", "method_sr_age"], "rule": "history AND distance<0.5 AND count>1 AND age<64", "units": "distance in ATR multiples;count in confirmed pivots;age in observations since confirmation", "timing": "latest known anchors by decision time; current ATR rescales tolerance on each decision"},
+      "wait_when": ["No usable swing pair/ATR means numeric fields remain absent and execution waits.", "Distance or age equals/exceeds its limit, or fewer than two relevant confirmed pivot prices are near the selected level."],
+      "invalidation": ["Age>=64 or distance>=0.5 invalidates this gate for the current candidate.", "The method does not delete a level on a raw breach; any stronger broken-level lifecycle needs a separately declared owner."],
+      "alternatives": ["Moving-average, trend-line and fixed price-level zones have separate anchor methods; do not substitute them for the pivot journal.", "A zone defined by distinct candle retests would require retest deduplication and its own event journal, rather than relabelling pivot count as touches."],
+      "source_vs_lab": "The source offers possible support/resistance areas. The latest-pivot choice,0.15ATR tolerance,0.5ATR proximity, two-pivot minimum and64-observation age are local choices without a measured success probability.",
+      "common_mistakes": ["Counting every candle wick as a new owner touch", "Measuring age from the original extremum instead of confirmation", "Comparing two values with different ATR normalization clocks"],
+      "agent_practice": ["List each counted pivot and its confirmation index, then independently calculate distance, tolerance and age."],
+      "implementation_gaps": ["Distinct retest events, zone merging and broken-level lifecycle are absent; actual source-inspired zone management would need explicit new state rather than a renamed score."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "near_recent_three_pivot_zone", "inputs": {"method_history_available": true, "method_sr_distance_atr": 0.25, "method_sr_touch_count": 3, "method_sr_age": 10}, "expected": true, "derivation": "BUY selected low100; same-side journal100,100.1,100.25; ATR2 gives tolerance0.3. Close100.5 gives distance0.25; selected pivot confirmed10 observations ago.", "case_reason": "All three bounded proxy conditions pass."},
+        {"kind": "synthetic_operator_exercise", "name": "half_atr_distance_equality_waits", "inputs": {"method_history_available": true, "method_sr_distance_atr": 0.5, "method_sr_touch_count": 3, "method_sr_age": 10}, "expected": false, "derivation": "With selected100 and ATR2, close101 is exactly0.5ATR away.", "case_reason": "Proximity boundary is strict."},
+        {"kind": "synthetic_operator_exercise", "name": "sixty_four_observation_age_waits", "inputs": {"method_history_available": true, "method_sr_distance_atr": 0.25, "method_sr_touch_count": 3, "method_sr_age": 64}, "expected": false, "derivation": "Same price geometry and count but current_index-confirmation_index=64.", "case_reason": "A still-near old level fails the declared freshness guard."}
+      ]
+    },
+    {
+      "profile_key": "curator_liquidity_pool_practice_v3",
+      "instrument_key": "liquidity_pool",
+      "group": "market_lens",
+      "method_ref": "internet_closed_equal_level_proxy_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_liquidity", "v3_cme_levels"],
+      "source_reviews": [{"url": "https://www.cmegroup.com/education/articles-and-reports/how-traders-measure-liquidity", "reviewed_scope": "Read volume/open-interest/spread and book-depth/size paragraphs. This source establishes why the OHLC equal-level count must remain a proxy."}],
+      "operating_steps": [
+        "Select the owner's latest confirmed low for BUY or high for SELL only when known high/low and positive ATR permit those fields.",
+        "Count same-side confirmed pivot prices in its64-item journal within0.15 current ATR of that level, including the selected pivot itself.",
+        "Require method_history_available AND method_equal_level_count>1. A single level, missing anchors or missing numeric input cannot pass.",
+        "Label the observation equal-level OHLC proxy. If the research question needs actual liquidity, request separately sourced venue spread, size/depth and correctly identified trades; do not invent those data from the count."
+      ],
+      "inputs": ["known_directional_pivot", "same_side_confirmed_pivot_journal", "current_positive_ATR14", "method_history_available:boolean", "method_equal_level_count:number"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_equal_level_count"], "rule": "history AND count>1", "units": "count of nearby pivot prices, never contracts/orders/stop quantity", "timing": "confirmed journal by current decision clock; tolerance rescales with current ATR"},
+      "wait_when": ["Owner history or high/low/ATR needed for the numeric field is absent.", "Count is at or below1.", "A question requires actual depth/stop data that this proxy does not observe."],
+      "invalidation": ["The retained journal is bounded and a changing selected level/current ATR can change count; no permanent pool is inferred."],
+      "alternatives": ["Synchronized venue bid/offer depth and size can support an actual liquidity measurement under another observed-data owner.", "Raw equal-high/low wick clustering is a different OHLC proxy and needs its own tolerance/deduplication method."],
+      "source_vs_lab": "The exchange describes observed market liquidity. This implementation counts nearby known extrema and observes no resting stops, depth or trader intent.0.15ATR and count>1 are local proxy rules, and a pass has no claim of superior execution.",
+      "common_mistakes": ["Calling two equal highs proof of known stop orders", "Replacing order-book size with tick activity", "Treating a bounded pivot count as volume"],
+      "agent_practice": ["Name the data actually observed and enumerate the missing book/trade facts before interpreting a count."],
+      "implementation_gaps": ["True venue liquidity requires authenticated timestamped bid/ask size/depth/trade provenance and a new observation algorithm; no amount of OHLC relabelling supplies it."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "two_confirmed_near_equal_lows", "inputs": {"method_history_available": true, "method_equal_level_count": 2}, "expected": true, "derivation": "BUY selected low100, another retained low100.2 and ATR2 give tolerance0.3, so both prices count.", "case_reason": "The equal-level proxy confirms; actual order quantity remains unknown."},
+        {"kind": "synthetic_operator_exercise", "name": "second_low_outside_tolerance", "inputs": {"method_history_available": true, "method_equal_level_count": 1}, "expected": false, "derivation": "Selected100, other100.4 and ATR2 yield tolerance0.3; only the selected pivot counts.", "case_reason": "A visible nearby level can still be outside the installed tolerance."},
+        {"kind": "synthetic_operator_exercise", "name": "history_guard_refuses_supplied_count", "inputs": {"method_history_available": false, "method_equal_level_count": 2}, "expected": false, "derivation": "A supplied count2 accompanies unavailable original history in this deliberate guard case.", "case_reason": "Unverified numeric plausibility cannot replace original availability."}
+      ]
+    },
+    {
+      "profile_key": "curator_liquidity_sweep_practice_v3",
+      "instrument_key": "liquidity_sweep",
+      "group": "market_lens",
+      "method_ref": "internet_closed_excursion_reclaim_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_cme_levels", "v3_cme_liquidity", "v3_tradingview_asof"],
+      "source_reviews": [{"url": "https://www.tradingview.com/pine-script-docs/concepts/repainting/", "reviewed_scope": "Read Fluid data values: OHLC lacks intrabar sequence. Combined with exchange liquidity gauges, this limits the local reclaim label to observed candle geometry."}],
+      "operating_steps": [
+        "Retrieve the directional support/resistance from the owner's known pivot pair at the closed decision clock and verify positive ATR/history.",
+        "For BUY require current low<support<current close; for SELL require current high>resistance>current close. Both comparisons are strict.",
+        "Match the completed geometry to the existing proposal direction and evaluate history_available AND method_sweep_reclaim.",
+        "Record excursion, level and close. Describe the result as an OHLC excursion/reclaim; neither actual stop execution nor the within-bar path is observed."
+      ],
+      "inputs": ["owner_known_directional_pivot", "current_closed_high_low_close", "existing_candidate_direction", "method_history_available:boolean", "method_sweep_reclaim:boolean"],
+      "runtime_conditions": {"required_fields": ["method_history_available", "method_sweep_reclaim"], "rule": "history AND direction-aligned strict excursion/reclaim", "units": "price comparisons only", "timing": "current completed candle against latest confirmed directional anchor; no intrabar tick path, stop journal or sweep-size measurement"},
+      "wait_when": ["Known swing pair or ATR needed for geometry is absent.", "Only a touch occurs, the close equals the level or the close remains beyond it.", "The direction is unmatched or a still-open candle is being interpreted."],
+      "invalidation": ["A BUY candle that closes at/below support has not reclaimed; SELL mirrors this.", "The event belongs to its current candle and is not persistent entry permission."],
+      "alternatives": ["A tick-resolved sequence with observed trades or book changes would answer a different stop/liquidity question and requires new data.", "A multi-timeframe trap or wick/body-strength filter has separate level provenance and conditions; it cannot be assumed from this simple geometry."],
+      "source_vs_lab": "Potential-level context is source-informed; the exact excursion/reclaim gate and sweep naming are local. Historical OHLC proves extremes and close only, with no measured stop quantities or institution intent.",
+      "common_mistakes": ["Describing a wick as observed stop hunting", "Using a touch or close equality as reclaim", "Inferring whether high or low happened first from OHLC"],
+      "agent_practice": ["Classify strict excursion/reclaim, touch-only and failed-reclaim candles while stating which intrabar facts are unknown."],
+      "implementation_gaps": ["Stop-execution or book-sweep detection needs original tick/trade/book data and a new algorithm; the present feature cannot establish it.", "If a study requires levels fixed before the candle opens, explicitly add a prior-row anchor variant; current input extraction uses the latest confirmed decision-time anchor."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "buy_excursion_then_closed_reclaim_geometry", "inputs": {"method_history_available": true, "method_sweep_reclaim": true}, "expected": true, "derivation": "Already known support100; current completed low99.7 and close100.4 satisfy99.7<100<100.4 for BUY.", "case_reason": "This confirms geometry, with no asserted stop or intrabar path evidence."},
+        {"kind": "synthetic_operator_exercise", "name": "touch_without_excursion_waits", "inputs": {"method_history_available": true, "method_sweep_reclaim": false}, "expected": false, "derivation": "Support100, low100 and close100.4 have a touch but low is not strictly below support.", "case_reason": "The excursion inequality is strict."},
+        {"kind": "synthetic_operator_exercise", "name": "excursion_but_close_on_level_waits", "inputs": {"method_history_available": true, "method_sweep_reclaim": false}, "expected": false, "derivation": "Support100, low99.7 and close100 reach the boundary without closing back above it.", "case_reason": "A reclaim close must be strictly on the candidate side."}
+      ]
+    },
+    {
+      "profile_key": "curator_session_range_practice_v3",
+      "instrument_key": "session_range",
+      "group": "market_lens",
+      "method_ref": "internet_closed_session_width_v2@1",
+      "target": "confirmation",
+      "context_predicate": {"regime": "trend_up", "session": "london", "volatility": "normal"},
+      "source_refs": ["v3_tradingview_sessions", "v3_fidelity_atr"],
+      "source_reviews": [{"url": "https://www.tradingview.com/pine-script-docs/concepts/sessions/", "reviewed_scope": "Read time-based session identity, timezone and bar alignment; growing-prefix width and numeric gate are local."}],
+      "operating_steps": [
+        "Identify the canonical current session instance or UTC date/session fallback; preserve explicit unknown labels rather than fabricating membership.",
+        "Reset on instance change. Accumulate only completed current-prefix high/low and actual observation count.",
+        "At count>=20 with positive local ATR14 compute width=(prefix_high-prefix_low)/ATR. Require availability AND0.5<width<5.",
+        "Apply width only as a contextual confirmation for the existing candidate; it contains no BUY/SELL direction and no final-session range forecast."
+      ],
+      "inputs": ["canonical_session_instance_and_calendar", "closed_current_prefix_high_low", "observed_group_bar_count", "current_ATR14", "method_session_available:boolean", "method_session_range_atr:number"],
+      "runtime_conditions": {"required_fields": ["method_session_available", "method_session_range_atr"], "rule": "available AND width>0.5 AND width<5", "units": "dimensionless current ATR multiples", "timing": "current prefix includes only completed bars, minimum20 observations; range can grow and ATR can change"},
+      "wait_when": ["Identity is unknown, fewer than20 group bars are observed or ATR is unavailable.", "Width is at/below0.5 or at/above5.", "A current unfinished bar or final session high/low is being substituted."],
+      "invalidation": ["New group resets accumulated extrema and count; prior-session width does not carry into it.", "Width becoming too large/small changes the current gate without rewriting past decisions."],
+      "alternatives": ["A completed prior-session range remains frozen for the next instance and requires a different owner.", "An opening-range width freezes at a declared interval end; current growing-prefix width never makes that freeze."],
+      "source_vs_lab": "Session identity and temporal alignment are source-informed. UTC grouping, minimum20 observed bars, arithmetic ATR14 and0.5/5 bounds are local. The fixed calendar is not certified broker/DST behavior and count alone does not attest gap completeness.",
+      "common_mistakes": ["Treating width as direction", "Using a final-session extreme early", "Equating observation count with elapsed complete bars"],
+      "agent_practice": ["Track instance/count/extrema/ATR through reset and compare prefix, opening and prior-session definitions on the same timeline."],
+      "implementation_gaps": ["Opening-range freeze, prior-completed-instance retention and explicit gap completeness are distinct unimplemented variants of this primary width gate."],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "mature_two_atr_session_width", "inputs": {"method_session_available": true, "method_session_range_atr": 2}, "expected": true, "derivation": "Twenty same-instance closed observations have prefix high110/low108 and current ATR1:width2.", "case_reason": "The gate supplies range context only."},
+        {"kind": "synthetic_operator_exercise", "name": "half_atr_width_equality_waits", "inputs": {"method_session_available": true, "method_session_range_atr": 0.5}, "expected": false, "derivation": "A mature prefix width0.5 with ATR1 equals the lower boundary.", "case_reason": "The lower width comparison is strict."},
+        {"kind": "synthetic_operator_exercise", "name": "five_atr_width_equality_waits", "inputs": {"method_session_available": true, "method_session_range_atr": 5}, "expected": false, "derivation": "A mature prefix high110/low105 and ATR1 has width5.", "case_reason": "The upper width comparison is also strict."},
+        {"kind": "synthetic_operator_exercise", "name": "new_instance_resets_availability", "inputs": {"method_session_available": false, "method_session_range_atr": 2}, "expected": false, "derivation": "A new instance has only its first closed observation; prior instance width2 shown as an adversarial stale premise cannot supply current availability.", "case_reason": "Instance reset must refuse stale session context."}
+      ]
+    }
+  ]
+}

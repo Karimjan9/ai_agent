@@ -11,6 +11,25 @@ replay-status idle, queue/mutex/control proof and original immutable artifacts.
 
 ## Curator operating knowledge and agent practice
 
+Explicit `curator_practical_knowhow_20261015_v3` retains reviewed operating
+profiles and original matched archive observations for bounded research,
+including absent-data/unactivated/negative results. Curator observations never
+enter the agent-owned outcome ledger. An optional prospective generation
+curriculum key is copied at new construction, then signed in selected child
+instruction; old/resumed generation and v1/v2 packs remain unchanged. PHP and
+Python additionally agree on closed SMA20/population-std normalized BandWidth,
+125 mature-width minimum and a fresh prior-five-bar Squeeze breakout boolean.
+The zero buffer/closed-cross timing are declared lab adaptations; observed
+execution costs, risk, old TR semantics and all authority gates are unchanged.
+
+Only a fresh explicit-v3 default policy may derive research preference from
+pinned curator comparisons. It retains the entire selected pool and BASELINE,
+compares only identical context/typed-role/measured-window sets, fixes unknown
+positions, and seals its own advice provenance separately from agent outcomes.
+Partial input availability is not a complete rule-utility comparison. A missing
+native strategy score yields typed WAIT with `method_native_score_unavailable`;
+the admission lane's compatibility confidence is never substituted as data.
+
 The additive source-practice teaching version retains all v1 instruction bytes.
 Two newly reviewed exact methods use the existing typed confirmation target:
 four mature contiguous closed bars for pre-pullback EMA direction and finite

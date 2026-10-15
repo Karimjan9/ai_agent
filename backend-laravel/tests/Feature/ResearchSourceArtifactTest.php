@@ -121,6 +121,21 @@ class ResearchSourceArtifactTest extends TestCase
         'backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php',
         'ai-service-python/tests/test_instrument_method_phase_selection.py',
     ];
+    private const CURATOR_PRACTICE_FILES = [
+        'backend-laravel/resources/research/instrument-operating-skills/curator-price-practice-v3.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-risk-practice-v3.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-practical-declaration-v3.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-practical-observations-v3.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-practical-technical-completion-v3.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-practical-dependency-diagnostics-v3.json',
+        'backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/source.json',
+        'backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/method.json',
+        'backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/recipe.json',
+        'backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php',
+        'backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php',
+        'ai-service-python/tests/test_closed_bandwidth_squeeze.py',
+        'ai-service-python/tests/test_method_native_score_binding.py',
+    ];
     private const OPERATING_CURRICULUM_SOURCE_FILES = [
         'backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json',
         'backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json',
@@ -170,7 +185,7 @@ class ResearchSourceArtifactTest extends TestCase
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $projectRoot = dirname(base_path());
-        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::SOURCE_PRACTICE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
+        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::SOURCE_PRACTICE_FILES, ...self::CURATOR_PRACTICE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
             if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
@@ -231,6 +246,29 @@ class ResearchSourceArtifactTest extends TestCase
         } catch (RuntimeException $exception) {
             $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $exception->getMessage());
         }
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($reference, false)['status']);
+        $this->assertFalse($artifact['scientific_evidence']); $this->assertFalse($artifact['promotion_evidence']);
+    }
+
+    public function test_curator_practice_resources_and_actual_software_proofs_are_exactly_archived_without_private_products(): void
+    {
+        $this->assertCount(13, self::CURATOR_PRACTICE_FILES);
+        $artifact = $this->owner->buildSourceArtifact();
+        $this->assertSame('verified', $artifact['status']);
+        $zip = new ZipArchive; $this->assertTrue($zip->open($this->zipPath($artifact['reference'])));
+        try {
+            foreach (self::CURATOR_PRACTICE_FILES as $path) {
+                $bytes = $zip->getFromName($path); $this->assertIsString($bytes, $path);
+                $this->assertSame(hash_file('sha256', $this->root.'/'.$path), hash('sha256', $bytes), $path);
+            }
+            foreach (['.runtime/curator-practical-originals-20261015/products/control.response.json',
+                '.runtime-curator-panel.py', 'backend-laravel/storage/app/lab-datasets/quotes.csv',
+                'backend-laravel/.env'] as $private) $this->assertFalse($zip->getFromName($private));
+        } finally { $zip->close(); }
+        $reference = $artifact['reference'];
+        File::append($this->root.'/'.self::CURATOR_PRACTICE_FILES[5], "\n changed fixture only");
+        try { $this->owner->verifySourceArtifact($reference, true); $this->fail('Changed diagnostics must invalidate current source.'); }
+        catch (RuntimeException $error) { $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $error->getMessage()); }
         $this->assertSame('verified', $this->owner->verifySourceArtifact($reference, false)['status']);
         $this->assertFalse($artifact['scientific_evidence']); $this->assertFalse($artifact['promotion_evidence']);
     }

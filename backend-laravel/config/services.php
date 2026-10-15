@@ -942,6 +942,9 @@ return [
     // their original owners; this is never a method-library auto-promotion.
     'instrument_methods' => [
         'generation_learning_enabled' => (bool) env('INSTRUMENT_METHOD_GENERATION_LEARNING_ENABLED', false),
+        // Explicit instruction revision for newly constructed generations only.
+        // Null preserves the original recipe-derived v1/v2 handoff.
+        'generation_curriculum_key' => env('INSTRUMENT_METHOD_GENERATION_CURRICULUM') ?: null,
         'generation_recipe_hashes' => array_values(array_filter(array_map('trim',
             explode(',', (string) env('INSTRUMENT_METHOD_GENERATION_RECIPES', ''))),
             fn (string $hash): bool => $hash !== '')),

@@ -369,3 +369,224 @@ phase-selection/old binding11 /163; source-artifact/ATR declaration34 /979.
 The broad focused Python method/exercise panel passed70 tests, genuine-entry
 suite9, and phase-selection/old-learning18. Overlapping earlier local suites
 are not additional independent tests or market evidence.
+
+## Curator operating-practice panel (2026-10-15)
+
+This is a new prospectively declared **reused-archive** question, not independent
+validation. All 26 primary instrument methods and the new normalized BandWidth
+alternative received one original attempt in each of two already-seen scopes,
+plus one shared control per scope: 56 attempts. The same EMA50/200/RSI14 baseline,
+1024 loaded / 200 warmup / 824 decision rows, risk and execution costs apply to
+all arms. The 07–16 UTC session is a newly declared common scope restriction,
+not a restriction selected after seeing outcomes. No original production agent,
+archive row, authority gate or old receipt was edited.
+
+Before-outcome spec SHA256:
+`fa15e5411c3607bed4107aef7cef49f87180681270b83a9c9fddbd07ee739634`.
+The exact source ZIP pins 567 files and its own SHA256 is
+`927198c902d547415f40e4de43b7d4a35172f2c08dffe163e3677e6f76724aef`.
+All 56 originals terminally closed: 52 completed, four technical. The two risk
+failures were a report export error on an input-free constant's empty binding;
+the two confidence failures exposed absence of a genuine native EMA score.
+The latter is not replaced by the admission lane's compatibility confidence.
+
+Each completed original passed actual clock, complete trace/event framing,
+dataset/source fences and account/trade ledger verification. Values below are
+net cash, not percentages, independent effect estimates or skill grades.
+
+| Instrument / exact primary operation | October | December | Important execution limitation |
+| --- | ---: | ---: | --- |
+| Control | -116.41 | -236.67 | 13 / 24 mature trades |
+| adaptive_entry_topology | -182.80 | -90.94 | Actual changed decisions in both scopes |
+| atr_risk_envelope | technical | technical | Original reporter failed; separate completion below |
+| bos_event | -119.28 | -90.94 | Actual confirmation vetoes |
+| breakout_retest | -119.28 | -90.94 | Actual confirmation vetoes |
+| choch_event | -119.28 | -90.94 | Actual confirmation vetoes |
+| compression_expansion | -119.28 | -90.94 | Original true-range proxy, not normalized BandWidth |
+| confidence_firewall | technical | technical | Genuine native EMA score absent |
+| confirmed_swing | -116.41 | -236.67 | Available, no changed decisions |
+| cost_aware_exit | -116.41 | -236.67 | 33 / 27 actual uses, no changed decisions |
+| cost_firewall | -119.28 | -90.94 | Quote absent: WAIT effect is not filter utility |
+| dynamic_cooldown | -116.41 | -247.09 | October has no changed decisions |
+| dynamic_fibonacci_zone | -119.28 | -90.94 | Actual confirmation vetoes |
+| high_volatility_firewall | -116.41 | -236.67 | Available, no changed decisions |
+| liquidity_pool | -119.28 | -80.36 | Proxy operation; not exchange order-book evidence |
+| liquidity_sweep | -182.80 | -90.94 | Actual changed decisions in both scopes |
+| loss_streak_cooldown | -116.41 | -247.09 | October has no changed decisions |
+| meta_label_filter | -119.28 | -90.94 | Real fitted model missing, no invented model scores |
+| range_reentry | -154.16 | -280.02 | Worse than both matched controls |
+| regime_router | -116.41 | -236.67 | Available, no changed decisions |
+| session_breakout | -119.28 | -90.94 | Partly underpowered context; not complete rule utility |
+| session_range | -184.34 | -247.09 | Partly underpowered context; not complete rule utility |
+| support_resistance_zone | -119.28 | -90.94 | Actual confirmation vetoes |
+| temporal_survival_filter | -116.41 | -236.67 | Available, no changed decisions |
+| transition_protection | -116.41 | -236.67 | Available, no changed decisions |
+| trend_pullback | -182.80 | -236.67 | December available without changed decisions |
+| volume_confirmation | -119.28 | -90.94 | Observed volume absent, not a measured bad strategy |
+| New normalized BandWidth alternative | -119.28 | -90.94 | Actual vetoes; distinct append-only method |
+
+Original summary SHA256:
+`1d2b7638e27ddcad4cb97fe3ad984743ac93eabe40dcbea5071a0bcfac90652e`;
+original observations SHA256:
+`abf74de8865b37b42c0a6b8d4ad815245b405b2ae44a60a4c81f5567b774c710`.
+All original products remain under
+`.runtime/curator-practice-20261015/.runtime/curator-practical-originals-20261015/`.
+
+### Explicitly approved two-risk technical completion
+
+The user authorized exactly one bounded completion of the two risk arms after
+the original panel closed. Only the private reporter's empty-binding view was
+corrected. Request bytes, source, data, parameters, cost and risk were identical;
+the original failures remain failures. Both completion products passed the same
+full clock/trace/account verification within their fixed 300-second caps.
+
+| Scope | Mature trades | Net cash | Matched control | Local delta | Actual risk reductions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| October | 13 | -96.18 | -116.41 | +20.23 | 1 |
+| December | 24 | -172.92 | -236.67 | +63.75 | 2 |
+
+This is reduced sizing on a losing sample, not positive economic skill or a
+risk-normalized advantage. It does not establish better entries. Completion
+manifest SHA256:
+`7b0586fb12049a14cef9efd185906b87beea9de566cf67fedef1533902e421c9`;
+summary SHA256:
+`ecd2af184ffd58c25c162e37e2f9ffe978a47a7df6a7c7eb431978e4e1cf98b9`;
+completion observations SHA256:
+`7435766a7937acc753b1ba3fd3ea703adf536e9e6387a702e9fdd038ca02a9a6`.
+Its separate products live under
+`.runtime/curator-practice-20261015/.runtime/curator-practical-technical-completion-20261015/`.
+
+The practical conclusion is context dependence and separate availability,
+activation and utility states, not 26 profitable instruments. Null, harmful,
+missing-input and technical observations remain useful bounded instruction.
+All 2026-and-later market data remain paper-only.
+
+### Separately declared native-score and observed-quote dependency studies
+
+These follow-ups are fresh diagnostic questions on the same seen market events,
+not retries that replace the original confidence or quote-unavailable rows.
+Their controls use fresh BASELINE-only policies with the same exact libraries
+as treatments. Every question pins original requests and source bytes before
+execution, with 300 seconds per arm, 1300 seconds total, one serial hidden
+single-threaded attempt per arm, and raw responses flushed before verification.
+
+The native-score question separates scoreless EMA from the existing genuinely
+scored trend20/50 producer. The latter's parameters come from the earlier exact
+frozen entry-panel control, not outcome-tuned confidence settings. Both use the
+unchanged October rows and common execution hash. Its before-outcome spec is
+`e3083d7fb76e3adf69f7fb086e51d898649df3ca00f970306cbe2f6e940a6dbe`,
+source archive
+`824f5e1deebc3a55673da1cf09074bd30a737e53e879995e58264d14067c825c`.
+The fresh EMA control must reproduce the original physical trade/account ledger;
+its additional default-policy trace may differ honestly.
+
+The quote question reconstructs synchronized genuine BID/ASK observations from
+173 pre-existing checkpoint payloads through the existing decoder and matcher.
+Each original price/provider cell is preserved in new hash-bound CSVs. Every
+quote must precede candle closure, be at most 60 seconds old, and have a BID
+matching the original close within `1e-6`. Both scopes contain 1024/1024 matched
+rows and 824/824 evaluation observations. No network request, volume estimate,
+new fill or change to modeled execution cost was introduced. The question is
+whether those observed inputs enable the exact `cost_firewall` operation, not
+whether modeled execution now reproduces real broker fills.
+
+The new October CSV SHA256 is
+`a17a75eae1d912eb98c24de87650e8318eb91c76660337b2a87d947565c3b39c`;
+December is
+`b2fc10c89dc3613a3edf8829c4ffe3f4a7afc3f3351e3c7ee63108a65506be56`.
+Quote source manifest
+`f71f7563d1418c8de961981c9b9fa7fb1b160218b488eadf70ac52a7abc4fa18`
+binds the exact checkpoint/decoder/dependency/parent identities. Before-outcome
+spec is `f2c689a6c5cf0d4039be40ddffa37b51b9e6b17e195686a0a621d150b42bce79`,
+source ZIP
+`bb47789671c6292c7bfc727abb576116a40732fa043f71d761f65dd4ed1dcd4b`.
+Old CSVs and old unavailable-input observations remain unchanged.
+
+All four native-score originals completed. The fresh EMA control exactly
+reproduced the old physical ledger. EMA treatment reached six actual score
+requests, all explicitly unavailable; five-trade scored trend treatment reached
+no entry-method evaluation (ten exit-phase target-unreached events). Genuine
+native score transport is covered by the actual-producer software regression,
+not proved as market activation by this unactivated archive treatment.
+
+| October score question | Mature trades | Net cash | Reached / available | Classification |
+| --- | ---: | ---: | ---: | --- |
+| Scoreless EMA control | 13 | -116.41 | — | Matched physical control |
+| Scoreless EMA + confidence | 13 | -119.28 | 6 / 0 | Missing score, not harmful-rule evidence |
+| Scored trend20/50 control | 5 | -260.00 | — | Separate family control |
+| Scored trend20/50 + confidence | 5 | -260.00 | 0 / 0 | Unactivated, not proof of null utility |
+
+Score summary SHA256:
+`195c55106041f41406e5b67dd63873f4638ceff098343ce4f65ac5434193ca43`;
+observations SHA256:
+`8a0a584c4bd345d80ffeea66a3bdcc1a8d3b887303f041afa6a5e0ac7f5487c0`.
+Products remain in
+`.runtime/curator-practice-20261015/.runtime/score-practice-originals-20261015/`.
+
+All four observed-quote originals also completed, with no timeout or altered
+execution cost. The exact primary rule reached six October and three December
+decisions with all required observed inputs available. Every reached invocation
+vetoed; those nine actual evaluations are not nine independent experiments.
+
+| Quote scope | Arm | Mature trades | Net cash | Reached / available / changed |
+| --- | --- | ---: | ---: | ---: |
+| October | Same-library BASELINE control | 13 | -116.41 | 0 / 0 / 0 |
+| October | Exact observed-quote firewall | 13 | -119.28 | 6 / 6 / 6 |
+| December | Same-library BASELINE control | 24 | -236.67 | 0 / 0 / 0 |
+| December | Exact observed-quote firewall | 20 | -90.94 | 3 / 3 / 3 |
+
+Local deltas are -2.87 and +145.73, respectively; absolute returns are still
+negative. The mixed outcome supports retaining scoped provisional know-how,
+not a universal spread threshold, independently confirmed skill or Champion.
+Quote summary SHA256:
+`8aca6f5225ff2acd566e436b1b92307fb33a988a64d3524df4f4ba4eaf2789c8`;
+observations SHA256:
+`38f612c4745177b07a34beff1e8b899df50af4e5e2a8905fee36bd639804b124`.
+Products remain in
+`.runtime/curator-practice-20261015/.runtime/quote-practice-originals-20261015/`.
+
+Read-only reconstruction through the same closed feature owner matched all
+9/9 full `feature_inputs_hash` values in the original reached events. This
+explains the rule, rather than inferring a cause from trade totals:
+
+| 2025 UTC decision | Observed spread | Closed TR14 mean | Spread / mean |
+| --- | ---: | ---: | ---: |
+| Oct 15 08:30 | 0.680 | 4.036357 | 0.168469 |
+| Oct 15 08:35 | 0.680 | 4.313286 | 0.157652 |
+| Oct 15 08:40 | 0.667 | 4.403286 | 0.151478 |
+| Oct 15 09:00 | 0.610 | 4.336714 | 0.140659 |
+| Oct 15 09:05 | 0.660 | 4.466000 | 0.147783 |
+| Oct 15 09:10 | 0.667 | 4.550786 | 0.146568 |
+| Dec 05 09:40 | 0.530 | 2.855500 | 0.185607 |
+| Dec 05 09:45 | 0.560 | 2.666929 | 0.209979 |
+| Dec 08 08:25 | 0.560 | 3.345000 | 0.167414 |
+
+These are raw price units; the denominator is an arithmetic mean of 14 closed
+true ranges, not Wilder's smoothed ATR. Displayed values are rounded only after
+exact comparison. Every ratio exceeds the lab's strict `<0.10` threshold;
+equality would also veto. Smaller nominal December spreads therefore remain
+more expensive relative to volatility. This is a useful operating observation,
+not evidence that the threshold is optimal. No available-input pass case was
+observed, and no risk/cost guard was weakened to manufacture one.
+
+### Verification of this curator-practice delivery
+
+The final disjoint focused Laravel panels passed 72 tests / 2,352 assertions
+and 17 curator tests / 1,188 assertions: **89 tests / 3,540 assertions** total.
+They include original generation/teaching compatibility, exact old v2 pack
+identity, all 85 new actual PHP-to-Python synthetic operator cases, selected
+original/completion/dependency projection, immutable unused-child handoff,
+scoped advice's real compiled policy effect, and exact source-artifact inclusion
+with private market products excluded. The final focused Python panels passed
+75 existing method regressions, 12 BandWidth tests and seven native-score tests:
+**94 tests**, not a whole-project suite or independent market observations.
+Changed PHP lint, focused Python compilation and Project Map impact/generate/
+check passed (1715 indexed sources). No paper/live qualification was tested.
+
+All 66 actual attempts remain visible as 56 originals, two approved technical
+completions and eight fresh diagnostics; 62 completed, with the four original
+technical histories retained. These are not 66 independent experiments. Real
+observed volume and an eligible fitted meta-model remain distinct missing
+inputs; the observed quote study did not create either. Future production
+activation additionally requires a safe drained boundary, verified byte artifact
+and actual loaded-worker source proofs. Tests alone never assert activation.

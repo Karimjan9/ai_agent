@@ -2,6 +2,23 @@
 
 ## Instrument methods and agent-owned policies (ADR-040)
 
+Explicit curator-practice v3 keeps all v1/v2 instruction identities and retains
+method/source-bound local positive, null, negative, no-behavior-change,
+unactivated, unavailable, technical and unresolved-provenance observations.
+These are usable bounded research instruction, never the recipient's own
+experience, independent confirmation, credit or authority. New generations
+may pin the explicit configured curriculum once; resumed generations never
+follow an ambient instruction revision. A selected teaching pack projects only
+its relevant curator observations. No observation or review label grants skill.
+
+`partially_unavailable` preserves mixed usable/missing-input execution without
+ranking the resulting WAIT effect as complete rule utility. Fresh default-v3
+policies seal curator-only bounded preference advice; parent-owned policies
+retain their existing learning owner. Unscored recipes stay at their original
+positions, all recipes remain eligible, and default action stays BASELINE.
+Explicit two-risk technical completion is retained separately from the original
+technical rows, never another independent sample or rewritten original outcome.
+
 All 26 curator lessons are `operating_skill_curriculum`, not earned agent skills.
 Exact installed recipes can yield `operating_rules_taught`; missing or altered
 mapped originals block, while unrelated custom methods are `unmapped`. Synthetic

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T07:13:17.877Z",
-  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
-  "source_file_count": 1711,
-  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
+  "generated_at": "2026-10-15T10:05:01.719Z",
+  "source_digest": "62ad514e4e02d28c1c035df8c88cf99739e484b359feda2e8edb0c39a5a31b14",
+  "source_file_count": 1715,
+  "git_head": "b60569def9b16870348293e66ede71ddaf54ba4d",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -52,6 +52,13 @@
         "backend-laravel/resources/research/instrument-operating-skills/model-v1.json",
         "backend-laravel/resources/research/instrument-operating-skills/source-practice-v2.json",
         "backend-laravel/resources/research/instrument-operating-skills/curator-archive-observations-v2.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-price-practice-v3.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-risk-practice-v3.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-practical-declaration-v3.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-practical-observations-v3.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-practical-technical-completion-v3.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-practical-dependency-diagnostics-v3.json",
+        "backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php",
         "backend-laravel/tests/Feature/InstrumentSourcePracticeTeachingTest.php",
         "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
         "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
@@ -80,6 +87,12 @@
         "backend-laravel/resources/research/instrument-methods/closed-atr-percent/method.json",
         "backend-laravel/resources/research/instrument-methods/closed-atr-percent/recipe.json",
         "backend-laravel/tests/Feature/ClosedAtrPercentMethodDeclarationTest.php",
+        "backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/recipe.json",
+        "backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php",
+        "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
+        "ai-service-python/tests/test_method_native_score_binding.py",
         "ai-service-python/tests/test_closed_atr_percent_method.py",
         "ai-service-python/tests/test_instrument_method_ema_pretrend.py",
         "backend-laravel/resources/research/instrument-methods/closed-donchian-retest/source.json",
@@ -490,6 +503,10 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "ai-service-python/tests/test_method_native_score_binding.py",
+        "backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php",
+        "backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php",
+        "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
         "backend-laravel/tests/Feature/AgentMethodStudyTeachingTest.php",
         "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
         "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
@@ -593,7 +610,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 207,
+      "source_file_count": 211,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
