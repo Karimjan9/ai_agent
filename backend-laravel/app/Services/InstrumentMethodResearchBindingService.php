@@ -14,6 +14,7 @@ class InstrumentMethodResearchBindingService
 {
     public const METADATA = 'instrument_method_learning';
     public const PROTOCOL = 'instrument_method_learning_v1';
+    public const PHASE_SELECTION_PROTOCOL = 'phase_target_applicable_v2';
 
     public function __construct(
         private InstrumentMethodLibraryService $library,
@@ -88,6 +89,17 @@ class InstrumentMethodResearchBindingService
                 'recipes' => $recipes, 'policy' => [...$policyBody, 'policy_hash' => $registered['policy_hash'], 'policy_json' => $registered['policy_json']],
                 'research_only' => true, 'economic_authority' => false, 'promotion_evidence' => false,
                 'paper_authority' => false, 'live_authority' => false];
+            // Future mixed-role typed libraries select an applicable target per
+            // phase. Existing sealed contracts and construction-adapter pools
+            // retain their original first-matching-recipe semantics.
+            $typedOnly = count($recipes) > 1; $targets = [];
+            foreach ($recipes as $recipe) {
+                if ($recipe['parameter_adapters'] !== []) $typedOnly = false;
+                foreach ($recipe['operators'] as $operator) $targets[$operator['target']] = true;
+            }
+            if ($typedOnly && isset($targets['exit']) && (isset($targets['confirmation']) || isset($targets['risk_multiplier']))) {
+                $body['selection_protocol'] = self::PHASE_SELECTION_PROTOCOL;
+            }
             if ($meta !== null) $body['meta_model'] = $meta;
             return [...$body, 'contract_hash' => $this->hashes->parameterHash($body), 'contract_json' => $this->json($body)];
         });

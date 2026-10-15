@@ -1,0 +1,21 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.tradingview.com/support/solutions/43000734653-how-are-adr-and-atr-calculated/",
+  "content": "Original curator paraphrase of TradingView's public ATR-percent explanation: average true range percentage normalizes range-based volatility by the current closing price, computed as one hundred times ATR divided by close. True range incorporates gaps, unlike a simple high-minus-low range. The publisher's displayed ATR-percent example uses a fourteen-period Wilder relative moving average. This research supplement instead preserves the laboratory's existing fourteen-completed-true-range arithmetic mean, explicitly not the publisher's RMA. A maximum of 0.10 percent, equality admission, five-minute closed timing, trend-up/New York/normal-volatility context and use only as an additional entry veto are fixed laboratory hypotheses, not publisher-endorsed profitable settings. This new context was selected after earlier archive opportunity inspection; the reused archive is not untouched validation and no earlier outcome is reclassified.",
+  "metadata": {
+    "license": "Original curator paraphrase; publisher material retains its rights; no copied code, video transcript or market outcomes.",
+    "access": "public",
+    "title": "How are ADR% and ATR% calculated?",
+    "publisher": "TradingView",
+    "source_checked_on": "2026-10-15",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "reviewed_scope": "Public ATR-percent definition and displayed normalization/smoothing formula, article section Average True Range% (ATR%); not the unrelated ADR implementation or any strategy performance.",
+    "not_reviewed": ["embedded_or_linked_video", "complete_book", "publisher_backtest", "profitable_threshold_selection"],
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

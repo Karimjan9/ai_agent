@@ -1,0 +1,26 @@
+{
+  "instrument_key": "trend_pullback",
+  "method_key": "internet_closed_ema_pretrend_pullback_20_50_v1",
+  "revision": 1,
+  "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["9cfd7931479fcc6341d12e81007a1f1785f1e3e4fa66a70dcd9e302191f08ea1"],
+  "known_limitations": [
+    "The closed owner keeps the original fixed EMA20/50 adjust=False recursion, seeded from the first observed close with min_periods=50. Four immediately contiguous closed bars t-3,t-2,t-1,t require all eight EMA values mature, so first availability is index52. Earlier history gaps remain allowed; a gap within these four observations cannot confirm.",
+    "Before a BUY pullback, EMA20 and EMA50 must both rise strictly from t-3 to t-2, with EMA20 above EMA50 on both bars. For SELL both averages must fall strictly, with EMA20 below EMA50. Flat slope waits. Testing current EMA rise alone would be redundant because a current close above its recursive EMA already implies that rise.",
+    "After this prior trend, preserve the old t-1 touch/t reclaim exactly. BUY needs low[t-1]<=EMA20[t-1], EMA50[t-1]<close[t-1]<=EMA20[t-1], EMA20[t-1]>EMA50[t-1], close[t]>EMA20[t], close[t]>close[t-1], EMA20[t]>EMA50[t]. SELL mirrors these comparisons using prior high. No future confirming candle is backdated.",
+    "The new trend_up/new_york/normal research context was selected from a previously observed archive opportunity before outcomes for this method. It does not establish untouched validation or the old London method's effect. The exact four-bar timing, periods, seed and scope are laboratory hypotheses informed by the linked EMA explanations, not a publisher's complete or profitable trading system.",
+    "This append-only method can veto only an existing same-direction closed strategy proposal. It cannot create a direction, confidence, order, larger risk or changed execution cost. The old two-bar feature, source, method, recipe and active agent policy are unchanged. Missing history, wrong direction, flat or opposite prior trend waits.",
+    "EMA lag, a genuine new trend after an earlier decline, sideways whipsaw and adverse execution costs can make the extra filter worse. Fewer trades are not proof of skill. Matched control/ablation archive trials, sufficient reached opportunities and separate independent qualification are required before useful-skill or Master claims. All2026-and-later observations remain paper-only."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {"op": "AND", "args": [
+      {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+      {"op": "BOOL", "input_key": "pretrend_pullback", "available_at": "2000-01-01T00:00:00Z"}
+    ]},
+    "input_bindings": {"available": "method_pullback_pretrend_available", "pretrend_pullback": "method_pullback_pretrend_confirmed"},
+    "budget": {"cpu_seconds": 0.5, "max_calls": 4096, "max_node_evaluations": 12288}
+  }
+}

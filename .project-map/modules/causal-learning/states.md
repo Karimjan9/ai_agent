@@ -12,6 +12,15 @@ and mature own outcomes remain separate practice; old handoffs have no new
 mandatory pack and are not relabelled. Teaching never expands the active roster
 or substitutes observations, trained weights, independent confirmation or credit.
 
+Only new source-practice method references select teaching v2. Its separately
+pinned completed curator panel stays reused-archive instruction, not own-agent
+practice or a harmful gene ban. Old v1 parts and packs remain byte-exact.
+Future purely typed mixed-role policy compilation may seal phase-target v2;
+at runtime a context-matching recipe with no current-phase target is bypassed,
+but an applicable recipe's missing input/WAIT is terminal. Old contracts keep
+their original first-context-match semantics. This changes research execution,
+not evidence, credit, scientific or promotion state.
+
 New source-grounded MACD/RSI confirmations and Chandelier close exits retain
 the same registered_research_only state. Positive history availability is not
 a signal or economic proof. Missing history/equality does not confirm or exit.
@@ -88,6 +97,15 @@ The explicit append-only alternative-method catalog never changes v1 recipes
 or an active policy snapshot. Closed-feature confirmation/risk/exit recipes
 retain missing-input WAIT and false economic/independent authority. Conditional
 volume and meta-model adapters are not qualified data or trained classifiers.
+
+Source-practice supplements preserve the exact three v1 instruction parts and
+all original primary exercises. New reviewed method references select a pinned
+v2 teaching pack; old-only/default packs and explicit v1 verification are
+unchanged. Supplement tampering, familiar-name substitution or missing original
+method/source proof refuses. Actual closed-bar EMA-pretrend and normalized ATR%
+inputs come from the existing feature owner, never CSV-supplied flags. A tutorial
+exercise, reached archive veto or observed positive baseline grants neither
+earned agent skill nor independent/economic authority.
 
 Own-child study preparation follows `verified unused own child -> exact parent
 and learned selector classes -> no_effect OR four fresh signed carriers ->

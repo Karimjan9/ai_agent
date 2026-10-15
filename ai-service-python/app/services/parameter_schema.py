@@ -317,6 +317,7 @@ EXECUTION_PARAMETER_SCHEMA: dict[str, dict[str, Any]] = {
             "trend_regime_confirmation_v1",
             "range_reentry_confirmation_v1",
             "volatility_persistence_v1",
+            "source_ema_pretrend_pullback_v1",
         },
     },
     "regime_classifier_variant": {
@@ -464,6 +465,12 @@ def validate_strategy_parameters(
     # Range-valid is not necessarily strategy-valid. Keep the runtime
     # contract aligned with Laravel's generator so an old or externally
     # supplied model cannot silently run an inverted EMA/RSI topology.
+    if validated.get('entry_topology_variant') == 'source_ema_pretrend_pullback_v1':
+        if family != 'trend' or validated.get('ema_fast') != 20 or validated.get('ema_slow') != 50:
+            raise ValueError('SOURCE_EMA_PRETREND_FIXED_TREND_20_50_REQUIRED')
+        if _normalise_strategy_identity(base_strategy or strategy) != 'trend':
+            raise ValueError('SOURCE_EMA_PRETREND_TREND_ENTRY_RUNTIME_REQUIRED')
+
     if family in {"trend", "ema_rsi"}:
         if "ema_fast" in validated and "ema_slow" in validated:
             fast = int(validated["ema_fast"])

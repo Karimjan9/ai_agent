@@ -24,6 +24,8 @@ BOOL_FIELDS = {
     "method_regime_available", "method_transition_available", "method_quote_available",
     "method_band_available", "method_band_reentry",
     "method_pullback_available", "method_pullback_confirmed",
+    "method_pullback_pretrend_available", "method_pullback_pretrend_confirmed",
+    "method_atr_percent_available",
     "method_retest_available", "method_retest_confirmed",
     "method_macd_available", "method_macd_cross", "method_rsi_available", "method_rsi_recovery",
     "method_chandelier_available", "method_chandelier_exit",
@@ -35,6 +37,7 @@ NUMBER_FIELDS = {
     "method_volume_ratio", "method_transition_age", "method_loss_streak", "method_bars_since_loss",
     "method_signal_age", "method_signal_survival", "method_regime_code", "method_meta_score",
     "method_spread_atr",
+    "method_atr_percent",
 }
 FIELDS = BOOL_FIELDS | NUMBER_FIELDS
 
@@ -247,6 +250,31 @@ class ClosedInstrumentMethodFeatures:
                     pullback_direction = "SELL"
             output.update({"method_pullback_available": pullback_ready, "_ema20": fast, "_ema50": trend,
                 "_pullback_direction": pullback_direction})
+            # A separate prospective method asks whether the trend was rising
+            # BEFORE the old touch/reclaim pair (falling for SELL). Current
+            # close > EMA already implies a rising current recursive EMA; that
+            # redundant check would not establish the prior trend. Preserve
+            # the old two-bar method and require four mature contiguous bars
+            # only for this new observation.
+            pretrend_ready = bool(index >= 3 and pullback_ready and all(
+                self.stamps[position] - self.stamps[position - 1] == self.duration
+                for position in (index - 2, index - 1)))
+            before_fast = _number(ema20.iloc[index - 2]) if pretrend_ready else None
+            before_trend = _number(ema50.iloc[index - 2]) if pretrend_ready else None
+            earlier_fast = _number(ema20.iloc[index - 3]) if pretrend_ready else None
+            earlier_trend = _number(ema50.iloc[index - 3]) if pretrend_ready else None
+            pretrend_ready = pretrend_ready and all(value is not None for value in
+                (before_fast, before_trend, earlier_fast, earlier_trend))
+            pretrend_direction = None
+            if pretrend_ready:
+                if (earlier_fast > earlier_trend and before_fast > before_trend
+                        and before_fast > earlier_fast and before_trend > earlier_trend):
+                    pretrend_direction = "BUY"
+                elif (earlier_fast < earlier_trend and before_fast < before_trend
+                        and before_fast < earlier_fast and before_trend < earlier_trend):
+                    pretrend_direction = "SELL"
+            output.update({"method_pullback_pretrend_available": pretrend_ready,
+                "_pretrend_pullback_direction": pullback_direction if pullback_direction == pretrend_direction else None})
             channel_high, channel_low = _number(donchian_high.iloc[index]), _number(donchian_low.iloc[index])
             retest_ready = bool(contiguous and channel_high is not None and channel_low is not None and channel_high >= channel_low)
             retest_direction, retest_level = None, None
@@ -283,6 +311,15 @@ class ClosedInstrumentMethodFeatures:
                 output["method_range_atr"] = float(tr.iloc[index] / a)
                 if _number(slow.iloc[index]) is not None and slow.iloc[index] > 0:
                     output["method_atr_ratio"] = float(a / slow.iloc[index])
+                # Closed SMA14 true-range volatility as percent of the actual
+                # positive close, distinct from ATR/baseline or TR/ATR ratios.
+                # Unavailable/nonpositive/overflow values are not guessed zero.
+                current_close = _number(close.iloc[index])
+                if current_close is not None and current_close > 0:
+                    atr_percent = float(a / current_close * 100.0)
+                    if math.isfinite(atr_percent) and atr_percent > 0:
+                        output["method_atr_percent_available"] = True
+                        output["method_atr_percent"] = atr_percent
             # Only actually declared closed session context identifies a window.
             session = row.get("market_session", row.get("session"))
             known_session = isinstance(session, str) and session not in {"", "unknown", "any"}
@@ -412,6 +449,7 @@ class ClosedInstrumentMethodFeatures:
         if direction in {"BUY", "SELL"}:
             output["method_band_reentry"] = source["_band_reentry_direction"] == direction
             output["method_pullback_confirmed"] = source["_pullback_direction"] == direction
+            output["method_pullback_pretrend_confirmed"] = source["_pretrend_pullback_direction"] == direction
             output["method_retest_confirmed"] = source["_retest_direction"] == direction
             output["method_macd_cross"] = source["_macd_cross_direction"] == direction
             output["method_rsi_recovery"] = source["_rsi_recovery_direction"] == direction

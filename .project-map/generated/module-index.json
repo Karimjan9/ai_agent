@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T05:38:06.186Z",
-  "source_digest": "8094c3491a2105f528ede43482d5cafd5f0f5c92041db4898887921252c12869",
-  "source_file_count": 1703,
-  "git_head": "a3875e784f6bdeec891a31a25df00ff323f805c1",
+  "generated_at": "2026-10-15T07:13:17.877Z",
+  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
+  "source_file_count": 1711,
+  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -50,6 +50,9 @@
         "backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json",
         "backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json",
         "backend-laravel/resources/research/instrument-operating-skills/model-v1.json",
+        "backend-laravel/resources/research/instrument-operating-skills/source-practice-v2.json",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-archive-observations-v2.json",
+        "backend-laravel/tests/Feature/InstrumentSourcePracticeTeachingTest.php",
         "backend-laravel/tests/Feature/InstrumentOperatingSkillCurriculumTest.php",
         "backend-laravel/tests/Feature/AgentOperatingSkillTeachingTest.php",
         "ai-service-python/tests/test_instrument_operating_skill_exercises.py",
@@ -70,6 +73,15 @@
         "backend-laravel/resources/research/instrument-methods/closed-ema-pullback/source.json",
         "backend-laravel/resources/research/instrument-methods/closed-ema-pullback/method.json",
         "backend-laravel/resources/research/instrument-methods/closed-ema-pullback/recipe.json",
+        "backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/recipe.json",
+        "backend-laravel/resources/research/instrument-methods/closed-atr-percent/source.json",
+        "backend-laravel/resources/research/instrument-methods/closed-atr-percent/method.json",
+        "backend-laravel/resources/research/instrument-methods/closed-atr-percent/recipe.json",
+        "backend-laravel/tests/Feature/ClosedAtrPercentMethodDeclarationTest.php",
+        "ai-service-python/tests/test_closed_atr_percent_method.py",
+        "ai-service-python/tests/test_instrument_method_ema_pretrend.py",
         "backend-laravel/resources/research/instrument-methods/closed-donchian-retest/source.json",
         "backend-laravel/resources/research/instrument-methods/closed-donchian-retest/method.json",
         "backend-laravel/resources/research/instrument-methods/closed-donchian-retest/recipe.json",
@@ -100,6 +112,8 @@
         "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
         "backend-laravel/tests/Feature/InstrumentMethodLibraryTest.php",
         "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+        "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+        "ai-service-python/tests/test_instrument_method_phase_selection.py",
         "backend-laravel/tests/Feature/InstrumentMethodStudyTest.php",
         "backend-laravel/tests/Feature/AgentMethodLearningTest.php",
         "backend-laravel/tests/Feature/AgentMethodCandidateTest.php",
@@ -579,7 +593,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 201,
+      "source_file_count": 207,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -652,6 +666,11 @@
         "qualified-solo"
       ],
       "paths": [
+        "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+        "ai-service-python/app/services/parameter_schema.py",
+        "ai-service-python/app/strategies/laboratory.py",
+        "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+        "ai-service-python/tests/test_source_ema_pretrend_entry.py",
         "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
         "backend-laravel/app/Services/LabPopulationReplacementTrait.php",
         "backend-laravel/app/Services/LabPopulationPlanningTrait.php",
@@ -929,7 +948,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 105,
+      "source_file_count": 110,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -958,6 +977,8 @@
         "ai-service-python/tests/test_instrument_method_context_contract.py",
         "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
         "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+        "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+        "ai-service-python/tests/test_instrument_method_phase_selection.py",
         "ai-service-python/requirements.lock.txt",
         "ai-service-python/requirements-dev.txt",
         "ai-service-python/tests/test_market_regime.py",
@@ -1132,7 +1153,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 70,
+      "source_file_count": 72,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {

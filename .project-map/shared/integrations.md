@@ -11,6 +11,35 @@ replay-status idle, queue/mutex/control proof and original immutable artifacts.
 
 ## Curator operating knowledge and agent practice
 
+The additive source-practice teaching version retains all v1 instruction bytes.
+Two newly reviewed exact methods use the existing typed confirmation target:
+four mature contiguous closed bars for pre-pullback EMA direction and finite
+positive `100*SMA14(TR)/close` for ATR%. Their PHP field allowlists and Python
+closed producer agree. The existing single-target collision guard remains;
+an explicit joint AND is a separate bundle observation. New NY-scoped archive
+practice is prospectively declared after known opportunity inspection, not a
+rewrite of old London methods or untouched validation. Teaching and agent-owned
+outcomes stay separate; neither source text nor synthetic exercises grants
+performance, credit, Master or paper/live authority.
+
+The v2 teaching pack separately pins curator archive observations (actual
+original request/response, clocks, ledgers and null/negative contrasts). They
+are instruction evidence, never the recipient's own outcomes or qualification.
+Old v1 teaching packs retain exact bytes. A fresh explicit trend20/50 model may
+select `source_ema_pretrend_pullback_v1` through canonical validation/factory and
+the existing native compiler. It creates closed directional entry proposals
+through the shared feature owner, not an entry port in the typed filter DSL.
+The frozen old trend path and ordinary random topology pool remain unchanged;
+ADX/RSI confidence, downstream sessions, costs and risk still apply.
+
+Future mixed purely typed entry/exit recipe pools carry the hash-bound
+`selection_protocol=phase_target_applicable_v2`. Choice skips only matching
+recipes without a target for the current phase; it never skips an applicable
+recipe's missing input or veto to search for a passing result. Pure-entry,
+single-hybrid and construction-adapter pools keep their original contract
+shape. Contracts without the field retain v1 behavior; present unknown values
+and v2 adapter pools refuse. Ordinary and native callers use this same engine.
+
 Native finite-model consumption has its own issuer and prospective target
 domain. The existing meta registry stores source-owned native artifacts and
 signed unused council/member account plans without modifying model/passport

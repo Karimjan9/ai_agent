@@ -195,3 +195,177 @@ historical archive immutability. Python90 exercises,15 feature-owner tests and
 9 focused temporal cases passed. Safe production delivery still requires the
 actual artifact, cold idle boundary and fresh loaded-worker proofs. All2026+
 market observations remain paper-only.
+
+## Source-practice correction (2026-10-15)
+
+The old27-arm account result is NOT26 verified instrument skills. Reopening the
+original products proves all26 treatments had17 entry `policy_default_baseline`
+events. Most methods were eligible only in an exit/holding context, where their
+confirmation/risk target could not execute. The exact first entry context was
+trend_up/new_york/normal; the old recipes were London-scoped. Original products,
+declarations and counts remain immutable. A zero-use trial does not reject its
+formula and cannot qualify the method or train a useful-selection claim.
+
+Actual additional source reading produced two executable questions, not merely
+more instruction text:
+
+- [Fidelity EMA](https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema)
+  describes directional EMA support/resistance and lag. The new four-closed-bar
+  recipe requires both EMA20/50 to trend in the candidate direction BEFORE the
+  touch/reclaim. Current close above an EMA already implies its current rise;
+  that redundant test is deliberately not sold as a new capability. Exact
+  periods, recursive seed, sequence and NY scope remain lab adaptations.
+- [TradingView ATR%](https://www.tradingview.com/support/solutions/43000734653-how-are-adr-and-atr-calculated/)
+  defines price-normalized volatility. The new closed owner exposes
+  `100*SMA14(TR)/close`, explicitly retaining the lab's SMA rather than silently
+  claiming the publisher's RMA14. The fixed0.10% cap is a prospective hypothesis,
+  not a profitable parameter copied from a source. Price scaling preserves the
+  ratio; an absolute price-unit ceiling does not have that property.
+
+New scope is explicit trend_up/new_york/normal, chosen from already-seen
+opportunities before NEW outcomes. No wildcard, forbidden-regime rule, risk
+limit or old receipt was relaxed to obtain activation. Full books, videos and
+masterclasses not actually inspected remain unreviewed. Two tutorial readings
+do not establish26 empirical skills or a successful curriculum.
+
+### All26: the remaining practical question, not a skill-count claim
+
+| Instrument | What a real practice trial must reach or distinguish |
+| --- | --- |
+| trend_pullback | Prior rising/falling trend, closed touch/reclaim; matched same-scope slope ablation. |
+| breakout_retest | Prior20-bar boundary, later retest of its frozen level; breakout bar is not its own retest. |
+| compression_expansion | Existing5/20 true-range proxy versus genuinely different BandWidth squeeze; these are not the same algorithm. |
+| session_breakout | Genuine session identity/calendar and an available prior range, followed by entry-phase breakout. |
+| range_reentry | Applicable range entry, completed outside/inside reentry; no automatic fade of a trending band tag. |
+| adaptive_entry_topology | Separate break and reclaim opportunities; OR composition is not a trained universal selector. |
+| dynamic_fibonacci_zone | Two confirmed anchors, positive leg and a subsequent directional retracement; no future pivots. |
+| confirmed_swing | Right-hand confirmation bars closed before the pivot becomes available. |
+| bos_event | Fresh directional crossing of an already-known pivot, not a retrospectively chosen level. |
+| choch_event | Prior directional state followed by a fresh opposite structure crossing. |
+| support_resistance_zone | Known pivot, actual touch count/age and normalized distance at a reached decision. |
+| liquidity_pool | Equal-level OHLC proxy only; actual resting-liquidity claims need order-book observations. |
+| liquidity_sweep | Known-level excursion then closed reclaim; OHLC does not prove intrabar stop/fill ordering. |
+| session_range | Mature actual session width and ATR; distinguish developing range from completed opening range. |
+| volume_confirmation | Canonical observed volume and units, mature positive baseline; no fabricated volume from OHLC. |
+| cost_firewall | Synchronized observed quotes at a reached entry; modeled execution costs do not create quote observations. |
+| high_volatility_firewall | Normalized ATR% availability and real entry veto; absolute and percentage thresholds are different rules. |
+| transition_protection | Observed regime boundary and elapsed closed bars, then a matching entry. |
+| loss_streak_cooldown | Same-agent mature uncensored loss history available before the next entry. |
+| confidence_firewall | A programme that genuinely emits its native score; score is not calibrated probability. |
+| temporal_survival_filter | Observed same-direction closed signal sequence; heuristic decay is not survival-model proof. |
+| dynamic_cooldown | Mature owned adverse sequence and subsequent recovery; compare the fixed schedule, not an imagined optimum. |
+| atr_risk_envelope | Reached risk stage; a constant0.5 treatment is not another stop-aware sizing algorithm. |
+| cost_aware_exit | Owned live holding and actual exit condition; trailing-only and partial/trailing/time bundles need distinct tests. |
+| regime_router | Known point-in-time regime and original proposal direction; alignment alone is not selector superiority. |
+| meta_label_filter | Real original owned labels, chronological fitting/calibration and reached cells; no caller/CSV score. |
+
+The new actual panel is separate from the old studies. Its first preparation
+refused two operators on the same target before any outcome. The replacement
+composes one explicit joint AND operator through the existing grammar; no
+single-target guard was removed. Original failure and first raw slice remain
+retained, with zero replay attempts for that preparation.
+
+Before-outcome spec SHA256:
+`59c143cdd1469a929e588d345554bd534c582b3eb3c59f742b9f4ebfc43ccea0`.
+It fixes two1024-row scopes,200 warmup/824 decisions, unchanged EMA50/200/RSI14
+account/cost/risk, five arms per scope and one300-second original attempt per
+arm. Arms: unchanged baseline, a NEW NY-scoped legacy two-bar ablation,
+four-bar pretrend, ATR% and an explicit joint method. The old London method is
+never relabelled as this ablation. Source524-file snapshot and raw-parent hash
+`caae3824e1296f880da15ca5cdaff8724216e7694129cf257eeb06c68e5a4bc5`
+precede outcomes. Original products live in isolated
+`.runtime/source-practice-20261015/.runtime/source-practice-originals-20261015-v2/`.
+This is previously seen discovery, not untouched evaluation or native/full/MTF
+qualification. All ten originals subsequently completed under their declared
+300-second caps, with the frozen524-file source snapshot still exact.
+
+| Previously seen discovery scope | Arm | Mature trades | Net cash | Method uses / behavior changes |
+| --- | --- | ---: | ---: | ---: |
+| October | Baseline | 42 | +804.96 | 0 / 0 |
+| October | NY legacy two-bar ablation | 42 | +707.52 | 1 / 1 |
+| October | NY four-bar pretrend | 42 | +707.52 | 1 / 1 |
+| October | NY ATR percent | 42 | +707.52 | 1 / 1 |
+| October | NY joint | 42 | +707.52 | 1 / 1 |
+| December | Baseline | 35 | -190.21 | 0 / 0 |
+| December | NY legacy two-bar ablation | 35 | -190.21 | 0 / 0 |
+| December | NY four-bar pretrend | 35 | -190.21 | 0 / 0 |
+| December | NY ATR percent | 35 | -190.21 | 0 / 0 |
+| December | NY joint | 35 | -190.21 | 0 / 0 |
+
+Summary SHA256:
+`d2e813760297ed3900c921f16096641746b6112a39785227db7fcfa9e697ad16`.
+Every original reports1024 loaded rows,200 warmup and824 decision rows. Complete
+actual clocks, account/trade chains and framed method events were verified.
+There are no censored trades in these rows. October's extra rules lost97.44
+cash relative to the unchanged control; pretrend added no difference over its
+two-bar ablation. December had no in-scope method use, so its null contrasts
+cannot assess method usefulness. Maximum drawdown was2.01% for all October
+arms and3.32% for all December arms. A single changed observation is not a
+power calculation, independent replication or an instrument-wide harmful ban.
+The overlapping vetoes do not establish a beneficial joint interaction.
+
+These are real executable-method observations, but they do not warrant a
+profitable skill label. Importantly, all four treatments are confirmation
+filters on the old EMA50/200/RSI14 proposal owner. That is a valid filter test,
+not proof that a trend-pullback tactic generated its own entries. A role-correct
+entry implementation must be named and compared separately through the
+existing strategy/compiler, without opening an entry port in the typed filter
+DSL, changing old strategy semantics or retroactively replacing these results.
+
+### Genuine entry programme: separately declared six-arm comparison
+
+The new opt-in `source_ema_pretrend_pullback_v1` is an actual trend entry owner,
+not another confirmation filter. It requires exact EMA20/50 and generates
+BUY/SELL only for the same closed pretrend/touch/reclaim, retaining the original
+ADX strength, RSI direction, confidence, session, cost, account and risk guards.
+The fresh canonical constructor and normal native member compiler were tested
+with the exact three-gene declaration; incompatible frozen architecture refuses.
+The ordinary random topology roster and old trend branch are unchanged.
+
+This is a NEW previously-seen-archive question: all three arms explicitly use
+`strategy=trend_v1`, `base_strategy=trend`, with ordinary trend strength20 and
+pullback0.75. It is not compared as if it were the old EMA/RSI programme. Arms
+separate the period-pair effect from the source-entry rule. The first request-only
+preparation refused an empty baseline delta encoded as an array; no replay or
+outcome occurred. That declaration and exact helper bytes remain retained.
+The linked preparation fixes only that wire shape and keeps all data/controls.
+
+Before-outcome spec:
+`71b33425f466bd9fd9dee15747630db66b82cf310d6df98231080599af470324`.
+It pins519 app/helper files and an actual before-outcome byte source archive,
+the same raw1024-row scopes/200 warmup/824 decisions, six original300-second
+caps and no retry. All6 originals completed, without timeout or post-outcome
+source changes. Actual clocks, complete account/trade chains and trace hashes
+passed; source entries were linked to their exact original ledger entry times
+and direction, not inferred from method names or the typed-method use counter.
+
+| Seen scope | Programme | Mature trades | Net cash | Max drawdown |
+| --- | --- | ---: | ---: | ---: |
+| October | Frozen trend50/200 | 4 | -50.95 | 1.25% |
+| October | Frozen trend20/50 | 9 | -132.68 | 3.09% |
+| October | Source entry20/50 | 1 | -50.01 | 0.50% |
+| December | Frozen trend50/200 | 0 | 0.00 | 0.00% |
+| December | Frozen trend20/50 | 6 | -61.41 | 1.32% |
+| December | Source entry20/50 | 1 | -54.10 | 0.54% |
+
+Actual source-programme trace coverage is824/824 candles in each scope;
+815/814 have mature contiguous rule inputs. There are15/17 directional
+patterns,7/5 ADX/RSI-admitted proposals and1/1 exact linked mature trades.
+Proposals are not automatic execution: session/confidence/account/holding gates
+still apply. These are genuine source-rule activation and account observations,
+not profitable skill, sufficient power or stronger-agent evidence. December's
+flat frozen control must not be hidden when comparing the new negative result.
+
+Original summary SHA256:
+`d3873a64e861f9eefb668a04b0865e6a4af166c2cf5e0d13da00ddf016e9399e`.
+Products and the exact source-archive reference remain under isolated
+`.runtime/source-practice-20261015/.runtime/source-entry-originals-20261015-v2/`.
+No production generation, old receipt, credit or research/paper epoch changed
+to obtain this result. All2026+ observations remain paper-only.
+
+Focused verification for this delivery: source-practice/old teaching17 tests /
+1022 assertions; actual fresh-entry/structural/hybrid/mutation35 /256;
+phase-selection/old binding11 /163; source-artifact/ATR declaration34 /979.
+The broad focused Python method/exercise panel passed70 tests, genuine-entry
+suite9, and phase-selection/old-learning18. Overlapping earlier local suites
+are not additional independent tests or market evidence.

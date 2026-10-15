@@ -1,5 +1,14 @@
 # Causal-learning history
 
+## 2026-10-15 - Source-practice v2 and phase-target selection
+
+Exact new methods select append-only teaching v2 with separately pinned actual
+curator observations. V1 packs and agent-owned outcomes stay unchanged. New
+purely typed mixed-role libraries seal phase-target v2 while old contracts keep
+their original selection; missing inputs/vetoes never cause success-seeking
+fallthrough. Source review, correctness, reach and utility remain distinct.
+See ADR-040 and the dated source-grounded backtest report.
+
 ## 2026-10-15 - Separately scoped native finite assets
 
 ADR-040's native extension adds source-owned per-position labels, a separately

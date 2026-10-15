@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T05:38:06.186Z",
-  "source_digest": "8094c3491a2105f528ede43482d5cafd5f0f5c92041db4898887921252c12869",
-  "source_file_count": 1703,
-  "git_head": "a3875e784f6bdeec891a31a25df00ff323f805c1",
+  "generated_at": "2026-10-15T07:13:17.877Z",
+  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
+  "source_file_count": 1711,
+  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laravel-python-contract",
   "paths": [
@@ -22,6 +22,8 @@
     "ai-service-python/tests/test_instrument_method_context_contract.py",
     "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
     "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
+    "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+    "ai-service-python/tests/test_instrument_method_phase_selection.py",
     "ai-service-python/requirements.lock.txt",
     "ai-service-python/requirements-dev.txt",
     "ai-service-python/tests/test_market_regime.py",
@@ -119,6 +121,7 @@
     "ai-service-python/tests/test_instrument_method_learning.py",
     "ai-service-python/tests/test_instrument_method_matrix.py",
     "ai-service-python/tests/test_instrument_method_original_deadline.py",
+    "ai-service-python/tests/test_instrument_method_phase_selection.py",
     "ai-service-python/tests/test_instrument_method_transport.py",
     "ai-service-python/tests/test_market_regime.py",
     "ai-service-python/tests/test_native_reachability_depth_audit.py",
@@ -144,6 +147,7 @@
     "backend-laravel/ecosystem.config.cjs",
     "backend-laravel/tests/Feature/DecisionTraceLearningContractTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
+    "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
     "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
     "backend-laravel/tests/Feature/NativeDepthDispatchFenceTest.php",
     "backend-laravel/tests/Feature/NativeSpreadContextStudyTest.php",
@@ -2489,34 +2493,34 @@
       "line": 165
     },
     {
-      "symbol": "validate_frame",
-      "kind": "python_function",
-      "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 369
-    },
-    {
       "symbol": "actual_meta_evaluation_binding",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
       "line": 37
     },
     {
-      "symbol": "bind_feature_frame",
+      "symbol": "validate_frame",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
       "line": 376
     },
     {
+      "symbol": "bind_feature_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/instrument_method_learning.py",
+      "line": 383
+    },
+    {
       "symbol": "notify_mature_close",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 397
+      "line": 404
     },
     {
       "symbol": "evaluate",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 405
+      "line": 412
     },
     {
       "symbol": "php_arrays",
@@ -2528,25 +2532,25 @@
       "symbol": "receipt",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 531
+      "line": 540
     },
     {
       "symbol": "transport",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 542
+      "line": 551
     },
     {
       "symbol": "validate_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 552
+      "line": 561
     },
     {
       "symbol": "receipt_current",
       "kind": "python_function",
       "path": "ai-service-python/app/services/instrument_method_learning.py",
-      "line": 561
+      "line": 570
     },
     {
       "symbol": "_sealed_body",
@@ -3590,139 +3594,139 @@
       "symbol": "seal_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 101
+      "line": 102
     },
     {
       "symbol": "_receipt_json_value",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 107
+      "line": 108
     },
     {
       "symbol": "receipt_hash_is_current",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 120
+      "line": 121
     },
     {
       "symbol": "_utc",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 136
+      "line": 137
     },
     {
       "symbol": "_stamp",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 145
+      "line": 146
     },
     {
       "symbol": "_positive_number",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 149
+      "line": 150
     },
     {
       "symbol": "_members",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 154
+      "line": 155
     },
     {
       "symbol": "_validate_chosen_solo",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 207
+      "line": 208
     },
     {
       "symbol": "validate_contract",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 253
+      "line": 254
     },
     {
       "symbol": "validate_member_symbols",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 294
+      "line": 295
     },
     {
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 341
+      "line": 342
     },
     {
       "symbol": "identity",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 362
+      "line": 363
     },
     {
       "symbol": "version_hash",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 366
+      "line": 367
     },
     {
       "symbol": "_compile_member",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 372
+      "line": 373
     },
     {
       "symbol": "_passport_scope_reason",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 413
+      "line": 414
     },
     {
       "symbol": "run_specialist_council",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 427
+      "line": 428
     },
     {
       "symbol": "_closed_trace_input",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 45
+      "line": 46
     },
     {
       "symbol": "_closed_session_calendar",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 52
+      "line": 53
     },
     {
       "symbol": "marked_equity",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 556
+      "line": 557
     },
     {
       "symbol": "event",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 567
+      "line": 568
     },
     {
       "symbol": "close_position",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 596
+      "line": 597
     },
     {
       "symbol": "lookup",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 62
+      "line": 63
     },
     {
       "symbol": "_closed_member_session",
       "kind": "python_function",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 76
+      "line": 77
     },
     {
       "symbol": "_causal_baselines",
@@ -4329,6 +4333,78 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_instrument_method_original_deadline.py",
       "line": 90
+    },
+    {
+      "symbol": "test_unknown_present_null_and_unsealed_selection_field_fail_closed",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 105
+    },
+    {
+      "symbol": "test_v2_never_skips_parameter_adapter_recipe",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 115
+    },
+    {
+      "symbol": "test_native_member_uses_the_same_versioned_engine_for_both_owned_phases",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 132
+    },
+    {
+      "symbol": "seal_body",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 20
+    },
+    {
+      "symbol": "prepared",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 25
+    },
+    {
+      "symbol": "engine",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 38
+    },
+    {
+      "symbol": "evaluate",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 42
+    },
+    {
+      "symbol": "InstrumentMethodPhaseSelectionTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 48
+    },
+    {
+      "symbol": "test_future_v2_selects_real_entry_and_exit_targets_in_either_recipe_order",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 49
+    },
+    {
+      "symbol": "test_old_contract_absence_preserves_first_recipe_and_target_unreached_exactly",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 61
+    },
+    {
+      "symbol": "test_pure_entry_order_and_context_mismatch_are_not_bypassed",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 77
+    },
+    {
+      "symbol": "test_first_applicable_missing_observation_does_not_fall_through_to_permissive_recipe",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 88
     },
     {
       "symbol": "test_cache_requires_current_actual_method_receipt_and_refuses_legacy_or_sibling",
@@ -5075,10 +5151,10 @@
       "line": 85
     },
     {
-      "symbol": "forModel",
+      "symbol": "attachToUnusedModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 118
+      "line": 109
     },
     {
       "symbol": "InstrumentMethodResearchBindingService",
@@ -5087,52 +5163,52 @@
       "line": 13
     },
     {
-      "symbol": "bindRequests",
+      "symbol": "forModel",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
       "line": 130
     },
     {
+      "symbol": "bindRequests",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 142
+    },
+    {
       "symbol": "scopeFromRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 165
-    },
-    {
-      "symbol": "utc",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 179
+      "line": 177
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 18
+      "line": 19
+    },
+    {
+      "symbol": "utc",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
+      "line": 191
     },
     {
       "symbol": "sha",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 186
+      "line": 198
     },
     {
       "symbol": "json",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 187
+      "line": 199
     },
     {
       "symbol": "compilePolicy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 25
-    },
-    {
-      "symbol": "attachToUnusedModel",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
-      "line": 97
+      "line": 26
     },
     {
       "symbol": "InstrumentResearchWindowService",
@@ -6794,163 +6870,163 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 219
+      "line": 235
     },
     {
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 291
+      "line": 307
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 381
+      "line": 397
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 411
+      "line": 427
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 423
+      "line": 439
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 439
+      "line": 455
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 454
+      "line": 470
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 456
+      "line": 472
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 469
+      "line": 485
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 477
+      "line": 493
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 488
+      "line": 504
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 506
+      "line": 522
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 516
+      "line": 532
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 537
+      "line": 553
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 551
+      "line": 567
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 572
+      "line": 588
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 584
+      "line": 600
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 595
+      "line": 611
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 602
+      "line": 618
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 624
+      "line": 640
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 630
+      "line": 646
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 647
+      "line": 663
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 684
+      "line": 700
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 714
+      "line": 730
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 722
+      "line": 738
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 744
+      "line": 760
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 753
+      "line": 769
     },
     {
       "symbol": "execute",
@@ -7155,6 +7231,48 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
       "line": 82
+    },
+    {
+      "symbol": "compile",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 117
+    },
+    {
+      "symbol": "context",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 129
+    },
+    {
+      "symbol": "InstrumentMethodPhaseSelectionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "test_future_canonical_mixed_role_contract_executes_both_phases_and_preserves_legacy_absence",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 18
+    },
+    {
+      "symbol": "test_pure_entry_and_single_combined_recipe_preserve_the_old_contract_shape",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 67
+    },
+    {
+      "symbol": "test_future_compiler_does_not_silently_skip_construction_adapter_recipes",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 79
+    },
+    {
+      "symbol": "recipe",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 98
     },
     {
       "symbol": "test_pre2026_scope_and_source_clock_guards_refuse_before_compilation",

@@ -5,6 +5,8 @@ def apply_trend_specialist(df: pd.DataFrame, parameters: dict | None = None) -> 
     """Trend pullback continuation with a strength and re-entry filter."""
     p = parameters or {}
     topology_variant = str(p.get("entry_topology_variant", "frozen") or "frozen")
+    if topology_variant == "source_ema_pretrend_pullback_v1":
+        return _apply_source_ema_pretrend_pullback(df, p)
     out = df.copy()
     fast, slow = int(p.get("ema_fast", 50)), int(p.get("ema_slow", 200))
     rsi_period = int(p.get("rsi_period", 14))
@@ -23,6 +25,46 @@ def apply_trend_specialist(df: pd.DataFrame, parameters: dict | None = None) -> 
     out.loc[buy, "signal"] = "BUY"
     out.loc[sell, "signal"] = "SELL"
     out["signal_confidence"] = ((out.get("adx", 0) - strength) / max(1, 50 - strength)).clip(0, 1)
+    return out
+
+
+def _apply_source_ema_pretrend_pullback(df: pd.DataFrame, parameters: dict) -> pd.DataFrame:
+    """Opt-in entry programme, not an upgrade of the frozen trend strategy.
+
+    The exact prior-trend/touch/reclaim is owned by the same closed method
+    feature compiler. Existing ADX/RSI confirmation and confidence are retained;
+    account sizing, sessions, costs and next-open admission remain downstream.
+    """
+    from app.services.instrument_method_features import ClosedInstrumentMethodFeatures
+
+    if parameters.get('ema_fast') != 20 or parameters.get('ema_slow') != 50:
+        raise ValueError('SOURCE_EMA_PRETREND_FIXED_20_50_REQUIRED')
+    seconds = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800, 'H1': 3600,
+               'H4': 14400, 'D1': 86400}.get(df.attrs.get('execution_timeframe'))
+    if seconds is None:
+        raise ValueError('SOURCE_EMA_PRETREND_ACTUAL_EXECUTION_CLOCK_REQUIRED')
+    owner = ClosedInstrumentMethodFeatures(df, bar_duration_seconds=seconds)
+    out = df.copy()
+    out['trend_fast'] = [row['_ema20'] for row in owner.features]
+    out['trend_slow'] = [row['_ema50'] for row in owner.features]
+    out['trend_rsi'] = _rsi(out.close, int(parameters.get('rsi_period', 14)))
+    strength = float(parameters.get('trend_strength_min', 20))
+    # The ordinary prepared frame already owns ADX. Its absence must not
+    # manufacture confidence or use the price-only fallback for this programme.
+    if 'adx' not in out:
+        raise ValueError('SOURCE_EMA_PRETREND_ORIGINAL_ADX_REQUIRED')
+    direction = pd.Series([row['_pretrend_pullback_direction'] or 'WAIT' for row in owner.features], index=out.index)
+    out['signal'] = 'WAIT'
+    buy = direction.eq('BUY') & (out.adx >= strength) & (out.trend_rsi > 50)
+    sell = direction.eq('SELL') & (out.adx >= strength) & (out.trend_rsi < 50)
+    out.loc[buy, 'signal'] = 'BUY'
+    out.loc[sell, 'signal'] = 'SELL'
+    out['signal_confidence'] = ((out.adx - strength) / max(1, 50 - strength)).clip(0, 1)
+    out['entry_topology_variant'] = 'source_ema_pretrend_pullback_v1'
+    out['source_entry_rule_protocol'] = 'closed_ema_pretrend_entry_v1'
+    out['source_entry_rule_available'] = [row['method_pullback_pretrend_available'] for row in owner.features]
+    out['source_entry_rule_direction'] = direction
+    out['source_entry_rule_admitted'] = out.signal.ne('WAIT')
     return out
 
 

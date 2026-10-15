@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T05:38:06.186Z",
-  "source_digest": "8094c3491a2105f528ede43482d5cafd5f0f5c92041db4898887921252c12869",
-  "source_file_count": 1703,
-  "git_head": "a3875e784f6bdeec891a31a25df00ff323f805c1",
+  "generated_at": "2026-10-15T07:13:17.877Z",
+  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
+  "source_file_count": 1711,
+  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -139,7 +139,7 @@
       "symbol": "ClosedInstrumentMethodFeatures",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_features.py",
-      "line": 93
+      "line": 96
     },
     {
       "symbol": "InstrumentMethodLearning",
@@ -223,7 +223,7 @@
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 341
+      "line": 342
     },
     {
       "symbol": "StrategyDnaService",
@@ -248,6 +248,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_backtester_execution.py",
       "line": 108
+    },
+    {
+      "symbol": "ClosedAtrPercentMethodTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_closed_atr_percent_method.py",
+      "line": 44
     },
     {
       "symbol": "CoveragePassportTest",
@@ -308,6 +314,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_instrument_method_native_meta_runtime.py",
       "line": 225
+    },
+    {
+      "symbol": "InstrumentMethodPhaseSelectionTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "line": 48
     },
     {
       "symbol": "ClosedPullbackRetestTest",
@@ -434,6 +446,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_scoped_selector_partition.py",
       "line": 10
+    },
+    {
+      "symbol": "SourceEmaPretrendEntryTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 51
     },
     {
       "symbol": "SourceGroundedMethodFeaturesTest",
@@ -8110,6 +8128,12 @@
       "line": 20
     },
     {
+      "symbol": "ClosedAtrPercentMethodDeclarationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/ClosedAtrPercentMethodDeclarationTest.php",
+      "line": 12
+    },
+    {
       "symbol": "ClosedBandMethodDeclarationTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php",
@@ -8530,6 +8554,12 @@
       "line": 24
     },
     {
+      "symbol": "InstrumentMethodPhaseSelectionTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "line": 14
+    },
+    {
       "symbol": "InstrumentMethodResearchBindingTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
@@ -8564,6 +8594,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentResearchWindowAuthorityTest.php",
       "line": 17
+    },
+    {
+      "symbol": "InstrumentSourcePracticeTeachingTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentSourcePracticeTeachingTest.php",
+      "line": 19
     },
     {
       "symbol": "InstrumentValidationEpochTest",
@@ -9266,6 +9302,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/SmartDisciplineEngineTest.php",
       "line": 16
+    },
+    {
+      "symbol": "SourceEmaPretrendEntryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "line": 15
     },
     {
       "symbol": "SourceGenerationAuditServiceTest",

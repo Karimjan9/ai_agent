@@ -1,0 +1,31 @@
+{
+  "instrument_key": "high_volatility_firewall",
+  "method_key": "internet_closed_sma_atr_percent_cap_v1",
+  "revision": 1,
+  "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"},
+  "horizon": "hour",
+  "source_keys": ["e0d614eb764b3676bb1f4e1a725253302b5ec8bf5177e68c10cfc6fb98631923"],
+  "known_limitations": [
+    "The closed feature owner computes true range as max(high-low,abs(high-previous close),abs(low-previous close)); the first row uses high-low. Fourteen actual completed true ranges are averaged arithmetically, then normalized as 100*SMA14(TR)/closed close. Both the ATR and close must be finite and strictly positive. Immature, invalid or zero observations do not manufacture a ratio or pass availability.",
+    "This confirmation is method_atr_percent_available AND NOT(method_atr_percent>0.10). Thus 0.10 percent equality may continue, while greater values WAIT; 0.10 percent is not a fraction of 0.10, ten percent, an absolute price distance, or an account-risk percentage. It never creates a direction or entry.",
+    "TradingView's normalization formula uses RMA14 ATR. Preserving the existing closed SMA14 owner is an explicit lab smoothing adaptation, not a change to management ATR or an assertion of exact publisher-indicator equivalence. The fixed 0.10 percent cap and trend-up/New York/normal-volatility research scope are lab hypotheses; no optimal search, calibration or profitability is asserted.",
+    "The explicit New York scope is a new execution question chosen after already-seen archive opportunity inspection, not untouched validation or an expansion/rewriting of old London-only revisions. The method applies only where the original strategy candidate reaches the existing entry decision path; all other context, data, account, risk, execution and admission guards remain mandatory.",
+    "Original closed OHLC and observation time bind the ratio. CSV-supplied method fields, future suffixes, modeled execution spread and censored outcomes cannot supply missing observations. Physical stops, targets, size, costs, leverage and external risk limits are unchanged.",
+    "This source-backed executable rule and its software tests are not independent economic qualification, useful causal skill, Master status, credit, promotion or paper/live authority. Archive outcomes retain their reused-data status; 2026 and later data remain paper-only."
+  ],
+  "implementation": {
+    "kind": "typed_ast",
+    "target": "confirmation",
+    "ast": {"op": "AND", "args": [
+      {"op": "BOOL", "input_key": "available", "available_at": "2000-01-01T00:00:00Z"},
+      {"op": "NOT", "args": [
+        {"op": "GREATER_THAN", "args": [
+          {"op": "NUMBER", "input_key": "percent", "available_at": "2000-01-01T00:00:00Z"},
+          {"op": "CONST", "type": "number", "value": 0.10}
+        ]}
+      ]}
+    ]},
+    "input_bindings": {"available": "method_atr_percent_available", "percent": "method_atr_percent"},
+    "budget": {"cpu_seconds": 0.5, "max_calls": 4096, "max_node_evaluations": 32768}
+  }
+}

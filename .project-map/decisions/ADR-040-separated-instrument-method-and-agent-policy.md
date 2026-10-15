@@ -160,3 +160,31 @@ This is a laboratory recipe hypothesis with unchanged external guards, not a
 global relaxation of missing-feature WAIT, independent confirmation or economic
 qualification. Synthetic original labels and actual software replay exercise
 the issuer/consumer contract; they never create market skill or a Champion.
+
+## Source practice and role-correct execution (2026-10-15)
+
+A source-backed instruction is not an earned agent skill, and a completed
+backtest that never reaches the method is not a usage qualification. Preserve
+the original26 lessons/90 primary exercises and old teaching-pack bytes. New
+exact revisions opt into an append-only v2 overlay; separately pinned original
+curator archive observations accompany the instructions, never become the
+recipient's own experiences or permit qualification by caller assertion.
+
+The closed four-bar EMA pretrend/touch/reclaim has distinct confirmation and
+entry uses. Typed DSL remains confirmation/risk/exit only. A fresh explicitly
+declared trend20/50 topology instead uses the normal strategy/factory/native
+compiler to create entry proposals, preserving the frozen old branch, ordinary
+random sampling and external risk/cost/session guards. Incompatible runtime,
+family, periods or frozen architecture refuse; no existing source is rewritten.
+
+Future mixed purely typed entry/exit recipe libraries may seal phase-target v2
+selection. It skips only a context-matching recipe with no current-phase target,
+not a selected veto or unavailable input. Single-target, single-hybrid and
+construction-adapter pools retain old contract shape; field absence retains
+legacy behavior and unknown protocol values refuse. This is not a runtime
+parameter-adapter loophole or a new decision scheduler.
+
+All26 instruments still need role-appropriate reached practice and separate
+utility assessment. Real quote, volume and trained-model prerequisites cannot
+be replaced by synthetic exercises. Negative/null reused-archive results remain
+negative/null, not a harmful global ban, skill certificate or economic credit.

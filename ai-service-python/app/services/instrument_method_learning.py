@@ -168,6 +168,9 @@ class InstrumentMethodLearning:
         body = _sealed_body(contract, "contract_hash", "contract_json", "METHOD_LEARNING_CONTRACT")
         if body.get("protocol") != PROTOCOL:
             raise ValueError("METHOD_LEARNING_PROTOCOL_REQUIRED")
+        self.phase_target_selection = 'selection_protocol' in body
+        if self.phase_target_selection and body['selection_protocol'] != 'phase_target_applicable_v2':
+            raise ValueError('METHOD_LEARNING_SELECTION_PROTOCOL_INVALID')
         data = payload.replay_dataset_hash if payload is not None else dataset_hash
         execution = execution_contract_metadata(payload)["execution_hash"] if payload is not None else execution_hash
         if (not data or body.get("data_hash") != data or not execution or body.get("execution_hash") != execution
@@ -293,6 +296,10 @@ class InstrumentMethodLearning:
             if not _same_ast_copy(adapters, expected_adapters):
                 raise ValueError('METHOD_LEARNING_ADAPTER_PINNED_SOURCE_MISMATCH')
             self.recipes[identity], self.predicates[identity], self.programs[identity] = recipe, predicate, programs
+        if self.phase_target_selection and any(recipe.get('parameter_adapters') for recipe in self.recipes.values()):
+            # A parameter adapter is a sealed construction treatment, not an
+            # inapplicable runtime recipe that may silently be skipped.
+            raise ValueError('METHOD_LEARNING_PHASE_SELECTION_TYPED_RECIPES_REQUIRED')
         pool = {"recipes": sorted([{"recipe_hash": key, "runtime_hash": value["runtime_hash"]}
             for key, value in self.recipes.items()], key=lambda item: item["recipe_hash"])}
         if body.get("compiled_pool_hash") != canonical_hash(pool):
@@ -449,14 +456,16 @@ class InstrumentMethodLearning:
         reason = "outside_scope"
         if in_scope:
             reason = "policy_default_" + self.policy["default_action"].lower()
+            targets = {"confirmation", "risk_multiplier"} if phase == "entry" else {"exit"}
             for rule in self.policy["rules"]:
                 if not _matches(_predicate(rule.get("context_predicate", {})), context):
                     continue
-                chosen = next((key for key in rule["preferred_recipes"] if _matches(self.predicates[key], context)), None)
+                chosen = next((key for key in rule["preferred_recipes"]
+                    if _matches(self.predicates[key], context)
+                    and (not self.phase_target_selection or any(program.target in targets for program in self.programs[key]))), None)
                 if chosen is not None:
                     break
             if chosen is not None:
-                targets = {"confirmation", "risk_multiplier"} if phase == "entry" else {"exit"}
                 for program in self.programs[chosen]:
                     if program.target in targets:
                         try:

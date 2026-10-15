@@ -2,13 +2,18 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T05:38:06.186Z",
-  "source_digest": "8094c3491a2105f528ede43482d5cafd5f0f5c92041db4898887921252c12869",
-  "source_file_count": 1703,
-  "git_head": "a3875e784f6bdeec891a31a25df00ff323f805c1",
+  "generated_at": "2026-10-15T07:13:17.877Z",
+  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
+  "source_file_count": 1711,
+  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
+    "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+    "ai-service-python/app/services/parameter_schema.py",
+    "ai-service-python/app/strategies/laboratory.py",
+    "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+    "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
     "backend-laravel/app/Services/LabPopulationReplacementTrait.php",
     "backend-laravel/app/Services/LabPopulationPlanningTrait.php",
@@ -118,6 +123,9 @@
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
   ],
   "source_files": [
+    "ai-service-python/app/services/parameter_schema.py",
+    "ai-service-python/app/strategies/laboratory.py",
+    "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
     "backend-laravel/app/Console/Commands/BuildLabGeneration.php",
     "backend-laravel/app/Console/Commands/ContinueInterruptedLabConstruction.php",
@@ -192,6 +200,7 @@
     "backend-laravel/app/Services/SpecialistCouncilPreparationService.php",
     "backend-laravel/app/Services/SpecialistCouncilResearchFeedbackService.php",
     "backend-laravel/app/Services/StrategyLibraryCompilerService.php",
+    "backend-laravel/app/Services/StrategyParameterSchemaService.php",
     "backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php",
     "backend-laravel/app/Services/TechnicalGenerationRecoveryService.php",
     "backend-laravel/app/Services/TradeManagementLibraryService.php",
@@ -214,6 +223,7 @@
     "backend-laravel/tests/Feature/ObservedCouncilEpisodeDispositionTest.php",
     "backend-laravel/tests/Feature/QualifiedResearchPolicyConsumptionTest.php",
     "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
+    "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
     "backend-laravel/tests/Feature/SpecialistCouncilDescendantProducerTest.php",
     "backend-laravel/tests/Feature/SpecialistCouncilHistoricalProofTest.php",
     "backend-laravel/tests/Feature/SpecialistCouncilIndependentPanelTest.php",
@@ -225,6 +235,222 @@
     "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php"
   ],
   "symbols": [
+    {
+      "symbol": "_normalise_strategy_identity",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/parameter_schema.py",
+      "line": 377
+    },
+    {
+      "symbol": "_strategy_family_alias",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/parameter_schema.py",
+      "line": 385
+    },
+    {
+      "symbol": "strategy_family",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/parameter_schema.py",
+      "line": 408
+    },
+    {
+      "symbol": "validate_strategy_parameters",
+      "kind": "python_function",
+      "path": "ai-service-python/app/services/parameter_schema.py",
+      "line": 421
+    },
+    {
+      "symbol": "apply_volatility_breakout_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 125
+    },
+    {
+      "symbol": "apply_mean_reversion_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 130
+    },
+    {
+      "symbol": "apply_mean_reversion_rsi_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 174
+    },
+    {
+      "symbol": "apply_range_reentry_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 179
+    },
+    {
+      "symbol": "_rsi",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 224
+    },
+    {
+      "symbol": "apply_session_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 231
+    },
+    {
+      "symbol": "apply_session_mean_reversion_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 246
+    },
+    {
+      "symbol": "apply_momentum_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 264
+    },
+    {
+      "symbol": "apply_momentum_pullback_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 291
+    },
+    {
+      "symbol": "apply_hybrid_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 305
+    },
+    {
+      "symbol": "_apply_source_ema_pretrend_pullback",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 31
+    },
+    {
+      "symbol": "clipped_confidence",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 379
+    },
+    {
+      "symbol": "apply_trend_specialist",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 4
+    },
+    {
+      "symbol": "apply_hybrid_consensus_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 501
+    },
+    {
+      "symbol": "apply_differential_router_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 535
+    },
+    {
+      "symbol": "apply_differential_trend_down_router_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 609
+    },
+    {
+      "symbol": "apply_regime_ensemble_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 614
+    },
+    {
+      "symbol": "apply_trend_retest_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 71
+    },
+    {
+      "symbol": "apply_volatility_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 94
+    },
+    {
+      "symbol": "test_immaturity_and_each_sequence_gap_fail_closed",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 107
+    },
+    {
+      "symbol": "test_future_changes_cannot_change_closed_entry_or_audit_prefix",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 119
+    },
+    {
+      "symbol": "test_explicit_schema_rejects_wrong_family_or_nonexact_periods",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 128
+    },
+    {
+      "symbol": "test_native_member_compiles_actual_opt_in_programme_with_closed_account_clock",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 139
+    },
+    {
+      "symbol": "parameters",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 22
+    },
+    {
+      "symbol": "source_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 27
+    },
+    {
+      "symbol": "legacy",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 34
+    },
+    {
+      "symbol": "SourceEmaPretrendEntryTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 51
+    },
+    {
+      "symbol": "test_every_preexisting_topology_keeps_exact_old_frame_behavior",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 52
+    },
+    {
+      "symbol": "test_closed_pretrend_touch_reclaim_generates_genuine_buy_and_sell",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 60
+    },
+    {
+      "symbol": "test_strength_and_rsi_confirmation_and_confidence_are_not_bypassed",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 75
+    },
+    {
+      "symbol": "test_falling_pretrend_and_flat_slope_do_not_generate_an_entry",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 86
+    },
+    {
+      "symbol": "test_missing_actual_clock_or_original_adx_refuses_instead_of_inventing_them",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "line": 99
+    },
     {
       "symbol": "handle",
       "kind": "php_method",
@@ -3229,13 +3455,13 @@
       "symbol": "nativeFollowupExecutionContract",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabPopulationAgentFactoryTrait.php",
-      "line": 3262
+      "line": 3280
     },
     {
       "symbol": "persistParentContributionGraph",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/LabPopulationAgentFactoryTrait.php",
-      "line": 3286
+      "line": 3304
     },
     {
       "symbol": "createAuthorizedCouncilPanelAgent",
@@ -5707,163 +5933,163 @@
       "symbol": "buildSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 219
+      "line": 235
     },
     {
       "symbol": "verifySourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 291
+      "line": 307
     },
     {
       "symbol": "sourceArtifactByteFence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 381
+      "line": 397
     },
     {
       "symbol": "sourceArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 411
+      "line": 427
     },
     {
       "symbol": "retainedSourceArtifactAddresses",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 423
+      "line": 439
     },
     {
       "symbol": "currentSourceArtifact",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 439
+      "line": 455
     },
     {
       "symbol": "artifactProjectRoot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 454
+      "line": 470
     },
     {
       "symbol": "artifactDirectory",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 456
+      "line": 472
     },
     {
       "symbol": "artifactAllowedPath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 469
+      "line": 485
     },
     {
       "symbol": "artifactSourcePath",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 477
+      "line": 493
     },
     {
       "symbol": "artifactSourcePaths",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 488
+      "line": 504
     },
     {
       "symbol": "artifactCurrentIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 506
+      "line": 522
     },
     {
       "symbol": "artifactIdentityFromFiles",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 516
+      "line": 532
     },
     {
       "symbol": "artifactGitProvenance",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 537
+      "line": 553
     },
     {
       "symbol": "artifactEffectiveSettings",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 551
+      "line": 567
     },
     {
       "symbol": "artifactToolVersions",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 572
+      "line": 588
     },
     {
       "symbol": "assertArtifactSourceUnchanged",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 584
+      "line": 600
     },
     {
       "symbol": "artifactJson",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 595
+      "line": 611
     },
     {
       "symbol": "publishArtifactReference",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 602
+      "line": 618
     },
     {
       "symbol": "isTerminalDrift",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 624
+      "line": 640
     },
     {
       "symbol": "pythonHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 630
+      "line": 646
     },
     {
       "symbol": "seal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 647
+      "line": 663
     },
     {
       "symbol": "assertCurrent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 684
+      "line": 700
     },
     {
       "symbol": "bindRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 714
+      "line": 730
     },
     {
       "symbol": "bindGenerationRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 722
+      "line": 738
     },
     {
       "symbol": "executionHash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 744
+      "line": 760
     },
     {
       "symbol": "responseValid",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchReleaseSealService.php",
-      "line": 753
+      "line": 769
     },
     {
       "symbol": "rootHypothesisForSeat",
@@ -7564,6 +7790,66 @@
       "line": 89
     },
     {
+      "symbol": "family",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 254
+    },
+    {
+      "symbol": "runtimeBaseStrategy",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 274
+    },
+    {
+      "symbol": "schema",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 292
+    },
+    {
+      "symbol": "canonicalizeForIdentity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 311
+    },
+    {
+      "symbol": "defaults",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 333
+    },
+    {
+      "symbol": "validate",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 411
+    },
+    {
+      "symbol": "normalizeForGeneration",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 455
+    },
+    {
+      "symbol": "clamp",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 495
+    },
+    {
+      "symbol": "executionDefaults",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 517
+    },
+    {
+      "symbol": "StrategyParameterSchemaService",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+      "line": 7
+    },
+    {
       "symbol": "confirmationPassportMatches",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyTacticRiskCompositionPlannerService.php",
@@ -9152,6 +9438,30 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/ScreeningExecutionDefinitionTest.php",
       "line": 93
+    },
+    {
+      "symbol": "SourceEmaPretrendEntryTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "line": 15
+    },
+    {
+      "symbol": "test_default_choice_pool_is_unchanged_but_explicit_fixed_trend_is_valid",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "line": 21
+    },
+    {
+      "symbol": "test_explicit_fixed_programme_rejects_wrong_family_and_periods",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "line": 38
+    },
+    {
+      "symbol": "test_actual_fresh_factory_and_native_compiler_preserve_explicit_three_gene_programme",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "line": 52
     },
     {
       "symbol": "test_four_derived_programs_cross_the_actual_native_consumer_without_qualification",

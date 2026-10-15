@@ -103,6 +103,24 @@ class ResearchSourceArtifactTest extends TestCase
         '.runtime/private-method-panel.py',
         'docs/task-final-notes.md',
     ];
+    private const SOURCE_PRACTICE_FILES = [
+        'backend-laravel/resources/research/instrument-operating-skills/curator-archive-observations-v2.json',
+        'backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/source.json',
+        'backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/method.json',
+        'backend-laravel/resources/research/instrument-methods/closed-ema-slope-pullback/recipe.json',
+        'backend-laravel/resources/research/instrument-methods/closed-atr-percent/source.json',
+        'backend-laravel/resources/research/instrument-methods/closed-atr-percent/method.json',
+        'backend-laravel/resources/research/instrument-methods/closed-atr-percent/recipe.json',
+        'backend-laravel/resources/research/instrument-operating-skills/source-practice-v2.json',
+        'backend-laravel/tests/Feature/ClosedAtrPercentMethodDeclarationTest.php',
+        'backend-laravel/tests/Feature/InstrumentSourcePracticeTeachingTest.php',
+        'ai-service-python/tests/test_closed_atr_percent_method.py',
+        'ai-service-python/tests/test_instrument_method_ema_pretrend.py',
+        'backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php',
+        'ai-service-python/tests/test_source_ema_pretrend_entry.py',
+        'backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php',
+        'ai-service-python/tests/test_instrument_method_phase_selection.py',
+    ];
     private const OPERATING_CURRICULUM_SOURCE_FILES = [
         'backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json',
         'backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json',
@@ -152,7 +170,7 @@ class ResearchSourceArtifactTest extends TestCase
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $projectRoot = dirname(base_path());
-        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
+        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::SOURCE_PRACTICE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
             if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
@@ -188,6 +206,33 @@ class ResearchSourceArtifactTest extends TestCase
             }
             $this->assertFalse($zip->getFromName('backend-laravel/.env')); $this->assertFalse($zip->getFromName('datasets/secret.csv'));
         } finally { $zip->close(); }
+    }
+
+    public function test_source_practice_additions_are_exact_bytes_without_private_market_products_or_unlisted_sources(): void
+    {
+        $unlisted = 'backend-laravel/resources/research/instrument-operating-skills/unlisted-practice.json';
+        File::put($this->root.'/'.$unlisted, '{"not":"a reviewed source"}');
+        $artifact = $this->owner->buildSourceArtifact(); $this->assertSame('verified', $artifact['status']);
+        $zip = new ZipArchive; $this->assertTrue($zip->open($this->zipPath($artifact['reference'])));
+        try {
+            foreach (self::SOURCE_PRACTICE_FILES as $path) {
+                $bytes = $zip->getFromName($path); $this->assertIsString($bytes, $path);
+                $this->assertSame(hash_file('sha256', $this->root.'/'.$path), hash('sha256', $bytes), $path);
+            }
+            foreach ([$unlisted, 'backend-laravel/.env', 'datasets/secret.csv', '.runtime/private-method-panel.py'] as $path) {
+                $this->assertFalse($zip->getFromName($path));
+            }
+        } finally { $zip->close(); }
+        $reference = $artifact['reference']; $path = self::SOURCE_PRACTICE_FILES[0];
+        File::append($this->root.'/'.$path, "\n changed fixture only");
+        try {
+            $this->owner->verifySourceArtifact($reference, true);
+            $this->fail('Current-source verification must refuse changed instruction bytes.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $exception->getMessage());
+        }
+        $this->assertSame('verified', $this->owner->verifySourceArtifact($reference, false)['status']);
+        $this->assertFalse($artifact['scientific_evidence']); $this->assertFalse($artifact['promotion_evidence']);
     }
 
     protected function tearDown(): void

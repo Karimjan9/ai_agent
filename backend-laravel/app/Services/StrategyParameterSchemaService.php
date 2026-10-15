@@ -289,11 +289,17 @@ class StrategyParameterSchemaService
         return $base !== '' ? $base : (($declaredFamily ?: $strategyFamily).'_v1');
     }
 
-    public function schema(string $strategy): array
+    public function schema(string $strategy, bool $includeExplicitResearch = false): array
     {
         $schema = self::SCHEMAS[$this->family($strategy)] ?? [];
-
-        return $schema ? [...$schema, ...self::EXECUTION_SCHEMA] : [];
+        $schema = $schema ? [...$schema, ...self::EXECUTION_SCHEMA] : [];
+        // Ordinary mutation/factory callers keep their original choice pool.
+        // Only explicit validation can admit this prospectively selected
+        // programme, and validate() additionally pins its family/EMA vector.
+        if ($includeExplicitResearch && isset($schema['entry_topology_variant'])) {
+            $schema['entry_topology_variant'][1][] = 'source_ema_pretrend_pullback_v1';
+        }
+        return $schema;
     }
 
     /**
@@ -304,7 +310,7 @@ class StrategyParameterSchemaService
      */
     public function canonicalizeForIdentity(string $strategy, array $parameters): array
     {
-        $schema = $this->schema($strategy);
+        $schema = $this->schema($strategy, true);
         $canonical = [];
 
         foreach ($parameters as $key => $value) {
@@ -405,7 +411,7 @@ class StrategyParameterSchemaService
     public function validate(string $strategy, array $parameters): array
     {
         $family = $this->family($strategy);
-        $schema = $this->schema($strategy);
+        $schema = $this->schema($strategy, true);
         if (! $schema) {
             throw new InvalidArgumentException("Parameter schema topilmadi: {$family}");
         }
@@ -431,6 +437,10 @@ class StrategyParameterSchemaService
             }
         }
 
+        if (($parameters['entry_topology_variant'] ?? null) === 'source_ema_pretrend_pullback_v1'
+            && ($family !== 'trend' || ($parameters['ema_fast'] ?? null) !== 20 || ($parameters['ema_slow'] ?? null) !== 50)) {
+            throw new InvalidArgumentException('SOURCE_EMA_PRETREND_FIXED_TREND_20_50_REQUIRED');
+        }
         return $parameters;
     }
 

@@ -1,5 +1,13 @@
 # Laboratory history
 
+## 2026-10-15 - Explicit source-backed pullback entry
+
+A fresh explicitly declared trend20/50 topology can generate genuine closed
+pretrend/touch/reclaim proposals through the existing factory and native
+compiler. Frozen source architecture and normal random topology sampling are
+not changed. This is research capability, not a qualified profitable strategy;
+see ADR-040 and its separate matched archive question.
+
 ## 2026-10-09 - Original depth audit and qualified SOLO selection
 
 Prospective native depth studies bind original physical sources to separately

@@ -1254,6 +1254,24 @@ trait LabPopulationAgentFactoryTrait
             $architecture = $compositionArchitecture;
         }
         if ($nativeFollowupSource !== null) $architecture = $nativeFollowupSource['strategy_architecture'];
+        $sourceEntryTopology = data_get($niche, 'declared_values.entry_topology_variant',
+            data_get($niche, 'declared_gene') === 'entry_topology_variant'
+                ? data_get($niche, 'declared_value') : ($base['entry_topology_variant'] ?? 'frozen'));
+        if ($sourceEntryTopology === 'source_ema_pretrend_pullback_v1') {
+            // This opt-in programme belongs to the pullback runtime, not the
+            // independently sampled breakout/retest architecture. A draft
+            // root may choose it explicitly; an existing physical source may
+            // not acquire a hidden architecture change alongside its genes.
+            $baselineArchitecture = data_get($parameterBaselineParent?->metadata, 'strategy_architecture');
+            if ($family !== 'trend'
+                || (! $structuralResearch && ($base['entry_topology_variant'] ?? 'frozen') !== $sourceEntryTopology)
+                || ($baselineArchitecture !== null && $baselineArchitecture !== 'trend_pullback')
+                || ($nativeFollowupSource !== null && $architecture !== 'trend_pullback')) {
+                $failureReason = 'SOURCE_EMA_PRETREND_EXPLICIT_PULLBACK_BASELINE_REQUIRED';
+                return false;
+            }
+            $architecture = 'trend_pullback';
+        }
         $tacticArchitecture = (string) data_get($niche, 'tactic_library_key', $architecture);
         $tacticContract = $this->tactics->for($family, $tacticArchitecture, $target);
         $strategyLibraryContract = (array) data_get($niche, 'strategy_library_contract', []);

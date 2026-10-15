@@ -39,7 +39,8 @@ POLICY_LIMITS = {
 }
 PRIMARY_TRACE_FIELDS = ('time', 'open', 'high', 'low', 'close', 'volume')
 MEMBER_TRACE_FIELDS = ('time', 'close', 'signal_confidence', 'market_regime',
-    'volatility_regime', 'market_session', 'mtf_stack_context_hash', 'composition_decision_id', 'entry_contract_status')
+    'volatility_regime', 'market_session', 'mtf_stack_context_hash', 'composition_decision_id', 'entry_contract_status',
+    'source_entry_rule_protocol', 'source_entry_rule_available', 'source_entry_rule_direction', 'source_entry_rule_admitted')
 
 
 def _closed_trace_input(row, fields, kernel):

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T05:38:06.186Z",
-  "source_digest": "8094c3491a2105f528ede43482d5cafd5f0f5c92041db4898887921252c12869",
-  "source_file_count": 1703,
-  "git_head": "a3875e784f6bdeec891a31a25df00ff323f805c1",
+  "generated_at": "2026-10-15T07:13:17.877Z",
+  "source_digest": "fb118ffa5f080bc94a393c9c777b69b5129221048a577accf519ee235c370bf2",
+  "source_file_count": 1711,
+  "git_head": "7787113a8d4670958190b0aa17802f913cad0061",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -137,6 +137,16 @@
         "test_direct_mtf_preparation_rejects_invalid_discovery_before_loading",
         "test_discovery_protocol_preserves_all_four_file_hash_guards",
         "test_foundation_protocol_is_not_a_discovery_authority_shortcut"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_closed_atr_percent_method.py",
+      "tests": [
+        "test_fourteen_completed_true_ranges_seed_and_gap_inclusive_formula",
+        "test_price_scale_invariance_and_identical_directional_decisions",
+        "test_source_rule_admits_equality_and_rejects_strictly_greater_without_a_direction",
+        "test_zero_atr_and_nonpositive_close_are_unavailable_not_fake_ratios",
+        "test_future_suffix_and_supplied_method_columns_cannot_rewrite_original_prefix"
       ]
     },
     {
@@ -280,6 +290,19 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_instrument_method_ema_pretrend.py",
+      "tests": [
+        "test_new_pretrend_rule_preserves_exact_old_bounce_then_requires_prior_rising_or_falling_emas",
+        "test_previously_falling_trend_alignment_can_pass_old_bounce_but_not_new_pretrend",
+        "test_flat_pretrend_ema_slope_waits_although_old_bounce_can_confirm",
+        "test_pretrend_needs_four_mature_bars_not_the_old_two_bar_maturity_floor",
+        "test_each_of_the_four_bar_sequence_gaps_refuses_new_confirmation",
+        "test_older_history_gap_does_not_erase_observed_emas_and_configured_clock_is_used",
+        "test_future_suffix_does_not_rewrite_any_old_or_new_prefix_observation",
+        "test_caller_cannot_supply_confirmation_or_use_the_current_unclosed_bar"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_instrument_method_features.py",
       "tests": [
         "test_future_tail_cannot_rewrite_any_past_feature",
@@ -401,6 +424,18 @@
         "test_source_mutation_after_signing_is_not_hidden_by_cache_or_header_hash",
         "test_signed_original_raw_source_finite_bare_utc_vocabulary_only",
         "test_original_csv_does_not_infer_other_local_clock_formats"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_phase_selection.py",
+      "tests": [
+        "test_future_v2_selects_real_entry_and_exit_targets_in_either_recipe_order",
+        "test_old_contract_absence_preserves_first_recipe_and_target_unreached_exactly",
+        "test_pure_entry_order_and_context_mismatch_are_not_bypassed",
+        "test_first_applicable_missing_observation_does_not_fall_through_to_permissive_recipe",
+        "test_unknown_present_null_and_unsealed_selection_field_fail_closed",
+        "test_v2_never_skips_parameter_adapter_recipe",
+        "test_native_member_uses_the_same_versioned_engine_for_both_owned_phases"
       ]
     },
     {
@@ -860,6 +895,20 @@
         "test_m5_volume_uses_seven_day_m5_budget_and_causal_bucket",
         "test_invalid_legacy_spread_values_cannot_claim_observation",
         "test_numeric_legacy_spread_remains_unverified_for_promotion"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+      "tests": [
+        "test_every_preexisting_topology_keeps_exact_old_frame_behavior",
+        "test_closed_pretrend_touch_reclaim_generates_genuine_buy_and_sell",
+        "test_strength_and_rsi_confirmation_and_confidence_are_not_bypassed",
+        "test_falling_pretrend_and_flat_slope_do_not_generate_an_entry",
+        "test_missing_actual_clock_or_original_adx_refuses_instead_of_inventing_them",
+        "test_immaturity_and_each_sequence_gap_fail_closed",
+        "test_future_changes_cannot_change_closed_entry_or_audit_prefix",
+        "test_explicit_schema_rejects_wrong_family_or_nonexact_periods",
+        "test_native_member_compiles_actual_opt_in_programme_with_closed_account_clock"
       ]
     },
     {
@@ -1829,6 +1878,17 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ClosedAtrPercentMethodDeclarationTest.php",
+      "tests": [
+        "test_append_only_atr_declaration_registers_idempotently_without_touching_agents_or_old_catalogs",
+        "test_actual_php_compilation_consumes_closed_python_atr_percent_with_equal_boundary_and_unchanged_baseline",
+        "test_existing_revision_cannot_change_cap_or_source_and_new_context_does_not_relax_validation",
+        "test_companion_ema_pretrend_declaration_registers_its_exact_new_scope_and_compiles_owner_features",
+        "register",
+        "input"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/ClosedBandMethodDeclarationTest.php",
       "tests": [
         "test_existing_cli_registers_fresh_closed_band_declaration_without_touching_old_catalogs_or_agent_state",
@@ -2741,6 +2801,17 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php",
+      "tests": [
+        "test_future_canonical_mixed_role_contract_executes_both_phases_and_preserves_legacy_absence",
+        "test_pure_entry_and_single_combined_recipe_preserve_the_old_contract_shape",
+        "test_future_compiler_does_not_silently_skip_construction_adapter_recipes",
+        "recipe",
+        "compile",
+        "context"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php",
       "tests": [
         "setUp",
@@ -2848,6 +2919,24 @@
         "windows",
         "observation",
         "posterior"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/InstrumentSourcePracticeTeachingTest.php",
+      "tests": [
+        "setUp",
+        "test_v2_extends_exact_original_twenty_six_lessons_without_replacing_ninety_primary_exercises",
+        "test_exact_registered_and_php_compiled_new_recipes_receive_v2_and_execute_only_their_specific_exercises",
+        "test_old_only_pack_remains_byte_exact_v1_after_new_declarations_and_mixed_roster_is_versioned",
+        "test_familiar_new_ref_with_substituted_valid_rule_or_source_does_not_obtain_reviewed_teaching",
+        "test_real_unused_child_receives_its_own_policy_and_exact_v2_teaching_without_learning_or_rewriting_library",
+        "test_pinned_v2_resource_replacement_is_refused_without_touching_any_original_resource",
+        "register",
+        "input",
+        "originalParts",
+        "libraryBytes",
+        "python",
+        "assertNoOwnLearningOrAuthority"
       ]
     },
     {
@@ -4090,6 +4179,7 @@
         "setUp",
         "test_exact_replay_idle_probe_source_and_regression_are_archived",
         "test_native_meta_original_issuer_target_and_php_python_regressions_are_exact_archive_bytes",
+        "test_source_practice_additions_are_exact_bytes_without_private_market_products_or_unlisted_sources",
         "tearDown",
         "test_archive_byte_fence_rehashes_actual_bytes_and_original_reference_without_claiming_full_verification",
         "test_archive_byte_fence_refuses_changed_reference_bytes_even_with_original_zip",
@@ -4478,6 +4568,14 @@
         "closedOrder",
         "reviewableOrder",
         "managementAudit"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
+      "tests": [
+        "test_default_choice_pool_is_unchanged_but_explicit_fixed_trend_is_valid",
+        "test_explicit_fixed_programme_rejects_wrong_family_and_periods",
+        "test_actual_fresh_factory_and_native_compiler_preserve_explicit_three_gene_programme"
       ]
     },
     {

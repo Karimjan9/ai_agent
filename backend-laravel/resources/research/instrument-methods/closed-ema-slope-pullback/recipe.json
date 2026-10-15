@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_closed_ema_pretrend_pullback_20_50_recipe_v1",
+  "revision": 1,
+  "method_hashes": ["37a96d176f7d6685f4f807a3f3927077fd8c82fff8d2496dd21bbd5ae87b9505"],
+  "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"}
+}

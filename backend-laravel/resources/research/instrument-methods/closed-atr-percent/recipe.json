@@ -1,0 +1,6 @@
+{
+  "recipe_key": "internet_closed_sma_atr_percent_recipe_v1",
+  "revision": 1,
+  "method_hashes": ["45d8ed7a85607cbb732044e75b5c0d69a4b98e088980de6e1f994987018ec665"],
+  "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"}
+}

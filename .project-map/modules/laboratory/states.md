@@ -1,5 +1,16 @@
 # Laboratory lifecycle states
 
+## Explicit source-backed entry topology
+
+Only a fresh, explicitly constructed trend20/50 model may use
+`source_ema_pretrend_pullback_v1`. Canonical validation rejects a different
+family or period pair; ordinary schema sampling keeps the old topology roster.
+The constructor's exact declared one-/three-gene route and native compiler
+preserve the selected vector, not a hidden post-seal adapter. Closed pretrend,
+touch/reclaim, ADX and RSI create a proposal; downstream confidence/session,
+execution/account/risk and admission guards remain separate. WAIT or a passing
+arithmetic exercise is not an earned skill. No old model or result changes.
+
 A spent, declared original method study can have terminal technical history
 while a failed arm's mutable agent projection still says screening. The existing
 terminal boundary now routes only that technical method purpose to its original

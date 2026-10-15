@@ -25,6 +25,17 @@ original eligibility-checked experience -> bounded policy proposal/fresh
 same-baseline candidate. A preregistered L1/L2 x A1/A2 diagnostic study separates
 library and selector effects; its local outcomes cannot borrow confirmation,
 credit or paper admission. Candidate preparation is not automatic dispatch.
+An append-only source-practice curriculum can add exact method-specific
+instruction to the existing26 lessons without changing v1. A matched archive
+trial must distinguish a reached rule, a behavior delta and economic utility;
+zero-use/default-baseline traces are not skill-use evidence. Only requested new
+reviewed methods select the new teaching version; old-only packs remain v1.
+V2 packs pin completed curator observations separately from agent-owned practice.
+An explicit fresh trend-entry variant uses the normal constructor/strategy owner
+before filter selection. Future typed mixed-role recipe pools select a matching
+current-phase target without falling through a selected veto/missing input;
+legacy contracts preserve their original selection. None of these transitions
+confers economic skill, independent confirmation or trading authority.
 Explicit original method studies register one durable work -> existing arbiter
 claim -> canonical four-carrier constructor -> all-four request-hash barrier ->
 one fenced scoped-arm job at a time -> exact original comparison -> method-only

@@ -479,3 +479,46 @@ Actual EMA may have no confidence and must report model unavailability. A
 separate supported-programme software fixture can exercise computed native
 scores; neither synthetic source labels nor software replay qualify a market
 model, stronger child, independent validation or economic/paper authority.
+
+## Source-practice correction (2026-10-15)
+
+Source study, correct implementation, actual use and economic utility are four
+different checks. The old26 primary rules were24 confirmation operators, one
+fixed risk multiplier and one exit. Their names do not mean they generate
+entries, route specialists or learned a calibrated prediction. Reopening the
+old27-arm originals found policy-default entries in every treatment; most
+methods were not used. Those originals are not relabelled as trained skills.
+
+The append-only `source_taught_operating_skills_20261015_v2` keeps the original
+26 lessons/90 primary exercises exact, and adds two source-reviewed practice
+profiles: a closed EMA20/50 pretrend/touch/reclaim and normalized SMA14 ATR%.
+Only recipes requesting these exact new revisions select v2; old-only packs
+remain v1. A separate pinned curator-observation resource carries the actual
+ten archive request/response/clock/ledger references and local contrasts.
+These observations are the curator's research, NOT the receiving agent's own
+outcomes. Substituted text, method rules, sources or results invalidate the pack.
+
+The measured filter panel did not find added utility: October control+804.96
+versus+707.52 for each treatment; December-190.21 for every arm with no method
+use. These results neither qualify the rules nor ban them globally. They teach
+what was actually tested and what remains unknown; registration does not turn
+them on in all agents. Full details and raw-original identities are in
+`source-grounded-method-backtests-2026-10-14.md`.
+
+For genuine entry practice, an explicit fresh trend model may choose
+`source_ema_pretrend_pullback_v1` with exact EMA20/50 before construction/sealing.
+This uses the normal strategy and native compiler, retaining ADX/RSI confidence,
+session/account/cost/risk guards. The ordinary random topology pool and frozen
+old trend branch are unchanged. A parameter-adapter recipe is still NOT a way
+to rewrite sealed models or bypass the exact constructor. Teaching two typed
+methods to such a fresh model leaves its entire physical vector unchanged.
+
+Future purely typed multi-recipe libraries containing entry and exit targets
+use a separately hash-bound phase-target selection protocol. A phase-inapplicable
+recipe no longer hides a later applicable one. Once an applicable recipe is
+chosen, its WAIT or missing-input result remains final; selection does not hunt
+for a passing result. Older contracts retain their original semantics.
+
+This delivery does not claim26 empirically mastered instruments. Quotes/volume/
+meta-model practice needs actual observations or a real fitted original asset;
+zero-use tests cannot replace them. All2026-and-later market data remain paper-only.

@@ -1,0 +1,378 @@
+{
+  "protocol": "curator_archive_observations_v1",
+  "part_key": "curator_archive_observations_v2",
+  "revision": 1,
+  "attribution": "curator_backtest_observation_not_original_agent_experience",
+  "original_panel_protocol": "source_practice_archive_panel_v1",
+  "original_spec_sha256": "59c143cdd1469a929e588d345554bd534c582b3eb3c59f742b9f4ebfc43ccea0",
+  "original_summary_sha256": "d2e813760297ed3900c921f16096641746b6112a39785227db7fcfa9e697ad16",
+  "exposure": "reused_seen_archive_and_previously_observed_context_not_independent",
+  "scope": {
+    "regime": "trend_up",
+    "session": "new_york",
+    "volatility": "normal"
+  },
+  "research_only": true,
+  "independent_validation": false,
+  "qualification_granted": false,
+  "mastery_proven": false,
+  "economic_authority": false,
+  "skill_credit": false,
+  "own_agent_outcome": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "all_2026_and_later_market_data": "paper_only",
+  "original_budget": {
+    "per_arm_seconds": 300,
+    "max_attempts_per_arm": 1
+  },
+  "windows": [
+    {
+      "key": "october_seen",
+      "dataset_sha256": "284687751d172c343dfd6842604b6e88dbadd129b95c89b37fd2a7bfd7052ba9",
+      "parent_dataset_sha256": "caae3824e1296f880da15ca5cdaff8724216e7694129cf257eeb06c68e5a4bc5",
+      "loaded_rows": 1024,
+      "warmup_rows": 200,
+      "decision_rows": 824,
+      "start_utc": "2025-10-13T07:10:00Z",
+      "evaluated_start_utc": "2025-10-14T00:50:00Z",
+      "end_utc": "2025-10-17T00:25:00Z",
+      "raw_provider_cells_unchanged": true
+    },
+    {
+      "key": "december_seen",
+      "dataset_sha256": "9aff463da71df809e8c61abc7621dcbe113a55d3cbe318868eab3ff24600a5d0",
+      "parent_dataset_sha256": "caae3824e1296f880da15ca5cdaff8724216e7694129cf257eeb06c68e5a4bc5",
+      "loaded_rows": 1024,
+      "warmup_rows": 200,
+      "decision_rows": 824,
+      "start_utc": "2025-12-03T21:00:00Z",
+      "evaluated_start_utc": "2025-12-04T14:40:00Z",
+      "end_utc": "2025-12-09T15:00:00Z",
+      "raw_provider_cells_unchanged": true
+    }
+  ],
+  "results": [
+    {
+      "key": "december_seen__baseline",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "d237c42979feda43a5a8fbc44e7f5c887eebe2a6a020879730b6bf40b09a71e5",
+      "response_sha256": "81f7e845d916dce3f76392e88420ce9455ef104ea52944d0e79587c2d31cd366",
+      "wall_seconds": 38.44036330000017,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "ccd4102b32155b7cc144eef24e28ffb9a518af76ceac6eec11ba6e9a9d2cee8c",
+        "mature": 35,
+        "max_drawdown_percent": 3.32,
+        "method_uses": 0,
+        "net_cash": -190.21,
+        "reasons": {},
+        "trace_hash": "82b717d9612d931ef3a112e0a285d1d28a0cc9fbf0d9cfe47622cebb4ef5f031",
+        "trade_ledger_hash": "96e3294c7993cfd0c8236fbbe36c2fc11408d7bd5afe013a0dccaa887d1b6cfc",
+        "trades": 35
+      }
+    },
+    {
+      "key": "december_seen__ny_atr_percent",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "2f64b791a17bdaed866cda040f571c4dcd61b4627b4b8d8949286403b5e2f0f3",
+      "response_sha256": "32c35c5237a6c9af799f6e64ebe1e5cca98786c2a64d83508f9355d893cd3402",
+      "wall_seconds": 96.59963460000017,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "ccd4102b32155b7cc144eef24e28ffb9a518af76ceac6eec11ba6e9a9d2cee8c",
+        "mature": 35,
+        "max_drawdown_percent": 3.32,
+        "method_uses": 0,
+        "net_cash": -190.21,
+        "reasons": {
+          "entry:policy_default_baseline": 36,
+          "exit:policy_default_baseline": 544,
+          "exit:recipe_target_unreached": 14
+        },
+        "trace_hash": "c75f949672160338fc20b080e83b7b463343ee997f8b035cb333ce09546f5027",
+        "trade_ledger_hash": "96e3294c7993cfd0c8236fbbe36c2fc11408d7bd5afe013a0dccaa887d1b6cfc",
+        "trades": 35
+      }
+    },
+    {
+      "key": "december_seen__ny_joint",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "74a0b2a666c49e87f69203266acbf360071049027da130a21f09fba16f8d0d51",
+      "response_sha256": "e7520112d297fd2c770bfbb162546e1249a5a634bc692af7caa74fad88821235",
+      "wall_seconds": 144.53433910000058,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "ccd4102b32155b7cc144eef24e28ffb9a518af76ceac6eec11ba6e9a9d2cee8c",
+        "mature": 35,
+        "max_drawdown_percent": 3.32,
+        "method_uses": 0,
+        "net_cash": -190.21,
+        "reasons": {
+          "entry:policy_default_baseline": 36,
+          "exit:policy_default_baseline": 544,
+          "exit:recipe_target_unreached": 14
+        },
+        "trace_hash": "b9408a295ecb1f69235d170d00b6e0a729ec2f21173e623b9161326e82b0488e",
+        "trade_ledger_hash": "96e3294c7993cfd0c8236fbbe36c2fc11408d7bd5afe013a0dccaa887d1b6cfc",
+        "trades": 35
+      }
+    },
+    {
+      "key": "december_seen__ny_pretrend",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "6e7cd25fa831ddd8d1523ca5329313fecfd6a9da38279265c749787b8b43e8f6",
+      "response_sha256": "9e91106052052ee6479d67348b02d0ff9343b1d7c0fe95099d5e93381a3108ea",
+      "wall_seconds": 73.9667502000002,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "ccd4102b32155b7cc144eef24e28ffb9a518af76ceac6eec11ba6e9a9d2cee8c",
+        "mature": 35,
+        "max_drawdown_percent": 3.32,
+        "method_uses": 0,
+        "net_cash": -190.21,
+        "reasons": {
+          "entry:policy_default_baseline": 36,
+          "exit:policy_default_baseline": 544,
+          "exit:recipe_target_unreached": 14
+        },
+        "trace_hash": "eb1e0e929d5996a637dbda3c1a92fd0e00cf87c110dbe394c47531068fb30269",
+        "trade_ledger_hash": "96e3294c7993cfd0c8236fbbe36c2fc11408d7bd5afe013a0dccaa887d1b6cfc",
+        "trades": 35
+      }
+    },
+    {
+      "key": "december_seen__ny_two_bar",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "35723796e40ab7ffd1c6ebf5129796c361499d10f2a8bd945b3322bdc2132379",
+      "response_sha256": "9923f4a346b75605837706b3ad63a2e9a141cc899a7c4747b0b2bc6cd5a35cc7",
+      "wall_seconds": 186.6846198000003,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "ccd4102b32155b7cc144eef24e28ffb9a518af76ceac6eec11ba6e9a9d2cee8c",
+        "mature": 35,
+        "max_drawdown_percent": 3.32,
+        "method_uses": 0,
+        "net_cash": -190.21,
+        "reasons": {
+          "entry:policy_default_baseline": 36,
+          "exit:policy_default_baseline": 544,
+          "exit:recipe_target_unreached": 14
+        },
+        "trace_hash": "3c351905dd2b8c00db9ab8c4aaa3f6e507c910f7ec33643e3e317e280bafc761",
+        "trade_ledger_hash": "96e3294c7993cfd0c8236fbbe36c2fc11408d7bd5afe013a0dccaa887d1b6cfc",
+        "trades": 35
+      }
+    },
+    {
+      "key": "october_seen__baseline",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "172ae73efa65b213eafaaa15bb3b720e9d683078a3a006d21e4aab6282db1961",
+      "response_sha256": "eb8a1e7f07bb05752048cb5a1553e6b16f04b4d6679201e60055e231d02f3176",
+      "wall_seconds": 107.13903019999998,
+      "evidence": {
+        "behavior_changes": 0,
+        "clock_hash": "6bec9ad5f45b55b0d096ee3ea24690c49be3ddc0d65997f33d1a9b96035fdd9b",
+        "mature": 42,
+        "max_drawdown_percent": 2.01,
+        "method_uses": 0,
+        "net_cash": 804.96,
+        "reasons": {},
+        "trace_hash": "d1fdbf6d18b1d9d0df3c3c362c9a9ce3d3c99f2abf567a0568ea862b8972022d",
+        "trade_ledger_hash": "e3bd263a29050d79a4eebc75efb152e96930adb917e001c7f601b0302e458b10",
+        "trades": 42
+      }
+    },
+    {
+      "key": "october_seen__ny_atr_percent",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "d245e95fd5b373db07373b4f3646d78c40cca788a05df533be01bae296fac710",
+      "response_sha256": "0f766436fb75f4dc09f054c48b0f5c8fc842c029dbd5ee9c2f1863e97a8b24cc",
+      "wall_seconds": 119.7568352999997,
+      "evidence": {
+        "behavior_changes": 1,
+        "clock_hash": "6bec9ad5f45b55b0d096ee3ea24690c49be3ddc0d65997f33d1a9b96035fdd9b",
+        "mature": 42,
+        "max_drawdown_percent": 2.01,
+        "method_uses": 1,
+        "net_cash": 707.52,
+        "reasons": {
+          "entry:policy_default_baseline": 42,
+          "entry:recipe_evaluated": 1,
+          "exit:policy_default_baseline": 507
+        },
+        "trace_hash": "ae182cc272df2218fbc35191c251196701d214a2ce9f09ff7fb795a7364a83f2",
+        "trade_ledger_hash": "2763784070d0f394347ec3cee6a78b54658cc035f711756b6635607a8fa7a4a5",
+        "trades": 42
+      }
+    },
+    {
+      "key": "october_seen__ny_joint",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "43eabde9c671229a2d1955fd9095a83508df1d435433b506141d724102cfe8d9",
+      "response_sha256": "f9a3e5499ec69576d0f7505e0aa4f237dbd41ad9944393cd38bf717f21ca0427",
+      "wall_seconds": 174.9886047,
+      "evidence": {
+        "behavior_changes": 1,
+        "clock_hash": "6bec9ad5f45b55b0d096ee3ea24690c49be3ddc0d65997f33d1a9b96035fdd9b",
+        "mature": 42,
+        "max_drawdown_percent": 2.01,
+        "method_uses": 1,
+        "net_cash": 707.52,
+        "reasons": {
+          "entry:policy_default_baseline": 42,
+          "entry:recipe_evaluated": 1,
+          "exit:policy_default_baseline": 507
+        },
+        "trace_hash": "5949675c64f1168cdb676e672ba56c7cd44ae86eac2c76e9f2aec2ec8b8d2fff",
+        "trade_ledger_hash": "2763784070d0f394347ec3cee6a78b54658cc035f711756b6635607a8fa7a4a5",
+        "trades": 42
+      }
+    },
+    {
+      "key": "october_seen__ny_pretrend",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "b526281806bc0991453374c7fd11707da4902f0235aef35c9fb649baf88529e3",
+      "response_sha256": "edb7e04794ab8062249b2503869b90ccf21dc3b07863295e0d4606be11b5574d",
+      "wall_seconds": 248.9164977999999,
+      "evidence": {
+        "behavior_changes": 1,
+        "clock_hash": "6bec9ad5f45b55b0d096ee3ea24690c49be3ddc0d65997f33d1a9b96035fdd9b",
+        "mature": 42,
+        "max_drawdown_percent": 2.01,
+        "method_uses": 1,
+        "net_cash": 707.52,
+        "reasons": {
+          "entry:policy_default_baseline": 42,
+          "entry:recipe_evaluated": 1,
+          "exit:policy_default_baseline": 507
+        },
+        "trace_hash": "655e50161217081c0bd6f95a09ef621d54b7e3a435b6661d028fb9bf2d2cbd3d",
+        "trade_ledger_hash": "2763784070d0f394347ec3cee6a78b54658cc035f711756b6635607a8fa7a4a5",
+        "trades": 42
+      }
+    },
+    {
+      "key": "october_seen__ny_two_bar",
+      "status": "completed",
+      "timeout": false,
+      "request_sha256": "203ed7e7353e4e660b9f1b48399b92a204fdad3a116aac28964675680497be63",
+      "response_sha256": "52320f22f32c67865baef338e1c16eb7f578b2c3f76326ec971f286c1183e8df",
+      "wall_seconds": 107.3614592999993,
+      "evidence": {
+        "behavior_changes": 1,
+        "clock_hash": "6bec9ad5f45b55b0d096ee3ea24690c49be3ddc0d65997f33d1a9b96035fdd9b",
+        "mature": 42,
+        "max_drawdown_percent": 2.01,
+        "method_uses": 1,
+        "net_cash": 707.52,
+        "reasons": {
+          "entry:policy_default_baseline": 42,
+          "entry:recipe_evaluated": 1,
+          "exit:policy_default_baseline": 507
+        },
+        "trace_hash": "40d62a6ec5ae790744cf59821662479e3129565390fbcd5162bbba5f23009420",
+        "trade_ledger_hash": "2763784070d0f394347ec3cee6a78b54658cc035f711756b6635607a8fa7a4a5",
+        "trades": 42
+      }
+    }
+  ],
+  "control_contrasts": [
+    {
+      "window": "october_seen",
+      "control_key": "october_seen__baseline",
+      "treatment_key": "october_seen__ny_atr_percent",
+      "net_cash_delta": -97.44,
+      "trade_delta": 0,
+      "method_uses": 1,
+      "behavior_changes": 1,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "october_seen",
+      "control_key": "october_seen__baseline",
+      "treatment_key": "october_seen__ny_joint",
+      "net_cash_delta": -97.44,
+      "trade_delta": 0,
+      "method_uses": 1,
+      "behavior_changes": 1,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "october_seen",
+      "control_key": "october_seen__baseline",
+      "treatment_key": "october_seen__ny_pretrend",
+      "net_cash_delta": -97.44,
+      "trade_delta": 0,
+      "method_uses": 1,
+      "behavior_changes": 1,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "october_seen",
+      "control_key": "october_seen__baseline",
+      "treatment_key": "october_seen__ny_two_bar",
+      "net_cash_delta": -97.44,
+      "trade_delta": 0,
+      "method_uses": 1,
+      "behavior_changes": 1,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "december_seen",
+      "control_key": "december_seen__baseline",
+      "treatment_key": "december_seen__ny_atr_percent",
+      "net_cash_delta": 0,
+      "trade_delta": 0,
+      "method_uses": 0,
+      "behavior_changes": 0,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "december_seen",
+      "control_key": "december_seen__baseline",
+      "treatment_key": "december_seen__ny_joint",
+      "net_cash_delta": 0,
+      "trade_delta": 0,
+      "method_uses": 0,
+      "behavior_changes": 0,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "december_seen",
+      "control_key": "december_seen__baseline",
+      "treatment_key": "december_seen__ny_pretrend",
+      "net_cash_delta": 0,
+      "trade_delta": 0,
+      "method_uses": 0,
+      "behavior_changes": 0,
+      "useful_skill_confirmed": false
+    },
+    {
+      "window": "december_seen",
+      "control_key": "december_seen__baseline",
+      "treatment_key": "december_seen__ny_two_bar",
+      "net_cash_delta": 0,
+      "trade_delta": 0,
+      "method_uses": 0,
+      "behavior_changes": 0,
+      "useful_skill_confirmed": false
+    }
+  ],
+  "interpretation": [
+    "All ten original products completed. The October baseline account's positive result is not profit caused by a new method.",
+    "Each October treatment reached only one applicable method decision, changed one decision and finished97.44 cash below its unchanged control. Counterfactual aliases sharing the same trade ledger are not independent repeated support.",
+    "December methods reached zero applicable entry targets and changed no behavior. Equal account results there are unreached/null evidence, not proof of useful filtering.",
+    "The added pretrend condition and ATR-percent rule did not improve this declared panel. The joint arm cannot assign individual causal contribution, and one reached opportunity is not a skill-power calculation.",
+    "These are bounded curator observations on already-seen archive scopes, not the receiving agent's own experience or a confirmed harmful ban. Agents may use them as explicitly scoped hypotheses for future practice, never fabricated WAIT rewards or economic credit."
+  ]
+}

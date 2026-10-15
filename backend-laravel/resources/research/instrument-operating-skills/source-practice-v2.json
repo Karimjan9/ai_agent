@@ -1,0 +1,136 @@
+{
+  "protocol": "instrument_operating_practice_extension_v1",
+  "part_key": "source_practice_v2",
+  "revision": 1,
+  "curriculum_key": "source_taught_operating_skills_20261015_v2",
+  "parent_curriculum_key": "source_taught_operating_skills_20261014_v1",
+  "parent_parts": {
+    "price_structure_v1": "37bb5c0a802042cc295472c05262cec77e11c4d63217e2e85d554c28aa0fb68b",
+    "risk_execution_v1": "8a40606ecc667f86574642fd1a5e021f93c5493b0bbe00f3aee06023ef63ab97",
+    "model_v1": "4647ed5f6895757778e91d1eee6125234507bb92f79258d3d6eedcd7c9308ed4"
+  },
+  "acceptance": {
+    "old_primary_exercises": "preserved_not_relabelled",
+    "new_exercises": "synthetic_method_logic_not_market_outcomes",
+    "agent_practice": "separate_owned_original_contextual_outcomes",
+    "mastery_proven": false,
+    "economic_authority": false,
+    "all_2026_and_later_market_data": "paper_only"
+  },
+  "archive_practice": {
+    "protocol": "pending_original_archive_practice_pointer_v1",
+    "spec_sha256": "59c143cdd1469a929e588d345554bd534c582b3eb3c59f742b9f4ebfc43ccea0",
+    "parent_dataset_sha256": "caae3824e1296f880da15ca5cdaff8724216e7694129cf257eeb06c68e5a4bc5",
+    "state_at_declaration": "original_panel_outcomes_not_yet_settled",
+    "exposure": "reused_archive_opportunity_seen_before_new_method_outcomes",
+    "result_claim": "none_read_original_settlement_separately",
+    "independent_validation": false,
+    "qualification_granted": false
+  },
+  "sources": [
+    {
+      "source_id": "ema_pretrend",
+      "url": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+      "supporting_reference": "https://help.ctrader.com/indicators/built-in/trend/exponential-moving-average/",
+      "reviewed_scope": "The public EMA description, trend-direction and dynamic-support usage and recursive calculation were reviewed by the curator. cTrader's public EMA alpha, lag and sideways false-signal explanation supports the disclosed recurrence. Only those source sections are claimed, not a complete trading system.",
+      "not_reviewed": ["complete_book", "full_video", "proprietary_masterclass", "publisher_strategy_profitability"],
+      "source_key": "9cfd7931479fcc6341d12e81007a1f1785f1e3e4fa66a70dcd9e302191f08ea1",
+      "source_path": "research/instrument-methods/closed-ema-slope-pullback/source.json",
+      "source_file_sha256": "fce76b2010d8965f4dd55909482ff579bbcc4229b0a46cddc81203b5f70100e3"
+    },
+    {
+      "source_id": "atr_percent",
+      "url": "https://www.tradingview.com/support/solutions/43000734653-how-are-adr-and-atr-calculated/",
+      "reviewed_scope": "The public Average True Range Percent section defines 100 times ATR divided by current close and displays fourteen-period Wilder RMA smoothing. Only normalization and the explicit smoothing distinction are taught; the lab's arithmetic SMA14, 0.10-percent boundary and New York scope are separate hypotheses.",
+      "not_reviewed": ["unrelated_ADR_implementation", "complete_book", "embedded_or_linked_video", "publisher_backtest", "profitable_threshold_selection"],
+      "source_key": "e0d614eb764b3676bb1f4e1a725253302b5ec8bf5177e68c10cfc6fb98631923",
+      "source_path": "research/instrument-methods/closed-atr-percent/source.json",
+      "source_file_sha256": "66244ff559f68d8306eb0d05da57ca34f00901b3f0eb87d4b74e19b034c98e37"
+    }
+  ],
+  "profiles": [
+    {
+      "profile_key": "closed_ema_pretrend_pullback_practice_v1",
+      "instrument_key": "trend_pullback",
+      "method_ref": "internet_closed_ema_pretrend_pullback_20_50_v1@1",
+      "method_path": "research/instrument-methods/closed-ema-slope-pullback/method.json",
+      "method_file_sha256": "7f7d37f98ce4f9ab17c88acc2dc3c222026a8f4a70dafb07f56424aec4b5d957",
+      "source_refs": ["ema_pretrend"],
+      "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"},
+      "reviewed_rule": "Use a directional EMA as potential dynamic support/resistance, distinguishing a prior rising/falling trend from fast-above-slow alignment alone. The executable lab rule checks both EMA slopes before the separate pullback and reclaim.",
+      "calculation_convention": "Fixed EMA20/50, alpha=2/(period+1), adjust=False, first observed-close seed and min_periods=50. Bars t-3 through t must all have mature EMAs and be immediately contiguous, so first availability is index52. BUY: both averages rise strictly t-3 to t-2 and fast is above slow on both; t-1 touches EMA20 and closes between EMA50 and EMA20; t reclaims EMA20 and exceeds t-1 close while fast remains above slow. SELL mirrors the complete sequence. No future candle is backdated.",
+      "source_vs_lab": "The reviewed sources explain EMA direction, dips/rallies and lag. Four-bar timing, 20/50 periods, exact reclaim, closed M5 use and trend_up/new_york/normal scope are bounded lab hypotheses, not publisher-proven profitable settings. The old two-bar London method remains unchanged.",
+      "operating_steps": [
+        "Reopen the exact registered source and method revision; confirm symbol/timeframe, New York context and existing proposal direction before evaluating a recipe.",
+        "Use only the original closed OHLC owner. Require four contiguous mature EMA observations, including both pre-pullback slopes; never inject method feature columns.",
+        "Check the complete directional pretrend, t-1 touch and t reclaim; any absent or false prerequisite means this additional confirmation cannot pass.",
+        "Preserve strategy direction, account risk, stops, targets, sizing, costs and admission; this method only vetoes an already existing proposal.",
+        "Record reached, available, confirmed and actual behavior-change events separately. Read matched archive control/ablation outcomes without pooling counterfactual aliases as independent trades."
+      ],
+      "inputs": ["original_closed_ohlc", "four_contiguous_mature_ema_observations", "existing_candidate_direction", "method_pullback_pretrend_available:boolean", "method_pullback_pretrend_confirmed:boolean"],
+      "wait_when": [
+        "Four mature contiguous observations are unavailable, or any required EMA is not finite.",
+        "Either prior EMA is flat or slopes against the proposed trade, or fast/slow alignment is absent.",
+        "The pullback touch or strict reclaim is absent, or a purported confirmation uses a future candle.",
+        "The existing candidate, context or upstream account/data/risk/admission guard does not permit this method."
+      ],
+      "why_could_fail": [
+        "EMA lag can reject a genuine newly reversing trend because its earlier pretrend still points the other way.",
+        "Sideways whipsaws, sparse contextual opportunities and transaction costs can erase any observed archive improvement.",
+        "Fewer trades or a better reused-archive account is not independent evidence, an individually useful skill or Master qualification."
+      ],
+      "agent_practice": [
+        "Distinguish the older two-bar bounce from the new four-bar pretrend rule; do not silently replace the old method or inherit its evidence.",
+        "Practice separate reached-but-unavailable, available-but-vetoed and actually confirmed cases using the closed feature owner and exact context.",
+        "Develop the agent's own contextual preference only from its original mature outcomes. Curator instruction does not create rewards for unchosen or WAIT decisions."
+      ],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "missing_four_bar_history_waits", "inputs": {"method_pullback_pretrend_available": false, "method_pullback_pretrend_confirmed": true}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "available_without_pretrend_reclaim_waits", "inputs": {"method_pullback_pretrend_available": true, "method_pullback_pretrend_confirmed": false}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "owner_confirmed_complete_sequence_can_continue", "inputs": {"method_pullback_pretrend_available": true, "method_pullback_pretrend_confirmed": true}, "expected": true}
+      ]
+    },
+    {
+      "profile_key": "closed_sma_atr_percent_practice_v1",
+      "instrument_key": "high_volatility_firewall",
+      "method_ref": "internet_closed_sma_atr_percent_cap_v1@1",
+      "method_path": "research/instrument-methods/closed-atr-percent/method.json",
+      "method_file_sha256": "78a54b260bdbda9ce8d75aaafd2b503efb9dc487aa4bdb94443f62a912ca97a9",
+      "source_refs": ["atr_percent"],
+      "context_predicate": {"regime": "trend_up", "session": "new_york", "volatility": "normal"},
+      "reviewed_rule": "Normalize gap-aware range volatility by current close, rather than comparing an absolute ATR price distance across different price levels. Keep normalization units separate from account risk and observed spread.",
+      "calculation_convention": "True range=max(high-low,abs(high-previous close),abs(low-previous close)); first row uses high-low. ATR is the arithmetic mean of fourteen completed true ranges, not the publisher's Wilder RMA. ATR-percent=100*SMA14(TR)/closed close; both denominator and ATR must be finite and strictly positive. Available values at or below0.10 percent may continue; greater values WAIT. This is not a0.10 fraction, ten percent or an account-risk percentage.",
+      "source_vs_lab": "The reviewed TradingView section supplies ATR-percent normalization and RMA14 context. Preserving the existing SMA14 owner, equality admission,0.10-percent threshold, closed M5 timing and New York context are explicit lab hypotheses. Original absolute-ATR30/20 revisions, physical management ATR and external account limits remain unchanged.",
+      "operating_steps": [
+        "Reopen the exact source and method revision, and check the original candidate's trend_up/new_york/normal context.",
+        "Use the original closed feature owner to obtain fourteen true ranges and a finite positive closed price; absent observations remain unavailable.",
+        "Interpret100*ATR/close in percentage units. Compare with0.10, allowing exact equality but refusing any greater value.",
+        "Use the result only as additional confirmation. Do not alter original direction, stops, targets, sizing, costs or account-risk guards.",
+        "Record input availability, target reach, actual veto and matched original account outcomes separately; never use library registration or a boundary exercise as market proof."
+      ],
+      "inputs": ["original_closed_ohlc", "fourteen_mature_true_ranges", "positive_finite_closed_close", "existing_candidate_direction", "method_atr_percent_available:boolean", "method_atr_percent:number_in_percent_units"],
+      "wait_when": [
+        "Fourteen actual completed true ranges, finite positive ATR or finite positive close is unavailable.",
+        "Observed ATR-percent is strictly greater than0.10.",
+        "The requested context/direction is inapplicable, or another original data, account, cost, risk or admission guard refuses."
+      ],
+      "why_could_fail": [
+        "A low-volatility cap can reject productive high-volatility opportunities or admit quiet but directionless periods.",
+        "SMA14 responds differently from Wilder RMA14; normalization does not make the two indicator histories identical.",
+        "The0.10-percent setting and reused New York archive opportunity are not calibrated profit targets or independent validation; costs may dominate a quiet market."
+      ],
+      "agent_practice": [
+        "Distinguish absolute ATR price units, normalized ATR-percent, bid/ask spread and account-risk percentage before choosing a recipe.",
+        "Practice immature/unavailable, below-boundary, exact-equality and above-boundary cases without fabricating price or availability observations.",
+        "Learn the agent's own appropriate context and WAIT preference only from original mature experience, leaving curator methods and earlier revisions immutable."
+      ],
+      "exercises": [
+        {"kind": "synthetic_operator_exercise", "name": "immature_atr_waits", "inputs": {"method_atr_percent_available": false, "method_atr_percent": 0.05}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "observed_below_cap_can_continue", "inputs": {"method_atr_percent_available": true, "method_atr_percent": 0.05}, "expected": true},
+        {"kind": "synthetic_operator_exercise", "name": "exact_percent_boundary_can_continue", "inputs": {"method_atr_percent_available": true, "method_atr_percent": 0.10}, "expected": true},
+        {"kind": "synthetic_operator_exercise", "name": "strictly_above_boundary_waits", "inputs": {"method_atr_percent_available": true, "method_atr_percent": 0.100001}, "expected": false},
+        {"kind": "synthetic_operator_exercise", "name": "high_observed_percent_waits", "inputs": {"method_atr_percent_available": true, "method_atr_percent": 0.20}, "expected": false}
+      ]
+    }
+  ]
+}

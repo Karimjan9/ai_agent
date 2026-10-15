@@ -1,0 +1,23 @@
+{
+  "kind": "imported_text",
+  "reference": "https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema",
+  "content": "Original curator paraphrase of Fidelity's EMA indicator guide, actually reviewed on 2026-10-15: EMA weights recent closes more heavily. The guide describes buying price dips near a rising EMA and selling rallies near a falling EMA; an EMA can act as dynamic support or resistance, but remains delayed and reacts to short-term price changes. Its recursive expression uses the current close and previous EMA. This research adaptation measures the direction of both fixed EMA20 and EMA50 before a separate closed pullback and reclaim, rather than treating fast-above-slow alignment alone as proof of a prior rising trend. The four-bar sequence, exact period pair, seed, explicit New York research context and confirmation-only attachment are laboratory hypotheses, not a complete Fidelity trading system, optimal settings or evidence of profit. The linked cTrader formula was also reviewed: alpha=2/(period+1), with lag and sideways-market false-signal limitations.",
+  "metadata": {
+    "license": "Original curator paraphrase; linked publishers retain their rights; no copied programme or market outcomes.",
+    "access": "public",
+    "title": "EMA trend direction and pre-pullback support hypothesis",
+    "publisher": "Fidelity Investments",
+    "source_checked_on": "2026-10-15",
+    "representation": "curator_paraphrase_not_page_snapshot",
+    "reviewed_sections": ["Description", "How this indicator works", "Calculation"],
+    "supporting_reference": "https://help.ctrader.com/indicators/built-in/trend/exponential-moving-average/",
+    "review_limits": "The linked public text was read. No complete book, video, proprietary masterclass or independent market result is claimed as reviewed.",
+    "scope_selection": "New trend_up/new_york/normal scope was selected from a previously seen archive opportunity before this new method's outcomes. It is a prospective discovery hypothesis, not untouched evidence or a rewrite of the old London method.",
+    "exposure": {
+      "status": "external_reference_not_market_evidence",
+      "prior_agent_access": "unknown",
+      "complete_inventory": false,
+      "independent_validation": false
+    }
+  }
+}

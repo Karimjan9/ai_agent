@@ -22,6 +22,8 @@ paths:
   - ai-service-python/tests/test_instrument_method_context_contract.py
   - backend-laravel/app/Services/InstrumentMethodResearchBindingService.php
   - backend-laravel/tests/Feature/InstrumentMethodResearchBindingTest.php
+  - backend-laravel/tests/Feature/InstrumentMethodPhaseSelectionTest.php
+  - ai-service-python/tests/test_instrument_method_phase_selection.py
   - ai-service-python/requirements.lock.txt
   - ai-service-python/requirements-dev.txt
   - ai-service-python/tests/test_market_regime.py

@@ -10,6 +10,11 @@ aliases:
   - native-depth-audit
   - qualified-solo
 paths:
+  - backend-laravel/app/Services/StrategyParameterSchemaService.php
+  - ai-service-python/app/services/parameter_schema.py
+  - ai-service-python/app/strategies/laboratory.py
+  - backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php
+  - ai-service-python/tests/test_source_ema_pretrend_entry.py
   - backend-laravel/app/Services/LabPopulationConstructionTrait.php
   - backend-laravel/app/Services/LabPopulationReplacementTrait.php
   - backend-laravel/app/Services/LabPopulationPlanningTrait.php
