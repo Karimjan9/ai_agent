@@ -604,6 +604,94 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         return [['valid'], ['numeric_value'], ['integer_type'], ['signature']];
     }
 
+    public function test_spent_unsigned_original_requires_verified_exact_old_publisher_and_wire_without_granting_a_deadline(): void
+    {
+        config()->set('services.internal_api.token', 'synthetic-unsigned-history-test-key-not-production-0123456789');
+        $this->design['study_key'] = 'reviewed-unsigned-original-software';
+        $this->design['resource_caps']['max_runtime_seconds'] = 600;
+        $registered = app(InstrumentMethodStudyService::class)->preregister($this->design);
+        $this->assertSame('preregistered_diagnostic', $registered['status']); $this->studyHash = $registered['study_hash'];
+        // Conditional owner fixture: the real archive verifier has its own byte,
+        // file-set and source-domain tests. No historical ZIP is manufactured.
+        $archive = [];
+        $releases = Mockery::mock(\App\Services\ResearchReleaseSealService::class)->makePartial();
+        $releases->shouldReceive('verifySourceArtifact')->andReturnUsing(function () use (&$archive): array { return $archive; });
+        $this->app->instance(\App\Services\ResearchReleaseSealService::class, $releases);
+        $compiled = [];
+        [$work, $generation] = $this->spentOriginalProjection(true, function (array $requests) use (&$compiled): array {
+            foreach ($requests as $arm => &$request) {
+                // Reproduce the exact reviewed old publisher, not an invented
+                // signature or a current executable request without a deadline.
+                unset($request['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER]);
+                $request['parameters'] = (array) ModelVersion::findOrFail($this->design['arms'][$arm]['model_id'])->parameters;
+            }
+            unset($request); $compiled = $requests; return $requests;
+        }, ['L1A1', 'L2A1'], function (LabGeneration $generation) use (&$archive): void {
+            $seal = (array) data_get($generation->trigger_context, 'research_release');
+            $seal['source_artifact'] = ['protocol' => 'research_source_artifact_reference_v1',
+                'artifact_hash' => str_repeat('e', 64), 'archive_sha256' => str_repeat('f', 64),
+                'archive_path' => '.runtime/research-source-artifacts/'.str_repeat('e', 64).'.zip',
+                'source_hash' => $seal['source_hash'], 'python_source_hash' => $seal['python_source_hash']];
+            $identity = $seal; unset($identity['release_hash'], $identity['sealed_at'], $identity['promotion_evidence']);
+            $seal['release_hash'] = app(ExecutionContractService::class)->hashParameters($identity);
+            $generation->update(['trigger_context' => [...(array) $generation->trigger_context, 'research_release' => $seal]]);
+            $archive = ['status' => 'verified', 'artifact_hash' => $seal['source_artifact']['artifact_hash'],
+                'manifest' => ['protocol' => \App\Services\ResearchReleaseSealService::SOURCE_ARTIFACT_PROTOCOL,
+                    'source_identity' => ['source_hash' => $seal['source_hash'], 'python_source_hash' => $seal['python_source_hash']],
+                    'files' => ['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php' => [
+                        'bytes' => 37367, 'sha256' => 'c804ef64778ceafa7858245d86691a3d4d289d450a3dc63daa58fae388fcf490']]]];
+        });
+        $owner = app(InstrumentMethodStudyExecutionService::class); $verified = $archive;
+        $runs = LabEvaluationRun::orderBy('id')->get()->toArray(); $result = $work->result;
+        $cases = ['unverified', 'missing_manifest', 'wrong_owner_hash', 'wrong_owner_bytes', 'wrong_source', 'wrong_python', 'wrong_address'];
+        foreach ($cases as $case) {
+            $archive = $verified;
+            if ($case === 'unverified') $archive['status'] = 'unknown';
+            if ($case === 'missing_manifest') unset($archive['manifest']);
+            if ($case === 'wrong_owner_hash') $archive['manifest']['files']['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php']['sha256'] = str_repeat('a', 64);
+            if ($case === 'wrong_owner_bytes') $archive['manifest']['files']['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php']['bytes']++;
+            if ($case === 'wrong_source') $archive['manifest']['source_identity']['source_hash'] = str_repeat('b', 64);
+            if ($case === 'wrong_python') $archive['manifest']['source_identity']['python_source_hash'] = str_repeat('c', 64);
+            if ($case === 'wrong_address') $archive['artifact_hash'] = str_repeat('d', 64);
+            $refused = $owner->reconcileGeneration($generation);
+            $this->assertSame($case === 'unverified' ? 'METHOD_STUDY_TERMINAL_SOURCE_ARCHIVE_REQUIRED'
+                : 'METHOD_STUDY_TERMINAL_LEGACY_COMPLETED_BINDING_REQUIRED', $refused['reason_code'], $case);
+            $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'), $case);
+        }
+        $archive = $verified;
+        $registration = $work->payload['method_registration'];
+        $seal = data_get($generation->trigger_context, 'research_release');
+        $capability = new \ReflectionMethod($owner, 'historicalUnsignedPublisher');
+        $capability = $capability->invoke($owner, $archive, $seal, $registration);
+        $this->assertSame($seal, $capability);
+        $matcher = new \ReflectionMethod($owner, 'historicalRequestParametersMatch');
+        $model = ModelVersion::findOrFail($this->design['arms']['L1A1']['model_id']);
+        $design = app(InstrumentMethodStudyService::class)->originalDesign($this->studyHash);
+        $request = $compiled['L1A1'];
+        $this->assertFalse($matcher->invoke($owner, $request, $model, $registration, $design, 'L1A1'));
+        foreach (['null_deadline', 'string_deadline', 'empty_deadline', 'numeric_value', 'integer_type', 'cap', 'nested_cap', 'release', 'reference'] as $case) {
+            $changed = $request;
+            if ($case === 'null_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = null;
+            if ($case === 'string_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = 'legacy';
+            if ($case === 'empty_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = [];
+            if ($case === 'numeric_value') $changed['parameters']['trend_strength_min'] += .1;
+            if ($case === 'integer_type') $changed['parameters']['lookback'] = (float) $changed['parameters']['lookback'];
+            if ($case === 'cap') $changed['policy_context']['instrument_method_study_resource_cap']['max_runtime_seconds']++;
+            if ($case === 'nested_cap') $changed['policy_context']['instrument_method_study']['resource_caps']['max_rows']++;
+            if ($case === 'release') $changed['research_release']['release_hash'] = str_repeat('a', 64);
+            if ($case === 'reference') $changed['research_release']['source_artifact']['archive_sha256'] = str_repeat('a', 64);
+            $this->assertFalse($matcher->invoke($owner, $changed, $model, $registration, $design, 'L1A1', $capability), $case);
+        }
+        $this->assertSame('recorded', $owner->reconcileGeneration($generation)['status']);
+        $again = $owner->reconcileGeneration($generation->fresh());
+        $this->assertSame('recorded', $again['status']); $this->assertFalse($again['closed']);
+        $this->assertSame($runs, LabEvaluationRun::orderBy('id')->get()->toArray());
+        $this->assertSame($result, $work->fresh()->result); $this->assertSame(2, $work->fresh()->attempts);
+        $this->assertDatabaseCount('lab_evaluation_runs', 2);
+        foreach ($compiled as $request) $this->assertArrayNotHasKey(InstrumentMethodStudyExecutionService::DEADLINE_MARKER, $request['policy_context']);
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
     public function test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original(): void
     {
         [$work, $generation] = $this->spentOriginalProjection(); $owner = app(InstrumentMethodStudyExecutionService::class);
@@ -691,10 +779,12 @@ class InstrumentMethodStudyExecutionTest extends TestCase
     }
 
     /** Synthetic transition products only; no market outcome or economic claim. */
-    private function spentOriginalProjection(bool $legacyCompleted = false, ?callable $mutateRequests = null, ?array $attemptedArms = null): array
+    private function spentOriginalProjection(bool $legacyCompleted = false, ?callable $mutateRequests = null, ?array $attemptedArms = null,
+        ?callable $prepareGeneration = null): array
     {
         $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class); $proof = $owner->inspectWork($work);
         $generation = app(LabPopulationService::class)->buildInstrumentMethodStudy($work, $proof);
+        if ($prepareGeneration !== null) $prepareGeneration($generation);
         $requests = []; foreach (InstrumentMethodStudyExecutionService::ARMS as $arm) {
             $agent = $generation->agents()->where('model_version_id', $proof['design']['arms'][$arm]['model_id'])->sole();
             $requests[$arm] = $owner->compileRequest($generation, $agent, $arm, $proof);

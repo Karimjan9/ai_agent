@@ -28,6 +28,8 @@ not a fabricated result. Historical projection cannot cross a later active
 cohort/agent/run. The exact legacy completed-marker omission is verified against the original
 checkpoint/request chains, never caller flags, a rewritten run or a fabricated
 retained barrier. New completion preserves its original publication owner.
+Pre-deadline unsigned originals require a separately pinned, fully verified old
+publisher archive; technical projection never retroactively grants a deadline.
 An original native depth purpose executes its cheap carrier, seals the actual
 pool/sample, then lets the same arbiter/dispatcher admit the original deeper
 carrier. Original diagnostic comparison and neutral episode dispositions own

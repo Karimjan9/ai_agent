@@ -20,6 +20,10 @@ the work ID. Only that exact absent-key completion shape can be rejoined through
 all actually attempted immutable checkpoint/request chains and the original source owner.
 Present null/wrong IDs, omitted technical owners or changed original bytes fail
 closed. This does not recreate a discarded work-result barrier or alter history.
+A reviewed pre-deadline publisher may reopen unsigned originals only after its
+exact archived owner bytes and full original source/release identities are
+verified. This spent-technical compatibility does not authorize an old budget
+or permit an unsigned future request.
 Idempotent `--settle-only --expected-generation-id` always exits without a
 successor. Future technical method closure also terminalizes its unattempted
 draft seats neutrally rather than fabricating replay. Ordinary terminal scopes

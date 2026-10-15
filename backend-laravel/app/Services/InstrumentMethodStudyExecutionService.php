@@ -28,6 +28,12 @@ class InstrumentMethodStudyExecutionService
     public const DEADLINE_MARKER = 'instrument_method_original_deadline';
     public const ARMS = ['L1A1', 'L2A1', 'L1A2', 'L2A2'];
 
+    // Reviewed pre-deadline publisher: compileRequest retained raw model
+    // parameters and returned bindGenerationRequest directly. This capability
+    // is only for spent technical projection, never future execution permission.
+    private const UNSIGNED_ORIGINAL_PUBLISHER_SHA256 = 'c804ef64778ceafa7858245d86691a3d4d289d450a3dc63daa58fae388fcf490';
+    private const UNSIGNED_ORIGINAL_PUBLISHER_BYTES = 37367;
+
     public function __construct(private InstrumentMethodStudyService $studies,
         private InstrumentMethodResearchBindingService $bindings, private LabImmutableEvidenceService $evidence,
         private ResearchReleaseSealService $releases, private ResearchExperimentConversionKernelService $conversion) {}
@@ -519,9 +525,12 @@ class InstrumentMethodStudyExecutionService
                     && ($seal['source_hash'] ?? null) === ($registration['php_source_hash'] ?? null)
                     && ($seal['python_source_hash'] ?? null) === ($registration['python_source_hash'] ?? null)
                     && ($seal['dataset_hash'] ?? null) === $design['data_hash'], 'METHOD_STUDY_TERMINAL_RELEASE_REQUIRED');
+                $unsignedPublisher = null;
                 if (isset($seal['source_artifact'])) {
-                    $this->need(($this->releases->verifySourceArtifact($seal['source_artifact'])['status'] ?? null) === 'verified',
+                    $archiveProof = $this->releases->verifySourceArtifact($seal['source_artifact']);
+                    $this->need(($archiveProof['status'] ?? null) === 'verified',
                         'METHOD_STUDY_TERMINAL_SOURCE_ARCHIVE_REQUIRED');
+                    $unsignedPublisher = $this->historicalUnsignedPublisher($archiveProof, $seal, $registration);
                 }
                 $agents = $current->agents()->orderBy('id')->lockForUpdate()->get();
                 $expected = array_column($design['arms'], 'model_id'); sort($expected);
@@ -594,7 +603,7 @@ class InstrumentMethodStudyExecutionService
                             && ($request['symbol'] ?? null) === $design['scope']['symbol']
                             && ($request['timeframe'] ?? null) === $design['scope']['timeframe']
                             && ($request['strategy'] ?? null) === $model->strategy
-                            && $this->historicalRequestParametersMatch($request, $model, $registration, $design, $arm)
+                            && $this->historicalRequestParametersMatch($request, $model, $registration, $design, $arm, $unsignedPublisher)
                             && ($request['replay_dataset_hash'] ?? null) === $design['data_hash']
                             && $this->evidence->equivalentJsonValue($request['initial_balance'] ?? null, $design['initial_balance'])
                             && $this->evidence->equivalentJsonValue($request['risk_per_trade'] ?? null, $design['risk_per_trade'])
@@ -694,13 +703,46 @@ class InstrumentMethodStudyExecutionService
         return true;
     }
 
-    /** Pure comparison with the old signed wire; no request/artifact is published. */
-    private function historicalRequestParametersMatch(array $request, ModelVersion $model, array $registration, array $design, string $arm): bool
+    /** Exact verified historical source capability, not a caller or database status flag. */
+    private function historicalUnsignedPublisher(array $archiveProof, array $seal, array $registration): ?array
+    {
+        $reference = (array) ($seal['source_artifact'] ?? []);
+        $manifest = (array) ($archiveProof['manifest'] ?? []);
+        // A filename contains periods, so use the original manifest key rather
+        // than data_get's dotted-path interpretation for the owner descriptor.
+        $file = $manifest['files']['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php'] ?? [];
+        if (($archiveProof['status'] ?? null) !== 'verified'
+            || ($reference['protocol'] ?? null) !== 'research_source_artifact_reference_v1'
+            || ($archiveProof['artifact_hash'] ?? null) !== ($reference['artifact_hash'] ?? null)
+            || ($manifest['protocol'] ?? null) !== ResearchReleaseSealService::SOURCE_ARTIFACT_PROTOCOL
+            || ($file['sha256'] ?? null) !== self::UNSIGNED_ORIGINAL_PUBLISHER_SHA256
+            || ($file['bytes'] ?? null) !== self::UNSIGNED_ORIGINAL_PUBLISHER_BYTES) return null;
+        foreach (['source_hash' => 'php_source_hash', 'python_source_hash' => 'python_source_hash'] as $field => $registered) {
+            $value = $seal[$field] ?? null;
+            if (! is_string($value) || preg_match('/^[a-f0-9]{64}$/D', $value) !== 1
+                || ($reference[$field] ?? null) !== $value || data_get($manifest, 'source_identity.'.$field) !== $value
+                || ($registration[$registered] ?? null) !== $value) return null;
+        }
+        return $seal;
+    }
+
+    /** Pure comparison with original wire; no request/artifact or signature is published. */
+    private function historicalRequestParametersMatch(array $request, ModelVersion $model, array $registration, array $design, string $arm,
+        ?array $unsignedPublisher = null): bool
     {
         try {
             $policy = (array) ($request['policy_context'] ?? []);
             if ($design['resource_caps']['max_runtime_seconds'] <= 300) {
                 return ! array_key_exists(self::DEADLINE_MARKER, $policy)
+                    && $this->hash((array) ($request['parameters'] ?? [])) === $design['arms'][$arm]['parameter_hash'];
+            }
+            if (! array_key_exists(self::DEADLINE_MARKER, $policy)) {
+                return $unsignedPublisher !== null
+                    && $this->hash((array) ($request['research_release'] ?? [])) === $this->hash($unsignedPublisher)
+                    && ($unsignedPublisher['source_hash'] ?? null) === ($registration['php_source_hash'] ?? null)
+                    && ($unsignedPublisher['python_source_hash'] ?? null) === ($registration['python_source_hash'] ?? null)
+                    && ($policy['instrument_method_study_resource_cap'] ?? null) === $design['resource_caps']
+                    && data_get($policy, 'instrument_method_study.resource_caps') === $design['resource_caps']
                     && $this->hash((array) ($request['parameters'] ?? [])) === $design['arms'][$arm]['parameter_hash'];
             }
             if (! is_array($policy[self::DEADLINE_MARKER] ?? null)

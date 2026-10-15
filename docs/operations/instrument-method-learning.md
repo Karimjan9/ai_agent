@@ -424,6 +424,11 @@ The legacy completed publisher replaced its nested marker without `work_id`.
 Only the exact absent-key completed shape is accepted after verifying all
 original checkpoints, immutable request/response bytes and historical source
 owner. A present null/wrong ID or missing technical-run owner remains blocked.
+One reviewed pre-deadline publisher retained raw model parameters and declared
+caps without a signed deadline. Only its exact verified archived owner bytes,
+matching original source/release and unchanged typed request/caps permit spent
+technical projection. This does not retroactively authorize its declared budget,
+sign an old request or admit any unsigned future execution.
 The old terminal work result did not retain its original request barrier;
 verification uses the retained four original request/checkpoint chains without
 inventing a stored barrier. Future completion preserves the initial marker.

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T04:54:13.084Z",
-  "source_digest": "dfc210ea05ebe7592e29f22018583bba95d89e1323cabe0816cd9ea080bb5302",
+  "generated_at": "2026-10-15T05:31:44.014Z",
+  "source_digest": "ad63aad42d34df40e8f89ce79c41284001984df049edd49a0fa56d53c23062f8",
   "source_file_count": 1697,
-  "git_head": "b7f1f8087135ce84d00dcd563222734003ae4ae4",
+  "git_head": "352eb0cb7b98be8a41221155da0e66a2f346c1b7",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -8119,19 +8119,19 @@
       "symbol": "assertLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 154
+      "line": 160
     },
     {
       "symbol": "admittedContinuationAllowed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 164
+      "line": 170
     },
     {
       "symbol": "execute",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 178
+      "line": 184
     },
     {
       "symbol": "InstrumentMethodStudyExecutionService",
@@ -8143,157 +8143,163 @@
       "symbol": "compileRequest",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 247
+      "line": 253
     },
     {
       "symbol": "queueArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 279
+      "line": 285
     },
     {
       "symbol": "executeQueuedArm",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 299
+      "line": 305
     },
     {
       "symbol": "__construct",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 31
-    },
-    {
-      "symbol": "registerWork",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 36
+      "line": 37
     },
     {
       "symbol": "inspectSource",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 369
+      "line": 375
     },
     {
       "symbol": "inspectOrigin",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 410
+      "line": 416
+    },
+    {
+      "symbol": "registerWork",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 42
     },
     {
       "symbol": "closeTechnical",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 438
+      "line": 444
     },
     {
       "symbol": "hasTerminalProjection",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 454
+      "line": 460
     },
     {
       "symbol": "reconcileGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 465
+      "line": 471
     },
     {
       "symbol": "originalAbsentProjectionEvent",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 632
+      "line": 641
     },
     {
       "symbol": "assertLaterGenerationsTerminal",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 662
+      "line": 671
     },
     {
       "symbol": "legacyCompletedOwnerShape",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 682
+      "line": 691
+    },
+    {
+      "symbol": "historicalUnsignedPublisher",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
+      "line": 707
     },
     {
       "symbol": "historicalRequestParametersMatch",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 698
+      "line": 730
     },
     {
       "symbol": "assertTerminalProjectionIdle",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 719
+      "line": 761
     },
     {
       "symbol": "projectTechnicalAgents",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 741
+      "line": 783
     },
     {
       "symbol": "defer",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 765
+      "line": 807
     },
     {
       "symbol": "bindOriginalDeadline",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 771
+      "line": 813
     },
     {
       "symbol": "transportFailureEnvelope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 822
+      "line": 864
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 840
+      "line": 882
     },
     {
       "symbol": "reason",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 841
+      "line": 883
     },
     {
       "symbol": "need",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 842
+      "line": 884
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 843
+      "line": 885
     },
     {
       "symbol": "ceiling",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 844
+      "line": 886
     },
     {
       "symbol": "inspectWork",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 85
+      "line": 91
     },
     {
       "symbol": "inspectWorkInVerificationScope",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php",
-      "line": 93
+      "line": 99
     },
     {
       "symbol": "InstrumentMethodStudyService",
@@ -15376,58 +15382,64 @@
       "line": 602
     },
     {
-      "symbol": "test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original",
+      "symbol": "test_spent_unsigned_original_requires_verified_exact_old_publisher_and_wire_without_granting_a_deadline",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
       "line": 607
     },
     {
+      "symbol": "test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
+      "line": 695
+    },
+    {
       "symbol": "test_spent_projection_refuses_changed_original_artifact_bytes",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 628
+      "line": 716
     },
     {
       "symbol": "test_spent_projection_requires_stop_no_live_lease_and_known_empty_pending_delayed_reserved_queues",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 639
+      "line": 727
     },
     {
       "symbol": "test_spent_projection_requires_authenticated_idle_not_public_health_or_live_replay",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 668
+      "line": 756
     },
     {
       "symbol": "test_existing_frozen_settle_only_command_repairs_spent_projection_without_successor",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 682
+      "line": 770
     },
     {
       "symbol": "spentOriginalProjection",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 694
+      "line": 782
     },
     {
       "symbol": "syntheticCompletedResponse",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 741
+      "line": 831
     },
     {
       "symbol": "claim",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 756
+      "line": 846
     },
     {
       "symbol": "context",
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/InstrumentMethodStudyExecutionTest.php",
-      "line": 763
+      "line": 853
     },
     {
       "symbol": "test_missing_originals_wait_and_censored_trades_are_underpowered_not_losses",
