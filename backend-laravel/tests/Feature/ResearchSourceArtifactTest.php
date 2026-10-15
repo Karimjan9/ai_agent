@@ -56,6 +56,14 @@ class ResearchSourceArtifactTest extends TestCase
         'backend-laravel/app/Services/ReplayLivenessProbeService.php',
         'backend-laravel/tests/Unit/ReplayLivenessProbeTest.php',
     ];
+    private const NATIVE_META_SOURCE_FILES = [
+        'backend-laravel/app/Services/InstrumentMethodNativeMetaModelTrait.php',
+        'backend-laravel/app/Services/InstrumentMethodNativeMetaBindingTrait.php',
+        'backend-laravel/tests/Feature/InstrumentMethodNativeMetaTest.php',
+        'ai-service-python/app/services/instrument_method_native_meta_model.py',
+        'ai-service-python/tests/test_instrument_method_native_meta_runtime.py',
+        'ai-service-python/tests/support/native_instrument_method_meta_fixture.py',
+    ];
     private const METHOD_SUPPLEMENT_DECLARATIONS = [
         'closed-band-reentry' => ['source', 'method', 'recipe', 'probe-spec'],
         'observed-quote-firewall' => ['quote-source', 'atr-source', 'method', 'recipe'],
@@ -144,7 +152,7 @@ class ResearchSourceArtifactTest extends TestCase
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $projectRoot = dirname(base_path());
-        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES] as $path) {
+        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
             if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
@@ -166,6 +174,19 @@ class ResearchSourceArtifactTest extends TestCase
             }
             $this->assertFalse($zip->getFromName('backend-laravel/.env'));
             $this->assertFalse($zip->getFromName('datasets/secret.csv'));
+        } finally { $zip->close(); }
+    }
+
+    public function test_native_meta_original_issuer_target_and_php_python_regressions_are_exact_archive_bytes(): void
+    {
+        $artifact = $this->owner->buildSourceArtifact(); $this->assertSame('verified', $artifact['status'], json_encode($artifact));
+        $zip = new ZipArchive; $this->assertTrue($zip->open($this->zipPath($artifact['reference'])));
+        try {
+            foreach (self::NATIVE_META_SOURCE_FILES as $path) {
+                $bytes = $zip->getFromName($path); $this->assertIsString($bytes, $path);
+                $this->assertSame(hash_file('sha256', $this->root.'/'.$path), hash('sha256', $bytes), $path);
+            }
+            $this->assertFalse($zip->getFromName('backend-laravel/.env')); $this->assertFalse($zip->getFromName('datasets/secret.csv'));
         } finally { $zip->close(); }
     }
 

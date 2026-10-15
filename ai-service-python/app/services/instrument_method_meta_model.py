@@ -131,6 +131,11 @@ def _context(value: dict) -> dict:
 class FiniteInstrumentMetaModel:
     """A bounded count-table classifier and separate chronological calibrator."""
 
+    protocol = PROTOCOL
+    binding_fields = BINDING_FIELDS
+    physical_fields = PHYSICAL_FIELDS
+    token_fields = {"symbol", "timeframe", "strategy"}
+
     def __init__(self, artifact: dict, expected_training_binding: dict,
                  evaluation_binding: dict | None = None, parameter_projection: dict | None = None):
         _need(isinstance(artifact, dict) and set(artifact) == ARTIFACT_FIELDS | {
@@ -150,29 +155,31 @@ class FiniteInstrumentMetaModel:
               and hashlib.sha256(encoded.encode("utf-8")).hexdigest() == artifact["artifact_hash"],
               "META_MODEL_ARTIFACT_HASH_INVALID")
         _need(_sha(artifact.get("issuer_signature")) and isinstance(expected_training_binding, dict)
-              and set(expected_training_binding) == BINDING_FIELDS | {"artifact_hash", "issuer_signature"},
+              and set(expected_training_binding) == self.binding_fields | {"artifact_hash", "issuer_signature"},
               "META_MODEL_SERVER_EXPORTED_REFERENCE_REQUIRED")
         _need(expected_training_binding["artifact_hash"] == artifact["artifact_hash"]
               and expected_training_binding["issuer_signature"] == artifact["issuer_signature"],
               "META_MODEL_SERVER_REFERENCE_MISMATCH")
-        _need(body.get("protocol") == PROTOCOL and all(body.get(key) is value for key, value in CEILING.items()),
+        _need(body.get("protocol") == self.protocol and all(body.get(key) is value for key, value in CEILING.items()),
               "META_MODEL_RESEARCH_ONLY_REQUIRED")
         binding = body.get("binding")
-        _need(isinstance(binding, dict) and set(binding) == BINDING_FIELDS
-              and all(expected_training_binding[field] == binding[field] for field in BINDING_FIELDS),
+        _need(isinstance(binding, dict) and set(binding) == self.binding_fields
+              and all(expected_training_binding[field] == binding[field] for field in self.binding_fields),
               "META_MODEL_TRAINING_BASELINE_MISMATCH")
-        for field in BINDING_FIELDS - {"symbol", "timeframe", "strategy", "clock_seconds"}:
+        for field in self.binding_fields - self.token_fields - {"clock_seconds"}:
             _need(_sha(binding[field]), "META_MODEL_ORIGINAL_BINDING_HASH_REQUIRED")
-        for field in ("symbol", "timeframe", "strategy"):
+        for field in self.token_fields:
             _need(isinstance(binding[field], str) and 0 < len(binding[field]) <= 128,
                   "META_MODEL_BINDING_TOKEN_REQUIRED")
         _need(type(binding["clock_seconds"]) is int and 1 <= binding["clock_seconds"] <= 86400,
               "META_MODEL_CLOCK_INVALID")
+        _need(parameter_projection is None or self.protocol == PROTOCOL,
+              "META_MODEL_NATIVE_PARAMETER_PROJECTION_FORBIDDEN")
         projected_hash = None if parameter_projection is None else _projected_parameter_hash(parameter_projection, binding)
         if evaluation_binding is not None:
-            _need(isinstance(evaluation_binding, dict) and set(evaluation_binding) == PHYSICAL_FIELDS
+            _need(isinstance(evaluation_binding, dict) and set(evaluation_binding) == self.physical_fields
                   and all(evaluation_binding[field] == (projected_hash if field == 'parameters_hash' and projected_hash is not None
-                                                        else binding[field]) for field in PHYSICAL_FIELDS),
+                                                        else binding[field]) for field in self.physical_fields),
                   "META_MODEL_EVALUATION_PHYSICAL_BASELINE_MISMATCH")
         for field in ("registration_hash", "records_hash", "originals_hash", "training_records_hash", "calibration_records_hash"):
             _need(_sha(body[field]), "META_MODEL_ORIGINAL_PROVENANCE_HASH_REQUIRED")

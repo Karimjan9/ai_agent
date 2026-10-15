@@ -164,7 +164,7 @@ def _context(row: dict, symbol: str, timeframe: str, direction: str) -> dict:
 class InstrumentMethodLearning:
     def __init__(self, contract: dict, payload=None, *, expected_agent_key: str | None = None,
                  dataset_hash: str | None = None, execution_hash: str | None = None,
-                 execution_owner: str = 'ordinary_single_position_v1'):
+                 execution_owner: str = 'ordinary_single_position_v1', native_context: tuple | None = None):
         body = _sealed_body(contract, "contract_hash", "contract_json", "METHOD_LEARNING_CONTRACT")
         if body.get("protocol") != PROTOCOL:
             raise ValueError("METHOD_LEARNING_PROTOCOL_REQUIRED")
@@ -318,14 +318,38 @@ class InstrumentMethodLearning:
             for program in programs for field in program.bindings.values())
         self.features = None
         self.meta_model = None
+        self.native_meta_binding = None
         if 'meta_model' in body:
-            if (execution_owner != 'ordinary_single_position_v1'
-                    or payload is not None and bool(payload.specialist_council_contract)):
-                raise ValueError('METHOD_META_ORDINARY_ORIGINAL_ACCOUNT_SCOPE_REQUIRED')
             meta = body['meta_model']
             legacy_fields = {'artifact', 'expected_training_binding', 'evaluation_binding'}
             if not isinstance(meta, dict) or set(meta) not in (legacy_fields, legacy_fields | {'parameter_projection'}):
                 raise ValueError('METHOD_META_MODEL_REFERENCE_FIELDS_REQUIRED')
+            from app.services.instrument_method_native_meta_model import PROTOCOL as native_protocol
+            if isinstance(meta.get('artifact'), dict) and meta['artifact'].get('protocol') == native_protocol:
+                if (execution_owner != 'native_specialist_council_v1' or set(meta) != legacy_fields
+                        or not isinstance(native_context, tuple) or len(native_context) != 3):
+                    raise ValueError('METHOD_NATIVE_META_ACTUAL_PARENT_REQUEST_REQUIRED')
+                from app.services.instrument_method_native_meta_model import (
+                    FiniteNativeInstrumentMetaModel, PHYSICAL_FIELDS, actual_native_meta_evaluation_binding,
+                )
+                parent, council, member = native_context
+                actual = actual_native_meta_evaluation_binding(parent, council, member)
+                from app.services.parameter_schema import validate_strategy_parameters
+                if (payload is None or payload.symbol != parent.symbol or payload.timeframe != parent.timeframe
+                        or payload.strategy != member.get('strategy') or payload.base_strategy != member.get('base_strategy')
+                        or not _same_ast_copy(member.get('method_learning'), contract)
+                        or not _same_ast_copy(validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy),
+                            validate_strategy_parameters(member['strategy'], member.get('parameters', {}), member.get('base_strategy')))):
+                    raise ValueError('METHOD_NATIVE_META_ORIGINAL_MEMBER_RUNTIME_REQUIRED')
+                if meta.get('evaluation_binding') != actual:
+                    raise ValueError('METHOD_NATIVE_META_ACTUAL_EVALUATION_BASELINE_MISMATCH')
+                self.native_meta_binding = actual
+                self.meta_model = FiniteNativeInstrumentMetaModel(meta['artifact'], meta['expected_training_binding'],
+                    {key: actual[key] for key in PHYSICAL_FIELDS})
+                return
+            if (execution_owner != 'ordinary_single_position_v1'
+                    or payload is not None and bool(payload.specialist_council_contract)):
+                raise ValueError('METHOD_META_ORDINARY_ORIGINAL_ACCOUNT_SCOPE_REQUIRED')
             if payload is None or not hasattr(payload, 'model_dump'):
                 raise ValueError('METHOD_META_ACTUAL_REQUEST_REQUIRED')
             if 'parameter_projection' in meta:
@@ -489,6 +513,8 @@ class InstrumentMethodLearning:
             event.update({'meta_model_hash': self.meta_model.artifact_hash,
                 'meta_training_binding_hash': canonical_hash(self.meta_model.body['binding']),
                 'meta_score_status': meta_status or 'method_feature_target_unreached'})
+            if self.native_meta_binding is not None:
+                event['native_meta_evaluation_binding_hash'] = canonical_hash(self.native_meta_binding)
         event["receipt_hash"] = canonical_hash(event)
         encoded = canonical_json(event).encode("utf-8")
         self.event_hasher.update(len(encoded).to_bytes(8, "big"))
@@ -525,11 +551,11 @@ class InstrumentMethodLearning:
 
 def validate_contract(contract: dict, *, dataset_hash: str, execution_hash: str,
                       expected_agent_key: str | None = None, payload=None,
-                      execution_owner: str = 'ordinary_single_position_v1') -> dict:
+                      execution_owner: str = 'ordinary_single_position_v1', native_context: tuple | None = None) -> dict:
     """Pure pre-cache validation; it never evaluates or consumes a decision."""
     return InstrumentMethodLearning(contract, payload, dataset_hash=dataset_hash,
         execution_hash=execution_hash, expected_agent_key=expected_agent_key,
-        execution_owner=execution_owner).body
+        execution_owner=execution_owner, native_context=native_context).body
 
 
 def receipt_current(result: dict, contract: dict) -> bool:

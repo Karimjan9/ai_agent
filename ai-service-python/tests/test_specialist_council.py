@@ -100,7 +100,7 @@ class SpecialistCouncilTest(unittest.TestCase):
             self.assertLessEqual(len(row['features']), 6)
             self.assertEqual(len(row['closed_source_inputs_hash']), 64)
             self.assertTrue(all(member['closed_inputs']['time'] == row['signal_time'] for member in row['member_decisions']))
-            self.assertTrue(all(len(member['closed_inputs']) <= 8 and len(member['closed_inputs_hash']) == 64
+            self.assertTrue(all(len(member['closed_inputs']) <= 9 and len(member['closed_inputs_hash']) == 64
                 and member['closed_input_columns'] > len(member['closed_inputs']) for member in row['member_decisions']))
 
     def test_bounded_native_inspection_keeps_omitted_closed_inputs_hash_bound(self):

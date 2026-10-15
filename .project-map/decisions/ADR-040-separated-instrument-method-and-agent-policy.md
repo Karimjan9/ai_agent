@@ -122,3 +122,41 @@ commit. Unsupported isolation, nested production transactions or the 50000-ID
 roster budget remain operational dependencies, not scientific negatives.
 The owned-outcome migration owns its new table only and refuses nonempty rollback;
 nullable unassessed model registration remains absence of assessment, not proof.
+
+## Native finite-asset extension (2026-10-15)
+
+Keep ordinary v1 issuance and its native refusal. A separately named native
+training/asset protocol reuses the finite registry and chronological fitter,
+but derives labels only from original accepted member decisions linked to that
+member's exact position/model/management version and uncensored net position
+cash. Fees, carry, embedded costs, all positions and the complete account must
+reconcile. Native inspection's canonical confidence strings are parsed only as
+finite [0,1] values from authenticated closed inputs. Missing original sessions,
+features, reached calibration cells, classes or power produce no fabricated
+asset. Alias positions cannot replenish sample power.
+
+Register an unused draft council/member target before evaluation plans, data
+use or carrier attempts. Its separate HMAC binds manifest/member/model, original
+asset/training proof, actual planned account and current source revision. This
+does not mutate a source model or passport and avoids a self-referential model
+hash. The canonical council compiler first builds all meta-free programmes,
+then attaches the verified asset and seals the final contract. The existing
+evaluator final-request owner revalidates the actual shared parent account;
+Python independently derives the same scope from that parent, original native
+contract and exact member. A member-shaped child is not account evidence.
+
+Conservative native v1 fixes semantic subject/peer library and selector policy,
+ordered peers, horizons/allocation/risk/execution, evaluation mode and fifteen
+inherited runtime ports. Window/warmup, transport, boundary, repair and unknown
+policy ports remain exact; only statistical trial counts are omitted. At most
+one learned-meta subject and no upgrades are supported. A second target or a
+peer asset refuses before mutation; multi-asset composition is not claimed.
+Ordinary assets cannot become native by copying seals. The target registry's
+`native-target:` namespace is reserved from both training registration routes.
+
+An explicitly preregistered optional-model recipe may preserve baseline behavior
+when the model is absent, then use its actual computed score once available.
+This is a laboratory recipe hypothesis with unchanged external guards, not a
+global relaxation of missing-feature WAIT, independent confirmation or economic
+qualification. Synthetic original labels and actual software replay exercise
+the issuer/consumer contract; they never create market skill or a Champion.

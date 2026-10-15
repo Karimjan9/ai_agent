@@ -108,8 +108,9 @@ ordinary model. Its target-specific HMAC proof and two-field model reference are
 part of runtime identity only when present. Compiler and Python revalidate
 physical parameters/account/risk/execution/clock. Prediction requires closed
 observations strictly after training/calibration labels; unavailable inputs stay
-unavailable. Native shared-account execution is unsupported, not inferred from
-an ordinary model. The original issuer can now reattach a verified asset to a
+unavailable. Ordinary-v1 assets refuse native shared-account execution; the
+separate native protocol below is never inferred from an ordinary model.
+The original issuer can now reattach a verified asset to a
 later unused physically identical ordinary child before its own policy seal.
 The new target has its own attachment hash/HMAC and bounded source lineage;
 copying a parent seal, source drift or a changed physical baseline refuses.
@@ -117,6 +118,22 @@ Generation, fresh candidate and own-policy four-carrier preparation use this
 owner. Intrinsic assets remain comparative baseline; only reverified target
 attachment identity is normalized. New generation proofs pin asset ownership
 and curated teaching packs; old asset-free proofs retain their identity.
+
+Separately versioned native finite assets follow `original native member's
+accepted position -> own uncensored cost-inclusive close -> fixed chronological
+fit -> signed native asset -> unused draft council/member target -> meta-free
+physical programme -> final bound native contract -> actual shared-account
+request recheck -> closed-entry score`. Shared cash differences never label a
+member. Native bounded trace confidence strings are parsed only from that
+authenticated original field; missing sessions/features remain dependencies.
+Whole ordered peers, semantic library/selector policy, account/allocation/risk,
+exact method scope and strategy family, clock/evaluation mode and fifteen
+inherited runtime ports are exact. Window,
+warmup, source transport, boundary and unknown policy ports are retained; only
+statistical trial counts are normalized. Original assets/ordinary refusals are
+unchanged. One learned-meta subject and no upgrades are supported in native v1;
+peer assets or a second target fail before insertion. A registry target is not
+a plan, dispatch, independent sample, authority or qualification (ADR-040).
 
 Owned-outcome v2 follows `reopened eligible original -> unique accepted entry
 and own method/position link -> uncensored mature cost-inclusive close ->

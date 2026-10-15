@@ -1,5 +1,15 @@
 # Causal-learning history
 
+## 2026-10-15 - Separately scoped native finite assets
+
+ADR-040's native extension adds source-owned per-position labels, a separately
+signed native asset, unused council/member target records and the existing
+canonical two-stage compile/final actual-request boundary. Native v1 supports
+one learned-meta subject and exact peer/subject policy, account and inherited
+runtime scope. Shared balance deltas, ordinary asset borrowing, peer learned
+assets and upgrades remain refused; code/fixture evidence grants no market
+skill, independent window, inheritance or paper authority.
+
 ## 2026-10-14 - Explicit ordinary model asset transfer
 
 ADR-040's ordinary transfer extension reissues target-specific attachments from

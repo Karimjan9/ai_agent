@@ -11,6 +11,23 @@ replay-status idle, queue/mutex/control proof and original immutable artifacts.
 
 ## Curator operating knowledge and agent practice
 
+Native finite-model consumption has its own issuer and prospective target
+domain. The existing meta registry stores source-owned native artifacts and
+signed unused council/member account plans without modifying model/passport
+identity. `SpecialistCouncilLifecycleService::runtimeContract` first derives all
+meta-free members, then attaches the verified native reference and seals the
+final council. The existing evaluator's final request binding rechecks actual
+parent account/mode/clock and all inherited ports before HTTP publication.
+Python receives the actual parent request plus exact validated native contract
+and member, not an ordinary-shaped member child as account evidence. Native v1
+requires one learned-meta subject, unchanged peer/subject policies and no
+upgrades; a peer learned asset is explicitly unsupported, not stripped away.
+Per-position net cash and full account/cost reconciliation own training labels.
+Future native traces publish actual closed-session provenance, including the
+existing deterministic calendar source where no session column was supplied;
+this is not observed provider quote evidence or a historical trace rewrite.
+
+
 The existing curated method owner reads three pinned instruction parts covering
 all 26 instruments. A teaching pack binds reviewed source scope, exact installed
 method/recipe hashes and declared operating examples; examples are synthetic
@@ -108,8 +125,26 @@ baselines; only a successfully reverified target-specific attachment is
 excluded from parity. New generation proofs pin that asset; candidate and
 four-arm policy preparation attach it before their own seals. The original
 study dispatcher passes the complete actual physical request to method
-compilation, not an invented training binding. Native/shared-account learned
-assets remain unsupported; typed native method transport remains available.
+compilation, not an invented training binding. Ordinary-v1 assets still refuse
+native/shared-account execution; the separately scoped native protocol follows
+the original member/position and full-account ownership boundary below.
+
+`instrument_method_native_meta_model_v1` reuses the fixed chronological finite
+issuer, not ordinary balance-delta labels. Original accepted positions must
+match their member/model/management version and mature cost-inclusive net cash;
+the full account, immutable trace, execution and clock reconcile independently.
+Only bounded canonical confidence strings from the original closed trace are
+parsed as numbers. Missing cells/features/power issue no invented fitted asset.
+A signed unused draft council/member target precedes plans and attempts. The
+canonical two-stage compiler and final full-parent request both recheck its
+account, ordered programmes, exact library/selector, mode and inherited runtime
+ports. Python derives the same binding from the actual shared account, not the
+ordinary-looking member child. Closed timestamps gate trained/calibrated scores;
+caller and CSV scores cannot replace them. Native v1 supports one learned-meta
+subject, no peer asset and no upgrades; changed window/repair/data-boundary
+ports refuse rather than silently widening transfer. Registry membership,
+conditional software execution and seen calibration grant no independent,
+economic, Master, paper or live authority. All 2026+ data remains paper-only.
 
 Selected curator teaching packs are additionally sealed and reopened by fresh
 candidate and own-policy study owners. Missing/altered mapped lessons refuse;

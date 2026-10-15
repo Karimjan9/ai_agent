@@ -159,7 +159,7 @@ class InstrumentMethodResearchBindingService
                 $request['policy_context']['instrument_method_study_resource_cap'] = $studyCap;
             }
         }
-        return $request;
+        return app(InstrumentMethodMetaBindingService::class)->bindNativeRequests($request);
     }
 
     public function scopeFromRequest(array $request): array

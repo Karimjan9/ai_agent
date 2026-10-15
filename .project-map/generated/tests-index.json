@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T15:51:11.161Z",
-  "source_digest": "4789d3df1cac8e8b4d2a90d4a33e764af06ebfda21b4e1bc4f2731d1dfcf04e7",
-  "source_file_count": 1697,
-  "git_head": "b6ea8529f29c7dc81b98847d7c89cd1a7da2613d",
+  "generated_at": "2026-10-15T05:35:10.753Z",
+  "source_digest": "b2d23f11cc1e984a7b990a25af8e1644764f010b7a4056515305a993ca2f043e",
+  "source_file_count": 1703,
+  "git_head": "b7f1f8087135ce84d00dcd563222734003ae4ae4",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -14,6 +14,10 @@
     },
     {
       "path": "ai-service-python/tests/support/authorized_research_transport_fixture.py",
+      "tests": []
+    },
+    {
+      "path": "ai-service-python/tests/support/native_instrument_method_meta_fixture.py",
       "tests": []
     },
     {
@@ -354,6 +358,35 @@
         "test_meta_reference_requires_actual_runtime_request_and_exact_sparse_shape",
         "test_copied_ordinary_model_cannot_claim_shared_native_account_qualification",
         "test_actual_ordinary_replay_uses_finite_meta_model_without_external_gate_changes"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_instrument_method_native_meta_runtime.py",
+      "tests": [
+        "test_actual_native_member_veto_uses_shared_account_peer_cash_clock_and_own_score",
+        "test_native_consumer_can_allow_own_member_without_disabling_peer_account_guards",
+        "test_actual_shared_account_peer_clock_programme_drift_refuses_not_relabels",
+        "test_native_model_needs_actual_parent_original_member_not_ordinary_shaped_child",
+        "test_native_training_policy_is_part_of_original_shared_account_not_copyable_treatment",
+        "test_pre_cache_native_guard_uses_actual_parent_and_refuses_upgrade_only_model",
+        "test_native_meta_score_still_unavailable_before_calibration_and_at_paper_boundary",
+        "test_native_meta_envelope_never_accepts_supplied_scores_or_ordinary_projection",
+        "test_new_data_and_version_envelope_do_not_change_exact_shared_physical_programme",
+        "test_native_hard_limits_null_only_fallback_preserves_empty_php_array_scope",
+        "test_native_physical_scope_rejects_malformed_untrusted_objects",
+        "test_only_known_nonexecution_metadata_is_outside_native_physical_transfer_scope",
+        "test_native_behavior_window_warmup_boundary_and_repair_ports_remain_strict",
+        "test_native_candidate_cache_preserves_original_repair_and_clock_context_ports",
+        "test_all_inherited_native_parent_runtime_ports_are_physically_bound",
+        "test_a_valid_peer_risk_recipe_drift_cannot_be_accepted_by_resigning_current_evaluation_copy",
+        "test_exact_method_scope_and_family_cannot_drift_after_native_calibration",
+        "test_native_v1_refuses_a_peer_predictor_even_with_unchanged_library_policy",
+        "test_declared_optional_model_recipe_can_preserve_original_baseline_before_asset_exists",
+        "test_missing_native_session_publishes_existing_calendar_without_changing_trades_or_account",
+        "test_native_closed_calendar_vector_equals_existing_scalar_owner_across_dst_changes",
+        "test_native_wait_only_run_builds_one_calendar_and_supplied_context_builds_none",
+        "test_native_closed_session_rejects_malformed_supplied_context",
+        "test_native_closed_session_rejects_future_open_or_malformed_clocks"
       ]
     },
     {
@@ -2677,6 +2710,28 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/InstrumentMethodNativeMetaTest.php",
+      "tests": [
+        "setUp",
+        "test_native_issuer_uses_own_mature_position_net_not_shared_cash_and_ordinary_issuer_stays_closed",
+        "test_censored_missing_context_corrupt_own_close_and_shared_account_conflicts_never_issue_a_model",
+        "test_exact_original_aliases_do_not_add_native_training_power",
+        "test_canonical_fresh_council_target_revalidates_actual_account_and_executes_php_export_in_python",
+        "test_native_physical_scope_keeps_peer_risk_horizon_and_unknown_policy_but_excludes_only_transport_metadata",
+        "test_real_differential_programme_consumes_server_issued_native_score_under_same_optional_policy",
+        "test_native_target_attachment_precedes_any_version_wrapper_enrollment_even_without_a_replay",
+        "test_existing_typed_cli_can_preregister_native_originals_without_dispatch_or_authority",
+        "design",
+        "original",
+        "council",
+        "model",
+        "policy",
+        "python",
+        "hash",
+        "seal"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/InstrumentMethodOriginalDeadlineTest.php",
       "tests": [
         "test_new_php_original_600_request_hmac_selects_real_python_simple_budget_without_full_authority",
@@ -4029,6 +4084,7 @@
         "sourceArtifactByteFence",
         "setUp",
         "test_exact_replay_idle_probe_source_and_regression_are_archived",
+        "test_native_meta_original_issuer_target_and_php_python_regressions_are_exact_archive_bytes",
         "tearDown",
         "test_archive_byte_fence_rehashes_actual_bytes_and_original_reference_without_claiming_full_verification",
         "test_archive_byte_fence_refuses_changed_reference_bytes_even_with_original_zip",

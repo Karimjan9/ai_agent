@@ -328,6 +328,20 @@ def _assert_non_paper_source_pre_2026(
         raise ValueError("Research/training/screening/replay dataset cutoff buzildi; 2026 va keyingi yillar faqat paper lane uchun.")
 
 
+def _native_method_meta_declared(payload: SimpleBacktestRequest) -> bool:
+    """Only the separately versioned native consumer needs exact parent ports."""
+    council = payload.specialist_council_contract or {}
+    if not isinstance(council, dict) or not isinstance(council.get('members'), list):
+        return False
+    for member in council['members']:
+        method = member.get('method_learning') if isinstance(member, dict) else None
+        meta = method.get('meta_model') if isinstance(method, dict) else None
+        artifact = meta.get('artifact') if isinstance(meta, dict) else None
+        if isinstance(artifact, dict) and artifact.get('protocol') == 'instrument_method_native_meta_model_v1':
+            return True
+    return False
+
+
 def _candidate_cache_payload(
     cohort_payload: SimpleBacktestRequest,
     strategy_payload: SimpleBacktestRequest,
@@ -341,8 +355,12 @@ def _candidate_cache_payload(
     contract while preserving every other policy input.
     """
     candidate_policy = dict(strategy_payload.policy_context or {})
+    # New native meta scope pins the actual whole parent context. Preserve its
+    # repair and clock ports rather than converting them into a different
+    # physical programme at the cache boundary. Legacy candidates are unchanged.
+    native_meta = _native_method_meta_declared(strategy_payload)
     repair_contracts = candidate_policy.get("repair_contracts")
-    if isinstance(repair_contracts, dict):
+    if isinstance(repair_contracts, dict) and not native_meta:
         candidate_contract = repair_contracts.get(candidate_label)
         candidate_policy["repair_contracts"] = (
             {candidate_label: candidate_contract}
@@ -358,7 +376,7 @@ def _candidate_cache_payload(
     # execution input. Cohort size changes during bounded recovery must not
     # invalidate an already completed candidate's deterministic replay cache.
     scoped = candidate_policy.get('scoped_research_certificate')
-    if (candidate_policy.get('specialist_council_authorized_arm') is None
+    if (not native_meta and candidate_policy.get('specialist_council_authorized_arm') is None
             and not (isinstance(scoped, dict) and scoped.get('purpose') in {
                 'independent_scoped_component_research', 'independent_scoped_descendant_research',
                 'independent_scoped_selector_research'})):
@@ -813,7 +831,14 @@ def _validate_method_learning_before_cache(payload: SimpleBacktestRequest, *, op
         if "instrument_method_learning" in (candidate.policy_context or {}):
             validate_contract(contract, dataset_hash=payload.replay_dataset_hash,
                 execution_hash=execution_hash, payload=candidate)
-        for member in (candidate.specialist_council_contract or {}).get("members", []):
+        council = candidate.specialist_council_contract or {}
+        if council.get('upgrades'):
+            native_versions = [council.get('members', [])] + [item.get('members', [])
+                for item in council['upgrades'] if isinstance(item, dict)]
+            if any('meta_model' in (member.get('method_learning') or {})
+                   for members in native_versions for member in members if isinstance(member, dict)):
+                raise ValueError('METHOD_NATIVE_META_VERSIONED_UPGRADE_UNSUPPORTED')
+        for member in council.get("members", []):
             contract = member.get("method_learning")
             if "method_learning" not in member:
                 continue
@@ -822,7 +847,8 @@ def _validate_method_learning_before_cache(payload: SimpleBacktestRequest, *, op
                 "specialist_council_contract": {}})
             validate_contract(contract, dataset_hash=payload.replay_dataset_hash,
                 execution_hash=execution_hash, payload=current,
-                execution_owner='native_specialist_council_v1')
+                execution_owner='native_specialist_council_v1',
+                native_context=(candidate, candidate.specialist_council_contract, member))
 
 
 def _run_all_backtests_sync(payload: SimpleBacktestRequest) -> dict[str, object]:

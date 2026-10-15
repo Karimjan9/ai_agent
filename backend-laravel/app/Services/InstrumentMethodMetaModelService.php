@@ -16,6 +16,7 @@ use Throwable;
  */
 class InstrumentMethodMetaModelService
 {
+    use InstrumentMethodNativeMetaModelTrait;
     public const PROTOCOL = 'instrument_method_meta_model_v1';
     public const REGISTRATION_PROTOCOL = 'instrument_method_meta_training_v1';
     public const BINDING_FIELDS = ['symbol', 'timeframe', 'strategy', 'parameters_hash', 'account_risk_hash', 'effective_policy_hash',
@@ -79,6 +80,11 @@ class InstrumentMethodMetaModelService
 
     public function preregister(array $input): array
     {
+        return $this->registerTraining($input);
+    }
+
+    private function registerTraining(array $input, ?string $nativeMember = null): array
+    {
         try {
             $allowed = ['model_key', 'run_ids', 'training_range', 'calibration_range', 'confidence_edges',
                 'probability_edges', 'minimum_training', 'minimum_calibration', 'minimum_cell_training',
@@ -86,6 +92,7 @@ class InstrumentMethodMetaModelService
             $this->need(array_diff(array_keys($input), $allowed) === [], 'META_MODEL_UNKNOWN_DESIGN_FIELD');
             $this->need(is_string($input['model_key'] ?? null)
                 && preg_match('/^[A-Za-z0-9_.:\/-]{1,150}$/D', $input['model_key']) === 1, 'META_MODEL_KEY_REQUIRED');
+            $this->need(! str_starts_with(strtolower($input['model_key']), 'native-target:'), 'META_MODEL_RESERVED_TARGET_NAMESPACE');
             $ids = $input['run_ids'] ?? null;
             $this->need(is_array($ids) && array_is_list($ids) && count($ids) >= 1 && count($ids) <= 16
                 && count(array_unique($ids)) === count($ids), 'META_MODEL_ORIGINAL_RUN_ROSTER_REQUIRED');
@@ -116,18 +123,19 @@ class InstrumentMethodMetaModelService
             $roster = []; $binding = null;
             // Registration fixes original identities, not a result ranking.
             foreach ($ids as $id) {
-                $proof = $this->original($id, false);
+                $proof = $nativeMember === null ? $this->original($id, false) : $this->nativeOriginal($id, $nativeMember, false);
                 $binding ??= $proof['binding'];
                 $this->need($this->hash($binding) === $this->hash($proof['binding']), 'META_MODEL_EFFECTIVE_BASELINE_MISMATCH');
                 $roster[] = $proof['identity'];
             }
-            $design = ['protocol' => self::REGISTRATION_PROTOCOL, 'model_key' => $input['model_key'],
+            $design = ['protocol' => $nativeMember === null ? self::REGISTRATION_PROTOCOL : self::NATIVE_REGISTRATION_PROTOCOL, 'model_key' => $input['model_key'],
                 'roster' => $roster, 'binding' => $binding, 'training_range' => $training,
                 'calibration_range' => $calibration, 'context_fields' => self::CONTEXT_FIELDS, ...$settings,
                 'prior_exposure' => 'seen_training_only', 'calibration_use' => 'chronological_seen_diagnostic',
                 'label' => 'matured_net_cash_positive', 'deduplication' => 'physical_entry_with_exact_outcome_v1',
                 'stopping_rule' => 'one_fixed_roster_fit_no_outcome_selection',
                 'maximum_cells' => 1024, 'maximum_model_bytes' => 262144, ...$this->ceiling()];
+            if ($nativeMember !== null) $design['native_member'] = $nativeMember;
             $hash = $this->hash($design);
             return DB::transaction(function () use ($hash, $design): array {
                 $old = DB::table('instrument_method_meta_registrations')->where('model_key', $design['model_key'])->lockForUpdate()->first();
@@ -151,13 +159,14 @@ class InstrumentMethodMetaModelService
                 $facts = $this->records($design);
                 [$assessment, $artifact] = $this->train($design, $facts, $registrationHash);
                 $assessment['assessment_hash'] = $this->hash($assessment);
-                $assessment['issuer_signature'] = $this->signature($assessment['assessment_hash']);
+                $protocol = isset($design['native_member']) ? self::NATIVE_PROTOCOL : self::PROTOCOL;
+                $assessment['issuer_signature'] = $this->signature($assessment['assessment_hash'], $protocol);
                 DB::table('instrument_method_meta_registrations')->where('id', $row->id)->update(['assessment' => $this->json($assessment)]);
                 if ($artifact !== null) {
                     $json = $this->json($artifact); $modelHash = hash('sha256', $json);
                     DB::table('instrument_method_meta_models')->insert(['model_hash' => $modelHash,
                         'registration_hash' => $registrationHash, 'artifact_json' => $json,
-                        'issuer_signature' => $this->signature($modelHash), 'created_at' => now(), 'updated_at' => now()]);
+                        'issuer_signature' => $this->signature($modelHash, $protocol), 'created_at' => now(), 'updated_at' => now()]);
                 }
                 return ['status' => $assessment['status'], 'registration_hash' => $registrationHash,
                     'assessment' => $assessment, 'model_hash' => $artifact !== null ? $modelHash : null, ...$this->ceiling()];
@@ -175,7 +184,7 @@ class InstrumentMethodMetaModelService
             $assessment = json_decode($row->assessment, true, 64, JSON_THROW_ON_ERROR);
             $body = array_diff_key($assessment, array_flip(['assessment_hash', 'issuer_signature']));
             $this->need(($assessment['assessment_hash'] ?? null) === $this->hash($body)
-                && hash_equals($this->signature($this->hash($body)), (string) ($assessment['issuer_signature'] ?? '')), 'META_MODEL_ASSESSMENT_SEAL_INVALID');
+                && hash_equals($this->signature($this->hash($body), isset($design['native_member']) ? self::NATIVE_PROTOCOL : self::PROTOCOL), (string) ($assessment['issuer_signature'] ?? '')), 'META_MODEL_ASSESSMENT_SEAL_INVALID');
             $facts = $this->records($design);
             $this->need(($body['records_hash'] ?? null) === $facts['records_hash'], 'META_MODEL_ORIGINAL_TRAINING_RECORDS_CHANGED');
             $model = DB::table('instrument_method_meta_models')->where('registration_hash', $registrationHash)->first();
@@ -190,14 +199,14 @@ class InstrumentMethodMetaModelService
     public function exportModel(string $modelHash, array $expectedBinding): array
     {
         try {
-            $this->need(array_keys($expectedBinding) !== []
-                && array_diff(array_keys($expectedBinding), self::BINDING_FIELDS) === []
-                && array_diff(self::BINDING_FIELDS, array_keys($expectedBinding)) === [], 'META_MODEL_EXACT_RUNTIME_BINDING_REQUIRED');
             $row = DB::table('instrument_method_meta_models')->where('model_hash', $modelHash)->first();
             $this->need($row !== null, 'META_MODEL_FITTED_ARTIFACT_NOT_FOUND');
             $inspection = $this->inspect($row->registration_hash);
             $this->need(($inspection['status'] ?? null) === 'fitted_diagnostic', 'META_MODEL_ORIGINAL_MODEL_PROOF_REQUIRED');
             $body = $this->verifiedArtifact($row);
+            $fields = $body['protocol'] === self::NATIVE_PROTOCOL ? self::NATIVE_BINDING_FIELDS : self::BINDING_FIELDS;
+            $this->need(array_keys($expectedBinding) !== [] && array_diff(array_keys($expectedBinding), $fields) === []
+                && array_diff($fields, array_keys($expectedBinding)) === [], 'META_MODEL_EXACT_RUNTIME_BINDING_REQUIRED');
             $this->need($this->hash($body['binding']) === $this->hash($expectedBinding), 'META_MODEL_RUNTIME_BINDING_MISMATCH');
             return ['status' => 'exported_diagnostic', 'artifact' => [...$body, 'artifact_json' => $row->artifact_json,
                 'artifact_hash' => $row->model_hash, 'issuer_signature' => $row->issuer_signature],
@@ -214,6 +223,7 @@ class InstrumentMethodMetaModelService
             $this->need($row !== null, 'META_MODEL_FITTED_ARTIFACT_NOT_FOUND');
             $body = $this->verifiedArtifact($row);
             $export = $this->exportModel($modelHash, $body['binding']);
+            $this->need(! $withParameterProjection || $body['protocol'] === self::PROTOCOL, 'META_MODEL_ORDINARY_PARAMETER_PROJECTION_REQUIRED');
             if (! $withParameterProjection || ($export['status'] ?? null) !== 'exported_diagnostic') return $export;
             $registration = DB::table('instrument_method_meta_registrations')->where('registration_hash', $row->registration_hash)->first();
             $design = $this->design($registration);
@@ -335,6 +345,7 @@ class InstrumentMethodMetaModelService
 
     private function records(array $design): array
     {
+        if (isset($design['native_member'])) return $this->nativeRecords($design);
         $seen = []; $records = []; $sourceFacts = []; $eventCount = 0; $tradeCount = 0; $duplicates = 0; $excluded = 0; $postCutoff = 0;
         foreach ($design['roster'] as $identity) {
             $proof = $this->original($identity['run_id'], true);
@@ -425,7 +436,7 @@ class InstrumentMethodMetaModelService
             elseif ($entry >= $this->utc($design['calibration_range']['start']) && $available <= $this->utc($design['calibration_range']['end'])) $calibration[] = $record;
             else $outside++;
         }
-        $base = ['protocol' => self::REGISTRATION_PROTOCOL, 'registration_hash' => $registrationHash,
+        $base = ['protocol' => $design['protocol'], 'registration_hash' => $registrationHash,
             'records_hash' => $facts['records_hash'], 'originals_hash' => $facts['originals_hash'],
             'training_samples' => count($train), 'calibration_samples' => count($calibration),
             'duplicates_excluded' => $facts['duplicates_excluded'], 'censored_excluded' => $facts['censored_excluded'],
@@ -463,7 +474,7 @@ class InstrumentMethodMetaModelService
         foreach ($calibrationBins as &$cell) $cell['score'] = ($cell['wins'] + $design['smoothing']) / ($cell['count'] + 2 * $design['smoothing']);
         unset($cell);
         $last = max(array_column([...$train, ...$calibration], 'label_available_at'));
-        $artifact = ['protocol' => self::PROTOCOL, 'registration_hash' => $registrationHash, 'binding' => $design['binding'],
+        $artifact = ['protocol' => isset($design['native_member']) ? self::NATIVE_PROTOCOL : self::PROTOCOL, 'registration_hash' => $registrationHash, 'binding' => $design['binding'],
             'context_fields' => self::CONTEXT_FIELDS, 'confidence_edges' => $design['confidence_edges'], 'probability_edges' => $design['probability_edges'],
             'smoothing' => $design['smoothing'], 'minimum_cell_training' => $design['minimum_cell_training'],
             'minimum_cell_calibration' => $design['minimum_cell_calibration'], 'training_samples' => count($train),
@@ -481,15 +492,18 @@ class InstrumentMethodMetaModelService
     private function design(object $row): array
     {
         $design = json_decode($row->design, true, 64, JSON_THROW_ON_ERROR);
-        $this->need($this->hash($design) === $row->registration_hash && ($design['protocol'] ?? null) === self::REGISTRATION_PROTOCOL, 'META_MODEL_DESIGN_HASH_INVALID');
+        $this->need($this->hash($design) === $row->registration_hash
+            && (($design['protocol'] ?? null) === self::REGISTRATION_PROTOCOL && ! isset($design['native_member'])
+                || ($design['protocol'] ?? null) === self::NATIVE_REGISTRATION_PROTOCOL && is_string($design['native_member'] ?? null)), 'META_MODEL_DESIGN_HASH_INVALID');
         return $design;
     }
     private function verifiedArtifact(object $row): array
     {
-        $this->need(hash('sha256', $row->artifact_json) === $row->model_hash
-            && hash_equals($this->signature($row->model_hash), $row->issuer_signature), 'META_MODEL_SERVER_ARTIFACT_SEAL_INVALID');
         $body = json_decode($row->artifact_json, true, 64, JSON_THROW_ON_ERROR);
-        $this->need(($body['protocol'] ?? null) === self::PROTOCOL && ($body['registration_hash'] ?? null) === $row->registration_hash, 'META_MODEL_ARTIFACT_OWNER_MISMATCH');
+        $this->need(in_array($body['protocol'] ?? null, [self::PROTOCOL, self::NATIVE_PROTOCOL], true)
+            && hash('sha256', $row->artifact_json) === $row->model_hash
+            && hash_equals($this->signature($row->model_hash, $body['protocol']), $row->issuer_signature), 'META_MODEL_SERVER_ARTIFACT_SEAL_INVALID');
+        $this->need(($body['registration_hash'] ?? null) === $row->registration_hash, 'META_MODEL_ARTIFACT_OWNER_MISMATCH');
         foreach ($this->ceiling() as $key => $value) $this->need(($body[$key] ?? null) === $value, 'META_MODEL_AUTHORITY_FORBIDDEN');
         return $body;
     }
@@ -530,7 +544,7 @@ class InstrumentMethodMetaModelService
     private function cutoff(): CarbonImmutable { return app(ResearchPaperEpochContractService::class)->cutoff(); }
     private function number(mixed $value): bool { return (is_int($value) || is_float($value)) && is_finite((float) $value); }
     private function sha(mixed $value): bool { return is_string($value) && preg_match('/^[a-f0-9]{64}$/D', $value) === 1; }
-    private function signature(string $hash): string { $key = config('app.key'); $this->need(is_string($key) && $key !== '', 'META_MODEL_SERVER_KEY_REQUIRED'); return hash_hmac('sha256', self::PROTOCOL.':'.$hash, $key); }
+    private function signature(string $hash, string $protocol = self::PROTOCOL): string { $key = config('app.key'); $this->need(is_string($key) && $key !== '', 'META_MODEL_SERVER_KEY_REQUIRED'); return hash_hmac('sha256', $protocol.':'.$hash, $key); }
     private function hash(array $value): string { return app(ResearchPaperEpochContractService::class)->parameterHash($value); }
     private function json(array $value): string { $sort = function ($item) use (&$sort) { if (! is_array($item)) return $item; if (! array_is_list($item)) ksort($item); return array_map($sort, $item); }; return json_encode($sort($value), JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR); }
     private function need(bool $condition, string $reason): void { if (! $condition) throw new LogicException($reason); }

@@ -46,7 +46,21 @@ meta training owner -> fixed-bin training plus chronological seen calibration
 exact physical evaluation binding -> closed/as-of ENTRY score. Underpowered
 sources issue no asset. This diagnostic path neither creates independent
 confirmation nor transfers an asset silently across changed child parameters
-or native shared accounts.
+or native shared accounts. The separate native protocol instead reopens exact
+member-position outcomes and reconciled shared account -> fixed chronological
+fit -> signed unused council/member target -> meta-free physical programmes ->
+bound final native request -> actual closed-entry score. Native v1 pins peer and
+subject policies, mode, account and inherited runtime ports; peer assets,
+upgrades or incompatible window contracts remain refused. It is not a dispatch
+or independent skill/Champion certificate.
+
+The separate native v1 issuer reopens native original member/position/account
+evidence -> fits the same bounded numeric algorithm -> preregisters one unused
+draft council/member target -> canonical two-stage native compile -> actual
+full parent request/clock/policy binding -> original native score/decision
+receipt. Exact subject/peer policy and inherited runtime ports are required;
+ordinary assets, peer learned assets, upgrades and missing features refuse.
+This route creates no new scheduler, independent evidence or economic credit.
 
 - `causal-learning`: experiment interpretation, receipt and next-work routing.
 - `laboratory`: cohort lifecycle, provenance and research gates.

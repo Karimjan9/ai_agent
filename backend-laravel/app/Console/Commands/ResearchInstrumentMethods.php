@@ -20,7 +20,7 @@ use Throwable;
 class ResearchInstrumentMethods extends Command
 {
     protected $signature = 'trading:instrument-methods
-        {action=inventory : inventory, curriculum, teach, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-fit, meta-status, meta-attach, meta-transfer or status}
+        {action=inventory : inventory, curriculum, teach, catalog, install, source, method, recipe, compile, policy, attach, learn, propose, evolve, study, study-prepare, study-execute, settle, meta-register, meta-native-register, meta-fit, meta-status, meta-attach, meta-transfer, meta-native-attach or status}
         {--input= : Local JSON object file, at most 1 MiB}
         {--fetch : Explicitly fetch a public HTTPS source reference; source action only}
         {--json : Print the bounded result with exact JSON numeric values}';
@@ -35,7 +35,7 @@ class ResearchInstrumentMethods extends Command
     ): int {
         try {
             $action = $this->argument('action');
-            if (! in_array($action, ['inventory', 'curriculum', 'teach', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-fit', 'meta-status', 'meta-attach', 'meta-transfer', 'status'], true)) {
+            if (! in_array($action, ['inventory', 'curriculum', 'teach', 'catalog', 'install', 'source', 'method', 'recipe', 'compile', 'policy', 'attach', 'learn', 'propose', 'evolve', 'study', 'study-prepare', 'study-execute', 'settle', 'meta-register', 'meta-native-register', 'meta-fit', 'meta-status', 'meta-attach', 'meta-transfer', 'meta-native-attach', 'status'], true)) {
                 throw new InvalidArgumentException('METHOD_COMMAND_ACTION_INVALID');
             }
             if ($this->option('fetch') && $action !== 'source') throw new InvalidArgumentException('METHOD_COMMAND_FETCH_SOURCE_ONLY');
@@ -65,10 +65,12 @@ class ResearchInstrumentMethods extends Command
                 'study-execute' => $this->registerStudyExecution($input),
                 'settle' => $this->settleStudy($input),
                 'meta-register' => app(InstrumentMethodMetaModelService::class)->preregister($input),
+                'meta-native-register' => app(InstrumentMethodMetaModelService::class)->preregisterNative($input),
                 'meta-fit' => app(InstrumentMethodMetaModelService::class)->fit($this->onlyHash($input, 'registration_hash')),
                 'meta-status' => app(InstrumentMethodMetaModelService::class)->inspect($this->onlyHash($input, 'registration_hash')),
                 'meta-attach' => $this->attachMetaModel($input),
                 'meta-transfer' => $this->transferMetaModel($input),
+                'meta-native-attach' => $this->attachNativeMetaModel($input),
                 'status' => $this->status($input, $library, $agents),
             };
             // Reference text is stored by the source owner, never echoed by this interface.
@@ -107,6 +109,15 @@ class ResearchInstrumentMethods extends Command
         }
         return app(InstrumentMethodMetaBindingService::class)->attachUnusedModel(
             $this->integer($input, 'model_id'), $this->hashField($input, 'model_hash'));
+    }
+
+    private function attachNativeMetaModel(array $input): array
+    {
+        if (array_diff(array_keys($input), ['version_id', 'member_id', 'model_hash', 'request', 'mtf_bundle']) !== []
+            || ! is_string($input['member_id'] ?? null) || ! is_array($input['request'] ?? null)
+            || isset($input['mtf_bundle']) && ! is_array($input['mtf_bundle'])) throw new InvalidArgumentException('METHOD_COMMAND_EXACT_NATIVE_META_ATTACHMENT_REQUIRED');
+        return app(InstrumentMethodMetaBindingService::class)->attachUnusedNativeCouncil($this->integer($input, 'version_id'),
+            $input['member_id'], $this->hashField($input, 'model_hash'), $input['request'], $input['mtf_bundle'] ?? null);
     }
 
     private function transferMetaModel(array $input): array

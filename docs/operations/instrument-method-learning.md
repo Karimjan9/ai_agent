@@ -206,8 +206,9 @@ physical parameters/account/risk/execution/clock. Original source/library/data
 identity remains separately recorded as training provenance. Prediction uses
 only closed observations strictly after calibration and the last label becomes
 observable. Missing context or a model not yet available remains an explicit
-dependency; CSV fields cannot supply a score. Native shared-account
-transfer is refused, not silently stripped or grandfathered. Old models without
+dependency; CSV fields cannot supply a score. Ordinary-v1 native shared-account
+transfer is refused, not silently stripped or grandfathered; the separately
+issued native scope below does not reuse this ordinary asset. Old models without
 this optional asset keep the same contracts and event hashes.
 
 `meta-transfer` accepts only `source_model_id` and `target_model_id`. The
@@ -227,8 +228,9 @@ Teacher packs also follow fresh candidate and study carriers before registration
 code-owned reviewed library instruction stays separate from agent-owned
 preference. Legacy absent-pack and asset-free proofs remain unchanged.
 
-This closes supported ordinary software transfer, not native learned-model
-transfer, a completed future original matrix, untouched market validation or
+This closes supported ordinary software transfer. The separate native scope
+below has its own issuer and restrictions. Neither path establishes a completed
+future original matrix, untouched market validation or
 economic child retention. A finite model still requires genuine calibrated
 original labels; teaching text supplies none. All 2026+ market data stays paper.
 
@@ -435,3 +437,30 @@ Further qualifications are empirical: additional per-instrument approaches,
 scope-specific independent issuer, specialist transfer/retention, native council
 comparison and prospective paper behavior. A registry or a passing software
 test does not establish any of them.
+
+## Native finite-model research scope
+
+The existing `trading:instrument-methods` owner additionally accepts
+`meta-native-register`: the usual fixed original run roster, chronological
+training/calibration ranges and budgets plus one exact `native_member`.
+`meta-fit`/`meta-status` retain the original issuer and resource limits.
+`meta-native-attach` requires `version_id`, `member_id`, `model_hash`, the planned
+full parent `request`, and optional original `mtf_bundle`. It registers a signed
+unused draft council/member target before evaluation plans or outcomes; it does
+not queue work. Existing canonical council preparation and final evaluator
+request binding remain the execution route. Shared-account labels use own
+position net cash, never changes in common cash caused by another specialist.
+
+Native v1 supports one learned-meta subject, unchanged semantic peer/subject
+policies, full physical/account/clock/runtime scope and no upgrades. Different
+peer assets, changed selector/library/risk, a late target or a changed runtime
+port refuse; arbitrary native inheritance is not implemented by this scope.
+The exact method scope (dates and context included) and strategy family are
+pinned too; a new evaluation window is not a free transfer of old calibration.
+Old source artifacts without required closed features remain dependencies.
+Future native session snapshots use the existing point-in-time calendar with
+explicit provenance where appropriate, not invented provider observations.
+Actual EMA may have no confidence and must report model unavailability. A
+separate supported-programme software fixture can exercise computed native
+scores; neither synthetic source labels nor software replay qualify a market
+model, stronger child, independent validation or economic/paper authority.

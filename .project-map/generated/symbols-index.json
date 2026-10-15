@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-14T15:51:11.161Z",
-  "source_digest": "4789d3df1cac8e8b4d2a90d4a33e764af06ebfda21b4e1bc4f2731d1dfcf04e7",
-  "source_file_count": 1697,
-  "git_head": "b6ea8529f29c7dc81b98847d7c89cd1a7da2613d",
+  "generated_at": "2026-10-15T05:35:10.753Z",
+  "source_digest": "b2d23f11cc1e984a7b990a25af8e1644764f010b7a4056515305a993ca2f043e",
+  "source_file_count": 1703,
+  "git_head": "b7f1f8087135ce84d00dcd563222734003ae4ae4",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -154,6 +154,12 @@
       "line": 131
     },
     {
+      "symbol": "FiniteNativeInstrumentMetaModel",
+      "kind": "python_class",
+      "path": "ai-service-python/app/services/instrument_method_native_meta_model.py",
+      "line": 35
+    },
+    {
       "symbol": "MarketAdaptiveReplayService",
       "kind": "python_class",
       "path": "ai-service-python/app/services/market_adaptive_replay.py",
@@ -217,7 +223,7 @@
       "symbol": "MemberRuntime",
       "kind": "python_class",
       "path": "ai-service-python/app/services/specialist_council.py",
-      "line": 291
+      "line": 341
     },
     {
       "symbol": "StrategyDnaService",
@@ -296,6 +302,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_instrument_method_matrix.py",
       "line": 58
+    },
+    {
+      "symbol": "ExplicitLimitsRequest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_instrument_method_native_meta_runtime.py",
+      "line": 225
     },
     {
       "symbol": "ClosedPullbackRetestTest",
@@ -5026,6 +5038,18 @@
       "line": 17
     },
     {
+      "symbol": "InstrumentMethodNativeMetaBindingTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodNativeMetaBindingTrait.php",
+      "line": 10
+    },
+    {
+      "symbol": "InstrumentMethodNativeMetaModelTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentMethodNativeMetaModelTrait.php",
+      "line": 9
+    },
+    {
       "symbol": "InstrumentMethodResearchBindingService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/InstrumentMethodResearchBindingService.php",
@@ -8492,6 +8516,12 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/InstrumentMethodMetaModelTest.php",
       "line": 21
+    },
+    {
+      "symbol": "InstrumentMethodNativeMetaTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/InstrumentMethodNativeMetaTest.php",
+      "line": 26
     },
     {
       "symbol": "InstrumentMethodOriginalDeadlineTest",

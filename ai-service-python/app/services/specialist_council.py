@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -38,7 +39,7 @@ POLICY_LIMITS = {
 }
 PRIMARY_TRACE_FIELDS = ('time', 'open', 'high', 'low', 'close', 'volume')
 MEMBER_TRACE_FIELDS = ('time', 'close', 'signal_confidence', 'market_regime',
-    'volatility_regime', 'mtf_stack_context_hash', 'composition_decision_id', 'entry_contract_status')
+    'volatility_regime', 'market_session', 'mtf_stack_context_hash', 'composition_decision_id', 'entry_contract_status')
 
 
 def _closed_trace_input(row, fields, kernel):
@@ -46,6 +47,55 @@ def _closed_trace_input(row, fields, kernel):
     # inspection snapshot is duplicated across the account/member clocks.
     full = {key: kernel._semantic_event_value(value) for key, value in row.items()}
     return {key: full[key] for key in fields if key in full}, canonical_hash(full), len(full)
+
+
+def _closed_session_calendar(times, kernel):
+    """Lazily resolve one immutable closed-clock vector with the existing owner.
+
+    Calendar coordinates depend only on the candle timestamp. No outcome or
+    future market value is read, and no coordinate is published before its
+    individual closed/as-of guard below. Supplied member context never needs
+    this calendar. Its lifetime is one native replay, not a persistent cache.
+    """
+    sessions = None
+
+    def lookup(candle):
+        nonlocal sessions
+        if sessions is None:
+            clocks = pd.Series(times).reset_index(drop=True)
+            memberships = kernel.session_membership(clocks)
+            sessions = {_utc(value): str(session) for value, session in
+                        zip(clocks, memberships['session'])}
+        if candle not in sessions:
+            raise ValueError('SPECIALIST_COUNCIL_CLOSED_SESSION_CLOCK_MISMATCH')
+        return sessions[candle]
+
+    return lookup
+
+
+def _closed_member_session(row: dict, *, decision_at, kernel, calendar_lookup=None) -> tuple[dict, dict]:
+    """Publish the same existing calendar fallback used by actual instruments.
+
+    This is deterministic closed-time context, never provider quote evidence.
+    Old artifacts stay untouched and supplied valid context is not overridden.
+    """
+    candle, available = _utc(row.get('time')), _utc(decision_at)
+    if candle >= available:
+        raise ValueError('SPECIALIST_COUNCIL_CLOSED_SESSION_FUTURE_INPUT')
+    session = row.get('market_session')
+    derived = session is None or isinstance(session, str) and session == ''
+    if derived:
+        # This is the exact fallback called by _instrument_runtime_context.
+        # The native replay resolves the same existing owner over its closed
+        # clock once, rather than building a pandas calendar for every WAIT.
+        # The scalar path is retained for this standalone closed-input helper.
+        session = calendar_lookup(candle) if calendar_lookup is not None else kernel._edge_market_session(candle)
+    if not isinstance(session, str) or re.fullmatch(r'[A-Za-z0-9_:-]{1,64}', session) is None:
+        raise ValueError('SPECIALIST_COUNCIL_CLOSED_SESSION_VALUE_INVALID')
+    return {**row, 'market_session': session}, {'protocol': 'native_closed_session_observation_v1',
+        'source': 'deterministic_existing_session_calendar' if derived else 'existing_closed_input',
+        'candle_time': _stamp(candle), 'available_at': _stamp(available),
+        'provider_quote_observation': False}
 
 
 def seal_contract(body: dict) -> dict:
@@ -319,7 +369,8 @@ class MemberRuntime:
         return self._version_identity_hash
 
 
-def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member: dict, version: str) -> MemberRuntime:
+def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member: dict, version: str,
+                    council_contract: dict | None = None) -> MemberRuntime:
     from app.services import backtester as kernel
     from app.services.composition_runtime import validate_composition_runtime_contract
     from app.services.parameter_schema import validate_strategy_parameters
@@ -348,7 +399,8 @@ def _compile_member(payload: SimpleBacktestRequest, frame: pd.DataFrame, member:
         BoundedDecisionProgram(member["operator_contract"]) if member.get("operator_contract") else None)
     if "method_learning" in member:
         runtime.method_learning = InstrumentMethodLearning(member["method_learning"], child,
-            execution_owner='native_specialist_council_v1')
+            execution_owner='native_specialist_council_v1',
+            native_context=(payload, council_contract or payload.specialist_council_contract, member))
         runtime.method_learning.validate_frame(snapshot.frame)
     runtime.temporal_state = kernel._temporal_survival_state()
     runtime.instrument_state = kernel._instrument_runtime_state(child.instrument_research_assignment)
@@ -457,7 +509,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                 dependencies.append("PARTIAL_ORDER_FILL_REPLAY_UNAVAILABLE")
     member_frame = frame.iloc[:execution_input_rows].copy() if depth_contract is not None else frame
     runtimes = {
-        version: [_compile_member(payload, member_frame, member, version) for member in members]
+        version: [_compile_member(payload, member_frame, member, version, contract) for member in members]
         for version, members in versions
     } if not dependencies else {}
     study = None
@@ -624,6 +676,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                 mature=reason != "end_of_data")
         event(runtime, timestamp, "execution", "closed", position_id=pos["position_id"], exit_reason=reason, net_pnl=net_pnl)
 
+    session_calendar = _closed_session_calendar(
+        frame.iloc[evaluation_start_index:execution_input_rows - 1]['time'], kernel)
     for index in range(evaluation_start_index + 1, execution_input_rows):
         if study is not None:
             study.current = None
@@ -733,7 +787,8 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
 
         for runtime in active:
             member = runtime.declaration
-            prior = runtime.rows[index - 1]
+            prior, session_observation = _closed_member_session(runtime.rows[index - 1],
+                decision_at=signal_at, kernel=kernel, calendar_lookup=session_calendar)
             if depth_audit is not None:
                 depth_audit.begin(runtime, prior, index - evaluation_start_index, index, timestamp)
             if study is not None:
@@ -752,6 +807,7 @@ def run_specialist_council(payload: SimpleBacktestRequest, frame: pd.DataFrame) 
                     'action': 'WAIT', 'accepted': False, 'rejection_code': 'no_signal',
                     'closed_inputs': closed_inputs, 'closed_inputs_hash': input_hash,
                     'closed_input_columns': input_columns,
+                    'session_observation': session_observation,
                     'stage_receipts': []}
                 trace_members[runtime.version_hash] = observed
                 trace_clock['member_decisions'].append(observed)

@@ -13,6 +13,7 @@ use Throwable;
 /** Optional, original-issuer-owned finite model. It cannot bind an already sealed policy or a native member. */
 class InstrumentMethodMetaBindingService
 {
+    use InstrumentMethodNativeMetaBindingTrait;
     public const PROTOCOL = 'instrument_method_meta_model_binding_v1';
     public const METADATA = 'instrument_method_meta_model';
     public const PROOF_METADATA = 'instrument_method_meta_model_attachment';

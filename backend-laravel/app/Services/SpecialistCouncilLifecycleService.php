@@ -404,7 +404,8 @@ class SpecialistCouncilLifecycleService
         $contract = $this->contracts->runtimeContract($version->manifest, $timeframe, $datasetHash, $executionHash, $native, $symbol);
         unset($contract['contract_hash']);
         $contract['version_id'] = $version->id;
-        return [...$contract, 'contract_hash' => $this->epochs->parameterHash($contract), 'contract_json' => $this->json($contract)];
+        return app(InstrumentMethodMetaBindingService::class)->compileNativeCouncil(
+            [...$contract, 'contract_hash' => $this->epochs->parameterHash($contract), 'contract_json' => $this->json($contract)]);
     }
 
     /** Derive a single exact removal from the frozen candidate, preserving every other treatment identity. */
