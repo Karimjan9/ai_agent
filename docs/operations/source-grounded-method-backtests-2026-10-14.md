@@ -590,3 +590,221 @@ observed volume and an eligible fitted meta-model remain distinct missing
 inputs; the observed quote study did not create either. Future production
 activation additionally requires a safe drained boundary, verified byte artifact
 and actual loaded-worker source proofs. Tests alone never assert activation.
+
+## Curator's contextual DMI/ADX research, 2026-10-15 — in progress
+
+This is the assistant-curator's own source study, implementation and original
+archive execution, not an assignment for future agents to invent the methods.
+The source/formula and reviewed manual/transcript scopes are recorded in
+`instrument-method-learning.md` and the pinned `context-adx-dmi-v1.json` design.
+There are two algorithms and 24 exact context declarations, not 24 qualified
+skills. They add directional DI confirmation, with or without strict ADX14>25,
+to the same frozen EMA50/200 RSI14 baseline. They do not implement full Wilder
+entry/stops or Bollinger Method IV, and do not generate new entries.
+
+### Original technical history and one bounded replacement
+
+The first original panel was frozen at spec
+`e119e04c1482fa377339ec921a8ced9dbf9cfd373df99268abdf232e1ab5d10a`.
+Its first two cases timed out at 300 seconds with no response product. The
+curator stopped only that private panel; the remaining 26 cases are explicitly
+uncompared/operator-stopped, including its interrupted third case. Old spec,
+ZIP, request bytes and technical products are unchanged. Stop intent
+`a1965cde33a74463a049dbf74dd4c6b011871b96dcfdc1c04582043413209857`
+and confirmation
+`e32b7b2bb9ae83caef0b1c51ddaa363bfc5bc6f39e1adadd254aaa30308e0864`
+retain that boundary. This was not production STOP or a market-loss finding.
+
+The software repair reuses the canonical calendar answer only within one
+bounded simple replay. Complete actual cached/unwrapped fixture responses,
+including ledger, trace and clock, compare exactly; eight focused tests pass.
+Four repeated coordinate queries become one calendar call in that fixture,
+not a claim of four-times replay speed. Calendar semantics, data, parameters,
+costs, risk and per-arm/global caps are unchanged.
+
+One separately frozen technical replacement owns all 28 fresh requests under
+the repaired source. Spec:
+`5c3ac482449898e5c1d54012bc583b14125f289caa9059640558e5576e99a8c4`;
+before-outcome source ZIP:
+`f0a2b13a58e9440a9eae8dd06fe12a442359865b4b406539d0d6a22c8b8f8d37`.
+Actual backtester SHA:
+`4d28814bcd71961cbb38cfb04a03fdb5f128f337c9229385674ba7ad3208ab67`.
+It retains one attempt per original, 300 seconds per arm, 9000 seconds global,
+one thread and hidden, serial, below-normal execution. Fresh native-calendar
+audit `f9c621da06a8c940065dabd1ce980dbdfccdd3d47b6391953a915b9c0a2fd87b`
+attests the selected unchanged windows, not the old whole archive's continuity.
+Raw-window custody manifest is
+`b91435027999a1468066611c5ff053020c52ba6373bd0bb69cef3a193efc8c92`.
+No old/new arm products are merged, no old approval is borrowed, and no
+automatic further replacement or independent-validation claim is created.
+
+All original responses remain private under the isolated worktree's
+`.runtime/context-practice-completion-20261015/products/`; exact request,
+response, process, clock, framed method events and complete account ledger are
+verified before comparison. This uses the actual PHP-compiled contracts and
+local Python executor, not the running HTTP service or a broker demo account.
+All 2026-and-later market data remain paper-only.
+
+### First window's measured partial results
+
+The following are completed originals from the pre-panel calendar-selected
+October 13–17, 2025 window, not a finished 28-arm study. They use 200 separate
+warmup rows and 1356 decision rows, the same initial 10000 account, newly sealed
+common 01–22 UTC schedule and identical modeled execution costs/risk.
+
+| Original intervention | Mature trades | Net cash | Drawdown % | Available method evaluations | Added vetoes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Control | 67 | +601.99 | 4.64 | 0 | 0 |
+| London DI+ADX>25 | 64 | +570.77 | 4.06 | 22 | 20 |
+| Overlap DI alignment | 62 | +817.57 | 4.15 | 13 | 8 |
+| Overlap DI+ADX>25 | 61 | +906.86 | 4.15 | 13 | 9 |
+
+The London DI-only original hit its unchanged 300-second cap and has no valid
+economic comparison. It is not a null or harmful strategy result. Remaining
+New York and later-window originals were still pending when this partial
+record was appended; their results must come from original terminal products.
+
+Measured full-account deltas versus the same original control are -31.22,
++215.58 and +304.87 respectively. London's lower drawdown is a tradeoff, not
+proof of the primary cash objective. The overlap observations are worth keeping
+as provisional know-how, not independently confirmed skill. Positive absolute
+cash alone is not incremental value. A 10-mature-trade diagnostic floor is not
+statistical power, and all four later calendar blocks need honest reporting,
+including losses, nulls, unavailable observations and technical cases.
+
+Each style/session intervention contains four exact regime-by-volatility
+methods. Its cash contrast belongs to the **whole original intervention**;
+it is never copied into four individual-method benefit grades. Event-level
+context counts are descriptive. The legacy `new_york` calendar label is not
+the entire New York core session; original venue phase and DST identity remain
+attached. Position/account effects can cross sessions.
+
+### Existing 26-instrument evidence inventory
+
+A separate outcome-unranked inventory reopened six pinned v3 resources:
+SHA `2d62ee6354c9718ed81c5b8d2d4e44f74c2ccea464e95a32d5a6e002609c2c9a`.
+Its 52 primary originals contain 48 completions and four technical cases;
+two risk completions, four dependency-method diagnostics and two supplemental
+BandWidth originals remain separate. It did not inspect the new DMI outcomes.
+All 26 primary declarations were London/normal (25 trend-up, one range).
+Their mixed-price input lacked observed volume, quotes or an eligible fitted
+model; missing-input vetoes do not prove those instruments economically bad.
+Some methods were usable but never changed behavior; counts of contracts,
+exercises or invocations are not empirically qualified skills.
+
+For the newer archive, the repository's legacy `tick_volume` semantic label
+means Dukascopy's provider BID-volume measure in millions, not cTrader's count
+of updates, executed exchange volume or real order-book flow. Candle aggregation
+and tick fallback preserve provider quantities; the parent manifest is not a
+raw per-bar tick witness. Old data/receipts are not relabeled. Curator knowledge
+and the agents' future own outcomes remain separate.
+
+### All-terminal contextual panel and curator interpretation
+
+The replacement panel finished all **28 terminal attempts: 26 completed and two
+timeouts**, in 4753.285 seconds. No cap, parameter, window or outcome was changed.
+The original final source check was `unchanged`. Summary SHA:
+`d28d59edc9a18e22b0df9e3d8bf6fc65e63b6178855f61c2a7c7180cdae64384`.
+The original private parent and its workers were absent before export. A bounded
+post-terminal exporter reopened every original request/process/response,
+complete account ledger, framed trace and actual clock, including paired clock
+parity, and rechecked original source/archive bytes before and after reading.
+Its verification SHA is
+`f20bba4b63c0089983023f993322abe7c1250cc93e2b656aa42f7980f4cf59fe`.
+Original source and products were not rewritten for publication.
+
+The complete net-cash matrix below uses a fresh 10000 account per original.
+Numbers are account units under the common modeled execution contract, not
+broker/demo cash or isolated session profits. Columns are the four original
+calendar-selected windows, not independent qualification windows.
+
+| Original intervention | Oct 13-17 | Oct 27-31, DST mismatch | Nov 3-7 | Dec 8-12 |
+| --- | ---: | ---: | ---: | ---: |
+| Exact control | +601.99 | +739.06 | -1051.14 | -174.31 |
+| London DI alignment | timeout | +739.06 | -1048.09 | -174.31 |
+| London DI + ADX>25 | +570.77 | +739.06 | -1014.78 | -355.54 |
+| Overlap DI alignment | +817.57 | +1017.24 | timeout | -202.51 |
+| Overlap DI + ADX>25 | +906.86 | +813.92 | -1010.67 | -179.64 |
+| New York label, DI alignment | +601.99 | +739.06 | -1051.14 | -412.47 |
+| New York label, DI + ADX>25 | +601.99 | +739.06 | -915.30 | -570.56 |
+
+Of the 24 original intervention/control contrasts, eight were locally positive,
+six locally negative, eight had no behavior change, and two remain technical
+unknowns. These are correlated discovery comparisons, not 24 independent
+hypotheses or a statistical success rate. Completed originals had 44-71 mature
+trades; the declared ten-trade floor is descriptive eligibility, not power.
+
+What the curator actually learned from these originals:
+
+- Overlap directional confirmation improved cash in both October windows
+  (+215.58 and +278.18 versus exact control), but worsened December by 28.20.
+  November's DI-only timeout gives no economic answer.
+- Adding ADX>25 to overlap DI helped more in the first October window but
+  produced 203.32 less cash than DI-only in the second. More confirmation is
+  not universally better. This is a conditional contrast between the declared
+  bundles, not an isolated ADX effect or factorial interaction certificate.
+- November overlap DI+ADX reduced loss by 40.47 but still lost 1010.67. A
+  slightly better negative result does not make the method profitable.
+- London DI was available in December but passed all nine reached candidates:
+  genuine use without a behavior change. London DI+ADX instead changed three
+  decisions and worsened cash by 181.23 and drawdown from 4.74% to 5.91%.
+- The New York-labelled DI+ADX treatment was unchanged in both October
+  windows, reduced November loss by 135.84, and worsened December by 396.25.
+  There is no support for a universal New York rule. The calendar's broad
+  residual label must not be advertised as the whole New York core session.
+- A veto does not guarantee fewer eventual trades: December New York DI
+  vetoed eight candidates yet finished 52 trades versus control's 48 because
+  subsequent position/account paths differ. Whole-account attribution matters.
+
+Session/regime/volatility are actual declared eligibility axes. Venue phases
+are retained descriptive observations, not newly proven phase-specific rules.
+For example, a London-labelled opportunity can retain an Asia venue phase;
+neither label is silently substituted for the other. Per-cell cash or trade
+utility was not manufactured from these event counts.
+
+### Separately versioned observed teaching
+
+The exact verified post-terminal resource is
+`research/instrument-operating-skills/curator-context-observations-v5.json`,
+445349 bytes, SHA
+`3a62699181d30e0c549141e9099c0872366818b4831f31c80239e3f0fd15c231`.
+Explicit `curator_context_observed_knowhow_20261015_v5` links these original
+28 rows and 24 **whole four-method bundle** contrasts to the reviewed v4
+instructions. It does not copy bundle cash into individual-method grades.
+Selected teaching preserves all original bundle refs and its exact control;
+it projects relevance, not the physical experiment identity. Technical cash,
+trades, clock and nonexistent response identities remain null, not zeros.
+
+V1-v4 remain immutable, including v4's literal `awaiting_original_panel` source
+instruction. The v4 curriculum was captured before this extension as
+`dc8b14ccf4d6e846d3517ceaaa3b8206fc51f15fddde6a5c132d97f977609f24`;
+its selected London-normal/trend-up DI teaching pack was
+`253ccdbfa5ae84b85a6cfcef77f4d8062f59a62f41fb69eb839821a2d4062b58`.
+Publishing observations does not backdate that pending version. Default
+curriculum and production environment are unchanged. No curator outcome is
+an agent-owned experience, automatic preference, independent certificate,
+skill credit, Master, Champion or paper/live authority.
+
+This is the first deep contextual batch for an existing instrument, not the
+completion of all 26 instruments. The separate inventory identifies remaining
+missing-input, no-behavior-change and context-transfer questions. Further
+curator batches need new bounded declarations; this panel is not repeatedly
+tuned/replayed to select a winner. No actual broker demo or authorized
+untouched validation was performed. Production code, DB and control were not
+changed by this isolated research batch.
+
+### Final software verification of this isolated batch
+
+The combined contextual/source/practical-teaching/generation/old-curriculum
+regression passed **89 tests / 4509 assertions** in 10m37.389s. This is one
+combined focused run, not the sum of overlapping earlier checks. It includes
+the genuine observed resource, original 28-row/24-bundle parsing, technical
+null guards, clock integrity/parity, exact source-artifact inclusion, no
+own-agent learning, all v1-v4 hash preservation and actual PHP-to-Python
+canonical teaching metadata transport. The separate focused Python run passed
+**57 tests** in 130.23s, covering DMI correctness/as-of/spoof refusal, existing
+method/context behavior and complete cached/unwrapped replay-response parity.
+Fourteen pure export-validator tests are software fixtures, not market cases.
+Focused PHP lint, Python compilation and Project Map impact/generate/check
+passed. No full-project suite, broker-demo, production activation, market
+qualification or independent compounding acceptance is claimed.

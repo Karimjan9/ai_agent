@@ -132,6 +132,13 @@ class ResearchSourceArtifactTest extends TestCase
         'backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/method.json',
         'backend-laravel/resources/research/instrument-methods/closed-bandwidth-squeeze/recipe.json',
         'backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php',
+        'backend-laravel/resources/research/instrument-methods/context-adx-dmi-v1.json',
+        'backend-laravel/tests/Feature/CuratorContextPracticeTest.php',
+        'backend-laravel/tests/Feature/CuratorContextKnowHowTest.php',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-context-observations-v5.json',
+        'backend-laravel/tests/Feature/CuratorContextObservedKnowHowTest.php',
+        'ai-service-python/tests/test_closed_dmi_adx_method.py',
+        'ai-service-python/tests/test_replay_market_coordinate_cache.py',
         'backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php',
         'ai-service-python/tests/test_closed_bandwidth_squeeze.py',
         'ai-service-python/tests/test_method_native_score_binding.py',
@@ -252,7 +259,7 @@ class ResearchSourceArtifactTest extends TestCase
 
     public function test_curator_practice_resources_and_actual_software_proofs_are_exactly_archived_without_private_products(): void
     {
-        $this->assertCount(13, self::CURATOR_PRACTICE_FILES);
+        $this->assertCount(20, self::CURATOR_PRACTICE_FILES);
         $artifact = $this->owner->buildSourceArtifact();
         $this->assertSame('verified', $artifact['status']);
         $zip = new ZipArchive; $this->assertTrue($zip->open($this->zipPath($artifact['reference'])));

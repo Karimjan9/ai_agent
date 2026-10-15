@@ -2,11 +2,14 @@ import hashlib
 import io
 import json
 import math
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from functools import wraps
 from types import MappingProxyType
 
 import numpy as np
@@ -67,6 +70,31 @@ from app.services.volume_features import (
     volume_shadow_report,
 )
 from app.strategies.registry import get_strategy, strategy_label
+
+
+_EDGE_MARKET_COORDINATE_LIMIT = 2048
+_EDGE_MARKET_COORDINATES: ContextVar[OrderedDict[int, pd.Series] | None] = ContextVar(
+    "replay_edge_market_coordinates", default=None)
+
+
+@contextmanager
+def _replay_market_coordinate_scope():
+    """One bounded calendar memo per replay; nested arms get their own scope."""
+    cache = OrderedDict()
+    token = _EDGE_MARKET_COORDINATES.set(cache)
+    try:
+        yield cache
+    finally:
+        cache.clear()
+        _EDGE_MARKET_COORDINATES.reset(token)
+
+
+def _with_replay_market_coordinates(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _replay_market_coordinate_scope():
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def _timeframe_duration_minutes(value: object) -> int:
@@ -1358,6 +1386,7 @@ def _apply_execution_regime(
     return merged
 
 
+@_with_replay_market_coordinates
 def _run_prepared_simple_backtest(
     payload: SimpleBacktestRequest,
     df: pd.DataFrame,
@@ -5247,27 +5276,51 @@ def _risk_context(signal_row: pd.Series, direction: str) -> str:
     )
 
 
+def _edge_market_coordinates(value: object) -> pd.Series:
+    """Reuse the original default-calendar row, never a new classification."""
+    cache = _EDGE_MARKET_COORDINATES.get()
+    key = None
+    if cache is not None:
+        try:
+            stamp = pd.to_datetime(value, utc=True, errors="coerce")
+            if isinstance(stamp, pd.Timestamp) and not pd.isna(stamp):
+                key = stamp.value
+        except (ValueError, TypeError, OverflowError):
+            # Invalid/unrepresentable inputs retain the original owner's
+            # quarantine/error behavior and are never cached by a sentinel.
+            pass
+        if key is not None and key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+    row = session_membership(pd.Series([value])).iloc[0]
+    if cache is not None and key is not None:
+        cache[key] = row
+        if len(cache) > _EDGE_MARKET_COORDINATE_LIMIT:
+            cache.popitem(last=False)
+    return row
+
+
 def _edge_market_session(value: object) -> str:
     """Canonical DST-aware session label shared with the XAUUSD toolbox."""
-    row = session_membership(pd.Series([value])).iloc[0]
+    row = _edge_market_coordinates(value)
     return str(row["session"])
 
 
 def _edge_market_venue_phase(value: object) -> str:
     """Exact venue phase used by local specialist evidence, never a global label."""
-    row = session_membership(pd.Series([value])).iloc[0]
+    row = _edge_market_coordinates(value)
     return str(row["venue_phase"])
 
 
 def _edge_market_session_instance(value: object) -> str:
     """Versioned active-phase instance fingerprint for pair-integrity audits."""
-    row = session_membership(pd.Series([value])).iloc[0]
+    row = _edge_market_coordinates(value)
     return str(row["session_instance_id"])
 
 
 def _edge_market_session_offset(value: object) -> str:
     """Stable offset-state coordinate for cross-DST validation."""
-    row = session_membership(pd.Series([value])).iloc[0]
+    row = _edge_market_coordinates(value)
     offsets = row.get("dst_offset", {})
     if not isinstance(offsets, dict):
         return "fixed_or_off_session"

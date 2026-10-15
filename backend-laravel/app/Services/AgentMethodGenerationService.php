@@ -35,7 +35,9 @@ class AgentMethodGenerationService
         if ($key === null) return [];
         $this->need(is_string($key) && in_array($key, [CuratedInstrumentMethodCatalogService::OPERATING_CURRICULUM_KEY,
             CuratedInstrumentMethodCatalogService::SOURCE_PRACTICE_CURRICULUM_KEY,
-            CuratedInstrumentMethodCatalogService::CURATOR_PRACTICE_CURRICULUM_KEY], true),
+            CuratedInstrumentMethodCatalogService::CURATOR_PRACTICE_CURRICULUM_KEY,
+            CuratedInstrumentMethodCatalogService::CONTEXT_KNOWHOW_CURRICULUM_KEY,
+            CuratedInstrumentMethodCatalogService::CONTEXT_OBSERVED_CURRICULUM_KEY], true),
             'METHOD_GENERATION_CURRICULUM_KEY_REQUIRED');
         return ['curriculum_key' => $key];
     }

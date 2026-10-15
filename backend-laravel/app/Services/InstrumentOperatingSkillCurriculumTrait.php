@@ -13,6 +13,12 @@ trait InstrumentOperatingSkillCurriculumTrait
     public const OPERATING_CURRICULUM_KEY = 'source_taught_operating_skills_20261014_v1';
     public const SOURCE_PRACTICE_CURRICULUM_KEY = 'source_taught_operating_skills_20261015_v2';
     public const CURATOR_PRACTICE_CURRICULUM_KEY = 'curator_practical_knowhow_20261015_v3';
+    public const CONTEXT_KNOWHOW_CURRICULUM_KEY = 'curator_context_knowhow_20261015_v4';
+    public const CONTEXT_OBSERVED_CURRICULUM_KEY = 'curator_context_observed_knowhow_20261015_v5';
+    private const CONTEXT_OBSERVED_PART_SHA256 = '3a62699181d30e0c549141e9099c0872366818b4831f31c80239e3f0fd15c231';
+    private const CONTEXT_OBSERVED_SPEC_SHA256 = '5c3ac482449898e5c1d54012bc583b14125f289caa9059640558e5576e99a8c4';
+    private const CONTEXT_OBSERVED_SUMMARY_SHA256 = 'd28d59edc9a18e22b0df9e3d8bf6fc65e63b6178855f61c2a7c7180cdae64384';
+    private const CONTEXT_OBSERVED_SOURCE_SHA256 = 'b7d9ec9032ced8e4d05a38921e3f7de6757db80d12429dd79bceeba80a71a48a';
     // New parts are pinned separately: no old source, lesson, pack or outcome is revised.
     private const CURATOR_PRACTICE_PARTS = [
         'curator_price_practice_v3' => ['curator-price-practice-v3.json', 'abcf2388ff29d31c258aba1f54ed6d8ea2ef985adac78f32fb7340ee793e5f33', 14],
@@ -45,10 +51,13 @@ trait InstrumentOperatingSkillCurriculumTrait
         try {
             $inventory = $this->instruments->inventory();
             $parts = []; $lessons = []; $sources = []; $curatorObservations = null; $curatorKnowhow = null;
+            $contextPractice = null; $contextObserved = null;
             // Future versions add an entry, never overwrite these original parts.
             $versions = [self::OPERATING_CURRICULUM_KEY => self::OPERATING_PARTS,
                 self::SOURCE_PRACTICE_CURRICULUM_KEY => self::OPERATING_PARTS,
-                self::CURATOR_PRACTICE_CURRICULUM_KEY => self::OPERATING_PARTS];
+                self::CURATOR_PRACTICE_CURRICULUM_KEY => self::OPERATING_PARTS,
+                self::CONTEXT_KNOWHOW_CURRICULUM_KEY => self::OPERATING_PARTS,
+                self::CONTEXT_OBSERVED_CURRICULUM_KEY => self::OPERATING_PARTS];
             $this->operatingNeed(isset($versions[$curriculumKey]), 'OPERATING_CURRICULUM_VERSION_UNKNOWN');
             foreach ($versions[$curriculumKey] as $partKey => [$file, $sha]) {
                 $path = resource_path('research/instrument-operating-skills/'.$file);
@@ -96,11 +105,19 @@ trait InstrumentOperatingSkillCurriculumTrait
                     $lessons[$key] = $lesson;
                 }
             }
-            if (in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY], true)) {
+            if (in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY,
+                self::CONTEXT_KNOWHOW_CURRICULUM_KEY, self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
                 [$parts, $lessons, $sources, $curatorObservations] = $this->operatingPracticeOverlay($parts, $lessons, $sources);
             }
-            if ($curriculumKey === self::CURATOR_PRACTICE_CURRICULUM_KEY) {
+            if (in_array($curriculumKey, [self::CURATOR_PRACTICE_CURRICULUM_KEY, self::CONTEXT_KNOWHOW_CURRICULUM_KEY,
+                self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
                 [$parts, $lessons, $sources, $curatorKnowhow] = $this->operatingCuratorKnowhowOverlay($parts, $lessons, $sources);
+            }
+            if (in_array($curriculumKey, [self::CONTEXT_KNOWHOW_CURRICULUM_KEY, self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
+                [$parts, $lessons, $sources, $contextPractice] = $this->operatingContextPracticeOverlay($parts, $lessons, $sources);
+            }
+            if ($curriculumKey === self::CONTEXT_OBSERVED_CURRICULUM_KEY) {
+                [$parts, $contextObserved] = $this->operatingContextObservedOverlay($parts, $contextPractice);
             }
             $keys = array_keys($lessons); $expected = array_keys($inventory['instruments']); sort($keys); sort($expected);
             $this->operatingNeed($keys === $expected, 'OPERATING_INSTRUMENT_COVERAGE_DRIFT');
@@ -114,6 +131,8 @@ trait InstrumentOperatingSkillCurriculumTrait
                     'exercises_are_market_evidence' => false, 'all_2026_and_later_market_data' => 'paper_only'],
                 ...($curatorObservations === null ? [] : ['curator_archive_observations' => $curatorObservations]),
                 ...($curatorKnowhow === null ? [] : ['curator_practical_knowhow' => $curatorKnowhow]),
+                ...($contextPractice === null ? [] : ['curator_contextual_practice' => $contextPractice]),
+                ...($contextObserved === null ? [] : ['curator_context_observed_practice' => $contextObserved]),
                 ...$this->operatingCeiling()];
             return [...$body, 'status' => 'operating_skill_curriculum', 'curriculum_hash' => $this->hashes->parameterHash($body)];
         } catch (Throwable $error) { return $this->operatingBlocked($error); }
@@ -160,10 +179,24 @@ trait InstrumentOperatingSkillCurriculumTrait
             }
             sort($recipeHashes); ksort($methods); ksort($recipes); ksort($lessons); ksort($sources);
             $curatorKnowhow = $curriculum['curator_practical_knowhow'] ?? null;
-            if ($curriculumKey === self::CURATOR_PRACTICE_CURRICULUM_KEY) {
+            if (in_array($curriculumKey, [self::CURATOR_PRACTICE_CURRICULUM_KEY, self::CONTEXT_KNOWHOW_CURRICULUM_KEY,
+                self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
                 [$curatorKnowhow, $lessons] = $this->operatingCuratorProjection($curatorKnowhow, $lessons, $methods);
             }
-            if (in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY], true)) {
+            $contextPractice = $curriculum['curator_contextual_practice'] ?? null;
+            if (in_array($curriculumKey, [self::CONTEXT_KNOWHOW_CURRICULUM_KEY, self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
+                [$contextPractice, $lessons] = $this->operatingContextPracticeProjection($contextPractice, $lessons, $methods);
+                $sources = [];
+                foreach ($lessons as $lesson) foreach ($lesson['source_refs'] as $sourceRef)
+                    $sources[$sourceRef] = $curriculum['sources'][$sourceRef];
+                ksort($sources);
+            }
+            $contextObserved = $curriculum['curator_context_observed_practice'] ?? null;
+            if ($curriculumKey === self::CONTEXT_OBSERVED_CURRICULUM_KEY) {
+                $contextObserved = $this->operatingContextObservedProjection($contextObserved, $methods);
+            }
+            if (in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY,
+                self::CONTEXT_KNOWHOW_CURRICULUM_KEY, self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
                 // New instruction envelopes cross the existing Eloquent array
                 // metadata transport. It serializes an integral JSON number
                 // such as 30.0 as 30. Pin that representation BEFORE sealing
@@ -181,12 +214,16 @@ trait InstrumentOperatingSkillCurriculumTrait
                 'recipe_hashes' => $recipeHashes, 'lessons' => $lessons, 'sources' => $sources,
                 'methods' => $methods, 'recipes' => $recipes,
                 'acceptance' => 'rules_supplied_not_agent_mastery', 'exercise_evidence' => 'synthetic_operator_examples_not_market_outcomes',
-                ...(in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY], true)
+                ...(in_array($curriculumKey, [self::SOURCE_PRACTICE_CURRICULUM_KEY, self::CURATOR_PRACTICE_CURRICULUM_KEY,
+                    self::CONTEXT_KNOWHOW_CURRICULUM_KEY, self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)
                     ? ['instruction_transport' => 'eloquent_metadata_json_numbers_v1'] : []),
                 ...(isset($curriculum['curator_archive_observations']) ? ['curator_archive_observations' => $curriculum['curator_archive_observations']] : []),
                 ...($curatorKnowhow === null ? [] : ['curator_practical_knowhow' => $curatorKnowhow]),
+                ...($contextPractice === null ? [] : ['curator_contextual_practice' => $contextPractice]),
+                ...($contextObserved === null ? [] : ['curator_context_observed_practice' => $contextObserved]),
                 ...$this->operatingCeiling()];
-            if ($curriculumKey === self::CURATOR_PRACTICE_CURRICULUM_KEY) {
+            if (in_array($curriculumKey, [self::CURATOR_PRACTICE_CURRICULUM_KEY, self::CONTEXT_KNOWHOW_CURRICULUM_KEY,
+                self::CONTEXT_OBSERVED_CURRICULUM_KEY], true)) {
                 // Pin v3's complete observation envelope to its actual metadata
                 // representation before sealing; this changes no earlier pack.
                 $body = json_decode(json_encode($body, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), true, 64, JSON_THROW_ON_ERROR);
@@ -303,6 +340,15 @@ trait InstrumentOperatingSkillCurriculumTrait
 
     private function operatingDeclaredMethod(string $ref): array
     {
+        if (str_starts_with($ref, 'curator_dmi_') || str_starts_with($ref, 'curator_strong_')) {
+            $catalog = $this->contextPracticeCatalog();
+            $this->operatingNeed(($catalog['status'] ?? null) === 'context_practice_catalog', 'OPERATING_CONTEXT_SOURCE_DRIFT');
+            foreach ($catalog['methods'] as $row) {
+                $method = $row['method_input'];
+                if ($method['method_key'].'@'.$method['revision'] === $ref) return $method;
+            }
+            throw new RuntimeException('OPERATING_DECLARED_METHOD_MISSING');
+        }
         foreach ([self::CATALOG_KEY, self::EXPANDED_CATALOG_KEY] as $catalogKey) {
             $data = $this->declaration($catalogKey);
             $sourceHashes = [];
@@ -343,6 +389,324 @@ trait InstrumentOperatingSkillCurriculumTrait
             }
         }
         return $selected;
+    }
+
+    /** Source-scoped instruction pending original outcomes; it is not a vote or an agent experience. */
+    private function operatingContextPracticeOverlay(array $parts, array $lessons, array $sources): array
+    {
+        $catalog = $this->contextPracticeCatalog();
+        $this->operatingNeed(($catalog['status'] ?? null) === 'context_practice_catalog'
+            && ($catalog['design_sha256'] ?? null) === self::CONTEXT_PRACTICE_SHA256
+            && count($catalog['methods'] ?? []) === 24 && isset($lessons['regime_router']), 'OPERATING_CONTEXT_SOURCE_DRIFT');
+        $partKey = 'curator_context_practice_v4'; $design = $catalog['design']; $sourceRefs = [];
+        foreach ($catalog['sources'] as $sourceId => $source) {
+            $id = $partKey.':'.$sourceId; $metadata = $source['metadata'] ?? [];
+            $this->operatingNeed(! isset($sources[$id]) && is_string($source['reference'] ?? null)
+                && preg_match('/^https:\/\//', $source['reference']) === 1
+                && is_string($metadata['reviewed_scope'] ?? null) && $metadata['reviewed_scope'] !== ''
+                && is_array($metadata['not_reviewed'] ?? null) && $metadata['not_reviewed'] !== []
+                && is_string($catalog['source_keys'][$sourceId] ?? null), 'OPERATING_SOURCE_REVIEW_REQUIRED');
+            $sources[$id] = ['source_id' => $sourceId, 'url' => $source['reference'],
+                'reviewed_scope' => $metadata['reviewed_scope'], 'not_reviewed' => $metadata['not_reviewed'],
+                'source_key' => $catalog['source_keys'][$sourceId], 'content_hash' => hash('sha256', $source['content']),
+                'representation' => $metadata['representation'], 'reviewed_on' => $metadata['reviewed_on'],
+                'publisher' => $metadata['publisher'], 'qualification_granted' => false];
+            $sourceRefs[] = $id;
+        }
+        sort($sourceRefs);
+        foreach (['operating_steps', 'wait_when', 'limitations'] as $field) {
+            $this->operatingNeed(is_array($design[$field] ?? null) && array_is_list($design[$field])
+                && $design[$field] !== [], 'OPERATING_INSTRUCTION_REQUIRED');
+            foreach ($design[$field] as $instruction)
+                $this->operatingNeed(is_string($instruction) && $instruction !== '', 'OPERATING_INSTRUCTION_REQUIRED');
+        }
+        $profiles = [];
+        $sourceVsLab = 'Reviewed StockCharts Wilder DI/ADX calculation and strength interpretation inform the rule; '
+            .'the separate Bollinger manual is contextual motivation, not a reproduced entry system. '
+            .'Exact scalar scopes, 150-observation maturity, strict thresholds and comparative design are laboratory declarations, '
+            .'not publisher qualification, calibrated probabilities or measured market superiority.';
+        $unknown = ['No contextual performance has yet been measured by this design.',
+            'Range/transition regimes, low volatility, Asian sessions, different horizons and actual order-book flow remain outside this scope.',
+            'A session label is not independent replication; current pre-2026 archive is reused research, not an untouched validation window.'];
+        foreach ($catalog['methods'] as $row) {
+            $method = $row['method_input']; $ref = $method['method_key'].'@'.$method['revision'];
+            $context = $method['context_predicate'];
+            $this->operatingNeed(($method['instrument_key'] ?? null) === 'regime_router'
+                && in_array($row['style'] ?? null, ['dmi', 'strong'], true)
+                && count($context) === 3 && array_diff(array_keys($context), ['regime', 'session', 'volatility']) === []
+                && count(array_filter($context, 'is_string')) === 3
+                && ($method['implementation']['kind'] ?? null) === 'typed_ast'
+                && ($method['implementation']['target'] ?? null) === 'confirmation', 'OPERATING_CONTEXT_METHOD_REQUIRED');
+            $profiles[$ref] = ['method_ref' => $ref, 'instrument_key' => 'regime_router', 'style' => $row['style'],
+                'context_predicate' => $context, 'horizon' => $method['horizon'], 'target' => 'confirmation',
+                'operating_steps' => $design['operating_steps'], 'wait_when' => $design['wait_when'],
+                'source_vs_lab' => $sourceVsLab, 'limitations' => $design['limitations'], 'unknown_scope' => $unknown,
+                'source_refs' => $sourceRefs, 'method_binding' => $method,
+                'evidence_state' => 'awaiting_original_panel', 'attribution' => 'curator_source_research',
+                'own_agent_outcome' => false, 'independent_validation' => false, 'skill_credit' => false,
+                ...$this->operatingCeiling()];
+        }
+        ksort($profiles);
+        $lesson = $lessons['regime_router']; unset($lesson['lesson_hash']);
+        $lesson['additional_method_refs'] = array_values(array_unique([...$lesson['additional_method_refs'], ...array_keys($profiles)]));
+        $lesson['source_refs'] = array_values(array_unique([...$lesson['source_refs'], ...$sourceRefs]));
+        $lesson['contextual_operating_practice'] = $profiles;
+        $lesson['lesson_hash'] = $this->hashes->parameterHash($lesson); $lessons['regime_router'] = $lesson;
+        $parts[$partKey] = self::CONTEXT_PRACTICE_SHA256;
+        $practice = ['protocol' => 'curator_context_operating_practice_v1', 'curriculum_key' => self::CONTEXT_KNOWHOW_CURRICULUM_KEY,
+            'design_key' => self::CONTEXT_PRACTICE_KEY, 'design_sha256' => self::CONTEXT_PRACTICE_SHA256,
+            'catalog_hash' => $catalog['catalog_hash'], 'evidence_state' => 'awaiting_original_panel',
+            'method_profiles' => $profiles, 'source_refs' => $sourceRefs, 'unknown_scope' => $unknown,
+            'attribution' => 'curator_source_research', 'own_agent_outcome' => false,
+            'independent_validation' => false, 'skill_credit' => false, ...$this->operatingCeiling()];
+        return [$parts, $lessons, $sources, $practice];
+    }
+
+    /** The full design stays pinned; only selected exact contextual instructions cross into a pack. */
+    private function operatingContextPracticeProjection(array $practice, array $lessons, array $methods): array
+    {
+        $selected = [];
+        foreach ($methods as $method) {
+            $ref = $method['method_key'].'@'.$method['revision'];
+            if (isset($practice['method_profiles'][$ref])) $selected[$ref] = true;
+        }
+        $allRefs = array_keys($practice['method_profiles']); $allSources = $practice['source_refs'];
+        $practice['method_profiles'] = array_intersect_key($practice['method_profiles'], $selected);
+        $practice['source_refs'] = [];
+        foreach ($practice['method_profiles'] as $profile)
+            $practice['source_refs'] = array_values(array_unique([...$practice['source_refs'], ...$profile['source_refs']]));
+        sort($practice['source_refs']);
+        foreach ($lessons as &$lesson) {
+            $profiles = array_intersect_key($lesson['contextual_operating_practice'] ?? [], $selected);
+            $lesson['additional_method_refs'] = array_values(array_filter($lesson['additional_method_refs'],
+                fn (string $ref): bool => ! in_array($ref, $allRefs, true) || isset($selected[$ref])));
+            $lesson['source_refs'] = array_values(array_filter($lesson['source_refs'],
+                fn (string $id): bool => ! in_array($id, $allSources, true) || in_array($id, $practice['source_refs'], true)));
+            if ($profiles === []) unset($lesson['contextual_operating_practice']);
+            else $lesson['contextual_operating_practice'] = $profiles;
+            unset($lesson['lesson_hash']); $lesson['lesson_hash'] = $this->hashes->parameterHash($lesson);
+        }
+        unset($lesson);
+        if ($selected === []) return [null, $lessons];
+        $practice['instruction_projection'] = ['scope' => 'exact_selected_contextual_method_refs', 'method_refs' => array_keys($selected),
+            'full_design_sha256' => self::CONTEXT_PRACTICE_SHA256];
+        return [$practice, $lessons];
+    }
+
+    private function operatingContextObservedOverlay(array $parts, array $practice): array
+    {
+        $panel = $this->operatingPinnedJson(
+            'research/instrument-operating-skills/curator-context-observations-v5.json',
+            self::CONTEXT_OBSERVED_PART_SHA256, 524288);
+        $observed = $this->operatingContextObservedPanel($panel, $practice, [
+            'spec' => self::CONTEXT_OBSERVED_SPEC_SHA256,
+            'summary' => self::CONTEXT_OBSERVED_SUMMARY_SHA256,
+            'source' => self::CONTEXT_OBSERVED_SOURCE_SHA256,
+        ]);
+        $parts['curator_context_observations_v5'] = self::CONTEXT_OBSERVED_PART_SHA256;
+        return [$parts, $observed];
+    }
+
+    /** Pure read-only contextual bundle parser; original event verification precedes export. */
+    private function operatingContextObservedPanel(array $panel, array $practice, array $bindings): array
+    {
+        $need = fn (bool $ok) => $this->operatingNeed($ok, 'OPERATING_CONTEXT_OBSERVATION_BINDING_REQUIRED');
+        $sha = fn ($value): bool => is_string($value) && preg_match('/^[a-f0-9]{64}$/D', $value) === 1;
+        $hash = fn (array $value): string => $this->hashes->parameterHash($value);
+        $utc = static fn (string $value): string => (new \DateTimeImmutable($value))
+            ->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z');
+        $need(($panel['protocol'] ?? null) === 'curator_context_observed_practice_v1'
+            && ($panel['curriculum_key'] ?? null) === self::CONTEXT_OBSERVED_CURRICULUM_KEY
+            && ($panel['attribution'] ?? null) === 'curator_observation'
+            && ($panel['design_sha256'] ?? null) === CuratedInstrumentMethodCatalogService::CONTEXT_PRACTICE_SHA256);
+        foreach (['spec' => 'original_spec_sha256', 'summary' => 'original_summary_sha256',
+            'source' => 'source_manifest_sha256'] as $key => $field)
+            $need($sha($bindings[$key] ?? null) && ($panel[$field] ?? null) === $bindings[$key]);
+        $flags = ['own_agent_outcome', 'independent_validation', 'skill_credit', 'qualification_granted',
+            'economic_authority', 'paper_authority', 'live_authority'];
+        foreach ($flags as $flag) $need(($panel[$flag] ?? null) === false);
+        $catalog = app(CuratedInstrumentMethodCatalogService::class)->contextPracticeCatalog();
+        $need(($catalog['status'] ?? null) === 'context_practice_catalog');
+        $design = $catalog['design'];
+        $expected = [];
+        foreach ($design['panel']['windows'] as $window) foreach ($design['panel']['arms_per_window'] as $arm) {
+            $refs = []; $sourceKeys = [];
+            if ($arm !== 'control') {
+                [$style, $session] = explode('_', $arm, 2);
+                foreach ($catalog['methods'] as $method) if ($method['style'] === $style
+                    && $method['method_input']['context_predicate']['session'] === $session) {
+                    $input = $method['method_input'];
+                    $refs[] = $input['method_key'].'@'.$input['revision'];
+                    $sourceKeys = [...$sourceKeys, ...$input['source_keys']];
+                }
+            }
+            sort($refs); $sourceKeys = array_values(array_unique($sourceKeys)); sort($sourceKeys);
+            $need(count($refs) === ($arm === 'control' ? 0 : 4));
+            $expected[$window.'__'.$arm] = ['window' => $window, 'arm' => $arm,
+                'method_refs' => $refs, 'source_keys' => $sourceKeys];
+        }
+        $roster = $panel['declaration']['case_roster'] ?? null; $rows = $panel['results'] ?? null;
+        $need(is_array($roster) && ! array_is_list($roster) && is_array($rows)
+            && array_is_list($rows) && count($rows) === 28 && count($roster) === 28);
+        $keys = array_keys($roster); $expectedKeys = array_keys($expected); sort($keys); sort($expectedKeys);
+        $need($keys === $expectedKeys);
+        $byKey = []; $entryAvailability = [];
+        foreach ($rows as $row) {
+            $key = $row['case_key'] ?? null;
+            $need(is_string($key) && isset($expected[$key], $roster[$key]) && ! isset($byKey[$key]));
+            $declared = $roster[$key];
+            foreach (['window', 'arm', 'method_refs', 'source_keys'] as $field)
+                $need(($row[$field] ?? null) === $expected[$key][$field]
+                    && ($declared[$field] ?? null) === $expected[$key][$field]);
+            foreach (['request_sha256', 'dataset_sha256', 'cost_sha256',
+                'window_sha256', 'source_manifest_sha256'] as $field)
+                $need($sha($row[$field] ?? null) && ($row[$field] ?? null) === ($declared[$field] ?? null));
+            $need($row['source_manifest_sha256'] === $bindings['source']
+                && in_array($row['status'] ?? null, ['completed', 'technical_error', 'timeout', 'cancelled'], true));
+            foreach ($flags as $flag) $need(($row[$flag] ?? null) === false);
+            $clock = $declared['clock'] ?? [];
+            foreach (['loaded_rows', 'warmup_rows', 'evaluated_rows'] as $field)
+                $need(is_int($clock[$field] ?? null) && $clock[$field] >= 0);
+            $need($clock['warmup_rows'] === $design['panel']['warmup_rows']
+                && $clock['evaluated_rows'] > 0
+                && $clock['loaded_rows'] === $clock['warmup_rows'] + $clock['evaluated_rows']
+                && array_diff(array_keys($clock), ['loaded_rows', 'warmup_rows', 'evaluated_rows',
+                    'evaluated_start', 'evaluated_end']) === []);
+            foreach (['evaluated_start', 'evaluated_end'] as $field)
+                $need(is_string($clock[$field] ?? null)
+                    && preg_match('/^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/D', $clock[$field]) === 1
+                    && $clock[$field] < '2026-01-01T00:00:00Z');
+            $need($clock['evaluated_start'] <= $clock['evaluated_end']);
+            if ($row['status'] === 'completed') {
+                foreach (['response_sha256', 'clock_receipt_sha256', 'trace_sha256', 'ledger_sha256'] as $field)
+                    $need($sha($row[$field] ?? null));
+                $actual = $row['clock'] ?? null;
+                $need(is_array($actual) && ($actual['protocol'] ?? null) === 'replay_executed_clock_v1'
+                    && ($actual['owner'] ?? null) === 'ordinary_single_position_v1'
+                    && ($actual['complete'] ?? null) === true && ($actual['evaluation_offset_rows'] ?? null) === 0
+                    && ($actual['input_rows'] ?? null) === $clock['loaded_rows']
+                    && ($actual['decision_rows'] ?? null) === $clock['evaluated_rows']
+                    && ($actual['first_evaluation_index'] ?? null) === $clock['warmup_rows']
+                    && ($actual['last_evaluation_index'] ?? null) === $clock['loaded_rows'] - 1
+                    && ($actual['dataset_hash'] ?? null) === $row['dataset_sha256']
+                    && ($actual['execution_hash'] ?? null) === $row['cost_sha256']
+                    && is_string($actual['execution_start'] ?? null) && is_string($actual['execution_end'] ?? null)
+                    && (str_ends_with($actual['execution_start'], 'Z') || str_ends_with($actual['execution_start'], '+00:00'))
+                    && (str_ends_with($actual['execution_end'], 'Z') || str_ends_with($actual['execution_end'], '+00:00'))
+                    && $utc($actual['execution_start']) === $clock['evaluated_start']
+                    && $utc($actual['execution_end']) === $clock['evaluated_end']);
+                foreach (['schedule_hash', 'index_set_hash', 'receipt_hash'] as $field)
+                    $need($sha($actual[$field] ?? null));
+                $need($row['clock_receipt_sha256'] === $actual['receipt_hash']
+                    && is_string($actual['receipt_json'] ?? null));
+                $body = json_decode($actual['receipt_json'], true, 64, JSON_THROW_ON_ERROR);
+                $actualBody = array_diff_key($actual, ['receipt_hash' => true, 'receipt_json' => true]);
+                $need(is_array($body) && $hash($body) === $actual['receipt_hash'] && $hash($actualBody) === $hash($body));
+                $need((is_int($row['net_cash'] ?? null) || is_float($row['net_cash'] ?? null))
+                    && is_finite((float) $row['net_cash'])
+                    && is_int($row['mature_trades'] ?? null) && $row['mature_trades'] >= 0);
+            } else {
+                // A technical row remains terminal history, never a synthetic zero response.
+                $need(array_key_exists('clock', $row) && $row['clock'] === null
+                    && ($row['clock_receipt_sha256'] ?? null) === null
+                    && ($row['net_cash'] ?? null) === null && ($row['mature_trades'] ?? null) === null);
+                foreach (['response_sha256', 'trace_sha256', 'ledger_sha256'] as $field)
+                    $need(array_key_exists($field, $row) && $row[$field] === null);
+                $need(array_key_exists('context_cells', $row) && $row['context_cells'] === []);
+                // Genuine technical response/stderr file hashes may be kept
+                // separately in raw_product_bindings, never as assessed products.
+            }
+            $cells = $row['context_cells'] ?? [];
+            $need(is_array($cells) && array_is_list($cells) && count($cells) <= 128);
+            $reach = ['reached' => 0, 'available' => 0, 'changed_decisions' => 0]; $seenContexts = [];
+            foreach ($cells as $cell) {
+                $need(is_array($cell) && array_diff(array_keys($cell),
+                    ['context', 'entry_method_events', 'selected', 'reached', 'available', 'pass', 'veto',
+                        'changed', 'unavailable_reasons', 'reason_counts']) === []
+                    && is_array($cell['context'] ?? null));
+                $need(array_diff(array_keys($cell['context']), ['session', 'regime', 'volatility', 'venue_phase', 'direction']) === []);
+                foreach ($cell['context'] as $value) $need($value === null || is_string($value));
+                $contextKey = $hash($cell['context']); $need(! isset($seenContexts[$contextKey])); $seenContexts[$contextKey] = true;
+                foreach (['entry_method_events', 'selected', 'reached', 'available', 'pass', 'veto', 'changed'] as $field)
+                    $need(is_int($cell[$field] ?? null) && $cell[$field] >= 0);
+                $need($cell['selected'] <= $cell['entry_method_events'] && $cell['reached'] <= $cell['selected']
+                    && $cell['available'] <= $cell['reached'] && $cell['changed'] <= $cell['reached']
+                    && $cell['pass'] + $cell['veto'] === $cell['available']);
+                foreach (['unavailable_reasons', 'reason_counts'] as $field) {
+                    $counter = $cell[$field] ?? null;
+                    $need(is_array($counter) && ($counter === [] || ! array_is_list($counter)) && count($counter) <= 96);
+                    foreach ($counter as $reason => $count)
+                        $need(is_string($reason) && $reason !== '' && is_int($count) && $count >= 0);
+                }
+                $need(array_sum($cell['reason_counts']) === $cell['entry_method_events']
+                    && array_sum($cell['unavailable_reasons']) === $cell['reached'] - $cell['available']);
+                $reach['reached'] += $cell['reached']; $reach['available'] += $cell['available'];
+                $reach['changed_decisions'] += $cell['changed'];
+            }
+            $entryAvailability[$key] = $reach;
+            $byKey[$key] = $row;
+        }
+        $need(count($byKey) === 28);
+        $contrasts = [];
+        foreach ($byKey as $key => $row) {
+            if ($row['arm'] === 'control') continue;
+            $controlKey = $row['window'].'__control'; $control = $byKey[$controlKey];
+            foreach (['dataset_sha256', 'cost_sha256', 'window_sha256', 'source_manifest_sha256'] as $field)
+                $need($row[$field] === $control[$field]);
+            $need($hash($roster[$key]['clock']) === $hash($roster[$controlKey]['clock']));
+            $grade = 'technical_or_incomplete'; $delta = null;
+            if ($row['status'] === 'completed' && $control['status'] === 'completed') {
+                $need($row['clock']['schedule_hash'] === $control['clock']['schedule_hash']
+                    && $row['clock']['index_set_hash'] === $control['clock']['index_set_hash']);
+                $delta = (float) $row['net_cash'] - (float) $control['net_cash'];
+                $reach = $entryAvailability[$key];
+                $grade = match (true) {
+                    $reach['reached'] === 0 => 'unactivated',
+                    $reach['available'] === 0 => 'unavailable',
+                    $reach['available'] < $reach['reached'] => 'partially_unavailable',
+                    $reach['changed_decisions'] === 0 => 'no_behavior_change',
+                    min($row['mature_trades'], $control['mature_trades'])
+                        < $design['panel']['minimum_mature_trades_for_descriptive_comparison'] => 'underpowered',
+                    abs($delta) <= .00000001 => 'bundle_local_null',
+                    $delta > 0 => 'bundle_local_positive',
+                    default => 'bundle_local_negative',
+                };
+            }
+            $contrasts[$key] = ['original_case_key' => $key, 'original_control_case_key' => $controlKey,
+                'original_method_refs' => $row['method_refs'], 'grade' => $grade, 'net_cash_delta' => $delta,
+                'effect_scope' => 'whole_continuous_account_original_four_method_intervention_bundle',
+                'context_cells_role' => 'descriptive_original_entry_or_decision_context_not_isolated_causal_effect',
+                'own_agent_outcome' => false, 'independent_validation' => false, 'skill_credit' => false,
+                ...$this->operatingCeiling()];
+        }
+        ksort($byKey); ksort($contrasts);
+        return [...$panel, 'results' => array_values($byKey), 'bundle_contrasts' => $contrasts,
+            'evidence_state' => 'observed_reused_archive_originals_not_independent_qualification',
+            'method_grade_assignment' => 'none_bundle_cash_is_not_individual_method_credit',
+            ...$this->operatingCeiling()];
+    }
+
+    /** Project relevance, not the intervention's physical identity or causal scope. */
+    private function operatingContextObservedProjection(array $observed, array $methods): ?array
+    {
+        $selected = [];
+        foreach ($methods as $method) $selected[$method['method_key'].'@'.$method['revision']] = true;
+        $rows = array_column($observed['results'], null, 'case_key');
+        $keep = []; $contrasts = [];
+        foreach ($observed['bundle_contrasts'] as $key => $contrast) {
+            $relevant = array_values(array_filter($contrast['original_method_refs'], fn ($ref) => isset($selected[$ref])));
+            if ($relevant === []) continue;
+            $contrasts[$key] = [...$contrast, 'selected_instruction_method_refs' => $relevant];
+            $keep[$key] = true; $keep[$contrast['original_control_case_key']] = true;
+        }
+        if ($contrasts === []) return null;
+        $observed['results'] = array_values(array_intersect_key($rows, $keep));
+        $observed['bundle_contrasts'] = $contrasts;
+        $observed['observation_projection'] = ['scope' => 'selected_instruction_relevance_original_bundle_identity_preserved',
+            'selected_method_refs' => array_keys($selected), 'full_observation_part_sha256' => self::CONTEXT_OBSERVED_PART_SHA256];
+        // Keep the full original declaration and original summary SHA. Projection is not
+        // a new panel, a new independent window or a replacement original receipt.
+        return $observed;
     }
 
     /** Append method-specific practice, never replace any v1 primary/exercise. */

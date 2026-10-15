@@ -50,6 +50,7 @@ paths:
   - ai-service-python/app/services/market_adaptive_replay.py
   - ai-service-python/app/services/multitimeframe.py
   - ai-service-python/app/services/backtester.py
+  - ai-service-python/tests/test_replay_market_coordinate_cache.py
   - ai-service-python/app/services/replay_executed_clock.py
   - ai-service-python/app/services/research_program_tasks.py
   - ai-service-python/app/services/instrument_research.py
@@ -106,6 +107,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - Simple replay market-coordinate memoization is invocation-local, bounded and cleared on exit; it reuses only the canonical calendar result for the same UTC timestamp. No persistent cross-arm cache, calendar change or economic permission is introduced, and complete cached/unwrapped response parity is tested.
   - Optional instrument_method_learning_v1 binds intrinsic method/recipe library and independent agent policy revisions to exact parameters, data, execution and observed closed context. Per-candidate cache retains its exact binding and cannot reuse missing/stale method receipts; explicit empty declarations fail closed. Actual decision events measure target reach/use separately. Unsigned diagnostic caps only reduce ordinary deadlines; privately signed original-deadline v2 admits only future exact-source bounded simple arms above 300 and at most 600 seconds, never old attempts or full/independent/paper authority.
   - authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.
   - Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.
@@ -150,6 +152,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_replay_market_coordinate_cache.py
   - backend-laravel/tests/Unit/ReplayLivenessProbeTest.php
   - ai-service-python/tests/test_market_regime.py
   - ai-service-python/tests/test_scoped_research_runtime.py

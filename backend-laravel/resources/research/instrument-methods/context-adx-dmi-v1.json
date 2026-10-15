@@ -1,0 +1,88 @@
+{
+  "protocol": "curator_context_practice_design_v1",
+  "key": "curator_adx_dmi_context_20261015_v1",
+  "revision": 1,
+  "owner": "curator_source_research_not_agent_owned_experience",
+  "instrument_key": "regime_router",
+  "research_only": true,
+  "independent_validation": false,
+  "qualification_granted": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "styles": ["dmi", "strong"],
+  "regimes": ["trend_up", "trend_down"],
+  "sessions": ["london", "overlap", "new_york"],
+  "volatilities": ["normal", "high"],
+  "sources": [
+    {
+      "source_id": "stockcharts_directional_movement",
+      "kind": "url",
+      "reference": "https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx",
+      "content": "Curator paraphrase of the platform's ADX documentation: directional movement compares successive highs and lows; only the larger strictly positive move contributes, while ties and inside bars contribute neither direction. Wilder smoothing of directional movement and true range produces plus and minus DI. DX compares their absolute difference to their sum, and a second Wilder smoothing produces ADX. ADX describes strength, not direction. The conventional fourteen-period calculation needs a long initialization history. Above twenty-five is commonly treated as strong, below twenty as weak, with an uncertain region between. DMI crossings and strength filters can still whipsaw or discard good trades. This research compares same-direction DI confirmation with the additional strong-ADX condition; it is not the publisher's full entry/stop system or a profitability claim.",
+      "metadata": {
+        "license": "Original limited curator paraphrase; original publisher retains rights. No copied code, full book or full transcript.",
+        "access": "public",
+        "title": "Average Directional Index (ADX)",
+        "publisher": "StockCharts ChartSchool",
+        "reviewed_on": "2026-10-15",
+        "reviewed_scope": "Calculation, Wilder smoothing, trend-strength interpretation and limitations; sections through The Bottom Line.",
+        "not_reviewed": ["Wilder complete book", "paid course", "historical performance claims"],
+        "representation": "curator_paraphrase_not_page_snapshot",
+        "exposure": {"complete_inventory": false, "prior_agent_access": "unknown", "independent_validation": false}
+      }
+    },
+    {
+      "source_id": "bollinger_method_iv_context",
+      "kind": "url",
+      "reference": "https://www.bollingerbands.com/_files/ugd/58be43_d09c50b6e8ea4afd9af0523ef94de876.pdf",
+      "content": "Curator paraphrase of John Bollinger's 2021 public Confirmed Breakouts Method IV manual, pages one through four: a Squeeze followed by consecutive closes outside the bands can carry different interpretations in trending and non-trending conditions. ADX is used to distinguish those conditions. This motivates testing contextual trend strength separately rather than treating every outside close alike. The present DMI panel does not implement the manual's Squeeze or two-close entry, and must not be named a reproduction of complete Method IV. The manual does not publish the exact numeric ADX default in the reviewed text. Other site descriptions of Method IV differ; this specific manual is the pinned reviewed edition, not an amalgam of versions.",
+      "metadata": {
+        "license": "Original limited curator paraphrase of publicly accessible manual; publisher retains rights.",
+        "access": "public",
+        "title": "Bollinger Bands Confirmed Breakouts (Method IV) Manual, 2021",
+        "publisher": "John Bollinger",
+        "reviewed_on": "2026-10-15",
+        "reviewed_scope": "PDF pages 1-4: Squeeze, bands, BandWidth and ADX-dependent interpretation. Used as contextual motivation, not as this panel's implemented entry algorithm.",
+        "not_reviewed": ["complete book", "paid video", "TradeStation proprietary implementation"],
+        "representation": "curator_paraphrase_not_page_snapshot",
+        "exposure": {"complete_inventory": false, "prior_agent_access": "unknown", "independent_validation": false}
+      }
+    }
+  ],
+  "operating_steps": [
+    "Use only completed original OHLC and actual closure timestamps. Compute fourteen-period Wilder DI and ADX independently of supplied ADX or method columns.",
+    "Require at least 150 original observations and adjacent current/previous bars. Older smoothing uses observed bars, not a continuous-calendar qualification.",
+    "The dmi alternative confirms an existing BUY only when plus DI exceeds minus DI, and SELL only when minus DI exceeds plus DI. It does not generate entries.",
+    "The strong alternative adds strict ADX greater than 25 to the same direction rule. Twenty through twenty-five, equality, missing values and opposite DI do not pass it.",
+    "Select a method only in its exact declared regime, volatility and legacy-session scope; retain BASELINE elsewhere. Compare each intervention to the same continuous-account control.",
+    "Inspect reach, availability and changed decisions before interpreting cash. Keep calendar phase, immature/censored outcomes, nulls, losses and unavailable cases separately."
+  ],
+  "wait_when": [
+    "Missing original OHLC/clock, immature Wilder history, nonpositive smoothed true range or a current adjacency gap.",
+    "For a selected dmi method, directional indicators tie or oppose the candidate.",
+    "For a selected strong method, the direction does not align or ADX is not strictly above 25.",
+    "No evidence exists here for range/transition, low volatility, Asian session, real order-book flow or a different execution horizon. Out-of-scope does not mean globally harmful."
+  ],
+  "limitations": [
+    "This is an additional confirmation of an existing frozen EMA/RSI candidate. It cannot create an entry, alter confidence, risk, costs, stops or authority; it is not full Wilder DMI entry/stop or Bollinger Method IV.",
+    "Fourteen-period arithmetic Wilder seeds, 150-observation maturity, strict DI comparisons, strict ADX>25 and two-adjacent-bar check are pinned laboratory conventions. Zero true range is unavailable, not fabricated certainty; genuinely later mature observations may recover.",
+    "Scopes are append-only alternatives, not extensions of existing London-only revisions. Normal/high volatility and trend-up/down are tested separately in original event coordinates; other regimes are unknown.",
+    "Legacy London excludes overlap; overlap takes precedence; new_york is the calendar owner's remaining broad COMEX/Globex label, not all New York core hours. Retain original IANA/DST venue phases; never force a row into a desired session.",
+    "Discovery uses already available pre-2026 archive, not known untouched data. Four time blocks and session labels are not automatically independent samples. A common newly sealed 01-22 UTC schedule does not revise older 07-16 UTC results.",
+    "Primary contrast is cost-inclusive whole continuous-account cash for the declared intervention against exact control. Entry-context trade breakdowns are descriptive, not causal session attribution; positions may cross sessions and interact through the common account.",
+    "Sample floor is diagnostic only; no p-value, statistical power, Master, causal skill, credit, paper/live or stronger-child claim follows from this panel. All 2026 and later market data remain paper-only."
+  ],
+  "panel": {
+    "windows": ["october_pre_dst", "october_uk_us_offset_mismatch", "november_standard", "december_standard"],
+    "arms_per_window": ["control", "dmi_london", "strong_london", "dmi_overlap", "strong_overlap", "dmi_new_york", "strong_new_york"],
+    "baseline": "previously declared EMA50/200 RSI14 physical control; only data and common 01-22 UTC schedule differ from older panel",
+    "warmup_rows": 200,
+    "max_originals": 28,
+    "per_original_timeout_seconds": 300,
+    "global_timeout_seconds": 9000,
+    "max_attempts_per_arm": 1,
+    "minimum_mature_trades_for_descriptive_comparison": 10,
+    "economic_ranking_or_autopromotion": false,
+    "keep_all_outcomes": true
+  }
+}

@@ -575,3 +575,28 @@ the sole dispatcher. Fixed policy challengers may be compared on six synthetic
 worlds and prospectively sealed unobserved real questions; neither path skips
 authorized data, scientific gates or separate measured search/transfer proof.
 See ADR-028 and `docs/operations/research-meta-learning.md`.
+
+## Explicit curator context practice
+
+The existing curated-method owner reopens a pinned reviewed-source design,
+then explicitly installs append-only scalar-context alternatives through the
+normal method/recipe registry. DMI direction-only and DMI plus ADX>25 are
+confirmation interventions, not new entry producers or complete Method IV.
+Fresh compiled policies retain BASELINE outside their exact scopes.
+
+Curator practice uses the normal Python replay on continuous accounts. Each
+question freezes original source bytes, raw data, warmup/evaluation rows,
+clock, cost/risk, all arms and resource caps before outcomes. Original event
+context describes reach and availability; the matched intervention's whole
+account is compared to exact control. Marginal per-session PnL does not become
+a joint-context causal certificate. New explicit teaching versions preserve
+all earlier instruction/receipt bytes and do not import curator outcomes into
+agent-owned experience or rerank using the older v3 advice owner.
+
+After every original is terminal and private workers have exited, a bounded
+offline exporter reopens original requests, clocks, framed events and complete
+account ledgers under the original source fence. Explicit v5 teaches the separately
+pinned observed record; v4 remains its immutable pending-source instruction.
+Selected teaching projects relevance, retaining each original four-method bundle
+and its exact control. It neither creates individual-method cash grades nor
+installs, dispatches or credits an agent automatically.

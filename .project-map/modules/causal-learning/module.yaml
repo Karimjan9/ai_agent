@@ -35,6 +35,13 @@ paths:
   - backend-laravel/tests/Feature/InstrumentMethodNativeMetaTest.php
   - backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php
   - backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php
+  - backend-laravel/app/Services/InstrumentContextPracticeTrait.php
+  - backend-laravel/resources/research/instrument-methods/context-adx-dmi-v1.json
+  - backend-laravel/tests/Feature/CuratorContextPracticeTest.php
+  - backend-laravel/tests/Feature/CuratorContextKnowHowTest.php
+  - backend-laravel/resources/research/instrument-operating-skills/curator-context-observations-v5.json
+  - backend-laravel/tests/Feature/CuratorContextObservedKnowHowTest.php
+  - ai-service-python/tests/test_closed_dmi_adx_method.py
   - backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json
   - backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json
   - backend-laravel/resources/research/instrument-operating-skills/model-v1.json
@@ -492,6 +499,9 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/CuratorContextPracticeTest.php
+  - backend-laravel/tests/Feature/CuratorContextKnowHowTest.php
+  - ai-service-python/tests/test_closed_dmi_adx_method.py
   - ai-service-python/tests/test_method_native_score_binding.py
   - backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php
   - backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php

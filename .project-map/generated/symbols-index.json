@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T10:05:01.719Z",
-  "source_digest": "62ad514e4e02d28c1c035df8c88cf99739e484b359feda2e8edb0c39a5a31b14",
-  "source_file_count": 1715,
-  "git_head": "b60569def9b16870348293e66ede71ddaf54ba4d",
+  "generated_at": "2026-10-15T13:21:33.310Z",
+  "source_digest": "cdf9b8090ae045be2d965cc21cc6fb53eb1368fef36c3d0ad4215312b3bd5ecc",
+  "source_file_count": 1721,
+  "git_head": "b3546223b84a94fd2290c886c5c46e3c2a27ae04",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -103,25 +103,25 @@
       "symbol": "_ImmutableSourceRowIndex",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 167
+      "line": 195
     },
     {
       "symbol": "PreparedFeatureSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 600
+      "line": 628
     },
     {
       "symbol": "PreparedSignalSnapshot",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 610
+      "line": 638
     },
     {
       "symbol": "PreparedReplayFeatureContext",
       "kind": "python_class",
       "path": "ai-service-python/app/services/backtester.py",
-      "line": 624
+      "line": 652
     },
     {
       "symbol": "CompositionRuntimeContractError",
@@ -139,7 +139,7 @@
       "symbol": "ClosedInstrumentMethodFeatures",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_features.py",
-      "line": 98
+      "line": 148
     },
     {
       "symbol": "InstrumentMethodLearning",
@@ -260,6 +260,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
       "line": 43
+    },
+    {
+      "symbol": "ClosedDmiAdxMethodTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_closed_dmi_adx_method.py",
+      "line": 85
     },
     {
       "symbol": "CoveragePassportTest",
@@ -428,6 +434,12 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_replay_cache_contract.py",
       "line": 21
+    },
+    {
+      "symbol": "ReplayMarketCoordinateCacheTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_replay_market_coordinate_cache.py",
+      "line": 19
     },
     {
       "symbol": "ResearchProgramTasksTest",
@@ -5032,6 +5044,12 @@
       "line": 11
     },
     {
+      "symbol": "InstrumentContextPracticeTrait",
+      "kind": "php_type",
+      "path": "backend-laravel/app/Services/InstrumentContextPracticeTrait.php",
+      "line": 10
+    },
+    {
       "symbol": "InstrumentIntelligenceService",
       "kind": "php_type",
       "path": "backend-laravel/app/Services/InstrumentIntelligenceService.php",
@@ -8227,6 +8245,24 @@
       "symbol": "CuratedInstrumentMethodCatalogTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Feature/CuratedInstrumentMethodCatalogTest.php",
+      "line": 16
+    },
+    {
+      "symbol": "CuratorContextKnowHowTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/CuratorContextKnowHowTest.php",
+      "line": 13
+    },
+    {
+      "symbol": "CuratorContextObservedKnowHowTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/CuratorContextObservedKnowHowTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "CuratorContextPracticeTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Feature/CuratorContextPracticeTest.php",
       "line": 16
     },
     {

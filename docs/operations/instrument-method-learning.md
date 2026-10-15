@@ -677,3 +677,156 @@ They establish software behavior on fixtures, not profitable squeeze trading
 or empirical agent mastery. The new method retains its own exact
 trend-up/London/normal predicate and external guards. All 2026-and-later market
 data remain paper-only.
+
+## Curator context research: ADX/DMI, 2026-10-15
+
+This is the curator's own source research and software preparation, not a task
+delegated to future agents. The original source is the
+[StockCharts ADX calculation and interpretation](https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx).
+Its important distinction is direction versus strength: DI provides directional
+agreement, while ADX can be high in either an uptrend or a downtrend. The
+reviewed [Fidelity entry/exit webinar transcript, PDF pages 21–24](https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Entry-and-exit-points_v2.pdf)
+also discusses confirmation, lag and choosing a tool appropriate to the market
+state. Only those relevant transcript pages were reviewed, not the full video
+or course. No inaccessible YouTube video is recorded as watched.
+
+John Bollinger's
+[2021 Method IV manual, PDF pages 1–4](https://www.bollingerbands.com/_files/ugd/58be43_d09c50b6e8ea4afd9af0523ef94de876.pdf)
+provides another contextual lesson: consecutive outside-band closes can have
+different interpretations depending on trend state. Its detailed description
+differs from another current Methods help page, so the editions must not be
+silently blended. The new DMI experiment does **not** implement that manual's
+Squeeze/two-close entry and is not advertised as complete Method IV.
+
+The two executable alternatives are deliberately separable:
+
+1. Confirm an existing BUY when DI+ > DI−, or SELL when DI− > DI+.
+2. Add strict ADX14 > 25 to precisely the same directional confirmation.
+
+These are two algorithms, not 24 independently mastered skills. Their 24
+append-only declarations cover two styles × three legacy session labels × two
+trend regimes × normal/high volatility. Exact scoped registration is required;
+an old London method cannot be widened with a new policy label. The new closed
+owner uses observed Wilder seeds, 150-row maturity, no future bars or supplied
+ADX spoofing, strict ties/thresholds and a current adjacency check. Missing
+range/history is unavailable, not a direction or confidence estimate.
+
+The unchanged `regime_router` instrument receives those reviewed instructions
+through explicit `curator_context_knowhow_20261015_v4`. Defaults and all v1/v2/v3
+curriculum hashes remain unchanged. A pack contains only its selected scoped
+profiles. Source correctness is teachable before market utility is known;
+`awaiting_original_panel` is explicit and supplies no measured results, v3
+ranking, own-agent experience, skill credit, Master or execution authority.
+The receiving agent must later collect its own outcomes under its own owner.
+
+The prospective panel uses four calendar/data-availability selections frozen
+before this panel's outcomes, in October, the UK/US DST-offset mismatch week,
+November and December 2025. Earlier archive results had already been seen;
+this is neither an untouched holdout nor wholly outcome-unexposed history. Each
+has 200 separate original warmup rows and 1,356 or 1,368 decision rows. The
+baseline is the earlier frozen EMA50/200 RSI14 vector, with a newly declared
+common 01–22 UTC schedule; all other physical cost/risk parameters are fixed.
+Each continuous-account control has six session-specific interventions.
+No threshold or context is selected by the later P&L. A method-only veto is
+not a new signal engine. Changed decisions, available observations and mature
+outcomes are checked before interpreting a comparison.
+
+Session labels need care: the actual calendar prioritizes overlap, then
+London, then Asia, then its remaining broad COMEX/Globex `new_york` label.
+That last label is **not** the entire New York core session. Original venue
+phase, regime, volatility and direction stay attached to each event. A
+whole-account treatment/control contrast is measured; assigning trades to
+their entry session is descriptive and does not isolate causal session P&L.
+Positions and capital may interact across session boundaries.
+
+The native archive used here has a real Dukascopy provider BID-volume measure
+(millions) and observed
+close quotes in the selected periods. This is a different source from the
+older mixed-price, volume-unavailable practice snapshots; those snapshots are
+not backfilled. The repository's legacy `tick_volume` label denotes aggregated
+provider BID-side amounts here, **not** the count of price updates described by
+cTrader's TickVolume indicator. Neither is exchange-traded volume, aggressor
+order flow or order-book depth. Quote holes remain holes; modeled execution
+costs remain common and are not represented as real broker fills.
+
+The full parent archive still has historical missing candles. The existing
+offline native calendar owner reports zero **unexpected** candles in the four
+selected loaded windows, including warmup. December's warmup contains eight
+absent Sunday slots excluded by that policy; this is not proof of an
+uninterrupted Sunday feed. All raw bytes, exclusions and source identity are
+retained. Reused pre-2026 data is discovery, not untouched validation; all
+2026-and-later market data remain paper-only. Market outcomes for this panel
+must be read from the separately frozen original products, never inferred
+from successful software tests or a source description.
+
+### Follow-on curator reading, not another completed skill
+
+The same [Fidelity webinar transcript, PDF pages 28–34](https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Entry-and-exit-points_v2.pdf)
+was also reviewed for momentum and volume context. A high oscillator reading
+can persist in a strong trend; it is not automatically an opposite entry.
+Volume can corroborate or warn, but a volume change alone does not establish
+a reversal. This archive's BID tick volume cannot inherit conclusions about
+exchange-traded volume without a separate test.
+
+The [CME position-sizing lesson](https://www.cmegroup.com/education/courses/trade-and-risk-management/proper-position-size)
+connects stop distance, monetary loss budget and instrument tick value. Its
+[risk-per-trade lesson](https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule)
+explicitly treats the familiar two-percent threshold as arbitrary. Neither
+publication authorizes changing this lab's external limits. A future ATR
+stop/sizing comparison must keep the existing risk budget fixed; simply
+halving exposure and losing less does not establish better entries or alpha.
+These are reviewed follow-on research questions, not new installed methods,
+completed backtests, demo orders or evidence that an agent has learned them.
+
+For existing compression/range instruments, the curator additionally reviewed
+[ChartSchool's NR7 strategy/calculation/limitations](https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/narrow-range-day-nr7),
+not Crabel's full book. The published setup uses completed **daily high–low
+ranges**; a one-bar true range is only a proxy and can produce different
+signals. Contraction itself provides no directional forecast. A future native
+NR7 alternative needs enough complete prior daily observations; seven M5 bars
+must not be relabeled seven days or silently substituted into this panel.
+[Fidelity's range-trading explanation](https://www.fidelity.com/learning-center/trading-investing/trading/range-trading)
+likewise makes the relevant timeframe and trend/range distinction important.
+Support/resistance mean-reversion in a range cannot be presumed valid after a
+trend develops. These reviews identify precise next experiments for existing
+`compression_expansion`, `range_reentry` and `support_resistance_zone`; they
+do not register untested methods or change the running DMI experiment.
+
+The [MetaTrader five-bar fractal definition](https://www.metatrader5.com/en/terminal/help/indicators/bw_indicators/fractals)
+corroborates the confirmation delay relevant to `confirmed_swing`: the middle
+extreme is not known as a completed two-right-bar pivot at the middle bar's
+clock. The existing unique 2+2 convention remains the lab's exact tie rule,
+not a reproduction of Bill Williams' full Alligator-filtered trading system.
+The [ChartSchool Fibonacci tool description](https://chartschool.stockcharts.com/table-of-contents/chart-analysis/chart-annotation-tools/fibonacci-retracements.md)
+treats retracements as alert zones, not guaranteed reversal prices. Confirmed
+anchors and a separate decision rule remain necessary; the familiar 50-percent
+level is not itself a Fibonacci sequence ratio. These source reviews refine
+the curator's interpretation of existing swing/Fibonacci skills without
+backdating pivots, adding a profitable-result claim or mutating old lessons.
+
+### Observed contextual know-how, not a universal trading rule
+
+The curator completed the separately frozen 28-attempt DMI/ADX panel: 26 actual
+archive products and two retained timeouts. The complete matrix and original
+byte/clock/account verification are in `source-grounded-method-backtests-2026-10-14.md`.
+Overlap direction-only confirmation improved both October windows but worsened
+December; adding ADX was not uniformly better. New York-labelled confirmation
+was sometimes unchanged, sometimes less harmful and sometimes substantially
+worse. London DI can be available without changing a single decision. None is
+a global harmful ban or a universal session recommendation.
+
+Explicit `curator_context_observed_knowhow_20261015_v5` adds a separately pinned
+observed record to the existing reviewed instructions. V4 remains its original
+pending-source version, and all older hashes/defaults remain unchanged. The
+new pack retains selected instruction relevance, the exact original four-method
+intervention roster, its control, full physical clock and descriptive context
+counts. Whole-account cash is never assigned to an individual method or venue
+phase. Timeout economic values remain unknown. Reused discovery observations
+can be taught as provisional know-how without becoming earned agent experience,
+economic authority, a new dispatcher or the older v3 preference-ranking input.
+The receiving agent still needs its own original subsequent trials.
+
+This isolated work is not a production activation or broker-demo receipt.
+Correct operation, measured local intervention effects and independently useful
+skills remain different evidence levels. 2026-and-later market data stay
+paper-only; no test, source reading or new name creates untouched market data.

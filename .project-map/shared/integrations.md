@@ -234,6 +234,24 @@ a copied wire marker: only the checked method runtime grants the non-wire
 capability. Missing observed volume/quotes or a trained meta model remains a
 typed conservative WAIT. OHLC liquidity proxies are not observed order flow.
 
+The same reserved closed-feature owner now publishes `method_dmi_available`,
+`method_dmi_aligned`, `method_adx_strong`, `method_adx_weak`, `method_adx14`,
+`method_di_plus14` and `method_di_minus14`. Wilder seeds use actual observations
+beginning with the second candle. Public inputs need 150 observed rows and an
+adjacent current/previous closed pair. ADX is strength, never direction; DI
+ties, zero true-range and missing observations cannot manufacture agreement.
+New scalar session/regime/volatility method revisions do not widen existing
+London-only contracts. The curator's v4 teaching is explicit opt-in and keeps
+source knowledge separate from the receiving agent's own outcome learning.
+
+Explicit v5 additionally carries the separately pinned post-terminal curator
+observation record. Its original PHP-compiled/Python-executed request, data,
+cost/source, physical row clock, trace and ledger identities remain attached.
+Completed treatment/control clocks must agree; technical clocks/cash stay null.
+Actual selected teaching metadata roundtrips through PHP/Python canonical hashing
+without changing the four-method bundle's attribution or earlier v4 instruction.
+This read-only knowledge transport grants no authority or own-agent experience.
+
 `own_policy_study_rebase_v1` prospectively maps verified original parent/child
 selector rules to fixed library recipe classes. Four new own-policy carriers
 retain the same physical vector and costs; their signed derivations are checked

@@ -20,12 +20,14 @@ class InstrumentMethodLibraryService
         'method_bandwidth_squeeze_available', 'method_bandwidth_squeeze_breakout',
         'method_retest_available', 'method_retest_confirmed',
         'method_macd_available', 'method_macd_cross', 'method_rsi_available', 'method_rsi_recovery',
-        'method_chandelier_available', 'method_chandelier_exit'];
+        'method_chandelier_available', 'method_chandelier_exit',
+        'method_dmi_available', 'method_dmi_aligned', 'method_adx_strong', 'method_adx_weak'];
     public const FEATURE_NUMBER_INPUTS = ['method_atr_ratio', 'method_range_atr', 'method_session_range_atr',
         'method_session_distance_atr', 'method_swing_range_atr', 'method_fib_retracement', 'method_sr_distance_atr',
         'method_sr_touch_count', 'method_sr_age', 'method_equal_level_count', 'method_volume_ratio',
         'method_transition_age', 'method_loss_streak', 'method_bars_since_loss', 'method_signal_age',
-        'method_signal_survival', 'method_regime_code', 'method_meta_score', 'method_spread_atr', 'method_atr_percent', 'method_bandwidth'];
+        'method_signal_survival', 'method_regime_code', 'method_meta_score', 'method_spread_atr', 'method_atr_percent', 'method_bandwidth',
+        'method_adx14', 'method_di_plus14', 'method_di_minus14'];
     private const CONTEXT_AXES = ['regime', 'session', 'volatility', 'venue_phase', 'spread_liquidity_state',
         'transition_state', 'direction', 'session_instance_id', 'calendar_version'];
 

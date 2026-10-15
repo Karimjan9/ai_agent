@@ -27,6 +27,7 @@ BOOL_FIELDS = {
     "method_pullback_pretrend_available", "method_pullback_pretrend_confirmed",
     "method_atr_percent_available",
     "method_bandwidth_squeeze_available", "method_bandwidth_squeeze_breakout",
+    "method_dmi_available", "method_dmi_aligned", "method_adx_strong", "method_adx_weak",
     "method_retest_available", "method_retest_confirmed",
     "method_macd_available", "method_macd_cross", "method_rsi_available", "method_rsi_recovery",
     "method_chandelier_available", "method_chandelier_exit",
@@ -40,6 +41,7 @@ NUMBER_FIELDS = {
     "method_spread_atr",
     "method_atr_percent",
     "method_bandwidth",
+    "method_adx14", "method_di_plus14", "method_di_minus14",
 }
 FIELDS = BOOL_FIELDS | NUMBER_FIELDS
 
@@ -95,6 +97,54 @@ def _wilder_average(values: pd.Series, period: int, *, first: int = 0) -> pd.Ser
     return pd.Series(result, index=values.index, dtype=float)
 
 
+def _directional_movement14(high: pd.Series, low: pd.Series, tr: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Observed-bar Wilder DMI/ADX; index zero has no preceding direction/TR."""
+    up, down = high.diff(), -low.diff()
+    plus = up.where(up.gt(0) & up.gt(down), 0.0)
+    minus = down.where(down.gt(0) & down.gt(up), 0.0)
+    smooth_tr = _wilder_average(tr, 14, first=1)
+    smooth_plus = _wilder_average(plus, 14, first=1)
+    smooth_minus = _wilder_average(minus, 14, first=1)
+    plus_di = (100.0 * (smooth_plus / smooth_tr)).where(smooth_tr.gt(0))
+    minus_di = (100.0 * (smooth_minus / smooth_tr)).where(smooth_tr.gt(0))
+    # Positive observed range without directional movement genuinely has DX=0;
+    # a zero-range history supplies no DI or DX denominator at all.
+    total = plus_di + minus_di
+    dx = (100.0 * ((plus_di - minus_di).abs() / total)).where(total.gt(0))
+    dx.loc[smooth_tr.gt(0) & total.eq(0)] = 0.0
+    # On an ordinary mature history DX first exists at index 14, hence ADX
+    # seeds at index 27. Flat initial observations are never invented DX=0;
+    # later genuine ranges may instead begin a later fourteen-DX seed.
+    return plus_di, minus_di, _wilder_adx14(dx)
+
+
+def _wilder_adx14(dx: pd.Series) -> pd.Series:
+    """Fourteen consecutive mature DX seed; unavailable division resets state."""
+    adx_values, seed, average = [], [], None
+    for value in dx:
+        value = _number(value)
+        if value is None or not 0.0 <= value <= 100.0:
+            # A missing/invalid division cannot bridge an old ADX state. A
+            # later recovery needs fourteen consecutive genuinely mature DX.
+            seed, average = [], None
+        elif average is None:
+            seed.append(value)
+            if len(seed) == 14:
+                average = math.fsum(seed) / 14.0
+        else:
+            average = (13.0 * average + value) / 14.0
+        adx_values.append(float("nan") if average is None else average)
+    return pd.Series(adx_values, index=dx.index, dtype=float)
+
+
+def _adx_strength(value: object) -> tuple[bool, bool]:
+    """Strength is not direction; equality and the 20..25 interval are neutral."""
+    number = _number(value)
+    if number is None or not 0.0 <= number <= 100.0:
+        return False, False
+    return number > 25.0, number < 20.0
+
+
 class ClosedInstrumentMethodFeatures:
     """A bounded original frame plus an agent-owned mature-close journal."""
 
@@ -126,6 +176,7 @@ class ClosedInstrumentMethodFeatures:
         if not valid.all():
             raise ValueError("METHOD_FEATURE_OHLC_INVALID")
         tr = pd.concat([high - low, (high - close.shift(1)).abs(), (low - close.shift(1)).abs()], axis=1).max(axis=1)
+        di_plus14, di_minus14, adx14 = _directional_movement14(high, low, tr)
         atr = tr.rolling(14, min_periods=14).mean()
         slow = atr.shift(1).rolling(50, min_periods=50).mean()
         # Disjoint windows: prior five compressed TR bars vs their previous
@@ -232,6 +283,18 @@ class ClosedInstrumentMethodFeatures:
             previous_fast = _number(ema20.iloc[index - 1]) if index else None
             previous_trend = _number(ema50.iloc[index - 1]) if index else None
             contiguous = bool(index and stamp - self.stamps[index - 1] == self.duration)
+            directional = tuple(_number(series.iloc[index]) for series in (di_plus14, di_minus14, adx14))
+            # The 150-observation stabilization floor is a declared lab input
+            # contract, not a certificate that all historical calendar bars
+            # exist. Only the current/previous closed pair must be adjacent.
+            dmi_ready = bool(index >= 149 and contiguous
+                and all(value is not None and 0.0 <= value <= 100.0 for value in directional))
+            if dmi_ready:
+                positive, negative, strength = directional
+                strong, weak = _adx_strength(strength)
+                output.update({"method_dmi_available": True, "method_di_plus14": positive,
+                    "method_di_minus14": negative, "method_adx14": strength,
+                    "method_adx_strong": strong, "method_adx_weak": weak})
             macd_value, macd_reference = _number(macd.iloc[index]), _number(macd_signal.iloc[index])
             previous_macd = _number(macd.iloc[index - 1]) if index else None
             previous_macd_reference = _number(macd_signal.iloc[index - 1]) if index else None
@@ -474,6 +537,9 @@ class ClosedInstrumentMethodFeatures:
         high, low = source.get("_high_pivot"), source.get("_low_pivot")
         buy = direction == "BUY"
         if direction in {"BUY", "SELL"}:
+            if output["method_dmi_available"]:
+                positive, negative = output["method_di_plus14"], output["method_di_minus14"]
+                output["method_dmi_aligned"] = bool(positive > negative if buy else negative > positive)
             output["method_band_reentry"] = source["_band_reentry_direction"] == direction
             output["method_bandwidth_squeeze_breakout"] = source["_bandwidth_breakout_direction"] == direction
             output["method_pullback_confirmed"] = source["_pullback_direction"] == direction

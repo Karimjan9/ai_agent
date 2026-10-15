@@ -658,3 +658,19 @@ plans research in 2027 or later. Original signed arm consumption checks the
 continuous pre-paper epoch rather than a post-2026 minimum market date. Its
 signature, original release, consumed-file witnesses and run clock remain
 mandatory, and archived seals are not rewritten.
+
+Curator contextual instruction is separately versioned. Source review and
+correctness tests may create `awaiting_original_panel` teaching knowledge,
+not an activated or useful skill. Original scoped replay can later establish
+available/unavailable, changed/unchanged, underpowered, local null/negative or
+provisional positive observations through a separately pinned evidence record.
+None is an agent-owned outcome, independent certificate, hard harmful ban,
+credit, Master or paper/live permission. Unknown contexts remain unknown.
+
+Explicit `curator_context_observed_knowhow_20261015_v5` retains all 28 terminal
+original rows and 24 whole-bundle contrasts from the separately verified panel.
+Timeout cash, trades and actual clocks remain null, not synthetic zeros. Selected
+instruction projection preserves the full four-method intervention identity;
+event context counts are descriptive, not isolated context PnL. V1-v4 hashes,
+literal v4 `awaiting_original_panel` state and default curriculum are unchanged.
+V5 is curator instruction only and cannot borrow v3 ranking or agent-owned outcomes.

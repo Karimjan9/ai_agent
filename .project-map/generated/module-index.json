@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T10:05:01.719Z",
-  "source_digest": "62ad514e4e02d28c1c035df8c88cf99739e484b359feda2e8edb0c39a5a31b14",
-  "source_file_count": 1715,
-  "git_head": "b60569def9b16870348293e66ede71ddaf54ba4d",
+  "generated_at": "2026-10-15T13:21:33.310Z",
+  "source_digest": "cdf9b8090ae045be2d965cc21cc6fb53eb1368fef36c3d0ad4215312b3bd5ecc",
+  "source_file_count": 1721,
+  "git_head": "b3546223b84a94fd2290c886c5c46e3c2a27ae04",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -47,6 +47,13 @@
         "backend-laravel/tests/Feature/InstrumentMethodNativeMetaTest.php",
         "backend-laravel/app/Services/CuratedInstrumentMethodCatalogService.php",
         "backend-laravel/app/Services/InstrumentOperatingSkillCurriculumTrait.php",
+        "backend-laravel/app/Services/InstrumentContextPracticeTrait.php",
+        "backend-laravel/resources/research/instrument-methods/context-adx-dmi-v1.json",
+        "backend-laravel/tests/Feature/CuratorContextPracticeTest.php",
+        "backend-laravel/tests/Feature/CuratorContextKnowHowTest.php",
+        "backend-laravel/resources/research/instrument-operating-skills/curator-context-observations-v5.json",
+        "backend-laravel/tests/Feature/CuratorContextObservedKnowHowTest.php",
+        "ai-service-python/tests/test_closed_dmi_adx_method.py",
         "backend-laravel/resources/research/instrument-operating-skills/price-structure-v1.json",
         "backend-laravel/resources/research/instrument-operating-skills/risk-execution-v1.json",
         "backend-laravel/resources/research/instrument-operating-skills/model-v1.json",
@@ -503,6 +510,9 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "backend-laravel/tests/Feature/CuratorContextPracticeTest.php",
+        "backend-laravel/tests/Feature/CuratorContextKnowHowTest.php",
+        "ai-service-python/tests/test_closed_dmi_adx_method.py",
         "ai-service-python/tests/test_method_native_score_binding.py",
         "backend-laravel/tests/Feature/CuratorPracticalKnowHowTest.php",
         "backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php",
@@ -610,7 +620,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 211,
+      "source_file_count": 216,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -1022,6 +1032,7 @@
         "ai-service-python/app/services/market_adaptive_replay.py",
         "ai-service-python/app/services/multitimeframe.py",
         "ai-service-python/app/services/backtester.py",
+        "ai-service-python/tests/test_replay_market_coordinate_cache.py",
         "ai-service-python/app/services/replay_executed_clock.py",
         "ai-service-python/app/services/research_program_tasks.py",
         "ai-service-python/app/services/instrument_research.py",
@@ -1081,6 +1092,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "Simple replay market-coordinate memoization is invocation-local, bounded and cleared on exit; it reuses only the canonical calendar result for the same UTC timestamp. No persistent cross-arm cache, calendar change or economic permission is introduced, and complete cached/unwrapped response parity is tested.",
         "Optional instrument_method_learning_v1 binds intrinsic method/recipe library and independent agent policy revisions to exact parameters, data, execution and observed closed context. Per-candidate cache retains its exact binding and cannot reuse missing/stale method receipts; explicit empty declarations fail closed. Actual decision events measure target reach/use separately. Unsigned diagnostic caps only reduce ordinary deadlines; privately signed original-deadline v2 admits only future exact-source bounded simple arms above 300 and at most 600 seconds, never old attempts or full/independent/paper authority.",
         "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",
         "Component and descendant full original windows execute the whole authorized source through the existing stateful executor and actual hard-risk/maturity observations, not historical survivor/walk-forward substitution. Selector monthly folds preserve the original genes, derive a private slice fence and remain computational strata of one physical window, never extra independent confirmation units.",
@@ -1120,6 +1132,7 @@
         "volume_lane=none crosses the boundary as not_requested and non-blocking."
       ],
       "tests": [
+        "ai-service-python/tests/test_replay_market_coordinate_cache.py",
         "backend-laravel/tests/Unit/ReplayLivenessProbeTest.php",
         "ai-service-python/tests/test_market_regime.py",
         "ai-service-python/tests/test_scoped_research_runtime.py",
@@ -1170,7 +1183,7 @@
       "flows": [
         ".project-map/modules/laravel-python-contract/flows/contract-attestation.md"
       ],
-      "source_file_count": 72,
+      "source_file_count": 73,
       "map": ".project-map/modules/laravel-python-contract/module.yaml"
     },
     {

@@ -9,6 +9,7 @@ use RuntimeException;
 class CuratedInstrumentMethodCatalogService
 {
     use InstrumentOperatingSkillCurriculumTrait;
+    use InstrumentContextPracticeTrait;
 
     public const PROTOCOL = 'curated_instrument_method_catalog_v1';
     public const CATALOG_KEY = 'internet_instrument_methods_20261013_v1';
