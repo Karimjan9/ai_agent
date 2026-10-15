@@ -315,6 +315,8 @@ class InstrumentMethodStudyExecutionTest extends TestCase
     public function test_spent_four_original_projection_reopens_historical_bytes_and_is_idempotent(): void
     {
         [$work, $generation] = $this->spentOriginalProjection();
+        LabGeneration::create(['ai_laboratory_id' => $generation->ai_laboratory_id, 'generation' => 2,
+            'status' => 'technical_quarantine', 'completed_at' => now()]); // Older full proof keeps its original shape.
         $before = [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->fresh()->toArray(), $work->receipt->toArray(),
             data_get($generation->trigger_context, 'instrument_method_study_terminal')];
         $evidence = Mockery::mock(LabImmutableEvidenceService::class)->makePartial();
@@ -328,11 +330,169 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         $this->assertSame($before, [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->fresh()->toArray(), $work->receipt->fresh()->toArray(),
             data_get($generation->fresh()->trigger_context, 'instrument_method_study_terminal')]);
         $events = \App\Models\LabLifecycleEvent::where('event_type', 'instrument_method_study_terminal_projection')->count();
+        $projection = data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal');
+        $this->assertArrayNotHasKey('attempted_arms', $projection); $this->assertArrayNotHasKey('unattempted_arms', $projection);
         $second = $owner->reconcileGeneration($generation->fresh());
         $this->assertSame('recorded', $second['status']); $this->assertFalse($second['closed']); $this->assertSame(0, $second['changed_agents']);
         $this->assertSame($events, \App\Models\LabLifecycleEvent::where('event_type', 'instrument_method_study_terminal_projection')->count());
         $this->assertDatabaseCount('lab_evaluation_runs', 4); $this->assertDatabaseCount('agent_method_experiences', 0);
         $this->assertDatabaseCount('lab_evolution_credit_events', 0); Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public function test_future_early_close_reinspection_requires_exact_original_absence_lifecycle_proof(): void
+    {
+        $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class); $queued = $owner->execute($work);
+        Http::fake(['*/api/backtest/run' => Http::response(['synthetic_transition_fixture' => true], 500)]);
+        $result = $owner->executeQueuedArm($work->id, $work->lease_token, $work->fence_version,
+            $queued['arm'], data_get($work->fresh()->result, 'queued_arm.request_hash'), 120);
+        $this->assertSame('completed_technical', $result['status'], json_encode($result));
+        $generation = LabGeneration::sole();
+        $absent = $generation->agents()->where('model_version_id', $this->design['arms']['L2A1']['model_id'])->sole();
+        $event = \App\Models\LabLifecycleEvent::where('lab_agent_id', $absent->id)
+            ->where('event_type', 'instrument_method_study_terminal_projection')->sole();
+        $saved = $event->getAttributes(); $payload = $event->payload;
+        app(\App\Services\AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'future original close reinspection');
+        $probe = Mockery::mock(\App\Services\ReplayLivenessProbeService::class);
+        $probe->shouldReceive('probe')->andReturn(['source' => 'replay-status', 'status' => 'ok', 'active_requests' => 0]);
+        $this->app->instance(\App\Services\ReplayLivenessProbeService::class, $probe);
+        foreach (['wrong_source', 'wrong_phase', 'run', 'attempt', 'from', 'to', 'reason', 'work_id', 'string_work_id',
+            'extra', 'ceiling', 'before_close', 'future', 'early_created', 'duplicate'] as $case) {
+            $change = match ($case) {
+                'wrong_source' => ['source' => 'caller'], 'wrong_phase' => ['phase' => 'full'], 'run' => ['run_id' => (string) Str::uuid()],
+                'attempt' => ['attempt' => 1], 'from' => ['from_status' => 'queued'], 'to' => ['to_status' => 'screened'],
+                'reason' => ['reason_code' => 'METHOD_STUDY_OTHER_REASON'],
+                'work_id' => ['payload' => [...$payload, 'work_id' => (int) $work->id + 1]],
+                'string_work_id' => ['payload' => [...$payload, 'work_id' => (string) $work->id]],
+                'extra' => ['payload' => [...$payload, 'caller_ready' => true]],
+                'ceiling' => ['payload' => [...$payload, 'skill_credit' => true]],
+                'before_close' => ['occurred_at' => $work->fresh()->completed_at->subMinute()],
+                'future' => ['occurred_at' => now()->addHour()], 'early_created' => ['created_at' => $work->fresh()->completed_at->subMinute()],
+                default => [],
+            };
+            $event->forceFill($change)->save();
+            if ($case === 'duplicate') { $duplicate = $event->replicate(); $duplicate->event_id = (string) Str::uuid(); $duplicate->save(); }
+            $this->assertSame('METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED', $owner->reconcileGeneration($generation)['reason_code'], $case);
+            $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'), $case);
+            if (isset($duplicate)) { $duplicate->delete(); unset($duplicate); }
+            $event->setRawAttributes($saved); $event->save(); $event->refresh();
+        }
+        $event->update(['payload' => array_reverse($payload, true)]); // JSON object key order may differ by DB driver.
+        $before = [LabEvaluationRun::get()->toArray(), $work->fresh()->toArray(), \App\Models\LabEvidenceArtifact::get()->toArray(),
+            \App\Models\LabLifecycleEvent::get()->toArray()];
+        $result = $owner->reconcileGeneration($generation->fresh());
+        $this->assertSame('recorded', $result['status'], json_encode($result)); $this->assertSame(0, $result['changed_agents']);
+        $this->assertSame($before, [LabEvaluationRun::get()->toArray(), $work->fresh()->toArray(), \App\Models\LabEvidenceArtifact::get()->toArray(),
+            \App\Models\LabLifecycleEvent::get()->toArray()]);
+        $this->assertFalse($owner->reconcileGeneration($generation->fresh())['closed']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 1); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertSentCount(1); Bus::assertDispatched(ExecuteScopedResearchArmJob::class, 1);
+    }
+
+    public function test_partial_spent_two_originals_project_absence_without_rewriting_history_and_are_idempotent(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true, null, ['L1A1', 'L2A1']);
+        LabGeneration::create(['ai_laboratory_id' => $generation->ai_laboratory_id, 'generation' => 2,
+            'status' => 'technical_quarantine', 'completed_at' => now()]);
+        $before = [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->toArray(), $work->receipt->toArray(),
+            \App\Models\LabEvidenceArtifact::orderBy('id')->get()->toArray()];
+        $owner = app(InstrumentMethodStudyExecutionService::class); $result = $owner->reconcileGeneration($generation);
+        $this->assertSame('recorded', $result['status'], json_encode($result)); $this->assertSame(3, $result['changed_agents']);
+        $this->assertSame(['screened', 'technical_quarantine', 'technical_quarantine', 'technical_quarantine'], LabAgent::orderBy('id')->pluck('lifecycle_status')->all());
+        $projection = data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal');
+        $this->assertSame(['L1A1', 'L2A1'], $projection['attempted_arms']);
+        $this->assertSame(['L1A2', 'L2A2'], $projection['unattempted_arms']);
+        $this->assertSame($before, [LabEvaluationRun::orderBy('id')->get()->toArray(), $work->fresh()->toArray(), $work->receipt->fresh()->toArray(),
+            \App\Models\LabEvidenceArtifact::orderBy('id')->get()->toArray()]);
+        $second = $owner->reconcileGeneration($generation->fresh());
+        $this->assertSame('recorded', $second['status'], json_encode($second)); $this->assertFalse($second['closed']);
+        $this->assertDatabaseCount('lab_evaluation_runs', 2); $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertSame(2, $work->fresh()->attempts);
+        $count = \App\Models\LabLifecycleEvent::count();
+        $generation->refresh(); $generation->update(['trigger_context' => [...$generation->trigger_context,
+            'instrument_method_study_projection_terminal' => [...$projection, 'original_proof_hash' => str_repeat('a', 64)]]]);
+        $this->assertSame('METHOD_STUDY_TERMINAL_PROJECTION_DRIFT', $owner->reconcileGeneration($generation)['reason_code']);
+        $this->assertSame($count, \App\Models\LabLifecycleEvent::count());
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public function test_partial_spent_projection_refuses_zero_extra_missing_unfinished_and_wrong_ownership(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true, null, ['L1A1', 'L2A1']);
+        $owner = app(InstrumentMethodStudyExecutionService::class); $original = $work->result;
+        foreach (['zero', 'extra', 'null', 'missing'] as $case) {
+            $result = $original;
+            if ($case === 'zero') $result['original_arms'] = [];
+            if ($case === 'extra') $result['original_arms']['FOREIGN'] = $result['original_arms']['L1A1'];
+            if ($case === 'null') $result['original_arms']['L2A1'] = null;
+            if ($case === 'missing') unset($result['original_arms']['L2A1']);
+            $work->update(['result' => $result]);
+            $expected = match ($case) { 'null' => 'METHOD_STUDY_TERMINAL_ORIGINAL_CHECKPOINT_REQUIRED',
+                'missing' => 'METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED', default => 'METHOD_STUDY_TERMINAL_FOUR_ORIGINALS_REQUIRED' };
+            $this->assertSame($expected, $owner->reconcileGeneration($generation)['reason_code'], $case);
+        }
+        $work->update(['result' => $original]);
+        $technical = LabEvaluationRun::where('status', 'technical_error')->sole(); $saved = $technical->getAttributes();
+        foreach (['unfinished', 'wrong_work', 'wrong_model', 'no_technical'] as $case) {
+            if ($case === 'unfinished') $technical->update(['finished_at' => null]);
+            if ($case === 'wrong_work') $technical->update(['metadata' => [...$technical->metadata,
+                InstrumentMethodStudyExecutionService::MARKER => [...$technical->metadata[InstrumentMethodStudyExecutionService::MARKER], 'work_id' => (int) $work->id + 1]]]);
+            if ($case === 'wrong_model') $technical->update(['model_version_id' => $this->design['arms']['L2A2']['model_id']]);
+            if ($case === 'no_technical') $technical->update(['status' => 'completed']);
+            $expected = $case === 'no_technical' ? 'METHOD_STUDY_TERMINAL_PARTIAL_TECHNICAL_ORIGINAL_REQUIRED' : 'METHOD_STUDY_TERMINAL_ORIGINAL_OWNER_REQUIRED';
+            $this->assertSame($expected, $owner->reconcileGeneration($generation)['reason_code'], $case);
+            $technical->setRawAttributes($saved); $technical->save(); $technical->refresh();
+        }
+        $absent = LabAgent::where('model_version_id', $this->design['arms']['L1A2']['model_id'])->sole();
+        foreach (['queued', 'technical_quarantine'] as $status) {
+            $absent->update(['lifecycle_status' => $status]);
+            $this->assertSame('METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED', $owner->reconcileGeneration($generation)['reason_code'], $status);
+        }
+        $absent->update(['lifecycle_status' => 'draft']);
+        foreach (['model', 'agent', 'artifact'] as $case) {
+            if ($case === 'artifact') $ghost = \App\Models\LabEvidenceArtifact::create(['artifact_id' => (string) Str::uuid(), 'run_id' => (string) Str::uuid(),
+                'lab_generation_id' => $generation->id, 'lab_agent_id' => $absent->id, 'artifact_type' => 'synthetic_unowned_absent_arm',
+                'sha256' => str_repeat('a', 64), 'recorded_at' => now()]);
+            else $ghost = LabEvaluationRun::create(['run_id' => (string) Str::uuid(), 'lab_generation_id' => $generation->id,
+                'lab_agent_id' => $case === 'agent' ? $absent->id : $technical->lab_agent_id,
+                'model_version_id' => $case === 'model' ? $absent->model_version_id : $technical->model_version_id,
+                'phase' => 'screening', 'mode' => 'incremental', 'status' => 'started', 'started_at' => now()]);
+            $this->assertSame('blocked', $owner->reconcileGeneration($generation)['status'], $case); $ghost->delete();
+        }
+        $later = LabGeneration::create(['ai_laboratory_id' => $generation->ai_laboratory_id, 'generation' => 2,
+            'status' => 'technical_quarantine', 'completed_at' => now()]);
+        $enrollment = $absent->replicate(); $enrollment->lab_generation_id = $later->id;
+        $enrollment->lifecycle_status = 'technical_quarantine'; $enrollment->save();
+        $this->assertSame('METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
+        $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
+    public function test_partial_older_projection_refuses_later_generation_agent_and_run_activity(): void
+    {
+        [$work, $generation] = $this->spentOriginalProjection(true, null, ['L1A1', 'L2A1']);
+        $owner = app(InstrumentMethodStudyExecutionService::class);
+        $later = LabGeneration::create(['ai_laboratory_id' => $generation->ai_laboratory_id, 'generation' => 2, 'status' => 'screening']);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_GENERATION_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $later->update(['status' => 'unknown_future_terminal', 'completed_at' => now()]);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_GENERATION_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $later->update(['status' => 'technical_quarantine']);
+        $model = ModelVersion::create(['name' => 'later-open-agent-fixture', 'strategy' => 'breakout', 'status' => 'draft',
+            'parameters' => app(StrategyParameterSchemaService::class)->defaults('breakout')]);
+        $agent = LabAgent::create(['lab_generation_id' => $later->id, 'model_version_id' => $model->id,
+            'symbol' => 'XAUUSD', 'timeframe' => 'H1', 'strategy_family' => 'breakout', 'lifecycle_status' => 'screening', 'origin' => 'synthetic-later-activity']);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_AGENT_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $agent->update(['lifecycle_status' => 'unknown_future_terminal']);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_AGENT_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $agent->update(['lifecycle_status' => 'technical_quarantine']);
+        $laterRun = LabEvaluationRun::create(['run_id' => (string) Str::uuid(), 'lab_generation_id' => $later->id, 'lab_agent_id' => $agent->id,
+            'model_version_id' => $model->id, 'phase' => 'screening', 'mode' => 'incremental', 'status' => 'started', 'started_at' => now()]);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_ORIGINAL_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $laterRun->update(['lab_generation_id' => null]);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_ORIGINAL_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $laterRun->update(['lab_agent_id' => null]);
+        $this->assertSame('METHOD_STUDY_TERMINAL_LATER_ORIGINAL_ACTIVE', $owner->reconcileGeneration($generation)['reason_code']);
+        $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
     }
 
     public function test_completed_actual_publication_keeps_exact_begin_owner_marker(): void
@@ -444,6 +604,94 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         return [['valid'], ['numeric_value'], ['integer_type'], ['signature']];
     }
 
+    public function test_spent_unsigned_original_requires_verified_exact_old_publisher_and_wire_without_granting_a_deadline(): void
+    {
+        config()->set('services.internal_api.token', 'synthetic-unsigned-history-test-key-not-production-0123456789');
+        $this->design['study_key'] = 'reviewed-unsigned-original-software';
+        $this->design['resource_caps']['max_runtime_seconds'] = 600;
+        $registered = app(InstrumentMethodStudyService::class)->preregister($this->design);
+        $this->assertSame('preregistered_diagnostic', $registered['status']); $this->studyHash = $registered['study_hash'];
+        // Conditional owner fixture: the real archive verifier has its own byte,
+        // file-set and source-domain tests. No historical ZIP is manufactured.
+        $archive = [];
+        $releases = Mockery::mock(\App\Services\ResearchReleaseSealService::class)->makePartial();
+        $releases->shouldReceive('verifySourceArtifact')->andReturnUsing(function () use (&$archive): array { return $archive; });
+        $this->app->instance(\App\Services\ResearchReleaseSealService::class, $releases);
+        $compiled = [];
+        [$work, $generation] = $this->spentOriginalProjection(true, function (array $requests) use (&$compiled): array {
+            foreach ($requests as $arm => &$request) {
+                // Reproduce the exact reviewed old publisher, not an invented
+                // signature or a current executable request without a deadline.
+                unset($request['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER]);
+                $request['parameters'] = (array) ModelVersion::findOrFail($this->design['arms'][$arm]['model_id'])->parameters;
+            }
+            unset($request); $compiled = $requests; return $requests;
+        }, ['L1A1', 'L2A1'], function (LabGeneration $generation) use (&$archive): void {
+            $seal = (array) data_get($generation->trigger_context, 'research_release');
+            $seal['source_artifact'] = ['protocol' => 'research_source_artifact_reference_v1',
+                'artifact_hash' => str_repeat('e', 64), 'archive_sha256' => str_repeat('f', 64),
+                'archive_path' => '.runtime/research-source-artifacts/'.str_repeat('e', 64).'.zip',
+                'source_hash' => $seal['source_hash'], 'python_source_hash' => $seal['python_source_hash']];
+            $identity = $seal; unset($identity['release_hash'], $identity['sealed_at'], $identity['promotion_evidence']);
+            $seal['release_hash'] = app(ExecutionContractService::class)->hashParameters($identity);
+            $generation->update(['trigger_context' => [...(array) $generation->trigger_context, 'research_release' => $seal]]);
+            $archive = ['status' => 'verified', 'artifact_hash' => $seal['source_artifact']['artifact_hash'],
+                'manifest' => ['protocol' => \App\Services\ResearchReleaseSealService::SOURCE_ARTIFACT_PROTOCOL,
+                    'source_identity' => ['source_hash' => $seal['source_hash'], 'python_source_hash' => $seal['python_source_hash']],
+                    'files' => ['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php' => [
+                        'bytes' => 37367, 'sha256' => 'c804ef64778ceafa7858245d86691a3d4d289d450a3dc63daa58fae388fcf490']]]];
+        });
+        $owner = app(InstrumentMethodStudyExecutionService::class); $verified = $archive;
+        $runs = LabEvaluationRun::orderBy('id')->get()->toArray(); $result = $work->result;
+        $cases = ['unverified', 'missing_manifest', 'wrong_owner_hash', 'wrong_owner_bytes', 'wrong_source', 'wrong_python', 'wrong_address'];
+        foreach ($cases as $case) {
+            $archive = $verified;
+            if ($case === 'unverified') $archive['status'] = 'unknown';
+            if ($case === 'missing_manifest') unset($archive['manifest']);
+            if ($case === 'wrong_owner_hash') $archive['manifest']['files']['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php']['sha256'] = str_repeat('a', 64);
+            if ($case === 'wrong_owner_bytes') $archive['manifest']['files']['backend-laravel/app/Services/InstrumentMethodStudyExecutionService.php']['bytes']++;
+            if ($case === 'wrong_source') $archive['manifest']['source_identity']['source_hash'] = str_repeat('b', 64);
+            if ($case === 'wrong_python') $archive['manifest']['source_identity']['python_source_hash'] = str_repeat('c', 64);
+            if ($case === 'wrong_address') $archive['artifact_hash'] = str_repeat('d', 64);
+            $refused = $owner->reconcileGeneration($generation);
+            $this->assertSame($case === 'unverified' ? 'METHOD_STUDY_TERMINAL_SOURCE_ARCHIVE_REQUIRED'
+                : 'METHOD_STUDY_TERMINAL_LEGACY_COMPLETED_BINDING_REQUIRED', $refused['reason_code'], $case);
+            $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'), $case);
+        }
+        $archive = $verified;
+        $registration = $work->payload['method_registration'];
+        $seal = data_get($generation->trigger_context, 'research_release');
+        $capability = new \ReflectionMethod($owner, 'historicalUnsignedPublisher');
+        $capability = $capability->invoke($owner, $archive, $seal, $registration);
+        $this->assertSame($seal, $capability);
+        $matcher = new \ReflectionMethod($owner, 'historicalRequestParametersMatch');
+        $model = ModelVersion::findOrFail($this->design['arms']['L1A1']['model_id']);
+        $design = app(InstrumentMethodStudyService::class)->originalDesign($this->studyHash);
+        $request = $compiled['L1A1'];
+        $this->assertFalse($matcher->invoke($owner, $request, $model, $registration, $design, 'L1A1'));
+        foreach (['null_deadline', 'string_deadline', 'empty_deadline', 'numeric_value', 'integer_type', 'cap', 'nested_cap', 'release', 'reference'] as $case) {
+            $changed = $request;
+            if ($case === 'null_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = null;
+            if ($case === 'string_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = 'legacy';
+            if ($case === 'empty_deadline') $changed['policy_context'][InstrumentMethodStudyExecutionService::DEADLINE_MARKER] = [];
+            if ($case === 'numeric_value') $changed['parameters']['trend_strength_min'] += .1;
+            if ($case === 'integer_type') $changed['parameters']['lookback'] = (float) $changed['parameters']['lookback'];
+            if ($case === 'cap') $changed['policy_context']['instrument_method_study_resource_cap']['max_runtime_seconds']++;
+            if ($case === 'nested_cap') $changed['policy_context']['instrument_method_study']['resource_caps']['max_rows']++;
+            if ($case === 'release') $changed['research_release']['release_hash'] = str_repeat('a', 64);
+            if ($case === 'reference') $changed['research_release']['source_artifact']['archive_sha256'] = str_repeat('a', 64);
+            $this->assertFalse($matcher->invoke($owner, $changed, $model, $registration, $design, 'L1A1', $capability), $case);
+        }
+        $this->assertSame('recorded', $owner->reconcileGeneration($generation)['status']);
+        $again = $owner->reconcileGeneration($generation->fresh());
+        $this->assertSame('recorded', $again['status']); $this->assertFalse($again['closed']);
+        $this->assertSame($runs, LabEvaluationRun::orderBy('id')->get()->toArray());
+        $this->assertSame($result, $work->fresh()->result); $this->assertSame(2, $work->fresh()->attempts);
+        $this->assertDatabaseCount('lab_evaluation_runs', 2);
+        foreach ($compiled as $request) $this->assertArrayNotHasKey(InstrumentMethodStudyExecutionService::DEADLINE_MARKER, $request['policy_context']);
+        Bus::assertNothingDispatched(); Http::assertNothingSent();
+    }
+
     public function test_spent_projection_refuses_corrupt_receipt_unfinished_duplicate_or_missing_original(): void
     {
         [$work, $generation] = $this->spentOriginalProjection(); $owner = app(InstrumentMethodStudyExecutionService::class);
@@ -459,7 +707,7 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         $this->assertSame('METHOD_STUDY_TERMINAL_ONE_ORIGINAL_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
         $duplicate->delete();
         $result = $work->result; unset($result['original_arms']['L2A2']); $work->update(['result' => $result]);
-        $this->assertSame('METHOD_STUDY_TERMINAL_FOUR_ORIGINALS_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
+        $this->assertSame('METHOD_STUDY_TERMINAL_UNATTEMPTED_ARM_REQUIRED', $owner->reconcileGeneration($generation)['reason_code']);
         $this->assertSame('screening', LabAgent::orderByDesc('id')->first()->lifecycle_status);
         $this->assertNull(data_get($generation->fresh()->trigger_context, 'instrument_method_study_projection_terminal'));
         Bus::assertNothingDispatched(); Http::assertNothingSent();
@@ -531,10 +779,12 @@ class InstrumentMethodStudyExecutionTest extends TestCase
     }
 
     /** Synthetic transition products only; no market outcome or economic claim. */
-    private function spentOriginalProjection(bool $legacyCompleted = false, ?callable $mutateRequests = null): array
+    private function spentOriginalProjection(bool $legacyCompleted = false, ?callable $mutateRequests = null, ?array $attemptedArms = null,
+        ?callable $prepareGeneration = null): array
     {
         $work = $this->claim(); $owner = app(InstrumentMethodStudyExecutionService::class); $proof = $owner->inspectWork($work);
         $generation = app(LabPopulationService::class)->buildInstrumentMethodStudy($work, $proof);
+        if ($prepareGeneration !== null) $prepareGeneration($generation);
         $requests = []; foreach (InstrumentMethodStudyExecutionService::ARMS as $arm) {
             $agent = $generation->agents()->where('model_version_id', $proof['design']['arms'][$arm]['model_id'])->sole();
             $requests[$arm] = $owner->compileRequest($generation, $agent, $arm, $proof);
@@ -542,19 +792,21 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         if ($mutateRequests !== null) $requests = $mutateRequests($requests);
         $ceiling = ['research_only' => true, 'independent_validation' => false, 'economic_authority' => false, 'confirmation_proven' => false,
             'mastery_proven' => false, 'skill_credit' => false, 'promotion_evidence' => false, 'paper_authority' => false];
+        $attemptedArms ??= InstrumentMethodStudyExecutionService::ARMS; $technicalArm = end($attemptedArms);
         $originals = []; $evidence = app(LabImmutableEvidenceService::class);
         foreach (InstrumentMethodStudyExecutionService::ARMS as $index => $arm) {
             $agent = $generation->agents()->where('model_version_id', $proof['design']['arms'][$arm]['model_id'])->sole();
+            if (! in_array($arm, $attemptedArms, true)) { $agent->update(['lifecycle_status' => 'draft']); continue; }
             $run = $evidence->beginRun($agent, 'screening', 'incremental', ['source' => InstrumentMethodStudyExecutionService::class, 'data_hash' => $this->design['data_hash']]);
             $run->update(['metadata' => [...(array) $run->metadata, InstrumentMethodStudyExecutionService::MARKER => [
                 'work_id' => (int) $work->id, 'study_hash' => $this->studyHash, 'arm' => $arm]]]);
             $evidence->attachRequest($run, $requests[$arm], ['data_hash' => $this->design['data_hash']]);
             $metadata = ['quality_verdict' => 'withheld'];
-            if ($legacyCompleted && $index !== 3) $metadata[InstrumentMethodStudyExecutionService::MARKER] = [
+            if ($legacyCompleted && $arm !== $technicalArm) $metadata[InstrumentMethodStudyExecutionService::MARKER] = [
                 'arm' => $arm, 'study_hash' => $this->studyHash, 'projection_withheld' => true, ...$ceiling];
-            $response = $legacyCompleted && $index !== 3 ? $this->syntheticCompletedResponse($requests[$arm]) : ['synthetic_transition_fixture' => true];
-            $evidence->finishIfOpen($run, $index === 3 ? 'technical_error' : 'completed', $response, [], $metadata);
-            $agent->update(['lifecycle_status' => $index === 3 ? 'screening' : 'screened']);
+            $response = $legacyCompleted && $arm !== $technicalArm ? $this->syntheticCompletedResponse($requests[$arm]) : ['synthetic_transition_fixture' => true];
+            $evidence->finishIfOpen($run, $arm === $technicalArm ? 'technical_error' : 'completed', $response, [], $metadata);
+            $agent->update(['lifecycle_status' => $arm === $technicalArm ? 'screening' : 'screened']);
             $originals[$arm] = ['run_id' => $run->run_id, 'model_id' => (int) $agent->model_version_id,
                 'request_hash' => app(\App\Services\ResearchPaperEpochContractService::class)->parameterHash($requests[$arm])];
         }
@@ -562,7 +814,7 @@ class InstrumentMethodStudyExecutionTest extends TestCase
         $generation->update(['status' => 'technical_quarantine', 'completed_at' => now(), 'trigger_context' => [...(array) $generation->trigger_context,
             'instrument_method_study_terminal' => ['protocol' => InstrumentMethodStudyExecutionService::PROTOCOL, 'reason_code' => $reason,
                 'original_results_unchanged' => true, ...$ceiling]]]);
-        $work->update(['status' => 'settled', 'attempts' => 4, 'lease_token' => null, 'lease_expires_at' => null, 'completed_at' => now(),
+        $work->update(['status' => 'settled', 'attempts' => count($attemptedArms), 'lease_token' => null, 'lease_expires_at' => null, 'completed_at' => now(),
             'result' => ['status' => 'original_method_matrix_unassessable', 'reason_code' => $reason, 'generation_id' => (int) $generation->id,
                 'original_arms' => $originals, ...$ceiling]]);
         app(\App\Services\AutonomousModeService::class)->stop('XAUUSD', 'H1', 'test', 'synthetic projection fixture');
