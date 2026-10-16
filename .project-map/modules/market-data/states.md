@@ -1,5 +1,12 @@
 # Market-data continuity states
 
+An offline causal-learning consumer may select two bounded native discovery
+weeks using the unchanged calendar owner. It reopens exact parent/manifest
+bytes, audits all 200 real warmup rows and complete UTC Monday-Friday edges,
+and preserves raw header/BOM/cells plus observed availability. Refused weeks
+remain in its manifest. This is not provider recovery, source-wide continuity,
+unused validation, a quote/volume substitution or a new admission owner.
+
 | From | Trigger | To | Guard / owner | Failure or compensation |
 | --- | --- | --- | --- | --- |
 | healthy | scheduled audit detects a bounded missing range | catching_up | `MarketDataContinuityService` creates explicit pending range | Existing valid candles remain usable only under the documented rules. |

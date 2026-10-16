@@ -2,13 +2,22 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T05:28:40.609Z",
-  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
-  "source_file_count": 1747,
-  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
+  "generated_at": "2026-10-16T07:28:08.992Z",
+  "source_digest": "fe1dc779b7f7ff0c505da24887716a66484b3c5f99dbd9c01fdfa161815c57ee",
+  "source_file_count": 1756,
+  "git_head": "33767fdc523778087b865abeb32dbd4c8016ad6e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
+    "ai-service-python/scripts/curator_instrument_windows.py",
+    "ai-service-python/scripts/curator_instrument_study.py",
+    "ai-service-python/scripts/curator_bollinger_study.py",
+    "ai-service-python/tests/test_curator_instrument_windows.py",
+    "ai-service-python/tests/test_curator_instrument_study.py",
+    "ai-service-python/tests/test_curator_instrument_journal.py",
+    "backend-laravel/scripts/prepare-curator-bollinger-study.php",
+    "docs/research/instruments/range_reentry",
+    "docs/research/instruments/README.md",
     "backend-laravel/scripts/prepare-curator-intraday-panel.php",
     "ai-service-python/scripts/curator_intraday_panel.py",
     "ai-service-python/scripts/curator_research_deadline.py",
@@ -333,6 +342,9 @@
     "ai-service-python/app/services/walk_forward.py",
     "ai-service-python/scripts/backtest-instrument-method-matrix.py",
     "ai-service-python/scripts/curator_activation_witness.py",
+    "ai-service-python/scripts/curator_bollinger_study.py",
+    "ai-service-python/scripts/curator_instrument_study.py",
+    "ai-service-python/scripts/curator_instrument_windows.py",
     "ai-service-python/scripts/curator_intraday_panel.py",
     "ai-service-python/scripts/curator_management_witness.py",
     "ai-service-python/scripts/curator_research_deadline.py",
@@ -344,6 +356,9 @@
     "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
     "ai-service-python/tests/test_closed_dmi_adx_method.py",
     "ai-service-python/tests/test_curator_activation_witness.py",
+    "ai-service-python/tests/test_curator_instrument_journal.py",
+    "ai-service-python/tests/test_curator_instrument_study.py",
+    "ai-service-python/tests/test_curator_instrument_windows.py",
     "ai-service-python/tests/test_curator_intraday_observations.py",
     "ai-service-python/tests/test_curator_intraday_panel.py",
     "ai-service-python/tests/test_curator_management_mechanics.py",
@@ -495,6 +510,7 @@
     "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
     "backend-laravel/database/migrations/2026_10_13_140000_create_instrument_method_meta_models.php",
     "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+    "backend-laravel/scripts/prepare-curator-bollinger-study.php",
     "backend-laravel/scripts/prepare-curator-intraday-panel.php",
     "backend-laravel/scripts/prepare-curator-scalp-panel.php",
     "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
@@ -2039,6 +2055,216 @@
       "line": 94
     },
     {
+      "symbol": "physical",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_bollinger_study.py",
+      "line": 17
+    },
+    {
+      "symbol": "validate",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_bollinger_study.py",
+      "line": 23
+    },
+    {
+      "symbol": "verify_response",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_bollinger_study.py",
+      "line": 86
+    },
+    {
+      "symbol": "comparisons",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_bollinger_study.py",
+      "line": 90
+    },
+    {
+      "symbol": "validate_launch",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 106
+    },
+    {
+      "symbol": "case_artifacts",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 117
+    },
+    {
+      "symbol": "verify_case_artifacts",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 122
+    },
+    {
+      "symbol": "worker",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 135
+    },
+    {
+      "symbol": "execute",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 164
+    },
+    {
+      "symbol": "inspect",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 212
+    },
+    {
+      "symbol": "owner",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 34
+    },
+    {
+      "symbol": "sources",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 39
+    },
+    {
+      "symbol": "entries",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 43
+    },
+    {
+      "symbol": "frozen",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 49
+    },
+    {
+      "symbol": "read_spec",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 66
+    },
+    {
+      "symbol": "prepare",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 74
+    },
+    {
+      "symbol": "seal",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_study.py",
+      "line": 85
+    },
+    {
+      "symbol": "_calendar_owner",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 104
+    },
+    {
+      "symbol": "_weeks",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 122
+    },
+    {
+      "symbol": "_availability",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 130
+    },
+    {
+      "symbol": "_select",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 155
+    },
+    {
+      "symbol": "_material",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 214
+    },
+    {
+      "symbol": "selection",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 244
+    },
+    {
+      "symbol": "extract",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 253
+    },
+    {
+      "symbol": "prepare",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 265
+    },
+    {
+      "symbol": "validate_manifest",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 283
+    },
+    {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 300
+    },
+    {
+      "symbol": "_need",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 39
+    },
+    {
+      "symbol": "_sha",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 44
+    },
+    {
+      "symbol": "_encoded",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 48
+    },
+    {
+      "symbol": "_utc",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 52
+    },
+    {
+      "symbol": "_stamp",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 56
+    },
+    {
+      "symbol": "_fields",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 61
+    },
+    {
+      "symbol": "_parse_rows",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 67
+    },
+    {
+      "symbol": "_source",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_instrument_windows.py",
+      "line": 88
+    },
+    {
       "symbol": "validate",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_intraday_panel.py",
@@ -2324,31 +2550,31 @@
       "symbol": "_original_clock",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_scalp_metrics.py",
-      "line": 111
+      "line": 122
     },
     {
       "symbol": "_eligible",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_scalp_metrics.py",
-      "line": 161
+      "line": 172
     },
     {
       "symbol": "_entry_context",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_scalp_metrics.py",
-      "line": 172
+      "line": 183
     },
     {
       "symbol": "summarize_scalp_metrics",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_scalp_metrics.py",
-      "line": 185
+      "line": 196
     },
     {
       "symbol": "compare_scalp_metrics",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_scalp_metrics.py",
-      "line": 302
+      "line": 313
     },
     {
       "symbol": "_need",
@@ -2955,6 +3181,276 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_activation_witness.py",
       "line": 88
+    },
+    {
+      "symbol": "test_subsequent_captures_do_not_claim_to_be_pre_outcome_attestations",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 108
+    },
+    {
+      "symbol": "test_retained_actual_pdf_captures_match_the_recorded_bytes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 120
+    },
+    {
+      "symbol": "test_public_terminal_account_table_is_not_a_qualified_skill",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 131
+    },
+    {
+      "symbol": "test_private_original_summary_reproduces_each_public_result_without_replay",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 146
+    },
+    {
+      "symbol": "test_source_records_have_real_text_and_explicit_unreviewed_boundaries",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 170
+    },
+    {
+      "symbol": "test_prospective_question_and_followup_preserve_their_bounded_scope",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 197
+    },
+    {
+      "symbol": "SelectedClassifierContextGateTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 220
+    },
+    {
+      "symbol": "classify_and_gate",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 221
+    },
+    {
+      "symbol": "test_actual_selected_dependency_path_is_explicit_not_claimed_as_optional_ta",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 228
+    },
+    {
+      "symbol": "test_actual_classifier_then_registered_gate_is_exact_on_mature_prefixes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 245
+    },
+    {
+      "symbol": "test_optional_ta_binding_when_available",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 272
+    },
+    {
+      "symbol": "synthetic_closed_prices",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 41
+    },
+    {
+      "symbol": "CuratorInstrumentJournalTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 53
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 55
+    },
+    {
+      "symbol": "test_three_public_events_keep_protocol_instrument_and_no_authority",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 61
+    },
+    {
+      "symbol": "test_exact_original_bytes_form_source_question_addendum_sha_chain",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 77
+    },
+    {
+      "symbol": "test_every_public_event_extends_one_exact_historical_chain",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "line": 92
+    },
+    {
+      "symbol": "test_real_naive_utc_rows_require_full_native_manifest_rederivation",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 105
+    },
+    {
+      "symbol": "test_caller_timestamp_flag_or_wrong_manifest_hash_never_grants_utc",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 117
+    },
+    {
+      "symbol": "CuratorInstrumentStudyTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 18
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 20
+    },
+    {
+      "symbol": "test_actual_eight_cross_runtime_wires_and_new_months",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 31
+    },
+    {
+      "symbol": "test_optional_gate_is_not_an_undeclared_risk_or_cost_change",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 39
+    },
+    {
+      "symbol": "test_unknown_adapter_and_authority_are_rejected",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 45
+    },
+    {
+      "symbol": "test_entire_declared_parameter_vector_is_pinned_before_outcomes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 53
+    },
+    {
+      "symbol": "test_case_deadlines_cannot_borrow_a_fresh_outer_budget",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 66
+    },
+    {
+      "symbol": "test_all_terminal_streams_remain_bound_even_for_technical_cases",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 78
+    },
+    {
+      "symbol": "test_missing_original_case_does_not_create_zero_economic_effect",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "line": 98
+    },
+    {
+      "symbol": "test_raw_header_bom_cell_spelling_crlf_and_original_slices_preserved",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 105
+    },
+    {
+      "symbol": "test_no_output_folder_when_second_required_month_has_no_complete_window",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 122
+    },
+    {
+      "symbol": "test_manifest_reinspection_rederives_raw_slices_calendar_and_authority",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 133
+    },
+    {
+      "symbol": "test_unavailable_quotes_remain_unknown_and_marker_or_asof_forgery_refuses",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 151
+    },
+    {
+      "symbol": "test_changed_export_or_calendar_owner_cannot_reuse_original_manifest",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 158
+    },
+    {
+      "symbol": "NoDeadline",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 19
+    },
+    {
+      "symbol": "checkpoint",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 20
+    },
+    {
+      "symbol": "synthetic_missing",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 24
+    },
+    {
+      "symbol": "CuratorInstrumentWindowsTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 35
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 37
+    },
+    {
+      "symbol": "source",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 44
+    },
+    {
+      "symbol": "test_exact_trust_roots_and_calendar_function_are_not_caller_flags",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 53
+    },
+    {
+      "symbol": "test_complete_weeks_are_wholly_inside_month_not_partial_initial_week",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 61
+    },
+    {
+      "symbol": "test_first_clean_month_wins_and_unused_months_not_relabelled_clean",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 69
+    },
+    {
+      "symbol": "test_200_warmup_gap_is_not_hidden_by_clean_evaluation_rows",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 81
+    },
+    {
+      "symbol": "test_fewer_than_200_actual_warmup_rows_refuses_otherwise_complete_week",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 88
+    },
+    {
+      "symbol": "test_missing_final_week_edge_is_detected_without_exporting_fake_boundary",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "line": 97
     },
     {
       "symbol": "CuratorIntradayObservationsTest",
@@ -20673,6 +21169,53 @@
         "test_no_position_empty_stream_is_explicitly_unactivated",
         "test_positive_shadow_geometry_and_scope_remain_separate",
         "test_nested_exception_and_original_exception_restore_exact_callable"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "tests": [
+        "test_three_public_events_keep_protocol_instrument_and_no_authority",
+        "test_exact_original_bytes_form_source_question_addendum_sha_chain",
+        "test_every_public_event_extends_one_exact_historical_chain",
+        "test_subsequent_captures_do_not_claim_to_be_pre_outcome_attestations",
+        "test_retained_actual_pdf_captures_match_the_recorded_bytes",
+        "test_public_terminal_account_table_is_not_a_qualified_skill",
+        "test_private_original_summary_reproduces_each_public_result_without_replay",
+        "test_source_records_have_real_text_and_explicit_unreviewed_boundaries",
+        "test_prospective_question_and_followup_preserve_their_bounded_scope",
+        "test_actual_selected_dependency_path_is_explicit_not_claimed_as_optional_ta",
+        "test_actual_classifier_then_registered_gate_is_exact_on_mature_prefixes",
+        "test_optional_ta_binding_when_available"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "tests": [
+        "test_actual_eight_cross_runtime_wires_and_new_months",
+        "test_optional_gate_is_not_an_undeclared_risk_or_cost_change",
+        "test_unknown_adapter_and_authority_are_rejected",
+        "test_entire_declared_parameter_vector_is_pinned_before_outcomes",
+        "test_case_deadlines_cannot_borrow_a_fresh_outer_budget",
+        "test_all_terminal_streams_remain_bound_even_for_technical_cases",
+        "test_missing_original_case_does_not_create_zero_economic_effect",
+        "test_real_naive_utc_rows_require_full_native_manifest_rederivation",
+        "test_caller_timestamp_flag_or_wrong_manifest_hash_never_grants_utc"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "tests": [
+        "test_exact_trust_roots_and_calendar_function_are_not_caller_flags",
+        "test_complete_weeks_are_wholly_inside_month_not_partial_initial_week",
+        "test_first_clean_month_wins_and_unused_months_not_relabelled_clean",
+        "test_200_warmup_gap_is_not_hidden_by_clean_evaluation_rows",
+        "test_fewer_than_200_actual_warmup_rows_refuses_otherwise_complete_week",
+        "test_missing_final_week_edge_is_detected_without_exporting_fake_boundary",
+        "test_raw_header_bom_cell_spelling_crlf_and_original_slices_preserved",
+        "test_no_output_folder_when_second_required_month_has_no_complete_window",
+        "test_manifest_reinspection_rederives_raw_slices_calendar_and_authority",
+        "test_unavailable_quotes_remain_unknown_and_marker_or_asof_forgery_refuses",
+        "test_changed_export_or_calendar_owner_cannot_reuse_original_manifest"
       ]
     },
     {

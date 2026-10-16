@@ -1,0 +1,18 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-practice-principles-20261016-04",
+  "previous_event_sha256":"f2f74984ea2cd57b61d326fcddecc7a91f0ce6639aea3712c4bbe8c9278ae2f0",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"additional_author_rule_review_after_seal_no_execution_change",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "source_reviews":[
+    {"source_id":"bollinger-author-22-rules","url":"https://www.bollingerbands.com/bollinger-band-rules","publisher":"John Bollinger","reviewed":"complete available text, rules 1-22","not_reviewed":["linked_book","linked_videos","subscriber_software"],"finding":"A band location is relative, not a standalone reversal instruction. Trending price may remain near a band; outside closes can imply continuation. Complementary evidence should not merely duplicate the same information. Default parameters are not universal, standard deviations do not establish a normal-return probability, and small bars still need adequate activity. These are usage principles, not an economic certificate for this implementation."},
+    {"source_id":"bollinger-tradenavigator-version","url":"https://www.bollingerbands.com/tradenavigator-bbtk","publisher":"John Bollinger","reviewed":"complete available toolkit description and author's Method IV note","not_reviewed":["TradeNavigator_software","full_book","trial_or_subscription"],"finding":"This platform's Method IV requires low relative volatility and an inside-close/outside-close/subsequent-extension sequence, with a stricter high/low alternative. It differs from the TradeStation manual's description. Pin exact source/platform rules before any reproduction; the toolkit is not a complete trading system by itself."}
+  ],
+  "practice_errors_to_avoid":["blindly_fade_every_tag","interpret_two_standard_deviations_as_95_percent_trade_success","count_correlated_indicators_as_independent_confirmation","mix_platform_versions_into_an_undefined_method","declare_zero_activity_a_successful_test"],
+  "runtime_observation":{"interpreter":"C:/Users/MK_99/AppData/Local/Programs/Python/Python313/python.exe","optional_ta_classes":{"ADXIndicator":false,"EMAIndicator":false,"AverageTrueRange":false},"selected_classifier":"existing_in_repository_fallback","scope":"Observed after launch, not a new before-outcome per-arm dependency attestation. No package was installed or changed. Runtime manifest already discloses it is not a complete third-party binary closure."},
+  "execution_change":false,
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

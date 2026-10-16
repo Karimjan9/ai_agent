@@ -1,0 +1,34 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-context-question-20261016-02",
+  "previous_event_sha256":"bb5e378b4ca700bbcacf85594bd4d8f00112b160fcb0ebd106e21893bc18fdc8",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"prospective_question_before_original_execution",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "question_id":"bollinger-range-context-20261016-v1",
+  "hypothesis_ids":["BB-H001","BB-H002"],
+  "php_draft_sha256":"8bc5c2df52a085beb29f72a3f08aea31df19609a47979ddcb63092ad085e38db",
+  "window_manifest_sha256":"9c6169fec6257d9b693d54438f33e549100310134fb50daedf2e140e405428a7",
+  "selection_rule":"Before outcomes: first clean full UTC Mon-Fri week wholly in April, then May, then June 2025; independently first clean full week in August 2025. Audit 200 actual preceding warmup rows and week edges. Retain all refusals. No PnL-based window choice.",
+  "selected_windows":[
+    {"key":"may2025","first_decision_open_utc":"2025-05-05T00:00:00Z","last_decision_open_utc":"2025-05-09T20:55:00Z","loaded_rows":1556,"warmup_rows":200,"decision_rows":1356,"sha256":"ac07bac6a75b992c2e92e531f8cc2a91452556732167dbb053533fa88483e159"},
+    {"key":"august2025","first_decision_open_utc":"2025-08-11T00:00:00Z","last_decision_open_utc":"2025-08-15T20:55:00Z","loaded_rows":1556,"warmup_rows":200,"decision_rows":1356,"sha256":"dff1966b5a2a5e463543e6574e15bac1c5a6bb81bdf7f6585a7ae5428779462e"}
+  ],
+  "predeclared_arms":[
+    {"key":"all_scalp6","session_context_gate":"none","time_stop_candles":6},
+    {"key":"range_low_scalp6","session_context_gate":"range_low_v1","time_stop_candles":6},
+    {"key":"all_day24","session_context_gate":"none","time_stop_candles":24},
+    {"key":"range_low_day24","session_context_gate":"range_low_v1","time_stop_candles":24}
+  ],
+  "physical_controls":{"initial_capital":10000,"risk_per_trade_percent":1,"entry_session_utc":"07:00-14:00","lookback":20,"minimum_signal_confidence":0.35,"atr_stop_multiplier":1.5,"atr_target_multiplier":2.5,"trailing":false,"partial_exit":false,"full_parameter_vector_hash":"7a9d42b6719845fa4acf0624e5443546049e1d3af663ec8bc264806c3fb35e49"},
+  "execution":"existing next modeled open; prior completed-bar signal/context; unchanged modeled spread, commission, slippage, gap and carry rules; zero observed BID/ASK coverage",
+  "gate":"range_low_v1 requires actual closed-row market_regime=range and volatility_regime=low_volatility; missing/unknown means WAIT. This is a curator hypothesis, not an author rule or a proven label.",
+  "comparisons":["context_given_scalp","context_given_day","holding_given_all","holding_given_range_low","whole_account_cash_interaction"],
+  "analysis_boundary":"Account paths, sizing and cooldowns may differ. These are whole-account policy contrasts, not identical-entry isolated trade effects. Two weeks in different months are discovery coverage, not independent validation. Six/twenty-four observed M5 rows are nominal thirty/one-hundred-twenty minutes, not a day-flat guarantee.",
+  "budgets":{"original_cases":8,"attempts_per_case":1,"per_case_seconds":600,"whole_panel_seconds":5400,"children":"one serial below-normal hidden process","deadlines":"both UTC and monotonic; no renewal"},
+  "terminal_rules":"Keep completed, technical and unattempted cases distinct; missing evidence stays unknown, not zero. Reinspection performs no replay. No outcome-dependent retry or parameter change in this question.",
+  "exposure":"Reused historical archive; complete prior training/selection/warmup/context exposure inventory is unavailable. No untouched claim.",
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

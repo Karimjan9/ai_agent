@@ -1,0 +1,20 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-source-capture-20261016-05",
+  "previous_event_sha256":"36be5c041bc354d6eaa76f6cc5817fc925b229ca068553d1a525cc56aaddeb05",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"public_author_PDF_capture_after_question_seal",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "capture_folder":".runtime/bollinger-source-captures-20261016/",
+  "source_captures":[
+    {"source_id":"bollinger-method-I-2021","file":"method-I.pdf","url":"https://www.bollingerbands.com/_files/ugd/58be43_f5e967053af44fa083340cacfc5e6226.pdf","bytes":946158,"sha256":"884128356dd2c0192c6e64cadd54c6d8ab8004da4755a4b348da126d2f4efed1","pdf_magic":true},
+    {"source_id":"bollinger-method-II-2021","file":"method-II.pdf","url":"https://www.bollingerbands.com/_files/ugd/58be43_b120ddf0184540608baf19e2c0ae2019.pdf","bytes":916188,"sha256":"cd11e6145eebb9766771eb5b3c944ebf1ce828cba549d62377c6415f3f983745","pdf_magic":true},
+    {"source_id":"bollinger-method-III-2021","file":"method-III.pdf","url":"https://www.bollingerbands.com/_files/ugd/58be43_377f4254baa04a19aaadb1735b45b6f0.pdf","bytes":926428,"sha256":"9470f93f9849ef96767f7126783a45e549c96d49ada55d3abbaf7d736a67f6c0","pdf_magic":true},
+    {"source_id":"bollinger-method-IV-2021","file":"method-IV.pdf","url":"https://www.bollingerbands.com/_files/ugd/58be43_d09c50b6e8ea4afd9af0523ef94de876.pdf","bytes":957044,"sha256":"9d00065edaf4fac96a7ba819be55515ed2fd2701e7eb9b45f7c341f9726c6c8e","pdf_magic":true}
+  ],
+  "custody_boundary":"These are actual public author downloads captured after question sealing and after some originals completed. They preserve the subsequently fetched bytes, not a backdated before-outcome content attestation. The earlier reviewed text scopes remain as originally recorded. No full copyrighted manual is committed or redistributed.",
+  "execution_change":false,
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

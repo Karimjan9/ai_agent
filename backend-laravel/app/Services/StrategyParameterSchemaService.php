@@ -313,6 +313,11 @@ class StrategyParameterSchemaService
         // This prospective management treatment must not enter ordinary
         // random construction, mutation or historical novelty rosters.
         if (! $includeExplicitResearch) unset($schema['trailing_activation_r']);
+        // Explicit validation only; complete default vectors and ordinary
+        // mutation/sampling rosters intentionally do not acquire this key.
+        if ($includeExplicitResearch && $this->family($strategy) === 'session') {
+            $schema['session_context_gate'] = ['string', ['none', 'range_low_v1']];
+        }
         return $schema;
     }
 
@@ -426,12 +431,23 @@ class StrategyParameterSchemaService
         return $includeExplicitResearch ? [...$parameters, 'trailing_activation_r' => 0.0] : $parameters;
     }
 
-    public function validate(string $strategy, array $parameters): array
+    public function validate(string $strategy, array $parameters, ?string $baseStrategy = null): array
     {
         $family = $this->family($strategy);
         $schema = $this->schema($strategy, true);
         if (! $schema) {
             throw new InvalidArgumentException("Parameter schema topilmadi: {$family}");
+        }
+
+        if (array_key_exists('session_context_gate', $parameters)) {
+            // Mirror the registry's effective base-first function identity,
+            // not the shared session schema alias. Whitespace is not a base.
+            $effective = strtolower($baseStrategy !== null && $baseStrategy !== '' ? $baseStrategy : $strategy);
+            $version = strrpos($effective, '_v');
+            if ($version !== false) $effective = substr($effective, 0, $version);
+            if ($family !== 'session' || $effective !== 'session_mean_reversion') {
+                throw new InvalidArgumentException('SESSION_CONTEXT_GATE_REENTRY_RUNTIME_REQUIRED');
+            }
         }
 
         $unknown = array_diff(array_keys($parameters), array_keys($schema));

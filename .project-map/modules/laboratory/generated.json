@@ -2,20 +2,22 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T05:28:40.609Z",
-  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
-  "source_file_count": 1747,
-  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
+  "generated_at": "2026-10-16T07:28:08.992Z",
+  "source_digest": "fe1dc779b7f7ff0c505da24887716a66484b3c5f99dbd9c01fdfa161815c57ee",
+  "source_file_count": 1756,
+  "git_head": "33767fdc523778087b865abeb32dbd4c8016ad6e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
     "backend-laravel/app/Services/StrategyParameterSchemaService.php",
     "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
     "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+    "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/tests/test_trailing_activation.py",
     "ai-service-python/app/strategies/laboratory.py",
     "ai-service-python/tests/test_curator_intraday_strategies.py",
+    "ai-service-python/tests/test_bollinger_context_gate.py",
     "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
@@ -129,6 +131,7 @@
   "source_files": [
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/app/strategies/laboratory.py",
+    "ai-service-python/tests/test_bollinger_context_gate.py",
     "ai-service-python/tests/test_curator_intraday_strategies.py",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "ai-service-python/tests/test_trailing_activation.py",
@@ -238,6 +241,7 @@
     "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
+    "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
     "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
     "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
     "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php"
@@ -313,19 +317,13 @@
       "symbol": "apply_momentum_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 267
+      "line": 278
     },
     {
       "symbol": "apply_momentum_pullback_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 294
-    },
-    {
-      "symbol": "apply_hybrid_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 308
+      "line": 305
     },
     {
       "symbol": "_apply_source_ema_pretrend_pullback",
@@ -334,10 +332,16 @@
       "line": 31
     },
     {
+      "symbol": "apply_hybrid_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 319
+    },
+    {
       "symbol": "clipped_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 382
+      "line": 393
     },
     {
       "symbol": "apply_trend_specialist",
@@ -349,25 +353,25 @@
       "symbol": "apply_hybrid_consensus_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 504
+      "line": 515
     },
     {
       "symbol": "apply_differential_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 538
+      "line": 549
     },
     {
       "symbol": "apply_differential_trend_down_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 612
+      "line": 623
     },
     {
       "symbol": "apply_regime_ensemble_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 617
+      "line": 628
     },
     {
       "symbol": "apply_trend_retest_strategy",
@@ -380,6 +384,96 @@
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
       "line": 94
+    },
+    {
+      "symbol": "test_enabled_gate_rejects_unknown_nonmatching_and_noncanonical_contexts",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 101
+    },
+    {
+      "symbol": "test_missing_context_columns_wait_without_inventing_alias_or_indicator_context",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 117
+    },
+    {
+      "symbol": "test_gate_uses_current_closed_row_not_previous_or_future_context",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 128
+    },
+    {
+      "symbol": "test_eligible_context_never_relaxes_recross_price_direction_or_session",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 149
+    },
+    {
+      "symbol": "test_gate_is_prefix_invariant_and_future_price_or_context_cannot_rewrite_past",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 166
+    },
+    {
+      "symbol": "test_schema_preserves_explicit_vector_and_effective_registered_recross_precedence",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 183
+    },
+    {
+      "symbol": "test_schema_rejects_gate_for_wrong_family_or_effective_breakout_runtime",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 203
+    },
+    {
+      "symbol": "test_schema_rejects_non_enum_values_instead_of_silently_disabling_gate",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 221
+    },
+    {
+      "symbol": "closed_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 29
+    },
+    {
+      "symbol": "original_recross",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 41
+    },
+    {
+      "symbol": "BollingerContextGateTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 63
+    },
+    {
+      "symbol": "strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 64
+    },
+    {
+      "symbol": "assert_exact_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 69
+    },
+    {
+      "symbol": "test_omitted_and_none_preserve_every_legacy_value_dtype_and_input_column",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 75
+    },
+    {
+      "symbol": "test_enabled_matching_closed_context_preserves_real_buy_sell_and_confidence",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "line": 92
     },
     {
       "symbol": "test_band_wick_touch_without_close_excursion_is_not_reentry",
@@ -8035,37 +8129,37 @@
       "symbol": "canonicalizeForIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 325
+      "line": 330
     },
     {
       "symbol": "defaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 347
+      "line": 352
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 429
+      "line": 434
     },
     {
       "symbol": "normalizeForGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 474
+      "line": 490
     },
     {
       "symbol": "clamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 514
+      "line": 530
     },
     {
       "symbol": "executionDefaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 536
+      "line": 552
     },
     {
       "symbol": "StrategyParameterSchemaService",
@@ -10702,6 +10796,36 @@
       "line": 22
     },
     {
+      "symbol": "BollingerContextGateParityTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "line": 12
+    },
+    {
+      "symbol": "test_gate_is_explicit_only_and_never_enters_defaults_or_sampling",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "test_direct_declared_request_validation_matches_the_actual_registered_function",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "line": 29
+    },
+    {
+      "symbol": "test_wrong_family_base_breakout_and_invalid_enum_fail_closed_in_both_owners",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "line": 53
+    },
+    {
+      "symbol": "pythonValidation",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "line": 88
+    },
+    {
       "symbol": "test_original_csv_prefix_binds_clock_schedule_and_event_to_execution_index_minus_one",
       "kind": "php_method",
       "path": "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
@@ -10829,6 +10953,21 @@
     }
   ],
   "tests": [
+    {
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "tests": [
+        "test_omitted_and_none_preserve_every_legacy_value_dtype_and_input_column",
+        "test_enabled_matching_closed_context_preserves_real_buy_sell_and_confidence",
+        "test_enabled_gate_rejects_unknown_nonmatching_and_noncanonical_contexts",
+        "test_missing_context_columns_wait_without_inventing_alias_or_indicator_context",
+        "test_gate_uses_current_closed_row_not_previous_or_future_context",
+        "test_eligible_context_never_relaxes_recross_price_direction_or_session",
+        "test_gate_is_prefix_invariant_and_future_price_or_context_cannot_rewrite_past",
+        "test_schema_preserves_explicit_vector_and_effective_registered_recross_precedence",
+        "test_schema_rejects_gate_for_wrong_family_or_effective_breakout_runtime",
+        "test_schema_rejects_non_enum_values_instead_of_silently_disabling_gate"
+      ]
+    },
     {
       "path": "ai-service-python/tests/test_trailing_activation.py",
       "tests": [
@@ -11879,6 +12018,15 @@
         "test_single_agent_failed_callback_does_not_manufacture_an_attempt_and_original_failure_avoids_ordinary_fanout",
         "test_twenty_known_terminal_technical_and_pre_execution_dispositions_close_only_after_owned_queue_drain",
         "test_terminal_price_question_waits_on_fresh_native_dependency_without_replay_or_ordinary_recovery"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "tests": [
+        "test_gate_is_explicit_only_and_never_enters_defaults_or_sampling",
+        "test_direct_declared_request_validation_matches_the_actual_registered_function",
+        "test_wrong_family_base_breakout_and_invalid_enum_fail_closed_in_both_owners",
+        "pythonValidation"
       ]
     },
     {

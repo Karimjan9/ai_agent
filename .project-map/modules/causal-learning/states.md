@@ -1,5 +1,17 @@
 # Causal learning states
 
+The explicit Bollinger instrument question first rederives two raw native
+calendar windows, including all 200 warmup rows and week-edge completeness.
+The fixed scan checks April, then May/June only if necessary, retaining each
+considered refusal; August is separate. The current adapter requires May/August.
+Only after both scopes pass can exclusive data artifacts be published. A fresh
+PHP-prepared eight-request roster is source/data/runtime sealed before one
+hidden serial attempt per case. Completed originals enter read-only
+clock/account/full-close comparison; missing, late or technical products remain
+unknown. No replay is inferred from reinspection or a guide update, and neither
+the curator context treatment nor its original observations grants agent-owned
+learning, independent skill, credit, broker or production authority.
+
 The new scalp/day-style source question follows the same prospective lifecycle
 with eight original method/holding/window cases. Its deadline helper seals
 monotonic AND UTC limits, checks before/after compute/publication and after

@@ -1,5 +1,28 @@
 # Integrations and runtime boundaries
 
+## Explicit per-instrument Bollinger research
+
+The offline window producer consumes the market-data owner's unchanged
+`missing_times` audit and native XAUUSD calendar, not a second provider or
+calendar implementation. Its validator reopens the pinned parent/manifest,
+repeats the fixed month/week scan, and checks exact raw slices, all 200 warmup
+rows and week boundaries. Only this source-rederived window contract
+or the unchanged old pinned manifest can authorize legacy naive CSV cells as
+UTC in scalp reporting; returned/witness clocks remain strict. Quote absence
+and provider BID volume retain their original limitations.
+
+The PHP preparer and Python code-owned Bollinger adapter bind the current
+May/August eight-case design to the actual session mean-reversion function.
+The optional `session_context_gate` is excluded from ordinary defaults and
+sampling; it does not turn a shared session schema alias into runtime identity.
+The parent/worker reuse ordinary replay, immutable request/response/full-close
+witnesses and dual-clock bounded execution. Per-instrument guide/events remain
+curator research artifacts, not agent-owned experience, economic skill,
+independent validation, a new scheduler, broker/demo or production permission.
+The current offline interpreter selects the repository's fallback classifier
+because optional `ta` is absent. Prefix checks exercise that actual path; the
+partial runtime fingerprint is not a complete dependency/third-party closure.
+
 ## Offline scalp and day source question
 
 `prepare-curator-intraday-panel.php` validates each actual declared strategy

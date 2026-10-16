@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T05:28:40.609Z",
-  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
-  "source_file_count": 1747,
-  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
+  "generated_at": "2026-10-16T07:28:08.992Z",
+  "source_digest": "fe1dc779b7f7ff0c505da24887716a66484b3c5f99dbd9c01fdfa161815c57ee",
+  "source_file_count": 1756,
+  "git_head": "33767fdc523778087b865abeb32dbd4c8016ad6e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,6 +22,15 @@
         "research-paper-epoch"
       ],
       "paths": [
+        "ai-service-python/scripts/curator_instrument_windows.py",
+        "ai-service-python/scripts/curator_instrument_study.py",
+        "ai-service-python/scripts/curator_bollinger_study.py",
+        "ai-service-python/tests/test_curator_instrument_windows.py",
+        "ai-service-python/tests/test_curator_instrument_study.py",
+        "ai-service-python/tests/test_curator_instrument_journal.py",
+        "backend-laravel/scripts/prepare-curator-bollinger-study.php",
+        "docs/research/instruments/range_reentry",
+        "docs/research/instruments/README.md",
         "backend-laravel/scripts/prepare-curator-intraday-panel.php",
         "ai-service-python/scripts/curator_intraday_panel.py",
         "ai-service-python/scripts/curator_research_deadline.py",
@@ -334,6 +343,12 @@
         "ai-service-python/app/services/prospective_probe_window.py"
       ],
       "entry_points": [
+        "ai-service-python/scripts/curator_instrument_windows.py --prepare",
+        "ai-service-python/scripts/curator_instrument_windows.py --validate",
+        "ai-service-python/scripts/curator_instrument_study.py --prepare",
+        "ai-service-python/scripts/curator_instrument_study.py --seal",
+        "ai-service-python/scripts/curator_instrument_study.py --execute",
+        "ai-service-python/scripts/curator_instrument_study.py --inspect",
         "backend-laravel/scripts/prepare-curator-scalp-panel.php --export-draft",
         "ai-service-python/scripts/curator_scalp_panel.py --seal",
         "ai-service-python/scripts/curator_scalp_panel.py --execute",
@@ -487,10 +502,13 @@
       ],
       "dependencies": [
         "laboratory",
+        "market-data",
         "confirmation-entry",
         "laravel-python-contract"
       ],
       "invariants": [
+        "Explicit offline instrument windows rederive exact pinned native parent/manifest bytes, the unchanged canonical missing-times function and native calendar source, all 200 actual warmup rows and complete UTC week edges. Calendar-only April/May/June-first-clean and August selection retains refusals; it cannot fabricate candles, source volume, quotes, unused validation or whole-archive continuity.",
+        "The code-owned Bollinger context adapter fixes the current May/August eight-case roster before outcomes. The ordinary replay, actual account/clock/full-close witness and dual absolute deadlines own original execution; technical/late products remain unknown. Exclusive artifacts and read-only reinspection do not create a scheduler, database/agent-learning write, skill credit, broker execution or production permission.",
         "Owned-outcome v2 reopens exact original ordinary single-position entry, method, mature close and cost-inclusive account evidence. Five unique mature episodes per exact context are an observational selection floor, not causal power; WAIT/veto utility remains unknown and multi-recipe positions are bundle observations. Existing v1 history is immutable, and explicitly v2-owned parents cannot downgrade invalid proof to invocation-ranked advice (ADR-040).",
         "A private signed original-deadline v2 declaration permits only future simple incremental method arms above 300 and at most 600 seconds with at most 4096 exact pre-2026 source rows. It binds source, model, account, costs, runtime controls, method and release; old requests/global caps and independent/full/paper authority remain unchanged (ADR-040).",
         "Component, selector, council and inheritance are separately sealed questions with a diagnostic-only default and a versioned named-original independent issuer. No stored assessment, verified bytes or future reservation alone proves untouched validation (ADR-036).",
@@ -547,6 +565,9 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "ai-service-python/tests/test_curator_instrument_journal.py",
+        "ai-service-python/tests/test_curator_instrument_windows.py",
+        "ai-service-python/tests/test_curator_instrument_study.py",
         "ai-service-python/tests/test_curator_scalp_observations.py",
         "ai-service-python/tests/test_curator_scalp_reporting.py",
         "ai-service-python/tests/test_curator_scalp_panel.py",
@@ -667,7 +688,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 239,
+      "source_file_count": 246,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -743,10 +764,12 @@
         "backend-laravel/app/Services/StrategyParameterSchemaService.php",
         "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
         "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+        "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
         "ai-service-python/app/services/parameter_schema.py",
         "ai-service-python/tests/test_trailing_activation.py",
         "ai-service-python/app/strategies/laboratory.py",
         "ai-service-python/tests/test_curator_intraday_strategies.py",
+        "ai-service-python/tests/test_bollinger_context_gate.py",
         "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
         "ai-service-python/tests/test_source_ema_pretrend_entry.py",
         "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
@@ -932,6 +955,7 @@
         "laravel-python-contract"
       ],
       "invariants": [
+        "Optional session_context_gate none/range_low_v1 is explicit research validation only and requires the actual session_mean_reversion runtime function under effective base precedence. Ordinary default/sampling vectors stay unchanged; range_low_v1 uses the original completed row's range and low_volatility labels, and missing context yields WAIT rather than a proxy or qualification.",
         "Only new typed qualified-SOLO panels stage original request digests, at most four per genuine lease under the unchanged 900-second delivery budget. Original definition/model/plan/source seals and HMAC prefix are revalidated before all-digests dispatch; exact extra operational slots never replenish scientific allowance. Legacy panels stay atomic (ADR-034).",
         "Original native depth is a distinct six-slot purpose with four source references and cheap/deeper carriers. Actual producer opportunities, signed clock views and immutable whole-pool/seeded sample precede one canonical deferred continuation; ordinary/full replay cannot borrow a short view. Diagnostic neutral closure grants no economic learning or independent authority (ADR-033).",
         "Best-qualified SOLO requires separate original scoped standalone qualification, a server-owned bounded as-of eligible roster and original ranking panel, then a disjoint final panel. Caller flags/shortlists and old chosen/matched SOLO grant nothing; original physical input/warmup/context/holding exposure and immutable selected-source proof own every stage (ADR-033).",
@@ -979,6 +1003,8 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+        "ai-service-python/tests/test_bollinger_context_gate.py",
         "ai-service-python/tests/test_trailing_activation.py",
         "backend-laravel/tests/Feature/RescueCircuitBreakerTest.php",
         "backend-laravel/tests/Feature/CausalEdgeAccountingTest.php",
@@ -1027,7 +1053,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 114,
+      "source_file_count": 116,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {

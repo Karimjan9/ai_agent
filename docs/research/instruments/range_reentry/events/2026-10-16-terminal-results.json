@@ -1,0 +1,51 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-terminal-results-20261016-07",
+  "previous_event_sha256":"ed68b747e61d659e9f59912684f217c70b605de5a9f904645281309f9e5ebba7",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"all_originals_terminal_and_read_only_reverified",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "question_id":"bollinger-range-context-20261016-v1",
+  "knowledge_label":"observed_know_how_not_qualified_skill",
+  "original_folder":".runtime/bollinger-context-originals-20261016/",
+  "spec_sha256":"3dff938a9fefbad49cbc509a074f71e4468c5ad79ada8d3fa2abf63097492e17",
+  "summary_sha256":"c740b14ae89956404568cc78baf9051647efbcbe28ee605247a5b6bc49335ef1",
+  "source_archive_sha256":"bfef59e16be4b830a483beccf9b600722ab6d0785ee5aec43fbc05981e710194",
+  "source_snapshot_hash":"81d1ec6410c97cd958851bfcc9a00981b32a28aa16b7677bc897f8a5431cb51a",
+  "artifact_roster_sha256":"9995ce485f000ff4b23c254dc14309f4d6c285bbead5f93d32828227bc3ee4ca",
+  "source_files":86,
+  "read_only_inspection":{"status":"verified_read_only","terminal_cases":8,"completed_originals_reverified":8,"original_replays_repeated":0},
+  "cases":[
+    {"case_key":"may2025__all_scalp6","status":"completed","mature":15,"net_cash":-259.00005492858327,"closed_cash_drawdown_percent":3.1975328132133702,"raw_strategy_signals":24,"per_day_mature_closes":[4,4,2,2,3]},
+    {"case_key":"may2025__range_low_scalp6","status":"completed","mature":5,"net_cash":-134.8837619084552,"closed_cash_drawdown_percent":1.9028418507244904,"raw_strategy_signals":8,"per_day_mature_closes":[0,2,1,1,1]},
+    {"case_key":"may2025__all_day24","status":"completed","mature":15,"net_cash":-179.4816961934448,"closed_cash_drawdown_percent":3.580949311434801,"raw_strategy_signals":24,"per_day_mature_closes":[3,4,2,3,3]},
+    {"case_key":"may2025__range_low_day24","status":"completed","mature":5,"net_cash":-22.482463764608838,"closed_cash_drawdown_percent":2.333458798379352,"raw_strategy_signals":8,"per_day_mature_closes":[0,2,1,1,1]},
+    {"case_key":"august2025__all_scalp6","status":"completed","mature":12,"net_cash":-26.3432941526371,"closed_cash_drawdown_percent":1.7576316103058993,"raw_strategy_signals":15,"per_day_mature_closes":[1,4,1,5,1]},
+    {"case_key":"august2025__range_low_scalp6","status":"completed","mature":0,"net_cash":0.0,"closed_cash_drawdown_percent":0.0,"raw_strategy_signals":0,"per_day_mature_closes":[0,0,0,0,0]},
+    {"case_key":"august2025__all_day24","status":"completed","mature":10,"net_cash":-176.83152193009664,"closed_cash_drawdown_percent":2.4197849199640586,"raw_strategy_signals":15,"per_day_mature_closes":[1,3,1,4,1]},
+    {"case_key":"august2025__range_low_day24","status":"completed","mature":0,"net_cash":0.0,"closed_cash_drawdown_percent":0.0,"raw_strategy_signals":0,"per_day_mature_closes":[0,0,0,0,0]}
+  ],
+  "whole_account_contrasts":{
+    "may2025":{"context_given_scalp":124.11629302012807,"context_given_day":156.99923242883597,"holding_given_all":79.51835873513846,"holding_given_range_low":112.40129814384636,"cash_interaction":32.8829394087079},
+    "august2025":{"context_given_scalp":26.3432941526371,"context_given_day":176.83152193009664,"holding_given_all":-150.48822777745954,"holding_given_range_low":0.0,"cash_interaction":150.48822777745954}
+  },
+  "post_outcome_feature_diagnostic":{
+    "procedure":"Reopen the actual all_scalp6 SimpleBacktestRequest in unchanged prepare_signal_snapshot; select original clock first_evaluation_index-1 through last_evaluation_index-1. No trade replay. Count exact current closed-row labels and recross signals; require both raw and joint signal counts to match original completed funnel records. Recheck frozen source/archive after both windows.",
+    "windows":[
+      {"window":"may2025","decision_signal_rows":1356,"active_session_rows":420,"range_active_rows":208,"low_vol_active_rows":177,"joint_active_context_rows":143,"raw_recross_signals":24,"joint_context_recross_signals":8},
+      {"window":"august2025","decision_signal_rows":1356,"active_session_rows":420,"range_active_rows":166,"low_vol_active_rows":1,"joint_active_context_rows":0,"raw_recross_signals":15,"joint_context_recross_signals":0}
+    ],
+    "independent":false,"new_trade_original":false
+  },
+  "hypothesis_assessments":[
+    {"id":"BB-H001","finding":"Filtering reduces realized losses in these accounts but never produces a positive active result. May activity drops from fifteen trades to five; August has no joint-context opportunity at all. This does not establish an economically useful active skill or a harmful ban for another context."},
+    {"id":"BB-H002","finding":"Longer holding reduces loss in May but increases loss in August's unfiltered account. No universal holding improvement was found; do not choose a future holding rule by the already observed calendar month."}
+  ],
+  "resource_facts":{"children":"one serial below-normal hidden child","sum_original_parent_observed_elapsed_monotonic_seconds":2361.57452400001,"max_original_parent_observed_elapsed_monotonic_seconds":521.5495908000012,"per_original_cap_seconds":600,"whole_panel_cap_seconds":5400,"measurement":"Observed elapsed time, not CPU hours, tokens, cost savings or profitable knowledge per hour."},
+  "clock_account_boundary":"Each original loaded 1556 rows with 200 actual warmup and 1356 decisions. All mature closes occur on their entry UTC date; all final open-position counts are zero. Observed six-row holds stay within 30 minutes and twenty-four-row holds within 120 minutes. This is not a general session-flat guarantee, marked-equity drawdown, independently observed tick fill or broker demo proof.",
+  "exposure_boundary":"May/August precede the October/December examples that motivated this hypothesis. This is retrospective cross-month discovery in reused history, not chronological forward validation, untouched data or a combined independent-trade sample. Do not sum separately initialized account results into a portfolio return.",
+  "next_research_decision":"Keep the exact negative/zero coverage lessons; do not activate range_low_v1 as a default agent skill. Prioritize source-fidelity BB-H008 and a declared closed-row entry/exit question; retain BB-H009/010 as unexecuted questions. No outcome-driven retry, old-receipt rewrite or forced trade quota.",
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

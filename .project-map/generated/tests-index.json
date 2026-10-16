@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T05:28:40.609Z",
-  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
-  "source_file_count": 1747,
-  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
+  "generated_at": "2026-10-16T07:28:08.992Z",
+  "source_digest": "fe1dc779b7f7ff0c505da24887716a66484b3c5f99dbd9c01fdfa161815c57ee",
+  "source_file_count": 1756,
+  "git_head": "33767fdc523778087b865abeb32dbd4c8016ad6e",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -124,6 +124,21 @@
         "test_compact_event_digest_is_emitted_without_full_decision_trace",
         "test_shadow_state_machine_is_explicit_and_finite",
         "test_architecture_interaction_activates_auditable_classifier_state_coherence"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_bollinger_context_gate.py",
+      "tests": [
+        "test_omitted_and_none_preserve_every_legacy_value_dtype_and_input_column",
+        "test_enabled_matching_closed_context_preserves_real_buy_sell_and_confidence",
+        "test_enabled_gate_rejects_unknown_nonmatching_and_noncanonical_contexts",
+        "test_missing_context_columns_wait_without_inventing_alias_or_indicator_context",
+        "test_gate_uses_current_closed_row_not_previous_or_future_context",
+        "test_eligible_context_never_relaxes_recross_price_direction_or_session",
+        "test_gate_is_prefix_invariant_and_future_price_or_context_cannot_rewrite_past",
+        "test_schema_preserves_explicit_vector_and_effective_registered_recross_precedence",
+        "test_schema_rejects_gate_for_wrong_family_or_effective_breakout_runtime",
+        "test_schema_rejects_non_enum_values_instead_of_silently_disabling_gate"
       ]
     },
     {
@@ -279,6 +294,53 @@
         "test_no_position_empty_stream_is_explicitly_unactivated",
         "test_positive_shadow_geometry_and_scope_remain_separate",
         "test_nested_exception_and_original_exception_restore_exact_callable"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_journal.py",
+      "tests": [
+        "test_three_public_events_keep_protocol_instrument_and_no_authority",
+        "test_exact_original_bytes_form_source_question_addendum_sha_chain",
+        "test_every_public_event_extends_one_exact_historical_chain",
+        "test_subsequent_captures_do_not_claim_to_be_pre_outcome_attestations",
+        "test_retained_actual_pdf_captures_match_the_recorded_bytes",
+        "test_public_terminal_account_table_is_not_a_qualified_skill",
+        "test_private_original_summary_reproduces_each_public_result_without_replay",
+        "test_source_records_have_real_text_and_explicit_unreviewed_boundaries",
+        "test_prospective_question_and_followup_preserve_their_bounded_scope",
+        "test_actual_selected_dependency_path_is_explicit_not_claimed_as_optional_ta",
+        "test_actual_classifier_then_registered_gate_is_exact_on_mature_prefixes",
+        "test_optional_ta_binding_when_available"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_study.py",
+      "tests": [
+        "test_actual_eight_cross_runtime_wires_and_new_months",
+        "test_optional_gate_is_not_an_undeclared_risk_or_cost_change",
+        "test_unknown_adapter_and_authority_are_rejected",
+        "test_entire_declared_parameter_vector_is_pinned_before_outcomes",
+        "test_case_deadlines_cannot_borrow_a_fresh_outer_budget",
+        "test_all_terminal_streams_remain_bound_even_for_technical_cases",
+        "test_missing_original_case_does_not_create_zero_economic_effect",
+        "test_real_naive_utc_rows_require_full_native_manifest_rederivation",
+        "test_caller_timestamp_flag_or_wrong_manifest_hash_never_grants_utc"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_instrument_windows.py",
+      "tests": [
+        "test_exact_trust_roots_and_calendar_function_are_not_caller_flags",
+        "test_complete_weeks_are_wholly_inside_month_not_partial_initial_week",
+        "test_first_clean_month_wins_and_unused_months_not_relabelled_clean",
+        "test_200_warmup_gap_is_not_hidden_by_clean_evaluation_rows",
+        "test_fewer_than_200_actual_warmup_rows_refuses_otherwise_complete_week",
+        "test_missing_final_week_edge_is_detected_without_exporting_fake_boundary",
+        "test_raw_header_bom_cell_spelling_crlf_and_original_slices_preserved",
+        "test_no_output_folder_when_second_required_month_has_no_complete_window",
+        "test_manifest_reinspection_rederives_raw_slices_calendar_and_authority",
+        "test_unavailable_quotes_remain_unknown_and_marker_or_asof_forgery_refuses",
+        "test_changed_export_or_calendar_owner_cannot_reuse_original_manifest"
       ]
     },
     {
@@ -5850,6 +5912,15 @@
         "test_nonfinite_runtime_values_and_mismatched_axes_fail_closed",
         "test_control_roles_cannot_be_used_as_hidden_interventions",
         "test_schema_legal_but_runtime_inactive_axes_are_not_executable_experiments"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
+      "tests": [
+        "test_gate_is_explicit_only_and_never_enters_defaults_or_sampling",
+        "test_direct_declared_request_validation_matches_the_actual_registered_function",
+        "test_wrong_family_base_breakout_and_invalid_enum_fail_closed_in_both_owners",
+        "pythonValidation"
       ]
     },
     {

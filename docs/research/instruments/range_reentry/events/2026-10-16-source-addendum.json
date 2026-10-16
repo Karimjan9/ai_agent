@@ -1,0 +1,20 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-source-addendum-20261016-03",
+  "previous_event_sha256":"87ecdc06b7d3a5971687391e7181d8c1b406ff18de009fb02cabb72603c195e6",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands and position management",
+  "research_date":"2026-10-16",
+  "event_type":"additional_source_review_after_question_seal_no_execution_change",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "sealed_question_id":"bollinger-range-context-20261016-v1",
+  "sealed_spec_sha256":"3dff938a9fefbad49cbc509a074f71e4468c5ad79ada8d3fa2abf63097492e17",
+  "source_reviews":[
+    {"source_id":"authorized-bollinger-methods-web","url":"https://bollingerbands.us/help-methods.php","publisher":"TraderLink site expressly authorized by Bollinger Bands","reviewed":"complete available Methods Explanation text","not_reviewed":["embedded_video","full_book","subscriber_software"],"finding":"The web summary describes Method IV using breakout against a previous bar's high/low; the TradeStation manual describes two outside closes and ADX routing. Do not silently combine differently described implementations under one method name. A reproduction needs its exact source/version and unresolved rules declared."},
+    {"source_id":"authorized-bollinger-stops-web","url":"https://bollingerbands.us/help-stops.php","publisher":"TraderLink site expressly authorized by Bollinger Bands","reviewed":"complete available Stops text, including Chandelier, Parabolic and BBStops descriptions","not_reviewed":["embedded_video","chart_screenshot_pixels","subscriber_software","full_Wilder_book"],"finding":"Its Chandelier description uses the extreme since entry and permits the calculated stop to move away when ATR expands. This differs from a monotonic ratchet and a fixed rolling-high implementation. The Parabolic prose and plot instructions give different AF-step defaults, so a numerical choice cannot be presented as uniquely source-determined. Existing hard risk limits must not be weakened to imitate a source variant."}
+  ],
+  "new_followup":{"id":"BB-H007","status":"unexecuted_source_fidelity_question","claim":"Since-entry versus rolling Chandelier extremes and ratchet versus recalculated stop may produce different management behavior.","dependency":"Separate declared position-state adapter, hard aggregate-risk compatibility, exact control and multiple-month original design; not added to the running question."},
+  "access_boundary":"Searches did not provide a reviewed full YouTube transcript. Public manual/page text was actually read; no video or paid masterclass is claimed watched.",
+  "execution_change":false,
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

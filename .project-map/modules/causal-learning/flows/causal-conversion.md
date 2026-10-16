@@ -1,5 +1,16 @@
 # Causal conversion loop
 
+Per-instrument source review -> fixed calendar-only native week selection
+(April/May/June first-clean, separately August; current adapter May/August) ->
+exact raw parent slices, 200 warmup and boundary/refusal manifest -> actual PHP
+session-reentry identity plus opt-in context/holding declarations -> all eight
+request digests and source/runtime/data archive before outcomes -> one hidden
+serial ordinary replay per case under original dual-clock caps -> immutable
+original response/witness/process facts -> read-only whole-account/holding/
+context comparison and curator guide/history. Missing/late products stay
+unknown; there is no DB/agent-outcome fan-out, renewed original, independent
+qualification, broker action or production rollout.
+
 Assistant reviews existing price-channel and Bollinger operating rules ->
 actual PHP session/recross identity validation -> two-method/two-holding/two-
 window original roster -> source/runtime/data/request seal -> dual absolute

@@ -1,0 +1,23 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-article-review-20261016-06",
+  "previous_event_sha256":"f636fdb5a63ef9dad6981c6a6b7d88bf807715af15f7224e80a2e5b1e55b2eb4",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"scanned_original_article_review_after_question_outcomes",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "source_reviews":[
+    {"source_id":"bollinger-TASC-Feb1992","url":"https://www.bollingerbands.com/_files/ugd/58be43_d0481bfee7424c91a089d4f0a7383133.pdf","publisher":"John Bollinger, Technical Analysis of Stocks and Commodities, February 1992","reviewed":"all five scanned PDF pages rendered and visually read, including formula/chart captions and spreadsheet sidebar","not_reviewed":["full_cited_books","underlying_DJIA_price_data","advertised_software"],"sha256":"e2d1ec5a8915e2aa22b7d9fa287461da539ff521867514a7ce7d56035b8afa1f","bytes":2914861,"finding":"Figure 4 divides variance by N; the spreadsheet sidebar explicitly uses population deviation and typical price. The main discussion also permits closes. This is not the current sample-deviation recross. A second extreme inside the band after an outside extreme, with appropriate confirmation, is a distinct pattern from one-bar recross. Historical period/width suggestions differ from the current 22-rule page, so source versions must stay explicit."},
+    {"source_id":"bollinger-FXTrader-AprJun2014","url":"https://www.bollingerbands.com/_files/ugd/58be43_a75cc84043bd4233b5e929fc2c25487b.pdf","publisher":"FX Trader Magazine interview with John Bollinger, April-June 2014","reviewed":"all four scanned pages, printed pages 47-50, rendered and visually read","not_reviewed":["advertised_DVD_course","full_recommended_books","unpublished_indicator_implementations"],"sha256":"d926c31e2163442fb64410748c53006313d3020a8b28b84db829ce36c12f311e","bytes":2723343,"finding":"The author separates band-relative position, momentum, bandwidth history and trend tools; complementary confirmation and practice matter. He identifies a limitation for volume-dependent accumulation tools in forex and emphasizes position sizing and learning from repeated practice. The interview does not publish a complete guaranteed intraday system or every indicator formula."}
+  ],
+  "video_access_attempt":{"discovery":"https://www.bollingerbands.com/videos-articles-interviews","url":"https://www.youtube.com/watch?v=-6cbdJulb7s","title":"The Right Way to Trade Bollinger Bands","author_page_date":"2011-07-01","result":"online_fetch_throttled_no_reviewed_transcript_or_video","watched":false},
+  "reading_custody":"Scanned PDFs had zero extractable text. Private pypdf 6.1.1 wheel and isolated PyMuPDF 1.26.4 renderer were used outside the interpreter site-packages and repository app/scripts. All nine page images were actually inspected. No production dependency, original request or source-frozen replay file was changed. Private source files/page images are not redistributed.",
+  "followups":[
+    {"id":"BB-H008","status":"unexecuted_source_fidelity_question","claim":"Compare population versus sample deviation under an explicitly pinned 20-close band contract before calling the code an exact author reproduction.","dependency":"Separate predeclared adapter/question; preserve current original outcomes and fixed risk/costs."},
+    {"id":"BB-H009","status":"post_outcome_curator_hypothesis_not_author_rule","claim":"Compare volatility against past observations from a comparable time-of-day/session rather than assuming a rolling all-hours low-volatility label transfers across months.","dependency":"Adequate genuinely preceding session history, declared normalization/warmup and exact-control test; do not redefine old labels or select a threshold from this panel's PnL."},
+    {"id":"BB-H010","status":"unexecuted_source_pattern_question","claim":"A causal two-extreme outside/inside band pattern with confirmation may differ from an unconditional one-bar recross.","dependency":"Explicit past-confirmed pivots and timing, no future-looking zigzag; separate source-faithful entry/management contract and multiple-month originals."}
+  ],
+  "execution_change":false,
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

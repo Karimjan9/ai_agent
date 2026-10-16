@@ -246,6 +246,9 @@ def apply_session_strategy(df: pd.DataFrame, parameters: dict | None = None) -> 
 def apply_session_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
     """Session-only range re-entry; no signal is emitted outside the session."""
     p = parameters or {}
+    context_gate = p.get("session_context_gate", "none")
+    if context_gate not in ("none", "range_low_v1"):
+        raise ValueError("SESSION_CONTEXT_GATE_VALUE_INVALID")
     start, end, lookback = int(p.get("session_start", 7)), int(p.get("session_end", 16)), int(p.get("lookback", 20))
     active = pd.to_datetime(df.time, utc=True, errors="coerce").dt.hour.between(start, end - 1)
     mean = df.close.rolling(lookback).mean()
@@ -261,6 +264,14 @@ def apply_session_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | N
     out.loc[buy, "signal"] = "BUY"
     out.loc[sell, "signal"] = "SELL"
     out["signal_confidence"] = ((df.close - mean).abs() / (std * 2.0)).clip(0, 1).fillna(0)
+    if context_gate == "range_low_v1":
+        # This explicit laboratory treatment consumes only the original
+        # completed row's context labels, never an ADX/ATR proxy or a fallback.
+        missing = pd.Series(index=df.index, dtype=object)
+        eligible = (df.get("market_regime", missing).eq("range")
+            & df.get("volatility_regime", missing).eq("low_volatility")).fillna(False)
+        out.loc[~eligible, "signal"] = "WAIT"
+        out.loc[~eligible, "signal_confidence"] = 0.0
     return out
 
 

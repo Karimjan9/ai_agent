@@ -1,5 +1,17 @@
 # Laboratory lifecycle states
 
+## Explicit Bollinger context treatment
+
+An explicitly supplied `session_context_gate` accepts only `none` or
+`range_low_v1` for the actual session mean-reversion function, not merely a
+shared session-family alias. PHP effective-base validation and Python registry
+identity agree; breakout and unrelated strategies refuse the key. Ordinary
+default vectors and sampling do not acquire it. `none` preserves the old path;
+`range_low_v1` can suppress proposals unless the original completed row has
+`market_regime=range` and `volatility_regime=low_volatility`. Missing context
+remains WAIT. This is a prospectively declared curator hypothesis, not a
+confirmed skill, default policy or permission to relax cost/risk gates.
+
 ## Explicit curator trailing activation
 
 An optional `trailing_activation_r` is admitted only through the explicit

@@ -13,10 +13,12 @@ paths:
   - backend-laravel/app/Services/StrategyParameterSchemaService.php
   - backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php
   - backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php
+  - backend-laravel/tests/Unit/BollingerContextGateParityTest.php
   - ai-service-python/app/services/parameter_schema.py
   - ai-service-python/tests/test_trailing_activation.py
   - ai-service-python/app/strategies/laboratory.py
   - ai-service-python/tests/test_curator_intraday_strategies.py
+  - ai-service-python/tests/test_bollinger_context_gate.py
   - backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php
   - ai-service-python/tests/test_source_ema_pretrend_entry.py
   - backend-laravel/app/Services/LabPopulationConstructionTrait.php
@@ -201,6 +203,7 @@ dependencies:
 # see shared/integrations.md rather than adding a reverse ownership edge to
 # causal-learning (which already depends on laboratory).
 invariants:
+  - Optional session_context_gate none/range_low_v1 is explicit research validation only and requires the actual session_mean_reversion runtime function under effective base precedence. Ordinary default/sampling vectors stay unchanged; range_low_v1 uses the original completed row's range and low_volatility labels, and missing context yields WAIT rather than a proxy or qualification.
   - Only new typed qualified-SOLO panels stage original request digests, at most four per genuine lease under the unchanged 900-second delivery budget. Original definition/model/plan/source seals and HMAC prefix are revalidated before all-digests dispatch; exact extra operational slots never replenish scientific allowance. Legacy panels stay atomic (ADR-034).
   - Original native depth is a distinct six-slot purpose with four source references and cheap/deeper carriers. Actual producer opportunities, signed clock views and immutable whole-pool/seeded sample precede one canonical deferred continuation; ordinary/full replay cannot borrow a short view. Diagnostic neutral closure grants no economic learning or independent authority (ADR-033).
   - Best-qualified SOLO requires separate original scoped standalone qualification, a server-owned bounded as-of eligible roster and original ranking panel, then a disjoint final panel. Caller flags/shortlists and old chosen/matched SOLO grant nothing; original physical input/warmup/context/holding exposure and immutable selected-source proof own every stage (ADR-033).
@@ -253,6 +256,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Unit/BollingerContextGateParityTest.php
+  - ai-service-python/tests/test_bollinger_context_gate.py
   - ai-service-python/tests/test_trailing_activation.py
   - backend-laravel/tests/Feature/RescueCircuitBreakerTest.php
   - backend-laravel/tests/Feature/CausalEdgeAccountingTest.php

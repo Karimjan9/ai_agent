@@ -81,17 +81,28 @@ def _registered_csv_binding(path, source_hash, request, rows, provenance):
     else:
         _need(isinstance(provenance, dict) and set(provenance) ==
               {"manifest_path", "manifest_sha256", "window_key"}, "SCALP_EXACT_CSV_PROVENANCE_REQUIRED")
-        _need(provenance["manifest_sha256"] == TRUSTED_CSV_MANIFEST_SHA256,
-              "SCALP_TRUSTED_CSV_MANIFEST_REQUIRED")
         manifest_path = Path(provenance["manifest_path"]).resolve()
         window_key = provenance["window_key"]
     _need(manifest_path.is_file(), "SCALP_REGISTERED_CSV_UTC_PROVENANCE_REQUIRED")
     raw_manifest = manifest_path.read_bytes()
-    _need(hashlib.sha256(raw_manifest).hexdigest() == TRUSTED_CSV_MANIFEST_SHA256,
+    manifest_identity = hashlib.sha256(raw_manifest).hexdigest()
+    _need(provenance is None or manifest_identity == provenance['manifest_sha256'],
           "SCALP_TRUSTED_CSV_MANIFEST_REQUIRED")
     manifest = json.loads(raw_manifest)
-    _need(manifest.get("protocol") == "curator_raw_context_window_preparation_v1"
-          and manifest.get("timestamp_semantics") == REGISTERED_CSV_TIME_SEMANTICS,
+    registration = 'pinned_original_csv_utc_registration_v1'
+    if manifest_identity == TRUSTED_CSV_MANIFEST_SHA256:
+        _need(manifest.get('protocol') == 'curator_raw_context_window_preparation_v1',
+              'SCALP_REGISTERED_CSV_UTC_SEMANTICS_REQUIRED')
+    else:
+        _need(manifest.get('protocol') == 'curator_instrument_calendar_windows_v1',
+              'SCALP_TRUSTED_CSV_MANIFEST_REQUIRED')
+        # This owner reopens the pinned original parent, reselects the exact
+        # calendar-only weeks and compares every original raw cell. A caller
+        # hash or a timezone flag alone never authorizes naive timestamps.
+        from scripts.curator_instrument_windows import validate_manifest
+        manifest = validate_manifest(manifest_path, manifest_identity)
+        registration = 'rederived_original_instrument_csv_utc_registration_v1'
+    _need(manifest.get("timestamp_semantics") == REGISTERED_CSV_TIME_SEMANTICS,
           "SCALP_REGISTERED_CSV_UTC_SEMANTICS_REQUIRED")
     windows = manifest.get("windows")
     _need(isinstance(windows, dict), "SCALP_REGISTERED_CSV_WINDOW_REQUIRED")
@@ -103,7 +114,7 @@ def _registered_csv_binding(path, source_hash, request, rows, provenance):
     _need(source_hash == window.get("sha256") == request.get("replay_dataset_hash")
           and type(window.get("loaded_rows")) is int and window["loaded_rows"] == rows,
           "SCALP_EXACT_REGISTERED_CSV_BYTES_REQUIRED")
-    return {"protocol": "pinned_original_csv_utc_registration_v1", "manifest_sha256": TRUSTED_CSV_MANIFEST_SHA256,
+    return {"protocol": registration, "manifest_sha256": manifest_identity,
         "window_key": key, "csv_sha256": source_hash, "timestamp_semantics": REGISTERED_CSV_TIME_SEMANTICS,
         "naive_utc_authority": "verified_original_source_registration_only_not_timezone_inference"}
 
