@@ -1,5 +1,17 @@
 # Integrations and runtime boundaries
 
+## Offline scalp and day source question
+
+`prepare-curator-intraday-panel.php` validates each actual declared strategy
+with the PHP session schema and rehashes the complete execution map after its
+prospective UTC entry schedule change. Python checks the same schema, physical
+map/hash, exact dataset and distinct breakout/recross function. The recross PHP
+family alias shares schema without changing its implicit runtime base to
+breakout. Existing default strategies and old sealed models are unchanged.
+The offline parent uses file-backed hidden children and immutable monotonic/
+UTC deadlines; worker and parent independently reject late publication. This
+does not alter production orchestration, broker connectivity or trading gates.
+
 ## Offline curator profit-delayed ratchet prototype
 
 PHP explicit research schema and Python validation admit finite

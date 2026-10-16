@@ -10,6 +10,14 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/scripts/prepare-curator-intraday-panel.php
+  - ai-service-python/scripts/curator_intraday_panel.py
+  - ai-service-python/scripts/curator_research_deadline.py
+  - ai-service-python/tests/test_curator_intraday_panel.py
+  - ai-service-python/tests/test_curator_intraday_observations.py
+  - ai-service-python/tests/test_curator_research_deadline.py
+  - backend-laravel/resources/research/instrument-operating-skills/curator-scalp-day-observations-v1.json
+  - docs/operations/curator-scalp-day-practice-2026-10-16.md
   - backend-laravel/scripts/prepare-curator-scalp-panel.php
   - ai-service-python/scripts/curator_scalp_panel.py
   - ai-service-python/scripts/curator_scalp_metrics.py

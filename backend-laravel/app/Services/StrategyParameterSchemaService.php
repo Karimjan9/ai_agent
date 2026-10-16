@@ -259,6 +259,7 @@ class StrategyParameterSchemaService
         $family = preg_replace('/_v\d+$/', '', $family) ?: $family;
 
         return match ($family) {
+            'session_mean_reversion' => 'session',
             'mtf_research_control' => 'mtf_research_control',
             'mtf_research_playbook' => 'mtf_research_playbook',
             'confirmation_entry_mtf' => 'confirmation_entry_mtf',
@@ -286,6 +287,15 @@ class StrategyParameterSchemaService
         }
 
         $base = trim((string) $baseStrategy);
+
+        // Schema ownership is shared with session breakout; the registered
+        // re-entry function keeps its existing implicit runtime identity.
+        $runtimeIdentity = preg_replace('/^(xauusd|eurusd|gbpusd)_/', '', strtolower($strategy));
+        $runtimeIdentity = preg_replace('/_g\d+_a\d+$/', '', $runtimeIdentity ?? strtolower($strategy));
+        $runtimeIdentity = preg_replace('/_v\d+$/', '', $runtimeIdentity) ?: $runtimeIdentity;
+        if ($base === '' && $runtimeIdentity === 'session_mean_reversion') {
+            return 'session_mean_reversion_v1';
+        }
 
         return $base !== '' ? $base : (($declaredFamily ?: $strategyFamily).'_v1');
     }

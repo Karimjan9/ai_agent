@@ -1,5 +1,12 @@
 # Causal conversion loop
 
+Assistant reviews existing price-channel and Bollinger operating rules ->
+actual PHP session/recross identity validation -> two-method/two-holding/two-
+window original roster -> source/runtime/data/request seal -> dual absolute
+deadline hidden serial workers -> unchanged native full-close witness ->
+read-only original clock/account/holding/context comparison -> curator guide.
+Missing/late products remain unknown; no new scheduler or authority is created.
+
 Explicit assistant-curated scalping source study -> actual PHP-prepared/Python-
 validated two-coordinate eight-request question -> before-outcome data/runtime/
 source-byte freeze -> one serial bounded offline original per arm/window ->

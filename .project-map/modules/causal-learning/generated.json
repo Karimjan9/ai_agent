@@ -2,13 +2,21 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T04:31:09.205Z",
-  "source_digest": "cb05ba7392ec186d6c280b9c7f776f9063f9e13907d3923de82c6dea837989df",
-  "source_file_count": 1739,
-  "git_head": "4c0c1e17f55dda20843342e25dd9f18f4b015c76",
+  "generated_at": "2026-10-16T05:28:40.609Z",
+  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
+  "source_file_count": 1747,
+  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
+    "backend-laravel/scripts/prepare-curator-intraday-panel.php",
+    "ai-service-python/scripts/curator_intraday_panel.py",
+    "ai-service-python/scripts/curator_research_deadline.py",
+    "ai-service-python/tests/test_curator_intraday_panel.py",
+    "ai-service-python/tests/test_curator_intraday_observations.py",
+    "ai-service-python/tests/test_curator_research_deadline.py",
+    "backend-laravel/resources/research/instrument-operating-skills/curator-scalp-day-observations-v1.json",
+    "docs/operations/curator-scalp-day-practice-2026-10-16.md",
     "backend-laravel/scripts/prepare-curator-scalp-panel.php",
     "ai-service-python/scripts/curator_scalp_panel.py",
     "ai-service-python/scripts/curator_scalp_metrics.py",
@@ -325,7 +333,9 @@
     "ai-service-python/app/services/walk_forward.py",
     "ai-service-python/scripts/backtest-instrument-method-matrix.py",
     "ai-service-python/scripts/curator_activation_witness.py",
+    "ai-service-python/scripts/curator_intraday_panel.py",
     "ai-service-python/scripts/curator_management_witness.py",
+    "ai-service-python/scripts/curator_research_deadline.py",
     "ai-service-python/scripts/curator_scalp_metrics.py",
     "ai-service-python/scripts/curator_scalp_panel.py",
     "ai-service-python/tests/support/native_instrument_method_meta_fixture.py",
@@ -334,9 +344,12 @@
     "ai-service-python/tests/test_closed_bandwidth_squeeze.py",
     "ai-service-python/tests/test_closed_dmi_adx_method.py",
     "ai-service-python/tests/test_curator_activation_witness.py",
+    "ai-service-python/tests/test_curator_intraday_observations.py",
+    "ai-service-python/tests/test_curator_intraday_panel.py",
     "ai-service-python/tests/test_curator_management_mechanics.py",
     "ai-service-python/tests/test_curator_management_observations.py",
     "ai-service-python/tests/test_curator_management_witness.py",
+    "ai-service-python/tests/test_curator_research_deadline.py",
     "ai-service-python/tests/test_curator_scalp_metrics.py",
     "ai-service-python/tests/test_curator_scalp_observations.py",
     "ai-service-python/tests/test_curator_scalp_panel.py",
@@ -482,6 +495,7 @@
     "backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php",
     "backend-laravel/database/migrations/2026_10_13_140000_create_instrument_method_meta_models.php",
     "backend-laravel/database/migrations/2026_10_13_150000_create_agent_method_owned_outcomes.php",
+    "backend-laravel/scripts/prepare-curator-intraday-panel.php",
     "backend-laravel/scripts/prepare-curator-scalp-panel.php",
     "backend-laravel/tests/Feature/AcademyCanonicalHandoffTest.php",
     "backend-laravel/tests/Feature/AcademyColdStartFairnessTest.php",
@@ -2025,6 +2039,96 @@
       "line": 94
     },
     {
+      "symbol": "validate",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 141
+    },
+    {
+      "symbol": "frozen",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 145
+    },
+    {
+      "symbol": "seal",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 163
+    },
+    {
+      "symbol": "prepare",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 188
+    },
+    {
+      "symbol": "read_spec",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 200
+    },
+    {
+      "symbol": "verify_response",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 208
+    },
+    {
+      "symbol": "worker",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 221
+    },
+    {
+      "symbol": "comparisons",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 257
+    },
+    {
+      "symbol": "validate_launch",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 280
+    },
+    {
+      "symbol": "execute",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 292
+    },
+    {
+      "symbol": "inspect_originals",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 347
+    },
+    {
+      "symbol": "source_roster",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 40
+    },
+    {
+      "symbol": "physical_for_arm",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 44
+    },
+    {
+      "symbol": "validate_design",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 50
+    },
+    {
+      "symbol": "validate_inputs",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_intraday_panel.py",
+      "line": 98
+    },
+    {
       "symbol": "_body",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_management_witness.py",
@@ -2125,6 +2229,96 @@
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_management_witness.py",
       "line": 97
+    },
+    {
+      "symbol": "_cleanup_owned_child",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 122
+    },
+    {
+      "symbol": "polled_exit",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 127
+    },
+    {
+      "symbol": "wait_owned_child",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 155
+    },
+    {
+      "symbol": "run_hidden_serial",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 205
+    },
+    {
+      "symbol": "_finite",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 24
+    },
+    {
+      "symbol": "ResearchDeadlineError",
+      "kind": "python_class",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 28
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 29
+    },
+    {
+      "symbol": "OwnedChildNotReaped",
+      "kind": "python_class",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 34
+    },
+    {
+      "symbol": "_Limits",
+      "kind": "python_class",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 39
+    },
+    {
+      "symbol": "AbsoluteResearchDeadline",
+      "kind": "python_class",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 47
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 48
+    },
+    {
+      "symbol": "start",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 56
+    },
+    {
+      "symbol": "from_record",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 75
+    },
+    {
+      "symbol": "record",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 89
+    },
+    {
+      "symbol": "checkpoint",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_research_deadline.py",
+      "line": 92
     },
     {
       "symbol": "_original_clock",
@@ -2763,6 +2957,102 @@
       "line": 88
     },
     {
+      "symbol": "CuratorIntradayObservationsTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 13
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 15
+    },
+    {
+      "symbol": "test_curator_know_how_never_becomes_agent_or_trading_authority",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 18
+    },
+    {
+      "symbol": "test_eight_cases_retain_negative_results_and_real_horizon_counts",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 28
+    },
+    {
+      "symbol": "test_selected_contexts_are_small_exploratory_samples_not_permissions",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 42
+    },
+    {
+      "symbol": "test_actual_retained_summary_products_and_context_projections",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 53
+    },
+    {
+      "symbol": "identity",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "line": 57
+    },
+    {
+      "symbol": "CuratorIntradayPanelTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 16
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 18
+    },
+    {
+      "symbol": "test_actual_php_to_python_eight_original_requests",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 27
+    },
+    {
+      "symbol": "test_all_shared_physical_controls_match_two_coordinate_declaration",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 34
+    },
+    {
+      "symbol": "test_authority_flag_or_extra_arm_is_rejected",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 41
+    },
+    {
+      "symbol": "test_schema_valid_but_undeclared_risk_intervention_is_rejected",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 50
+    },
+    {
+      "symbol": "test_actual_source_and_data_are_pinned_not_tail_override",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 56
+    },
+    {
+      "symbol": "test_comparison_keeps_missing_products_unknown_not_zero",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 65
+    },
+    {
+      "symbol": "test_original_global_bounds_cannot_be_renewed_or_overshot",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "line": 76
+    },
+    {
       "symbol": "CuratorManagementMechanicsTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_curator_management_mechanics.py",
@@ -2971,6 +3261,186 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_management_witness.py",
       "line": 93
+    },
+    {
+      "symbol": "test_completion_that_crosses_deadline_during_poll_is_rejected",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 108
+    },
+    {
+      "symbol": "test_utc_backward_jump_is_sticky_fail_closed_not_budget_extension",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 117
+    },
+    {
+      "symbol": "test_worker_original_limits_are_never_renewed_after_calculation",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 130
+    },
+    {
+      "symbol": "test_child_cap_clamps_to_original_parent_axes_without_renewal",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 146
+    },
+    {
+      "symbol": "test_timeout_terminates_only_supplied_handle_and_retains_facts",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 159
+    },
+    {
+      "symbol": "test_unreaped_child_blocks_serial_progress_with_bounded_cleanup",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 169
+    },
+    {
+      "symbol": "FakeClock",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 18
+    },
+    {
+      "symbol": "test_frozen_cleanup_clock_cannot_create_unbounded_wait",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 181
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 19
+    },
+    {
+      "symbol": "test_unreaped_exception_is_a_durable_serial_abort_not_another_arm_timeout",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 192
+    },
+    {
+      "symbol": "test_backwards_parent_utc_is_technical_refusal_not_success_or_budget_retry",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 208
+    },
+    {
+      "symbol": "test_deadline_failure_facts_cannot_be_mutated_to_reopen_publication",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 220
+    },
+    {
+      "symbol": "monotonic",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 23
+    },
+    {
+      "symbol": "test_pipe_and_long_poll_are_refused_before_waiting",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 233
+    },
+    {
+      "symbol": "test_invalid_or_extended_record_cannot_create_replacement_deadline",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 243
+    },
+    {
+      "symbol": "test_real_hidden_child_has_file_backed_large_output_without_pipe_deadlock",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 259
+    },
+    {
+      "symbol": "utc",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 26
+    },
+    {
+      "symbol": "test_real_owned_sleeping_child_is_reaped_on_short_absolute_cap",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 271
+    },
+    {
+      "symbol": "advance",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 29
+    },
+    {
+      "symbol": "sleep",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 33
+    },
+    {
+      "symbol": "deadline",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 39
+    },
+    {
+      "symbol": "FakeProcess",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 44
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 48
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 54
+    },
+    {
+      "symbol": "terminate",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 63
+    },
+    {
+      "symbol": "kill",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 68
+    },
+    {
+      "symbol": "CuratorResearchDeadlineTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 74
+    },
+    {
+      "symbol": "test_normal_completion_uses_short_polling_not_communicate",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 75
+    },
+    {
+      "symbol": "test_forward_utc_jump_after_wake_rejects_finished_child",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 85
+    },
+    {
+      "symbol": "test_monotonic_expiry_alone_wins_over_completed_returncode",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "line": 97
     },
     {
       "symbol": "test_trust_pin_and_reporting_version_are_not_caller_selectable",

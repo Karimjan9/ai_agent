@@ -1,0 +1,118 @@
+{
+  "protocol": "assistant_curator_scalp_day_observations_v1",
+  "research_date": "2026-10-16",
+  "origin": "assistant_curated_not_agent_owned_experience",
+  "evidence_level": "observed_reused_archive_know_how_not_independent_skill",
+  "research_only": true,
+  "usable_for_research": true,
+  "own_agent_outcome": false,
+  "independent_validation": false,
+  "credit": false,
+  "mastery": false,
+  "economic_authority": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "automatic_agent_attachment": false,
+  "question_id": "curator-intraday-session-20261016-v1",
+  "original_spec_sha256": "87e1b294f12ef9a2360e0a7c02b7f45bf9c69a0de2009c7c4f3ef1bdf83ace8c",
+  "original_summary_sha256": "ab2081764e26db5942297d81c5826b63e1213a900d4ec86bd6ef0f5c27f9d2f6",
+  "original_source_archive_sha256": "4f3a26dd32fcd7f2a2d2d0392931a303d8fb8e8ebb5ece27727556ec3d197f64",
+  "original_artifact_roster_sha256": "c774c2b984ce784be8709495913d0ed8aa197c58a0abb2b8fa4ae3423c233d24",
+  "terminal_original_cases": 8,
+  "completed_reverified_cases": 8,
+  "scope": {
+    "symbol": "XAUUSD", "timeframe": "M5", "initial_balance": 10000.0,
+    "risk_per_trade_percent": 1.0, "all_2026_and_later": "paper_only",
+    "entry_hours": "UTC_07_14_half_open_not_local_London_or_New_York_equivalence",
+    "windows": ["october_pre_dst", "december_standard"],
+    "costs": "unchanged_fixed_modeled_spread_slippage_commission_carry_not_broker_fills",
+    "no_untouched_or_orderflow_claim": true
+  },
+  "cases": {
+    "october_pre_dst__breakout_scalp6": {
+      "status": "completed", "mature": 22, "net_cash": 188.8255259723519,
+      "median_holding_minutes": 25.0, "max_holding_minutes": 30.0,
+      "daily_full_closes": [4,4,5,4,5], "closed_same_utc_date": 22, "open": 0,
+      "response_sha256": "1451b31fa5f8b895dc792889a35e42bf1f6a7c76605435639c721e9d2fa7b733"
+    },
+    "october_pre_dst__reentry_scalp6": {
+      "status": "completed", "mature": 17, "net_cash": -138.33676219997142,
+      "median_holding_minutes": 30.0, "max_holding_minutes": 30.0,
+      "daily_full_closes": [3,2,4,3,5], "closed_same_utc_date": 17, "open": 0,
+      "response_sha256": "54dc9346cbffd7a3c91ac60f40ba6f5f52461c28f3de1aac5c30ce6024500209"
+    },
+    "october_pre_dst__breakout_day24": {
+      "status": "completed", "mature": 20, "net_cash": 396.37386597581644,
+      "median_holding_minutes": 22.5, "max_holding_minutes": 120.0,
+      "daily_full_closes": [3,3,5,4,5], "closed_same_utc_date": 20, "open": 0,
+      "response_sha256": "84a7fdfb7dddd1d48b94227e08a918d7c4f90e46dd478d54f3858981209d58a1"
+    },
+    "october_pre_dst__reentry_day24": {
+      "status": "completed", "mature": 15, "net_cash": -483.3358967858494,
+      "median_holding_minutes": 30.0, "max_holding_minutes": 120.0,
+      "daily_full_closes": [2,1,4,3,5], "closed_same_utc_date": 15, "open": 0,
+      "response_sha256": "c912374f047c8eea728f2dfb3f53bfe2ec124586646efebbea0d06b29cb0f883"
+    },
+    "december_standard__breakout_scalp6": {
+      "status": "completed", "mature": 26, "net_cash": -0.5333427004043187,
+      "median_holding_minutes": 17.5, "max_holding_minutes": 30.0,
+      "daily_full_closes": [3,6,3,4,10], "closed_same_utc_date": 26, "open": 0,
+      "response_sha256": "653db1bac92ff044094d20ea31f3167d80d26d7d495fc535926f238a345f1777"
+    },
+    "december_standard__reentry_scalp6": {
+      "status": "completed", "mature": 19, "net_cash": -149.49098127699654,
+      "median_holding_minutes": 20.0, "max_holding_minutes": 30.0,
+      "daily_full_closes": [3,3,3,5,5], "closed_same_utc_date": 19, "open": 0,
+      "response_sha256": "7fdc319ac23bb476b81158e217a332706ab5de9d031d29fa70699c179fd8927f"
+    },
+    "december_standard__breakout_day24": {
+      "status": "completed", "mature": 23, "net_cash": -152.69118307603276,
+      "median_holding_minutes": 25.0, "max_holding_minutes": 120.0,
+      "daily_full_closes": [3,6,3,4,7], "closed_same_utc_date": 23, "open": 0,
+      "response_sha256": "4d9dcb67b5cea3548af2b6a676bfad00511c199c8ff306a9e22f4f652e30d770"
+    },
+    "december_standard__reentry_day24": {
+      "status": "completed", "mature": 18, "net_cash": -241.07867641257872,
+      "median_holding_minutes": 17.5, "max_holding_minutes": 120.0,
+      "daily_full_closes": [3,3,3,4,5], "closed_same_utc_date": 18, "open": 0,
+      "response_sha256": "5e8505337dbaa6c1fb022b3dfcc57dbbbf3df0dd86be7cafaef36c2a7a87d588"
+    }
+  },
+  "context_examples": [
+    {"arm":"breakout_scalp6","kind":"entry_regime_volatility","regime":"trend_up","volatility":"normal_volatility",
+     "october":{"n":5,"cash":292.7577348440715},"december":{"n":5,"cash":117.92655093199807}},
+    {"arm":"breakout_scalp6","kind":"entry_regime_volatility","regime":"range","volatility":"low_volatility",
+     "october":{"n":4,"cash":-67.90387709712823},"december":{"n":2,"cash":-92.47781484792026}},
+    {"arm":"reentry_scalp6","kind":"entry_regime_volatility","regime":"range","volatility":"low_volatility",
+     "october":{"n":3,"cash":26.535422586655528},"december":{"n":3,"cash":103.86600561788794}},
+    {"arm":"breakout_scalp6","kind":"entry_calendar_phase","phase":"london_comex_overlap",
+     "october":{"n":7,"cash":310.7573453023355},"december":{"n":5,"cash":-85.92720854556876}}
+  ],
+  "context_interpretation": {
+    "status":"exploratory_small_reused_samples_not_context_certification",
+    "selection":"descriptive_examples_selected_after_original_outcomes_not_preregistered_confirmatory_subgroups",
+    "isolated_context_effect":false,
+    "general_harmful_ban":false,
+    "conditional_account_replay_required_before_using_as_filter":true,
+    "source_context_membership":"original_entry_market_regime_volatility_and_closed_signal_calendar_point",
+    "cash_scope":"original_mature_trade_cash_grouping_not_counterfactual_only_context_account_return"
+  },
+  "operating_knowledge": [
+    "A strict prior-channel breakout and a closed-band recross are distinct executable methods; a band tag alone is not either method.",
+    "Use the exact registered base with session_mean_reversion_v1; base=session would select breakout.",
+    "The 6-bar variants produced multiple mature closes on all ten observed dates without a forced trade quota.",
+    "Longer holding improved October breakout but worsened December; it is not a universal day-trading improvement.",
+    "The full reentry accounts lost in both weeks, while small range/low-volatility trade groups were positive; investigate prospectively, do not ban the instrument or certify the slice.",
+    "Flat history and unknown true order-flow data require WAIT or an explicit dependency, not fabricated signals or data.",
+    "Keep curator instruction separate from an agent's own subsequent practice and from independently earned skill."
+  ],
+  "next_question": "prospectively_compare_source_relevant_regime_context_and_exit_rule_with_exact_control_on_separately_sealed_discovery_windows_without_posthoc_context_profit_claim",
+  "limitations": [
+    "ordinary_row_timer_not_general_wall_clock_or_session_flat_contract",
+    "same_bar_fill_time_and_within_candle_stop_target_order_unknown",
+    "closed_cash_drawdown_not_marked_equity",
+    "endogenous_calibration_and_cooldown_differ_so_account_contrasts_not_identical_trade_path_effects",
+    "no_full_library_or_horizon_mastery_claim",
+    "no_broker_demo_or_production_release"
+  ]
+}

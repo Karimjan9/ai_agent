@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T04:31:09.205Z",
-  "source_digest": "cb05ba7392ec186d6c280b9c7f776f9063f9e13907d3923de82c6dea837989df",
-  "source_file_count": 1739,
-  "git_head": "4c0c1e17f55dda20843342e25dd9f18f4b015c76",
+  "generated_at": "2026-10-16T05:28:40.609Z",
+  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
+  "source_file_count": 1747,
+  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -282,6 +282,44 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_curator_intraday_observations.py",
+      "tests": [
+        "test_curator_know_how_never_becomes_agent_or_trading_authority",
+        "test_eight_cases_retain_negative_results_and_real_horizon_counts",
+        "test_selected_contexts_are_small_exploratory_samples_not_permissions",
+        "test_actual_retained_summary_products_and_context_projections"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_intraday_panel.py",
+      "tests": [
+        "test_actual_php_to_python_eight_original_requests",
+        "test_all_shared_physical_controls_match_two_coordinate_declaration",
+        "test_authority_flag_or_extra_arm_is_rejected",
+        "test_schema_valid_but_undeclared_risk_intervention_is_rejected",
+        "test_actual_source_and_data_are_pinned_not_tail_override",
+        "test_comparison_keeps_missing_products_unknown_not_zero",
+        "test_original_global_bounds_cannot_be_renewed_or_overshot"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "tests": [
+        "test_flat_history_is_unavailable_not_object_comparison_failure",
+        "test_registry_pins_distinct_explicit_strategy_and_base_pairs",
+        "test_real_breakout_uses_current_close_strictly_beyond_prior_twenty_high_low",
+        "test_breakout_prior_level_touch_is_not_a_strict_break",
+        "test_real_reentry_uses_sample_std_bands_and_directional_closed_prices",
+        "test_band_wick_touch_without_close_excursion_is_not_reentry",
+        "test_moving_band_pseudo_reentry_in_wrong_price_direction_remains_wait",
+        "test_seven_to_fourteen_utc_row_timestamp_session_is_half_open",
+        "test_confidence_is_scalar_finite_and_bounded_for_both_registered_methods",
+        "test_two_hundred_plus_row_prefixes_and_appended_future_outliers_do_not_change_past",
+        "test_legacy_default_mean_reversion_is_outside_fade_not_session_reentry",
+        "test_six_and_twentyfour_bar_holding_timers_do_not_change_vectorized_entries"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_curator_management_mechanics.py",
       "tests": [
         "test_buy_and_sell_stops_ratchet_without_mutating_risk_or_target",
@@ -319,6 +357,28 @@
         "test_original_producer_exception_restores_exact_callable",
         "test_unavailable_snapshot_without_completed_original_call_refuses",
         "test_metrics_do_not_mislabel_cost_or_unobserved_stop_path"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_research_deadline.py",
+      "tests": [
+        "test_normal_completion_uses_short_polling_not_communicate",
+        "test_forward_utc_jump_after_wake_rejects_finished_child",
+        "test_monotonic_expiry_alone_wins_over_completed_returncode",
+        "test_completion_that_crosses_deadline_during_poll_is_rejected",
+        "test_utc_backward_jump_is_sticky_fail_closed_not_budget_extension",
+        "test_worker_original_limits_are_never_renewed_after_calculation",
+        "test_child_cap_clamps_to_original_parent_axes_without_renewal",
+        "test_timeout_terminates_only_supplied_handle_and_retains_facts",
+        "test_unreaped_child_blocks_serial_progress_with_bounded_cleanup",
+        "test_frozen_cleanup_clock_cannot_create_unbounded_wait",
+        "test_unreaped_exception_is_a_durable_serial_abort_not_another_arm_timeout",
+        "test_backwards_parent_utc_is_technical_refusal_not_success_or_budget_retry",
+        "test_deadline_failure_facts_cannot_be_mutated_to_reopen_publication",
+        "test_pipe_and_long_poll_are_refused_before_waiting",
+        "test_invalid_or_extended_record_cannot_create_replacement_deadline",
+        "test_real_hidden_child_has_file_backed_large_output_without_pipe_deadlock",
+        "test_real_owned_sleeping_child_is_reaped_on_short_absolute_cap"
       ]
     },
     {
@@ -6052,6 +6112,14 @@
         "test_outputs_with_different_frozen_inputs_are_not_comparable",
         "service",
         "proposal"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+      "tests": [
+        "test_registered_reentry_uses_the_unchanged_session_schema_and_defaults",
+        "test_actual_python_registry_and_parameter_owner_preserve_the_selected_function",
+        "test_alias_does_not_admit_unowned_range_topology_parameters"
       ]
     },
     {

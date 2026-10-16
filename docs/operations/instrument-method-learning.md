@@ -833,6 +833,12 @@ paper-only; no test, source reading or new name creates untouched market data.
 
 ### Scalping-first curator practice
 
+The newer research priority includes **both scalp and day trading**. See
+[the scalp and day source study](curator-scalp-day-practice-2026-10-16.md) for
+the separate price-channel/band-recross question, actual holding/day activity
+checks and source-specific operating instructions. The earlier scalp-only
+priority remains historical context, not a restriction on the new day track.
+
 See [the first scalping study](curator-scalping-practice-2026-10-16.md) for the
 source-derived EMA use rules, paired short-holding comparison, daily activity,
 descriptive contexts and explicit execution/data limits. The separate

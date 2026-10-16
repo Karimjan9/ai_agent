@@ -1,5 +1,14 @@
 # Causal learning states
 
+The new scalp/day-style source question follows the same prospective lifecycle
+with eight original method/holding/window cases. Its deadline helper seals
+monotonic AND UTC limits, checks before/after compute/publication and after
+short polling, and never renews a cap. Expiry/clock regression becomes technical
+unknown; an unreaped owned child prevents further serial launches. Completed
+raw products are reopened without replay. Same-date closes, nominal holding,
+descriptive contexts and fixed-cost cash remain provisional curator know-how,
+not general session-flat, broker, own-agent or independent authority.
+
 An explicit offline curator scalp question follows `draft -> validated ->
 source/data/runtime sealed -> single original attempt -> completed or technical
 terminal/unattempted bounded dependency -> descriptive comparison`. Raw failed,

@@ -2,17 +2,20 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T04:31:09.205Z",
-  "source_digest": "cb05ba7392ec186d6c280b9c7f776f9063f9e13907d3923de82c6dea837989df",
-  "source_file_count": 1739,
-  "git_head": "4c0c1e17f55dda20843342e25dd9f18f4b015c76",
+  "generated_at": "2026-10-16T05:28:40.609Z",
+  "source_digest": "c56a317b0f7f42c2c5c9582a49851315bff2ce8caa59a2bee32e19f7e839b1d2",
+  "source_file_count": 1747,
+  "git_head": "265f53d5013e6161268fc8d3ce4a2269cd03e038",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
     "backend-laravel/app/Services/StrategyParameterSchemaService.php",
+    "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+    "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/tests/test_trailing_activation.py",
     "ai-service-python/app/strategies/laboratory.py",
+    "ai-service-python/tests/test_curator_intraday_strategies.py",
     "backend-laravel/tests/Feature/SourceEmaPretrendEntryTest.php",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "backend-laravel/app/Services/LabPopulationConstructionTrait.php",
@@ -126,6 +129,7 @@
   "source_files": [
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/app/strategies/laboratory.py",
+    "ai-service-python/tests/test_curator_intraday_strategies.py",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
     "ai-service-python/tests/test_trailing_activation.py",
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
@@ -234,7 +238,9 @@
     "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
-    "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php"
+    "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
+    "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+    "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php"
   ],
   "symbols": [
     {
@@ -307,19 +313,19 @@
       "symbol": "apply_momentum_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 264
+      "line": 267
     },
     {
       "symbol": "apply_momentum_pullback_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 291
+      "line": 294
     },
     {
       "symbol": "apply_hybrid_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 305
+      "line": 308
     },
     {
       "symbol": "_apply_source_ema_pretrend_pullback",
@@ -331,7 +337,7 @@
       "symbol": "clipped_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 379
+      "line": 382
     },
     {
       "symbol": "apply_trend_specialist",
@@ -343,25 +349,25 @@
       "symbol": "apply_hybrid_consensus_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 501
+      "line": 504
     },
     {
       "symbol": "apply_differential_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 535
+      "line": 538
     },
     {
       "symbol": "apply_differential_trend_down_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 609
+      "line": 612
     },
     {
       "symbol": "apply_regime_ensemble_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 614
+      "line": 617
     },
     {
       "symbol": "apply_trend_retest_strategy",
@@ -374,6 +380,96 @@
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
       "line": 94
+    },
+    {
+      "symbol": "test_band_wick_touch_without_close_excursion_is_not_reentry",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 113
+    },
+    {
+      "symbol": "test_moving_band_pseudo_reentry_in_wrong_price_direction_remains_wait",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 120
+    },
+    {
+      "symbol": "test_seven_to_fourteen_utc_row_timestamp_session_is_half_open",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 138
+    },
+    {
+      "symbol": "test_confidence_is_scalar_finite_and_bounded_for_both_registered_methods",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 153
+    },
+    {
+      "symbol": "test_two_hundred_plus_row_prefixes_and_appended_future_outliers_do_not_change_past",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 164
+    },
+    {
+      "symbol": "test_legacy_default_mean_reversion_is_outside_fade_not_session_reentry",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 179
+    },
+    {
+      "symbol": "test_six_and_twentyfour_bar_holding_timers_do_not_change_vectorized_entries",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 190
+    },
+    {
+      "symbol": "frame_from_closes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 28
+    },
+    {
+      "symbol": "exercise_frame",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 38
+    },
+    {
+      "symbol": "CuratorIntradayStrategiesTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 49
+    },
+    {
+      "symbol": "test_flat_history_is_unavailable_not_object_comparison_failure",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 50
+    },
+    {
+      "symbol": "test_registry_pins_distinct_explicit_strategy_and_base_pairs",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 57
+    },
+    {
+      "symbol": "test_real_breakout_uses_current_close_strictly_beyond_prior_twenty_high_low",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 70
+    },
+    {
+      "symbol": "test_breakout_prior_level_touch_is_not_a_strict_break",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 86
+    },
+    {
+      "symbol": "test_real_reentry_uses_sample_std_bands_and_directional_closed_prices",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_intraday_strategies.py",
+      "line": 92
     },
     {
       "symbol": "test_immaturity_and_each_sequence_gap_fail_closed",
@@ -7927,49 +8023,49 @@
       "symbol": "runtimeBaseStrategy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 275
+      "line": 276
     },
     {
       "symbol": "schema",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 293
+      "line": 303
     },
     {
       "symbol": "canonicalizeForIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 315
+      "line": 325
     },
     {
       "symbol": "defaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 337
+      "line": 347
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 419
+      "line": 429
     },
     {
       "symbol": "normalizeForGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 464
+      "line": 474
     },
     {
       "symbol": "clamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 504
+      "line": 514
     },
     {
       "symbol": "executionDefaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 526
+      "line": 536
     },
     {
       "symbol": "StrategyParameterSchemaService",
@@ -10676,6 +10772,60 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
       "line": 88
+    },
+    {
+      "symbol": "SessionMeanReversionSchemaParityTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+      "line": 11
+    },
+    {
+      "symbol": "test_registered_reentry_uses_the_unchanged_session_schema_and_defaults",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+      "line": 13
+    },
+    {
+      "symbol": "test_actual_python_registry_and_parameter_owner_preserve_the_selected_function",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+      "line": 28
+    },
+    {
+      "symbol": "test_alias_does_not_admit_unowned_range_topology_parameters",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+      "line": 63
+    },
+    {
+      "symbol": "test_composite_runtime_keeps_its_identity_when_parent_metadata_is_stale",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "line": 10
+    },
+    {
+      "symbol": "test_liquidity_trap_mtf_has_a_bounded_shared_schema_and_defaults",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "line": 32
+    },
+    {
+      "symbol": "test_confirmation_entry_matrix_has_bounded_model_mode_and_admission_gates",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "line": 47
+    },
+    {
+      "symbol": "test_architecture_interaction_is_an_explicit_bounded_macro_gene",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "line": 79
+    },
+    {
+      "symbol": "StrategyParameterSchemaServiceTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
+      "line": 8
     }
   ],
   "tests": [

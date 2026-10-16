@@ -249,7 +249,10 @@ def apply_session_mean_reversion_strategy(df: pd.DataFrame, parameters: dict | N
     start, end, lookback = int(p.get("session_start", 7)), int(p.get("session_end", 16)), int(p.get("lookback", 20))
     active = pd.to_datetime(df.time, utc=True, errors="coerce").dt.hour.between(start, end - 1)
     mean = df.close.rolling(lookback).mean()
-    std = df.close.rolling(lookback).std().replace(0, pd.NA)
+    # Keep numeric dtype on flat history. pd.NA can coerce this float series
+    # to object and make the subsequent shifted band comparison raise.
+    # A zero-width band is unavailable, not an executable opportunity.
+    std = df.close.rolling(lookback).std().replace(0, float('nan'))
     lower, upper = mean - 2.0 * std, mean + 2.0 * std
     buy = active & (df.close.shift(1) < lower.shift(1)) & (df.close >= lower) & (df.close > df.close.shift(1))
     sell = active & (df.close.shift(1) > upper.shift(1)) & (df.close <= upper) & (df.close < df.close.shift(1))
