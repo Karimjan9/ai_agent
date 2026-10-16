@@ -67,5 +67,7 @@ automatic default. All 2026 and later observations remain paper-only.
 The exact source ledger is [sources.json](sources.json); the predeclared
 continuation criteria and fixed method priority are in [question.json](question.json).
 They are research-practice prerequisites, not a statistical power calculation.
-Original market
-results will be recorded only after every declared attempt is terminal.
+All 12 originals are now terminal. The [original results and next decision](results.md)
+retain every arm: no treatment met the declared agent-practice prerequisites.
+This is a completed two-month discovery batch, not a qualified skill or a
+successful agent inheritance result.
