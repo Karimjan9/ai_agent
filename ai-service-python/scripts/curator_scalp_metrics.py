@@ -93,6 +93,13 @@ def _registered_csv_binding(path, source_hash, request, rows, provenance):
     if manifest_identity == TRUSTED_CSV_MANIFEST_SHA256:
         _need(manifest.get('protocol') == 'curator_raw_context_window_preparation_v1',
               'SCALP_REGISTERED_CSV_UTC_SEMANTICS_REQUIRED')
+    elif manifest.get('protocol') == 'curator_complete_month_window_v1':
+        # The named owner independently reconstructs the one exact whole
+        # October scope, native parent, warmup, calendar edges and raw cells.
+        # A protocol string or caller-provided manifest hash is not proof.
+        from scripts.curator_bollinger_month_window import validate_manifest
+        manifest = validate_manifest(manifest_path, manifest_identity)
+        registration = 'rederived_original_complete_month_csv_utc_registration_v1'
     else:
         _need(manifest.get('protocol') == 'curator_instrument_calendar_windows_v1',
               'SCALP_TRUSTED_CSV_MANIFEST_REQUIRED')

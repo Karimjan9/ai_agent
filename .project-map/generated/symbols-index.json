@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T07:34:23.645Z",
-  "source_digest": "b0b32c816ef827264554072f42940345fd122a0bc1c2d3898711d5d239bb0d3b",
-  "source_file_count": 1756,
-  "git_head": "7b344c0ff853d1f99f6e90dec8335337666e4073",
+  "generated_at": "2026-10-16T09:35:22.165Z",
+  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
+  "source_file_count": 1767,
+  "git_head": "6d863a3b8f5c7c4b2f2c2b902680de0682efe382",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -139,7 +139,7 @@
       "symbol": "ClosedInstrumentMethodFeatures",
       "kind": "python_class",
       "path": "ai-service-python/app/services/instrument_method_features.py",
-      "line": 148
+      "line": 149
     },
     {
       "symbol": "InstrumentMethodLearning",
@@ -253,25 +253,25 @@
       "symbol": "ResearchDeadlineError",
       "kind": "python_class",
       "path": "ai-service-python/scripts/curator_research_deadline.py",
-      "line": 28
+      "line": 34
     },
     {
       "symbol": "OwnedChildNotReaped",
       "kind": "python_class",
       "path": "ai-service-python/scripts/curator_research_deadline.py",
-      "line": 34
+      "line": 40
     },
     {
       "symbol": "_Limits",
       "kind": "python_class",
       "path": "ai-service-python/scripts/curator_research_deadline.py",
-      "line": 39
+      "line": 45
     },
     {
       "symbol": "AbsoluteResearchDeadline",
       "kind": "python_class",
       "path": "ai-service-python/scripts/curator_research_deadline.py",
-      "line": 47
+      "line": 53
     },
     {
       "symbol": "ArmReplayResourcesTest",
@@ -284,6 +284,24 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_backtester_execution.py",
       "line": 108
+    },
+    {
+      "symbol": "OwnedMidlineExitRuntimeTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 139
+    },
+    {
+      "symbol": "BollingerCompleteFormulaTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 35
+    },
+    {
+      "symbol": "ClosedMidline20Test",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 85
     },
     {
       "symbol": "BollingerContextGateTest",
@@ -320,6 +338,48 @@
       "kind": "python_class",
       "path": "ai-service-python/tests/test_curator_activation_witness.py",
       "line": 17
+    },
+    {
+      "symbol": "CuratorBollingerMonthMetricsTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_month_metrics.py",
+      "line": 20
+    },
+    {
+      "symbol": "NoDeadline",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_month_window.py",
+      "line": 19
+    },
+    {
+      "symbol": "CuratorBollingerMonthWindowTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_month_window.py",
+      "line": 34
+    },
+    {
+      "symbol": "ActualPhpMidlinePolicyAdmissionTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe_evidence.py",
+      "line": 235
+    },
+    {
+      "symbol": "CuratorBollingerRecipeEvidenceTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe_evidence.py",
+      "line": 82
+    },
+    {
+      "symbol": "CompleteBollingerRecipeDesignTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe.py",
+      "line": 16
+    },
+    {
+      "symbol": "ActualPhpCompleteRecipeDeclarationTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe.py",
+      "line": 47
     },
     {
       "symbol": "SelectedClassifierContextGateTest",
@@ -7984,6 +8044,12 @@
       "line": 17
     },
     {
+      "symbol": "map",
+      "kind": "php_type",
+      "path": "backend-laravel/scripts/prepare-curator-bollinger-recipe-study.php",
+      "line": 37
+    },
+    {
       "symbol": "FrozenM5GapRecoveryOperation",
       "kind": "php_type",
       "path": "backend-laravel/scripts/recover-frozen-m5-gap.php",
@@ -9886,10 +9952,22 @@
       "line": 10
     },
     {
+      "symbol": "BollingerBandVarianceParityTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
+      "line": 14
+    },
+    {
       "symbol": "BollingerContextGateParityTest",
       "kind": "php_type",
       "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
       "line": 12
+    },
+    {
+      "symbol": "BollingerRecipeOfflinePreparationTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/BollingerRecipeOfflinePreparationTest.php",
+      "line": 11
     },
     {
       "symbol": "CanonicalLaboratoryScopeTest",

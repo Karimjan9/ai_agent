@@ -256,6 +256,54 @@ class CuratorResearchDeadlineTest(unittest.TestCase):
                 deadline_owner.AbsoluteResearchDeadline.from_record(record,
                     monotonic=clock.monotonic, utc=clock.utc)
 
+    def test_cached_windows_exit_code_is_not_native_process_completion(self):
+        clock = FakeClock()
+        process = FakeProcess(clock, finish_after=0)
+        process._handle = object()
+        with patch.object(deadline_owner, "_wait_for_process_handle", return_value=258) as native_wait:
+            self.assertIsNone(deadline_owner._owned_child_exit_code(process))
+            self.assertEqual(process.returncode, 0)
+            native_wait.assert_called_once_with(process._handle, 0)
+        with patch.object(deadline_owner, "_wait_for_process_handle", return_value=deadline_owner._PROCESS_SIGNALED):
+            self.assertEqual(deadline_owner._owned_child_exit_code(process), 0)
+
+    def test_expired_cached_exit_waits_for_owned_native_handle_without_reopening_budget(self):
+        clock = FakeClock()
+        deadline = clock.deadline(.1)
+        process = FakeProcess(clock, finish_after=0)
+        process._handle = object()
+        clock.advance(.2)
+
+        def native_status(handle, milliseconds):
+            self.assertIs(handle, process._handle)
+            self.assertEqual(milliseconds, 0)
+            return deadline_owner._PROCESS_SIGNALED if clock.mono >= 100.3 else 258
+
+        with patch.object(deadline_owner, "_wait_for_process_handle", side_effect=native_status):
+            result = deadline_owner.wait_owned_child(process, deadline, sleep=clock.sleep)
+        self.assertTrue(result["owned_child_reaped"])
+        self.assertGreaterEqual(clock.mono, 100.3)
+        self.assertTrue(result["timeout"])
+        self.assertFalse(result["publication_allowed"])
+        self.assertFalse(result["deadline_renewed"])
+        self.assertEqual(deadline.record()["budget_seconds"], .1)
+
+    def test_cached_exit_with_unsignaled_owned_handle_aborts_after_bounded_cleanup(self):
+        clock = FakeClock()
+        deadline = clock.deadline(.1)
+        process = FakeProcess(clock, finish_after=0)
+        process._handle = object()
+        clock.advance(.2)
+        with patch.object(deadline_owner, "_wait_for_process_handle", return_value=258) as native_wait:
+            with self.assertRaises(deadline_owner.OwnedChildNotReaped) as caught:
+                deadline_owner.wait_owned_child(process, deadline, sleep=clock.sleep,
+                    terminate_grace_seconds=.1, kill_grace_seconds=.1)
+        self.assertTrue(all(call.args == (process._handle, 0) for call in native_wait.call_args_list))
+        self.assertFalse(caught.exception.facts["owned_child_reaped"])
+        self.assertTrue(caught.exception.facts["abort_serial_study"])
+        self.assertFalse(caught.exception.facts["publication_allowed"])
+        self.assertLessEqual(caught.exception.facts["cleanup_poll_count"], 8)
+
     def test_real_hidden_child_has_file_backed_large_output_without_pipe_deadlock(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

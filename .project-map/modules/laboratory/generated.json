@@ -2,13 +2,15 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T07:34:23.645Z",
-  "source_digest": "b0b32c816ef827264554072f42940345fd122a0bc1c2d3898711d5d239bb0d3b",
-  "source_file_count": 1756,
-  "git_head": "7b344c0ff853d1f99f6e90dec8335337666e4073",
+  "generated_at": "2026-10-16T09:35:22.165Z",
+  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
+  "source_file_count": 1767,
+  "git_head": "6d863a3b8f5c7c4b2f2c2b902680de0682efe382",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
+    "ai-service-python/tests/test_bollinger_complete_method.py",
+    "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
     "backend-laravel/app/Services/StrategyParameterSchemaService.php",
     "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
     "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
@@ -131,6 +133,7 @@
   "source_files": [
     "ai-service-python/app/services/parameter_schema.py",
     "ai-service-python/app/strategies/laboratory.py",
+    "ai-service-python/tests/test_bollinger_complete_method.py",
     "ai-service-python/tests/test_bollinger_context_gate.py",
     "ai-service-python/tests/test_curator_intraday_strategies.py",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
@@ -241,6 +244,7 @@
     "backend-laravel/tests/Feature/SpecialistCouncilPreparationTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
     "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
+    "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
     "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
     "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
     "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
@@ -317,13 +321,7 @@
       "symbol": "apply_momentum_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 278
-    },
-    {
-      "symbol": "apply_momentum_pullback_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 305
+      "line": 283
     },
     {
       "symbol": "_apply_source_ema_pretrend_pullback",
@@ -332,16 +330,22 @@
       "line": 31
     },
     {
+      "symbol": "apply_momentum_pullback_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 310
+    },
+    {
       "symbol": "apply_hybrid_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 319
+      "line": 324
     },
     {
       "symbol": "clipped_confidence",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 393
+      "line": 398
     },
     {
       "symbol": "apply_trend_specialist",
@@ -353,25 +357,25 @@
       "symbol": "apply_hybrid_consensus_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 515
+      "line": 520
     },
     {
       "symbol": "apply_differential_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 549
+      "line": 554
     },
     {
       "symbol": "apply_differential_trend_down_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 623
+      "line": 628
     },
     {
       "symbol": "apply_regime_ensemble_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 628
+      "line": 633
     },
     {
       "symbol": "apply_trend_retest_strategy",
@@ -384,6 +388,114 @@
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
       "line": 94
+    },
+    {
+      "symbol": "test_only_original_closed_inputs_can_publish_midline",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 110
+    },
+    {
+      "symbol": "test_prefix_and_future_prices_do_not_rewrite_midline",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 124
+    },
+    {
+      "symbol": "population_recross",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 13
+    },
+    {
+      "symbol": "OwnedMidlineExitRuntimeTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 139
+    },
+    {
+      "symbol": "execute",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 143
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 156
+    },
+    {
+      "symbol": "test_midline_uses_held_direction_previous_close_and_next_open_not_entry_bar",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 162
+    },
+    {
+      "symbol": "test_existing_gap_stop_still_owns_price_when_midline_also_requests_close",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 187
+    },
+    {
+      "symbol": "test_existing_time_stop_precedes_method_evaluation_and_six_row_cap_is_unchanged",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 204
+    },
+    {
+      "symbol": "features",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 29
+    },
+    {
+      "symbol": "BollingerCompleteFormulaTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 35
+    },
+    {
+      "symbol": "test_absent_and_sample_preserve_legacy_frame_and_float_bytes",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 36
+    },
+    {
+      "symbol": "test_population_uses_same_population_deviation_for_bands_and_confidence",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 46
+    },
+    {
+      "symbol": "test_population_is_prefix_invariant_and_does_not_mutate_original",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 53
+    },
+    {
+      "symbol": "test_variance_is_explicit_and_bound_to_actual_registered_runtime",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 67
+    },
+    {
+      "symbol": "ClosedMidline20Test",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 85
+    },
+    {
+      "symbol": "test_twenty_prices_and_valid_actual_direction_are_required",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 86
+    },
+    {
+      "symbol": "test_directional_comparisons_and_equal_midline_are_explicit",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "line": 99
     },
     {
       "symbol": "test_enabled_gate_rejects_unknown_nonmatching_and_noncanonical_contexts",
@@ -8129,37 +8241,37 @@
       "symbol": "canonicalizeForIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 330
+      "line": 331
     },
     {
       "symbol": "defaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 352
+      "line": 353
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 434
+      "line": 435
     },
     {
       "symbol": "normalizeForGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 490
+      "line": 500
     },
     {
       "symbol": "clamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 530
+      "line": 540
     },
     {
       "symbol": "executionDefaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 552
+      "line": 562
     },
     {
       "symbol": "StrategyParameterSchemaService",
@@ -10794,6 +10906,24 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Support/ConditionalQualifiedNativePolicyFixture.php",
       "line": 22
+    },
+    {
+      "symbol": "BollingerBandVarianceParityTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "test_variance_is_explicit_only_and_closed_midline_fields_are_boolean",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
+      "line": 16
+    },
+    {
+      "symbol": "test_php_and_python_refuse_unowned_or_invalid_treatments_and_preserve_accepted_vectors",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
+      "line": 32
     },
     {
       "symbol": "BollingerContextGateParityTest",

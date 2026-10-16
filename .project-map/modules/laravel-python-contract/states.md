@@ -1,5 +1,12 @@
 # Cross-runtime contract states
 
+Explicit research-only `session_band_variance` is validated against the actual
+registered recross runtime in PHP and Python, not the shared session family
+alone; omission/sample preserve the existing formula. Method policy runtime
+parameters likewise bind to the actual request strategy/base while separately
+checking the canonical family and exact parameter identity. Closed SMA20 exit
+inputs require genuine closed observations and an actual held BUY/SELL direction.
+
 The explicit offline curator activation prototype passes float-valued
 `trailing_activation_r` through PHP and Python validation without expanding
 ordinary mutation/default rosters. Zero/omitted same-input legacy behavior is

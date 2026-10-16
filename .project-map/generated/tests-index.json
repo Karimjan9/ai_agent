@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T07:34:23.645Z",
-  "source_digest": "b0b32c816ef827264554072f42940345fd122a0bc1c2d3898711d5d239bb0d3b",
-  "source_file_count": 1756,
-  "git_head": "7b344c0ff853d1f99f6e90dec8335337666e4073",
+  "generated_at": "2026-10-16T09:35:22.165Z",
+  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
+  "source_file_count": 1767,
+  "git_head": "6d863a3b8f5c7c4b2f2c2b902680de0682efe382",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -124,6 +124,22 @@
         "test_compact_event_digest_is_emitted_without_full_decision_trace",
         "test_shadow_state_machine_is_explicit_and_finite",
         "test_architecture_interaction_activates_auditable_classifier_state_coherence"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_bollinger_complete_method.py",
+      "tests": [
+        "test_absent_and_sample_preserve_legacy_frame_and_float_bytes",
+        "test_population_uses_same_population_deviation_for_bands_and_confidence",
+        "test_population_is_prefix_invariant_and_does_not_mutate_original",
+        "test_variance_is_explicit_and_bound_to_actual_registered_runtime",
+        "test_twenty_prices_and_valid_actual_direction_are_required",
+        "test_directional_comparisons_and_equal_midline_are_explicit",
+        "test_only_original_closed_inputs_can_publish_midline",
+        "test_prefix_and_future_prices_do_not_rewrite_midline",
+        "test_midline_uses_held_direction_previous_close_and_next_open_not_entry_bar",
+        "test_existing_gap_stop_still_owns_price_when_midline_also_requests_close",
+        "test_existing_time_stop_precedes_method_evaluation_and_six_row_cap_is_unchanged"
       ]
     },
     {
@@ -297,6 +313,57 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_curator_bollinger_month_metrics.py",
+      "tests": [
+        "test_real_named_month_validator_runs_before_registration_acceptance",
+        "test_protocol_and_updated_caller_hash_cannot_grant_forged_authority",
+        "test_changed_original_csv_is_refused_even_with_matching_protocol",
+        "test_exact_window_path_key_rows_and_request_hash_stay_required",
+        "test_bad_caller_hash_refuses_before_validator_and_witness_stamps_stay_strict"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_bollinger_month_window.py",
+      "tests": [
+        "test_fixed_native_contract_and_only_october_identity",
+        "test_full_month_not_two_short_weeks_and_raw_cells_are_exact",
+        "test_one_real_gap_cannot_be_skipped_by_selecting_another_week_or_month",
+        "test_insufficient_actual_200_warmup_refuses_even_full_month",
+        "test_prepare_and_reinspection_are_exclusive_and_no_authority",
+        "test_forged_manifest_with_updated_hash_cannot_grant_skill_or_change_clock",
+        "test_actual_export_or_calendar_owner_drift_is_not_accepted",
+        "test_failed_month_guard_publishes_no_output_folder"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe_evidence.py",
+      "tests": [
+        "test_real_original_owner_full_close_clock_and_complete_method_receipt",
+        "test_legacy_verifier_never_delegates_method_events_or_any_receipt",
+        "test_legacy_method_free_wrapper_still_delegates_identical_arguments",
+        "test_omitted_and_duplicate_method_calls_cannot_hide_behind_counters",
+        "test_event_direction_timing_outputs_and_hash_are_independently_rederived",
+        "test_self_consistent_but_false_aggregate_receipt_is_rejected",
+        "test_event_ledger_method_count_is_not_an_optional_claim",
+        "test_new_public_verifier_requires_code_owned_sealed_adapter_validation",
+        "test_schedule_preserves_time_stop_precedence_and_eof_unknown_exposure",
+        "test_valid_other_spec_cannot_authorize_an_unlisted_caller_declaration",
+        "test_resealed_but_undeclared_wait_policy_is_not_a_midline_exit_recipe",
+        "test_existing_actual_php_compiled_policy_is_admitted_without_trade_replay"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_bollinger_recipe.py",
+      "tests": [
+        "test_missing_arm_is_unknown_not_zero_or_component_credit",
+        "test_complete_same_clock_pair_only_measures_whole_recipe",
+        "test_only_named_preparer_and_adapter_are_available",
+        "test_actual_two_wire_declaration_and_original_rows",
+        "test_unrequested_controls_deadlines_or_authority_cannot_drift",
+        "test_complete_runtime_policy_cannot_be_replaced_by_caller_claim"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
       "tests": [
         "test_three_public_events_keep_protocol_instrument_and_no_authority",
@@ -439,6 +506,9 @@
         "test_deadline_failure_facts_cannot_be_mutated_to_reopen_publication",
         "test_pipe_and_long_poll_are_refused_before_waiting",
         "test_invalid_or_extended_record_cannot_create_replacement_deadline",
+        "test_cached_windows_exit_code_is_not_native_process_completion",
+        "test_expired_cached_exit_waits_for_owned_native_handle_without_reopening_budget",
+        "test_cached_exit_with_unsignaled_owned_handle_aborts_after_bounded_cleanup",
         "test_real_hidden_child_has_file_backed_large_output_without_pipe_deadlock",
         "test_real_owned_sleeping_child_is_reaped_on_short_absolute_cap"
       ]
@@ -5915,12 +5985,28 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
+      "tests": [
+        "test_variance_is_explicit_only_and_closed_midline_fields_are_boolean",
+        "test_php_and_python_refuse_unowned_or_invalid_treatments_and_preserve_accepted_vectors"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
       "tests": [
         "test_gate_is_explicit_only_and_never_enters_defaults_or_sampling",
         "test_direct_declared_request_validation_matches_the_actual_registered_function",
         "test_wrong_family_base_breakout_and_invalid_enum_fail_closed_in_both_owners",
         "pythonValidation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/BollingerRecipeOfflinePreparationTest.php",
+      "tests": [
+        "setUpBeforeClass",
+        "test_actual_owners_compile_only_memory_records_and_fixed_finite_contexts",
+        "test_only_population_formula_and_canonical_exit_policy_differ",
+        "test_actual_python_owner_admits_canonical_recross_but_refuses_base_and_parameter_drift"
       ]
     },
     {

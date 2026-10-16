@@ -22,13 +22,37 @@ from scripts import curator_intraday_panel as previous
 from scripts.curator_research_deadline import AbsoluteResearchDeadline, run_hidden_serial, ResearchDeadlineError, OwnedChildNotReaped
 need, sha, write_new = previous.need, previous.sha, previous.write_new
 FLAGS = previous.FLAGS
-ADAPTERS = {'bollinger_context_v1': 'scripts.curator_bollinger_study'}
+ADAPTERS = {'bollinger_context_v1': 'scripts.curator_bollinger_study',
+    'bollinger_recipe_v1': 'scripts.curator_bollinger_recipe'}
+PREPARERS = {'bollinger_context_v1': 'prepare-curator-bollinger-study.php',
+    'bollinger_recipe_v1': 'prepare-curator-bollinger-recipe-study.php'}
 EXTRA = ('backend-laravel/scripts/prepare-curator-bollinger-study.php',
     'backend-laravel/tests/Unit/BollingerContextGateParityTest.php',
     'ai-service-python/tests/test_bollinger_context_gate.py',
     'ai-service-python/tests/test_curator_instrument_windows.py',
     'ai-service-python/tests/test_curator_instrument_study.py',
-    'docs/research/instruments/range_reentry/events/2026-10-16-context-question.json')
+    'docs/research/instruments/range_reentry/events/2026-10-16-context-question.json',
+    'backend-laravel/scripts/prepare-curator-bollinger-recipe-study.php',
+    'backend-laravel/app/Services/InstrumentMethodLibraryService.php',
+    'backend-laravel/app/Services/InstrumentMethodResearchBindingService.php',
+    'backend-laravel/app/Services/AgentMethodLearningService.php',
+    'backend-laravel/app/Services/TradingInstrumentOperatingSystemService.php',
+    'backend-laravel/app/Services/TypedInstrumentFoundryService.php',
+    'backend-laravel/app/Services/InstrumentMethodSourceService.php',
+    'backend-laravel/app/Services/ContextContractV2Service.php',
+    'backend-laravel/app/Services/MarketSessionCalendarService.php',
+    'backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php',
+    'backend-laravel/database/migrations/2026_10_13_120000_create_instrument_method_and_agent_learning.php',
+    'backend-laravel/database/migrations/2026_10_13_121000_scope_research_method_program_identity.php',
+    'backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php',
+    'backend-laravel/tests/Unit/BollingerRecipeOfflinePreparationTest.php',
+    'ai-service-python/tests/test_bollinger_complete_method.py',
+    'ai-service-python/tests/test_curator_bollinger_month_window.py',
+    'ai-service-python/tests/test_curator_bollinger_month_metrics.py',
+    'ai-service-python/tests/test_curator_bollinger_recipe.py',
+    'ai-service-python/tests/test_curator_bollinger_recipe_evidence.py',
+    'docs/research/instruments/range_reentry/events/2026-10-16-complete-recipe-question.json',
+    'docs/research/instruments/range_reentry/events/2026-10-16-article-review.json')
 
 
 def owner(spec):
@@ -71,13 +95,16 @@ def read_spec(path, identity):
     return spec
 
 
-def prepare(php, manifest_path, manifest_sha, output):
+def prepare(php, manifest_path, manifest_sha, output, study_owner='bollinger_context_v1'):
     path = Path(output).resolve()
     need(path.is_relative_to(ROOT / '.runtime') and path.parent.is_dir(), 'ISOLATED_DRAFT_OUTPUT_REQUIRED')
-    result = subprocess.run([str(php), str(ROOT / 'backend-laravel/scripts/prepare-curator-bollinger-study.php'),
+    need(study_owner in PREPARERS, 'CODE_OWNED_INSTRUMENT_PREPARER_REQUIRED')
+    result = subprocess.run([str(php), str(ROOT / 'backend-laravel/scripts' / PREPARERS[study_owner]),
         '--windows', str(Path(manifest_path).resolve()), '--windows-sha256', manifest_sha],
         cwd=ROOT, capture_output=True, timeout=60, check=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    draft = json.loads(result.stdout); owner(draft).validate(draft)
+    draft = json.loads(result.stdout)
+    need(draft.get('study_owner') == study_owner, 'EXACT_PREPARER_OWNER_REQUIRED')
+    owner(draft).validate(draft)
     digest = write_new(path, result.stdout)
     print(json.dumps({'status': 'actual_php_prepared_no_outcomes', 'draft_path': str(path), 'draft_sha256': digest}))
 
@@ -204,7 +231,9 @@ def execute(path, identity):
         write_new(products / (key + '.process.json'), result)
         report['results'][key] = {**{field: case[field] for field in ('window', 'arm', 'baseline_key', 'dataset_sha256', 'cost_sha256')}, **result}
         print(json.dumps({'case': key, 'status': result['status']}), flush=True)
+    deadline.checkpoint('before_terminal_comparisons')
     report['comparisons'] = adapter.comparisons(report); frozen(spec, full=True)
+    deadline.checkpoint('before_terminal_report_publication')
     report['final_source_check'] = 'unchanged'; digest = write_new(folder / 'original-panel-summary.json', report)
     print(json.dumps({'status': 'all_originals_terminal', 'completed': sum(row['status'] == 'completed' for row in report['results'].values()), 'summary_sha256': digest}), flush=True)
 
@@ -249,10 +278,11 @@ def inspect(path, identity):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(); parser.add_argument('--manifest'); parser.add_argument('--manifest-sha256')
     parser.add_argument('--output'); parser.add_argument('--folder'); parser.add_argument('--spec'); parser.add_argument('--spec-sha256')
+    parser.add_argument('--study-owner', choices=tuple(PREPARERS), default='bollinger_context_v1')
     action = parser.add_mutually_exclusive_group(required=True)
     for name in ('prepare', 'seal', 'execute', 'inspect', 'worker'): action.add_argument('--' + name)
     args = parser.parse_args()
-    if args.prepare: prepare(args.prepare, args.manifest, args.manifest_sha256, args.output)
+    if args.prepare: prepare(args.prepare, args.manifest, args.manifest_sha256, args.output, args.study_owner)
     elif args.seal: seal(args.seal, args.folder)
     elif args.worker: worker(args.spec, args.spec_sha256, args.worker)
     elif args.inspect: print(json.dumps(inspect(args.inspect, args.spec_sha256)))

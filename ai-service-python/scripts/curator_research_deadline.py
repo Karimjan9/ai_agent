@@ -16,6 +16,12 @@ import subprocess
 import threading
 import time
 
+if os.name == "nt":
+    from _winapi import WaitForSingleObject as _wait_for_process_handle, WAIT_OBJECT_0 as _PROCESS_SIGNALED
+else:
+    _wait_for_process_handle = None
+    _PROCESS_SIGNALED = 0
+
 PROTOCOL = "curator_research_absolute_deadline_v1"
 MAX_POLL_SECONDS = .25
 _SERIAL_LAUNCH = threading.Lock()
@@ -119,6 +125,21 @@ class AbsoluteResearchDeadline:
         return facts
 
 
+def _owned_child_exit_code(process):
+    """A cached Windows exit code is not proof that owned handles are released.
+
+    CPython terminate() may cache GetExitCodeProcess after access-denied while
+    termination is still pending. poll() then returns that cache without a
+    native wait. Probe only this supplied process HANDLE, never a PID/tree.
+    """
+    exit_code = process.poll()
+    handle = getattr(process, "_handle", None)
+    if exit_code is not None and handle is not None and _wait_for_process_handle is not None:
+        if _wait_for_process_handle(handle, 0) != _PROCESS_SIGNALED:
+            return None
+    return exit_code
+
+
 def _cleanup_owned_child(process, *, monotonic, sleep, terminate_grace, kill_grace):
     """Bounded polling only; never communicate(), wait(full cap), or kill a PID tree."""
     facts = {"terminate_sent": False, "kill_sent": False, "owned_child_reaped": False,
@@ -129,7 +150,7 @@ def _cleanup_owned_child(process, *, monotonic, sleep, terminate_grace, kill_gra
         # The count also bounds cleanup if a fake/broken clock stops advancing.
         for _ in range(math.ceil(grace / .05) + 2):
             facts["cleanup_poll_count"] += 1
-            if process.poll() is not None:
+            if _owned_child_exit_code(process) is not None:
                 return True
             now = monotonic()
             if not _finite(now) or now < started or now - started >= grace:
@@ -137,7 +158,7 @@ def _cleanup_owned_child(process, *, monotonic, sleep, terminate_grace, kill_gra
             sleep(min(.05, max(0, grace - (now - started))))
         return False
 
-    if process.poll() is not None:
+    if _owned_child_exit_code(process) is not None:
         facts["owned_child_reaped"] = True
         return facts
     for operation, grace in (("terminate", terminate_grace), ("kill", kill_grace)):
@@ -169,7 +190,7 @@ def wait_owned_child(process, deadline, *, poll_interval=.1, terminate_grace_sec
     try:
         while True:
             deadline.checkpoint("parent_before_owned_child_poll")
-            exit_code = process.poll()
+            exit_code = _owned_child_exit_code(process)
             observed = deadline.checkpoint("parent_after_owned_child_poll")
             if exit_code is not None:
                 return {**observed, "status": "completed" if exit_code == 0 else "technical_child_exit",

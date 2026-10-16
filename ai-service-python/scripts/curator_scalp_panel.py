@@ -281,6 +281,14 @@ def verify_clock(clock, window, execution_hash):
 
 
 def verify_response(body, declaration, window, envelope, spec, response_sha):
+    """Legacy studies never authorize a method selection or method receipt."""
+    need(not any(event.get('event_type') == 'instrument_method_decision' for event in body['decision_trace'])
+        and 'instrument_method_learning_receipt' not in body['data_quality'], 'NO_AGENT_METHOD_SELECTION_ALLOWED')
+    return verify_physical_response(body, declaration, window, envelope, spec, response_sha)
+
+
+def verify_physical_response(body, declaration, window, envelope, spec, response_sha):
+    """Shared original clock/account/full-close checks, not method authorization."""
     from app.schemas import SimpleTrade
     from app.services.backtester import _trade_ledger_hash
     from app.services.research_program_tasks import canonical_hash
@@ -300,8 +308,6 @@ def verify_response(body, declaration, window, envelope, spec, response_sha):
         and quality['complete'] is True and quality['event_count'] == len(trace)
         and quality['evaluated_candle_count'] == window['evaluated_rows']
         and sum(body['event_ledger_categories'].values()) == body['event_ledger_count'], 'ORIGINAL_LEDGER_AND_TRACE_REQUIRED')
-    need(not any(event.get('event_type') == 'instrument_method_decision' for event in trace)
-        and not body['data_quality'].get('instrument_method_learning_receipt'), 'NO_AGENT_METHOD_SELECTION_ALLOWED')
     witness = envelope['full_close_witness']; cash = verify_management_witness(body, witness)
     scalp = summarize_scalp_metrics(request, body, witness, csv_path=window['path'], max_holding_minutes=30.0)
     clock = body['data_quality']['replay_executed_clock']

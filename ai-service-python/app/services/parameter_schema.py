@@ -444,6 +444,15 @@ def validate_strategy_parameters(
             raise ValueError("SESSION_CONTEXT_GATE_REENTRY_RUNTIME_REQUIRED")
         schema = {**schema, "session_context_gate": {
             "type": str, "choices": {"none", "range_low_v1"}}}
+    if "session_band_variance" in values:
+        # A prospectively declared formula treatment, never an ordinary gene.
+        from app.strategies.laboratory import apply_session_mean_reversion_strategy
+        from app.strategies.registry import get_strategy
+        if (strategy_family(strategy) != "session"
+                or get_strategy(strategy, base_strategy) is not apply_session_mean_reversion_strategy):
+            raise ValueError("SESSION_BAND_VARIANCE_REENTRY_RUNTIME_REQUIRED")
+        schema = {**schema, "session_band_variance": {
+            "type": str, "choices": {"sample", "population"}}}
     unknown = sorted(set(values) - set(schema))
     if unknown:
         raise ValueError(

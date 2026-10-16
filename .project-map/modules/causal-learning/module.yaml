@@ -10,6 +10,15 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - ai-service-python/scripts/curator_bollinger_month_window.py
+  - ai-service-python/scripts/curator_bollinger_recipe.py
+  - ai-service-python/scripts/curator_bollinger_recipe_evidence.py
+  - ai-service-python/tests/test_curator_bollinger_month_window.py
+  - ai-service-python/tests/test_curator_bollinger_month_metrics.py
+  - ai-service-python/tests/test_curator_bollinger_recipe.py
+  - ai-service-python/tests/test_curator_bollinger_recipe_evidence.py
+  - backend-laravel/scripts/prepare-curator-bollinger-recipe-study.php
+  - backend-laravel/tests/Unit/BollingerRecipeOfflinePreparationTest.php
   - ai-service-python/scripts/curator_instrument_windows.py
   - ai-service-python/scripts/curator_instrument_study.py
   - ai-service-python/scripts/curator_bollinger_study.py

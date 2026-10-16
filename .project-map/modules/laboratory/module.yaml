@@ -10,6 +10,8 @@ aliases:
   - native-depth-audit
   - qualified-solo
 paths:
+  - ai-service-python/tests/test_bollinger_complete_method.py
+  - backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php
   - backend-laravel/app/Services/StrategyParameterSchemaService.php
   - backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php
   - backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php

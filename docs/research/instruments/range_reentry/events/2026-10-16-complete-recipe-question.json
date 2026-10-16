@@ -1,0 +1,26 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-complete-recipe-question-20261016-08",
+  "previous_event_sha256":"c905ef101c15042ace0fe50b85028ae82d65952883c0b266c7e8efb553bbe262",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"complete_lab_recipe_question_before_original_outcomes",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "question_id":"bollinger-complete-recipe-20261016-v1",
+  "knowledge_label":"prospective_lab_recipe_not_economic_skill",
+  "decision":"Concentrate on one complete trade recipe rather than add another research mechanism. Retain the eight prior negative/null originals; do not install the range_low gate as an earned skill.",
+  "source_binding":{"reviewed_article_event_sha256":"ed68b747e61d659e9f59912684f217c70b605de5a9f904645281309f9e5ebba7","author_fact":"The reviewed February1992 article's variance formula divides by N and permits close prices.","lab_hypothesis":"Keep the existing closed-price recross; combine population deviation with a directional closed20-price mean exit. This is not a full reproduction of author Methods I-IV, their two-extreme patterns, stops or commercial code."},
+  "hypotheses":["BB-H008 population versus current sample formula, including confidence","BB-H006 declared closed-row midline exit"],
+  "arms":[
+    {"key":"control","entry":"Existing20-close two-sample-deviation recross; default confidence and downstream gates","exit":"Unchanged ATR1.5 stop / ATR2.5 target / six observed M5-row time stop"},
+    {"key":"population_midline","entry":"Same recross with ddof0 in both bands and confidence","exit":"In exact London/overlap plus known regime/volatility contexts, previous completed close >=SMA20 for held BUY or <=SMA20 for held SELL requests next-open full exit. Native gap stop/target and six-row time priority remain. Other/unknown context keeps native exits."}
+  ],
+  "unchanged":{"account":10000.0,"risk_per_trade_percent":1.0,"entry_UTC_session":"07:00-14:00 exclusive","lookback":20,"minimum_signal_confidence":0.35,"ATR_stop":1.5,"ATR_target":2.5,"time_stop_observed_M5_rows":6,"partial_exit":false,"trailing":false,"volume_lane":"none","context_entry_gate":"none","cost_hash":"d39b48f79f6cea4d3e93f8885e5d5c9fffe8bb5f7b287dabb04372d1a51c4b1f"},
+  "original_declaration":{"actual_PHP_draft_sha256":"3f97939a7e0a459ce6fa21e66ef84788be6f29952133d41765136778a237855e","control_wire_sha256":"084b23b30888d25573e80469510fb1a4495d4eb39efbac978a6c48f72eec1d8c","recipe_wire_sha256":"0341d1e0f65ecaeba02da1b89ec8c36f57fefa506724a81878c8105a446e5ec3","actual_compiled_contract_hash":"48395ad2549a0a178b17d639f830b3c908bbf9cbe1308a0934dbb52a9997a9ff","compiler":"Existing canonical Library/Foundry/ResearchBinding owners inside disposable SQLite memory; no production registry, agent or queue write"},
+  "scope":{"period":"whole October2025 UTC, reused historical discovery","manifest_sha256":"ed1b690d4556fc4524c4b9cedafde9693d9d0e4c677b1fb105f00755e477d23b","CSV_sha256":"7e546aa5caae9ceb577654925b205a7b40121349a72f5e344ff80c8bccb911dc","loaded_rows":6524,"actual_warmup_rows":200,"decision_rows":6324,"native_calendar_gaps":0,"observed_quote_rows":6264,"missing_quote_rows":60,"quotes_are_not_broker_fills":true,"modeled_costs_unchanged":true,"other_month_readiness":"November has8 evaluation gaps; December has2 evaluation and7 warmup gaps. Neither is silently passed or substituted into a full-month comparison."},
+  "before_outcome_budgets":{"originals":2,"per_original_seconds":2700,"whole_panel_seconds":6000,"attempts_per_arm":1,"execution":"one hidden below-normal child at a time; UTC plus monotonic absolute limits; same owned Windows handle must signal before serial continuation"},
+  "analysis":"Compare complete account policies after modeled costs and report activity, maturity, raw risk/cash drawdown and actual method-use/reached-context evidence. This two-coordinate bundle cannot assign individual formula/exit credit. Technical/missing evidence is unknown, not economic zero. More trades or lower loss alone does not establish profitable skill. No parameter, period, confidence, cost, risk or deadline tuning after outcomes.",
+  "next_step_rule":"After terminal originals and immutable reinspection, retain positive, null and negative findings. Useful provisional behavior may motivate a separately declared other-period or factorial question. Do not automatically import curator outcomes as agent experience, install a default or grant authority.",
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"credit":false,"mastery":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}

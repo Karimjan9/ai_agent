@@ -23,6 +23,7 @@ BOOL_FIELDS = {
     "method_compression_expansion", "method_dynamic_cooldown_ready", "method_regime_aligned",
     "method_regime_available", "method_transition_available", "method_quote_available",
     "method_band_available", "method_band_reentry",
+    "method_midline20_available", "method_midline20_exit",
     "method_pullback_available", "method_pullback_confirmed",
     "method_pullback_pretrend_available", "method_pullback_pretrend_confirmed",
     "method_atr_percent_available",
@@ -260,6 +261,10 @@ class ClosedInstrumentMethodFeatures:
                     reentry_direction = "SELL"
             output.update({"method_band_available": band_ready, "_band_lower": lower,
                 "_band_upper": upper, "_band_reentry_direction": reentry_direction})
+            # Keep the original completed-price mean private until inputs()
+            # supplies an actual direction. Flat mature prices are valid for
+            # a midline exit even when a zero-width band cannot confirm entry.
+            output["_midline20"] = _number(band_mean.iloc[index])
             width = _number(bandwidth.iloc[index])
             squeeze_ready = bool(index >= 144 and width is not None
                 and _number(bandwidth_low.iloc[index - 1]) is not None
@@ -537,6 +542,10 @@ class ClosedInstrumentMethodFeatures:
         high, low = source.get("_high_pivot"), source.get("_low_pivot")
         buy = direction == "BUY"
         if direction in {"BUY", "SELL"}:
+            midline = source.get("_midline20")
+            output["method_midline20_available"] = midline is not None
+            if midline is not None:
+                output["method_midline20_exit"] = bool(close >= midline if buy else close <= midline)
             if output["method_dmi_available"]:
                 positive, negative = output["method_di_plus14"], output["method_di_minus14"]
                 output["method_dmi_aligned"] = bool(positive > negative if buy else negative > positive)

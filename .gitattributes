@@ -1,0 +1,2 @@
+# Immutable research journal seals refer to these exact LF bytes on every OS.
+docs/research/instruments/** text eol=lf

@@ -1,5 +1,16 @@
 # Causal learning states
 
+The explicit complete-recipe adapter follows the existing sealed single-attempt
+offline lifecycle. Its fixed October scope has 6,524 loaded / 200 warmup / 6,324
+decision rows. Calendar acceptance never fills missing quotes or certifies
+observed broker fills. A matched result measures the whole two-coordinate
+formula/exit account bundle, not individual component benefit. Missing products
+stay unknown, and the finite exact-context exit retains native risk/time
+protection outside scope. Method reconstruction cannot create agent experience,
+an independent certificate, credit, Master, paper or live permission.
+On Windows a cached child exit code is not reaping proof: the same owned native
+process handle must also be signaled before subsequent serial work can launch.
+
 The explicit Bollinger instrument question first rederives two raw native
 calendar windows, including all 200 warmup rows and week-edge completeness.
 The fixed scan checks April, then May/June only if necessary, retaining each

@@ -16,6 +16,7 @@ class InstrumentMethodLibraryService
         'method_signal_available', 'method_meta_model_available', 'method_compression_expansion',
         'method_dynamic_cooldown_ready', 'method_regime_aligned', 'method_regime_available', 'method_transition_available', 'method_quote_available',
         'method_band_available', 'method_band_reentry', 'method_pullback_available', 'method_pullback_confirmed',
+        'method_midline20_available', 'method_midline20_exit',
         'method_pullback_pretrend_available', 'method_pullback_pretrend_confirmed', 'method_atr_percent_available',
         'method_bandwidth_squeeze_available', 'method_bandwidth_squeeze_breakout',
         'method_retest_available', 'method_retest_confirmed',

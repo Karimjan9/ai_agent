@@ -317,6 +317,7 @@ class StrategyParameterSchemaService
         // mutation/sampling rosters intentionally do not acquire this key.
         if ($includeExplicitResearch && $this->family($strategy) === 'session') {
             $schema['session_context_gate'] = ['string', ['none', 'range_low_v1']];
+            $schema['session_band_variance'] = ['string', ['sample', 'population']];
         }
         return $schema;
     }
@@ -447,6 +448,15 @@ class StrategyParameterSchemaService
             if ($version !== false) $effective = substr($effective, 0, $version);
             if ($family !== 'session' || $effective !== 'session_mean_reversion') {
                 throw new InvalidArgumentException('SESSION_CONTEXT_GATE_REENTRY_RUNTIME_REQUIRED');
+            }
+        }
+
+        if (array_key_exists('session_band_variance', $parameters)) {
+            $effective = strtolower($baseStrategy !== null && $baseStrategy !== '' ? $baseStrategy : $strategy);
+            $version = strrpos($effective, '_v');
+            if ($version !== false) $effective = substr($effective, 0, $version);
+            if ($family !== 'session' || $effective !== 'session_mean_reversion') {
+                throw new InvalidArgumentException('SESSION_BAND_VARIANCE_REENTRY_RUNTIME_REQUIRED');
             }
         }
 

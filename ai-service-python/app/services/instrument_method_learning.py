@@ -197,7 +197,11 @@ class InstrumentMethodLearning:
                     or body.get('runtime_parameters_hash') != canonical_hash(parameters)):
                 raise ValueError('METHOD_LEARNING_RUNTIME_PARAMETERS_IDENTITY_MISMATCH')
             if payload is not None:
-                expected_parameters = validate_strategy_parameters(family, parameters)
+                # A shared family (for example "session") is not its actual
+                # registered runtime. Explicit recross-only treatments must
+                # be checked against the independently supplied request's
+                # strategy/base, not misvalidated as the family's breakout.
+                expected_parameters = validate_strategy_parameters(payload.strategy, parameters, payload.base_strategy)
                 actual_parameters = validate_strategy_parameters(payload.strategy, payload.parameters, payload.base_strategy)
                 if (family != strategy_family(payload.strategy, payload.base_strategy)
                         or not _same_ast_copy(expected_parameters, actual_parameters)):

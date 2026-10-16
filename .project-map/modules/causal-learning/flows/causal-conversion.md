@@ -1,5 +1,16 @@
 # Causal conversion loop
 
+The complete Bollinger lab-recipe question selects only the fixed whole October
+2025 native month plus 200 original warmup rows, rejecting loaded/month-edge
+calendar gaps. Disposable SQLite-only canonical PHP registration/compilation
+produces a two-arm control versus population-band/midline-exit bundle, with
+finite known-context recipes and BASELINE fallback. All original requests,
+runtime/source/data and fixed resource caps precede outcomes. Existing hidden
+serial replay and immutable cash/clock witnesses are retained. A separate
+method-aware inspector reconstructs the original closed-input method calls;
+ordinary curator studies still forbid method-policy observations. Reinspection
+is not replay, independent validation, agent learning or trading authority.
+
 Per-instrument source review -> fixed calendar-only native week selection
 (April/May/June first-clean, separately August; current adapter May/August) ->
 exact raw parent slices, 200 warmup and boundary/refusal manifest -> actual PHP

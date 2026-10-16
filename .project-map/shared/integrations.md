@@ -1,5 +1,18 @@
 # Integrations and runtime boundaries
 
+## Explicit complete-recipe offline comparison
+
+The whole-month producer reuses the unchanged native calendar/raw-parent owner.
+Only full source rederivation admits its naive UTC source cells; observed quote
+coverage is metadata, not filled quote gaps or broker execution proof. The new
+two-arm Bollinger recipe uses actual Library/Foundry/ResearchBinding compilation
+inside disposable SQLite `:memory:` without dotenv or production application
+boot. Population-band selection binds to the actual recross strategy in both
+languages. Directional midline features belong to the original closed-price
+owner; native gap, hard-stop and time-stop priority is unchanged. A narrowly
+method-aware inspector re-evaluates the actual original method-call schedule;
+the old generic study verifier still forbids all method-policy events.
+
 ## Explicit per-instrument Bollinger research
 
 The offline window producer consumes the market-data owner's unchanged
