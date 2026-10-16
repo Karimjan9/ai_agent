@@ -1,5 +1,14 @@
 # Causal learning states
 
+The post-outcome EMA source/opportunity audit is a separate read-only
+diagnostic: original-hash validation -> original feature/signal reconstruction
+-> observed gate/trace reconciliation -> append-only curator findings.
+Counterfactual state and first-veto-censored later gates remain unknown; a
+static intersection is not an accepted trade or economic effect. Original
+requests, runtime, gates and outcomes remain unchanged. This is not another
+backtest, untouched evaluation, broker demo, agent outcome or qualification,
+and it grants no replay, credit, paper/live or production authority.
+
 The explicit three-method replication adapter uses exactly the full June and
 September 2025 native months, each with 200 real warmup rows and complete
 loaded/month-edge audits. January/February/March refusals retain their exact

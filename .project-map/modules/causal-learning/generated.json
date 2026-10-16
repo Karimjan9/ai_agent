@@ -2,13 +2,16 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T12:47:04.775Z",
-  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
-  "source_file_count": 1775,
-  "git_head": "da7326e4656bdb5d9a64912a9ac564c43fc0bd27",
+  "generated_at": "2026-10-16T15:53:53.483Z",
+  "source_digest": "7c66a6292a26a3ba29c7fa6c1647f08824b5fdbbb272b07292633318ab64c18a",
+  "source_file_count": 1777,
+  "git_head": "fc9606a09db81c58b039f9ac423829d12a4d1095",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
+    "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+    "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+    "docs/research/methods/ema-pullback-fidelity",
     "ai-service-python/scripts/curator_intraday_month_windows.py",
     "ai-service-python/scripts/curator_complete_intraday_methods.py",
     "ai-service-python/tests/test_curator_intraday_month_windows.py",
@@ -363,6 +366,7 @@
     "ai-service-python/scripts/curator_bollinger_recipe.py",
     "ai-service-python/scripts/curator_bollinger_study.py",
     "ai-service-python/scripts/curator_complete_intraday_methods.py",
+    "ai-service-python/scripts/curator_ema_opportunity_audit.py",
     "ai-service-python/scripts/curator_instrument_study.py",
     "ai-service-python/scripts/curator_instrument_windows.py",
     "ai-service-python/scripts/curator_intraday_month_windows.py",
@@ -382,6 +386,7 @@
     "ai-service-python/tests/test_curator_bollinger_month_window.py",
     "ai-service-python/tests/test_curator_bollinger_recipe_evidence.py",
     "ai-service-python/tests/test_curator_bollinger_recipe.py",
+    "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
     "ai-service-python/tests/test_curator_instrument_journal.py",
     "ai-service-python/tests/test_curator_instrument_study.py",
     "ai-service-python/tests/test_curator_instrument_windows.py",
@@ -2224,6 +2229,114 @@
       "line": 28
     },
     {
+      "symbol": "gate_cells",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 124
+    },
+    {
+      "symbol": "past_descriptors",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 132
+    },
+    {
+      "symbol": "changes",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 143
+    },
+    {
+      "symbol": "prepare_month",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 153
+    },
+    {
+      "symbol": "primary_trace",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 171
+    },
+    {
+      "symbol": "select_examples",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 178
+    },
+    {
+      "symbol": "analyze_month",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 189
+    },
+    {
+      "symbol": "export",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 247
+    },
+    {
+      "symbol": "need",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 31
+    },
+    {
+      "symbol": "digest",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 36
+    },
+    {
+      "symbol": "encoded",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 40
+    },
+    {
+      "symbol": "checked",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 44
+    },
+    {
+      "symbol": "validate_question",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 51
+    },
+    {
+      "symbol": "app_names",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 59
+    },
+    {
+      "symbol": "bind_app",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 64
+    },
+    {
+      "symbol": "unchanged",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 71
+    },
+    {
+      "symbol": "require_runtime",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 77
+    },
+    {
+      "symbol": "inputs",
+      "kind": "python_function",
+      "path": "ai-service-python/scripts/curator_ema_opportunity_audit.py",
+      "line": 81
+    },
+    {
       "symbol": "read_spec",
       "kind": "python_function",
       "path": "ai-service-python/scripts/curator_instrument_study.py",
@@ -3806,6 +3919,84 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_bollinger_recipe.py",
       "line": 86
+    },
+    {
+      "symbol": "test_byte_source_roster_and_before_after_hash_tamper_refuse",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 106
+    },
+    {
+      "symbol": "test_unreviewed_source_fails_before_attempt_or_real_original_reads",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 117
+    },
+    {
+      "symbol": "test_runtime_drift_and_expired_attempt_fail_closed_without_retry",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 123
+    },
+    {
+      "symbol": "fixture",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 14
+    },
+    {
+      "symbol": "test_real_synthetic_feature_preparation_never_enters_account_or_eligibility",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 140
+    },
+    {
+      "symbol": "EmaOpportunityAuditTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 43
+    },
+    {
+      "symbol": "test_intersections_first_veto_and_filled_indices_reconcile",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 44
+    },
+    {
+      "symbol": "test_execution_1400_is_outside_even_when_signal_1355_is_inside",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 55
+    },
+    {
+      "symbol": "test_outside_session_hides_an_already_low_recorded_confidence",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 61
+    },
+    {
+      "symbol": "test_occupied_vs_actual_state_veto_is_not_a_fabricated_flat_default",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 67
+    },
+    {
+      "symbol": "test_missing_extra_raw_trace_rows_or_execution_off_by_one_refuse",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 76
+    },
+    {
+      "symbol": "test_descriptors_are_past_only_and_gaps_or_immaturity_are_unknown",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 88
+    },
+    {
+      "symbol": "test_authority_and_non_boolean_flags_cannot_change_the_question",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "line": 99
     },
     {
       "symbol": "test_subsequent_captures_do_not_claim_to_be_pre_outcome_attestations",
@@ -22113,6 +22304,22 @@
         "test_no_position_empty_stream_is_explicitly_unactivated",
         "test_positive_shadow_geometry_and_scope_remain_separate",
         "test_nested_exception_and_original_exception_restore_exact_callable"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "tests": [
+        "test_intersections_first_veto_and_filled_indices_reconcile",
+        "test_execution_1400_is_outside_even_when_signal_1355_is_inside",
+        "test_outside_session_hides_an_already_low_recorded_confidence",
+        "test_occupied_vs_actual_state_veto_is_not_a_fabricated_flat_default",
+        "test_missing_extra_raw_trace_rows_or_execution_off_by_one_refuse",
+        "test_descriptors_are_past_only_and_gaps_or_immaturity_are_unknown",
+        "test_authority_and_non_boolean_flags_cannot_change_the_question",
+        "test_byte_source_roster_and_before_after_hash_tamper_refuse",
+        "test_unreviewed_source_fails_before_attempt_or_real_original_reads",
+        "test_runtime_drift_and_expired_attempt_fail_closed_without_retry",
+        "test_real_synthetic_feature_preparation_never_enters_account_or_eligibility"
       ]
     },
     {

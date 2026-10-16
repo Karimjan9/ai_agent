@@ -1,0 +1,43 @@
+{
+  "protocol": "curator_ema_primary_source_review_v1",
+  "review_date": "2026-10-16",
+  "curator": "coding_assistant_not_agent_owned_experience",
+  "sources": [
+    {
+      "id": "woods-ma-intraday",
+      "url": "https://www.tradingsetupsreview.com/day-trading-with-20-period-moving-average/",
+      "author": "Galen Woods",
+      "publisher": "Trading Setups Review",
+      "published": "2013-12-11",
+      "updated": "2019-10-24",
+      "reviewed": "Full available article, six trading charts and one decorative illustration; no linked book, paid course, video or audited account reviewed.",
+      "visual_cautions": [
+        "NQ: EMA20; ES range: EMA14; four-entry example: SMA20; FDAX management: EMA20."
+      ],
+      "evidence_status": "Educational, not audited trading evidence; not an exact lab algorithm.",
+      "private_capture": {"path": ".runtime/ema-source-captures-20261016/ema-day.html", "sha256": "be560abfe6d347db6f5111574ad99af556289814fcca6c9990a7cbb817f8cc17"}
+    },
+    {
+      "id": "woods-candlestick-ema",
+      "url": "https://www.tradingsetupsreview.com/candlestick-patterns-with-a-moving-average/",
+      "author": "Galen Woods",
+      "publisher": "Trading Setups Review",
+      "published": "2012-03-18",
+      "updated": "2020-03-12",
+      "reviewed": "Full available article and six embedded charts, including a losing example and an untriggered setup. No linked book/course or video reviewed.",
+      "visual_cautions": ["Daily chart examples are not M5 calibration; later outcomes cannot retroactively trigger entries."],
+      "evidence_status": "Educational, not audited trading evidence; discretionary inputs remain unquantified.",
+      "private_capture": {"path": ".runtime/ema-source-captures-20261016/ema-patterns.html", "sha256": "2953a8f4e54aefee3681e77e28e2269ecabd528e17e8779ae90f9be7e8088ec6"}
+    }
+  ],
+  "source_handling": "Publisher-hosted charts were inspected privately, not republished in the repository. No complete video, book or paid masterclass is claimed. Reading performed in 2026 does not make this a strategy prospectively designed in 2025.",
+  "scope": "Source interpretation plus already exposed June/September 2025 diagnostic; not independent validation, broker demo or prospective paper trading.",
+  "research_only": true,
+  "own_agent_outcome": false,
+  "independent_validation": false,
+  "credit": false,
+  "mastery": false,
+  "economic_authority": false,
+  "paper_authority": false,
+  "live_authority": false
+}

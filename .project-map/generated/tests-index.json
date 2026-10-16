@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T12:47:04.775Z",
-  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
-  "source_file_count": 1775,
-  "git_head": "da7326e4656bdb5d9a64912a9ac564c43fc0bd27",
+  "generated_at": "2026-10-16T15:53:53.483Z",
+  "source_digest": "7c66a6292a26a3ba29c7fa6c1647f08824b5fdbbb272b07292633318ab64c18a",
+  "source_file_count": 1777,
+  "git_head": "fc9606a09db81c58b039f9ac423829d12a4d1095",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -374,6 +374,22 @@
         "test_actual_two_wire_declaration_and_original_rows",
         "test_unrequested_controls_deadlines_or_authority_cannot_drift",
         "test_complete_runtime_policy_cannot_be_replaced_by_caller_claim"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_ema_opportunity_audit.py",
+      "tests": [
+        "test_intersections_first_veto_and_filled_indices_reconcile",
+        "test_execution_1400_is_outside_even_when_signal_1355_is_inside",
+        "test_outside_session_hides_an_already_low_recorded_confidence",
+        "test_occupied_vs_actual_state_veto_is_not_a_fabricated_flat_default",
+        "test_missing_extra_raw_trace_rows_or_execution_off_by_one_refuse",
+        "test_descriptors_are_past_only_and_gaps_or_immaturity_are_unknown",
+        "test_authority_and_non_boolean_flags_cannot_change_the_question",
+        "test_byte_source_roster_and_before_after_hash_tamper_refuse",
+        "test_unreviewed_source_fails_before_attempt_or_real_original_reads",
+        "test_runtime_drift_and_expired_attempt_fail_closed_without_retry",
+        "test_real_synthetic_feature_preparation_never_enters_account_or_eligibility"
       ]
     },
     {

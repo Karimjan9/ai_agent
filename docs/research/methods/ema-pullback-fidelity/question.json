@@ -1,0 +1,31 @@
+{
+  "protocol": "curator_ema_source_and_opportunity_question_v1",
+  "question": "What does the existing EMA programme actually require, which gates overlap, and how does it differ from a primary author's intraday EMA teaching?",
+  "declared_scope": "Post-outcome diagnostic of already exposed original June/September 2025 data, not a new economic backtest or untouched assessment.",
+  "original_spec_sha256": "d20afc8088aa36b2b875238894fb80448a7c170deb9cb12e486108d7e80c7d80",
+  "original_report_sha256": "02e4509995c65afdbe9de41a507ca5b625c62798ea4a408b23e692757dcaca88",
+  "original_archive_sha256": "4730485351c57c1eda03d77ffdcf1a03b97484915f686d76057a81ae41b9113d",
+  "source_cases": ["june2025__ema_control", "june2025__ema_structural", "september2025__ema_control", "september2025__ema_structural"],
+  "windows": ["june2025", "september2025"],
+  "scope_rows": "Exactly the original full CSVs and 200 real warmup rows; original decision source rows 199 through N-2, execution rows 200 through N-1. No added market data.",
+  "allowed_computation": [
+    "Verify original request/response/witness/process and dataset hashes before analysis",
+    "Prepare original features and source signals once per month using the unchanged registered runtime",
+    "Count closed-price core touch/reclaim and pretrend conditions before ADX/RSI; reconcile actual raw signals against original traces",
+    "Measure session and original ADX-derived confidence gate intersections on all raw signals and on observed flat original candidates separately",
+    "Describe original first-veto censoring, occupied positions and outcome-dependent state without fabricating replacement state",
+    "Record past-only last-20-bar EMA overlap and slope-direction-change descriptors; these are not learned trend labels or filters",
+    "Select illustrative original candidates by fixed chronological category, never profit or favorable future outcome"
+  ],
+  "forbidden": ["run_simple_backtest", "_run_prepared_backtest", "order or position creation", "changing any parameter, clock, cost or gate", "fabricated counterfactual fill/profit", "production/DB/API access", "legacy artifact rewrite", "agent-owned learning or automatic policy attachment"],
+  "examples": {
+    "selection": "First chronological case per month/category: original fill, outside-session/confidence-pass, outside-session/confidence-fail, in-session-confidence-fail, occupied-or-state-different, exact session boundary if observed. Missing category is absent, not synthesized.",
+    "reading": "Original execution index minus one is the closed signal candle. No future return determines example selection. Author charts are educational illustrations, not audited trading results."
+  },
+  "resource_contract": {"max_windows": 2, "max_loaded_rows_per_window": 6500, "seconds": 300, "attempts": 1, "serial": true},
+  "next_decision": "Retain the old programme unchanged. Choose one prospective source-faithful discovery question only after source, trigger, management and observable-data differences are explicit. A static gate pass alone never authorizes a replay or claims profitability.",
+  "research_only": true, "curator_owned": true, "own_agent_outcome": false,
+  "independent_validation": false, "credit": false, "mastery": false,
+  "economic_authority": false, "paper_authority": false, "live_authority": false,
+  "data_policy": "All 2026 and later market observations remain paper-only. No broker demo account is available; this diagnostic is neither broker demo nor prospective paper execution."
+}

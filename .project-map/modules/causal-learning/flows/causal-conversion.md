@@ -1,5 +1,16 @@
 # Causal conversion loop
 
+A separately declared post-outcome EMA opportunity audit reopens the exact
+original June/September requests, products and CSVs -> reconstructs only the
+unchanged features and source signals -> reconciles original raw-signal/trace
+counts and observed session/confidence intersections -> retains first-veto,
+occupied-position and state censoring -> records chronological examples and
+source-method differences. No execution engine, replacement position state,
+counterfactual fill/PnL, gate change or fresh market assessment is authorized.
+Past-only overlap/slope descriptors are diagnostic, not learned context labels
+or economic/agent skill. The next replay would require its own prospective
+question, source and resource seal; this audit does not create one.
+
 Source review with explicit author/lab boundary -> fixed complete June and
 September native months plus 200 real warmup and retained Q1 gap refusals ->
 full parent/source/calendar rederivation -> actual memory-only PHP canonical
