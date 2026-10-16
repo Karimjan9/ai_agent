@@ -3,6 +3,87 @@
 Canonical library key: `range_reentry`. Curator research, 2026-10-16.
 This dossier is not an agent-owned skill or an independent economic certificate.
 
+## Current focus: one complete lab recipe
+
+After the eight retained week originals, the user accepted a narrower priority:
+prove one reusable complete scalp/day method before expanding the laboratory.
+The [next prospective question](events/2026-10-16-complete-recipe-question.json)
+therefore compares the unchanged sample-band recross/ATR account with a
+population-band plus closed-SMA20-exit account. This is a two-coordinate lab
+bundle, not an individual exit/formula certificate or reproduction of all four
+author methods. Context, setup, confidence, next-open entry, protective ATR
+orders, sizing, costs and six-row time protection are all explicit.
+
+The extra exit applies only in exactly declared London/overlap, known regime
+and volatility contexts. Other/unknown contexts retain native exits. The mean
+uses the preceding completed observation and actual held direction; the entry
+bar cannot exit through this method. Existing time-stop and gap-stop/target
+priority are retained. No future price, forced trade quota or relaxed risk gate
+is used to manufacture activity.
+
+The fixed scope is the entire October 2025 UTC month: 6,524 original native rows,
+200 actual warmup and 6,324 evaluation rows. The unchanged calendar finds no
+loaded/month-edge gaps. Evaluation quote coverage is 6,264/6,324; the 60 missing
+rows remain missing, and synchronized closing quotes are not broker fills.
+Modeled costs remain unchanged in both accounts. November's eight evaluation
+gaps and December's two evaluation/seven warmup gaps were not silently passed
+or replaced. This is reused archive discovery, not untouched validation.
+
+The actual canonical PHP Library/Foundry/ResearchBinding owners compiled the
+finite exit policy inside disposable SQLite memory, without dotenv, production
+application boot, persistent registry writes or dispatch. Source commit
+`fdb410a` and the two requests precede original execution. Spec SHA256:
+`8cb6f8affa62fd8f240f0b3119e309fd8081badd97841a81ca9e47fbfff2c296`.
+Private originals are under `.runtime/bollinger-complete-recipe-originals-20261016/`.
+One hidden serial original per arm has a 2,700-second cap; the panel has 6,000
+seconds with UTC and monotonic guards. Both originals completed once within
+their caps. The read-only inspector reopened all original streams and source
+archive entries and rederived the clock, account and method evidence without
+another trade replay.
+
+### Complete October result
+
+| Account | Mature closes | Net cash | Closed-cash drawdown |
+| --- | ---: | ---: | ---: |
+| Original sample recross / ATR | 85 | -752.98 | 10.19% |
+| Population recross / contextual SMA20 exit | 89 | -1,013.28 | 11.65% |
+
+The whole recipe is **260.30 worse** than control in this reused month. Both
+accounts have zero final open positions. Across 23 eligible observed UTC days,
+both have 22 days with multiple closes: averages 3.70 and 3.87 closes per day.
+Median observed holding is 25 versus 20 minutes, with maxima 30 minutes. Actual
+same-bar intrabar duration remains unknown for 5 versus 7 trades. Activity and
+shorter holding therefore exist, but do not establish profitable scalping.
+
+The method inspector reconstructed all 398 original calls: 89 entry phase and
+309 exit phase. The closed midline rule requested and actually caused 17 full
+method exits; 26 calls retained the declared policy fallback. It is not merely
+a registered but unreachable skill. However, two coordinates changed together:
+do not assign the -260.30 difference, or an isolated benefit, to the exit alone.
+The drawdown is based on realized full-close cash, not marked equity/tick paths.
+
+The [terminal result](events/2026-10-16-complete-recipe-results.json) retains the
+negative observation and exact hashes. Summary SHA256:
+`407cde744cf54b422872f82fd9ec5c62eb7e562a0c31ccf9c54456e71a41b51a`;
+source ZIP `3f838c514304bd694965d055130abf268530ce3f3c326fec02b0a420b33601f0`;
+reverified artifact roster
+`9245d02fe6587cc9d20a5ed878a94e8f4036eacfcf80545d735b1432115d8c47`.
+
+Do not promote this bundle or select a profitable-looking October subset.
+Its next useful question is a separately declared complete entry with genuine
+pattern confirmation or trend-pullback context, rather than assuming formula
+fidelity plus an earlier exit must improve economics. Existing author methods
+are not rejected by this one lab recipe. Source facts, curator hypotheses and
+actual outcomes stay distinct. No automatic agent learning, independent skill,
+credit, paper/live authority or production release was created.
+
+New focused checks passed: 11 formula/closed-exit tests, 12 strict method-evidence
+tests, 20 deadline tests, and 5 PHP parity/compiler tests with 255 assertions.
+Separate month/registration and existing physical-owner regressions passed;
+Project Map check passed. In this checkout the public journal runs 12 tests
+with 3 explicit skips: private earlier originals, private source PDFs and
+unavailable optional `ta`. These are software/custody checks, not market profit.
+
 ## What was actually studied
 
 The full available text of John Bollinger's four TradeStation manuals was
@@ -204,7 +285,7 @@ All eight observed child elapsed times total 2,361.57 seconds; the maximum is
 521.55 seconds, below the unchanged 600-second cap. These are elapsed times,
 not CPU usage or evidence of financial/token savings.
 
-## Software verification and unresolved test boundary
+## Historical software verification before the complete-recipe follow-up
 
 Actual PHP request preparation and new declaration/custody checks pass. PHP
 context/runtime parity plus previous session parity: six tests / 164 assertions.
@@ -225,6 +306,15 @@ originals and their reinspection passed under their own unchanged budgets.
 No timeout or safety limit was enlarged to turn those tests green. This
 remaining launch/file-lock diagnostic is not a strategy loss or a reason to
 ship unverified code.
+
+The subsequent bounded Windows investigation proved one specific boundary:
+CPython could cache an exit code while the same owned native process handle
+was still unsignaled. The follow-up checks that actual handle before serial
+continuation and aborts after unchanged bounded cleanup if it remains alive.
+All 20 deadline tests, including both real-child fixtures, now pass. This does
+not prove why the older large-output fixture exceeded ten seconds; that
+historical cause remains unasserted. No PID/tree killing or larger test timer
+was introduced. Original earlier process histories remain unchanged.
 
 Production/main, queues, DB, agent-owned experience and broker orders are
 unchanged. The opt-in gate stays outside ordinary defaults/sampling. This is

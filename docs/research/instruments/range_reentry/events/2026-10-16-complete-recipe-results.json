@@ -1,0 +1,36 @@
+{
+  "protocol":"curator_instrument_research_event_v1",
+  "event_id":"range_reentry-complete-recipe-results-20261016-09",
+  "previous_event_sha256":"d0f982f3f4600bb336f9404c0cee69084495367bac61d99e820ff21bafe8bb48",
+  "instrument_key":"range_reentry",
+  "method_subject":"Bollinger Bands",
+  "research_date":"2026-10-16",
+  "event_type":"complete_lab_recipe_originals_terminal_and_reverified",
+  "curator":"coding_assistant_not_agent_owned_experience",
+  "question_id":"bollinger-complete-recipe-20261016-v1",
+  "knowledge_label":"observed_negative_recipe_bundle_not_qualified_skill",
+  "source_commit":"fdb410a",
+  "original_folder":".runtime/bollinger-complete-recipe-originals-20261016/",
+  "spec_sha256":"8cb6f8affa62fd8f240f0b3119e309fd8081badd97841a81ca9e47fbfff2c296",
+  "summary_sha256":"407cde744cf54b422872f82fd9ec5c62eb7e562a0c31ccf9c54456e71a41b51a",
+  "source_archive_sha256":"3f838c514304bd694965d055130abf268530ce3f3c326fec02b0a420b33601f0",
+  "source_snapshot_hash":"0382659c9bdfbcf38d74d07a3e1a547807fd332878584a51d16a38f348115d7b",
+  "source_files":110,
+  "artifact_roster_sha256":"9245d02fe6587cc9d20a5ed878a94e8f4036eacfcf80545d735b1432115d8c47",
+  "read_only_inspection":{"status":"verified_read_only","terminal_cases":2,"completed_originals_reverified":2,"original_replays_repeated":0,"checks":"Original request/response/witness/process streams, absolute deadlines, source ZIP entries, original full clock/account math and method call/event/receipt reconstruction; feature-only preparation is not another trade replay."},
+  "cases":[
+    {"case_key":"october2025__control","status":"completed","mature":85,"net_cash":-752.9810155378691,"closed_cash_drawdown_percent":10.187337011377029,"open_position_count":0,"raw_strategy_signals":113,"eligible_observed_UTC_days":23,"eligible_days_with_multiple_mature_closes":22,"zero_close_eligible_days":0,"mature_closes_per_eligible_day":3.6956521739130435,"median_holding_minutes":25.0,"max_observed_holding_minutes":30.0,"same_bar_intrabar_duration_unknown":5,"parent_observed_elapsed_monotonic_seconds":280.3803239000117},
+    {"case_key":"october2025__population_midline","status":"completed","mature":89,"net_cash":-1013.2811698740716,"closed_cash_drawdown_percent":11.647798926062197,"open_position_count":0,"raw_strategy_signals":119,"eligible_observed_UTC_days":23,"eligible_days_with_multiple_mature_closes":22,"zero_close_eligible_days":0,"mature_closes_per_eligible_day":3.869565217391304,"median_holding_minutes":20.0,"max_observed_holding_minutes":30.0,"same_bar_intrabar_duration_unknown":7,"parent_observed_elapsed_monotonic_seconds":382.70094690000406}
+  ],
+  "paired_result":{"matched_complete":true,"realized_cash_delta":-260.30015433620247,"effect_scope":"whole_account_two_coordinate_recipe_bundle","individual_formula_or_exit_credit":false,"independent":false,"dominance_claim":false,"total_marked_utility_claim":false},
+  "method_evidence":{"contract_hash":"48395ad2549a0a178b17d639f830b3c908bbf9cbe1308a0934dbb52a9997a9ff","receipt_hash":"45a6ec232c5fcfdc27bba3a09139677f5a5328e0b4f9bab672acffaf3793a32d","events_hash":"6c6e18829f0cc00149ca24765734f14f39fa2f56e7d82d4b5c3810856390f26e","complete_call_schedule_rederived":true,"method_events":398,"entry_phase_calls":89,"exit_phase_calls":309,"recipe_evaluated":288,"recipe_target_unreached":84,"policy_default_baseline":26,"exit_requests":17,"actual_method_full_closes":17,"feature_only_reverification":true},
+  "measured_know_how":[
+    "This original month has actual repeated intraday activity; missing activation is not the reason for the observed economic loss.",
+    "The new closed-input exit is genuinely consumed. Its17 full closes do not prove benefit: the complete formula/exit bundle loses more cash and has greater closed-cash drawdown than control.",
+    "Shorter median holding and four extra trades are not economic improvement. Formula and exit changed together, so this panel cannot blame or credit either individually.",
+    "A negative lab recross recipe does not refute all Bollinger author patterns or all applications. These originals are retained as scoped know-how, not a global harmful ban."
+  ],
+  "next_research_decision":"Do not promote or continue tuning this bundle on its observed October outcome. Preserve the source and failed recipe. The next useful complete-entry question is separately declared source-faithful two-extreme/confirmation or trend-pullback behavior, with fixed costs/risk and multiple predeclared eligible periods. Do not extend this run, pick a lucky subset or create agent experience from curator results.",
+  "boundary":"Reused October2025 M5 discovery; not untouched validation, tick-fill/broker demo evidence, marked-equity drawdown, strong child or Champion proof. Each account independently starts at10000 with identical risk/cost; duplicated event streams are not independent trades. Quotes remain partly missing. Prior originals remain unchanged. Production/main/control/DB/agents were not modified. All2026 and later data remain paper-only.",
+  "research_only":true,"own_agent_outcome":false,"independent_validation":false,"credit":false,"mastery":false,"economic_authority":false,"paper_authority":false,"live_authority":false
+}
