@@ -830,3 +830,13 @@ This isolated work is not a production activation or broker-demo receipt.
 Correct operation, measured local intervention effects and independently useful
 skills remain different evidence levels. 2026-and-later market data stay
 paper-only; no test, source reading or new name creates untouched market data.
+
+### Scalping-first curator practice
+
+See [the first scalping study](curator-scalping-practice-2026-10-16.md) for the
+source-derived EMA use rules, paired short-holding comparison, daily activity,
+descriptive contexts and explicit execution/data limits. The separate
+`curator-scalping-observations-v1.json` retains seven assessed archive products
+and one unknown technical case without relabelling eight original technical
+processes. It is curator research know-how, not an automatic curriculum update,
+own-agent outcome, independent skill, broker demo or trading authority.

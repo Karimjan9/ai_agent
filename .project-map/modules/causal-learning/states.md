@@ -1,5 +1,22 @@
 # Causal learning states
 
+An explicit offline curator scalp question follows `draft -> validated ->
+source/data/runtime sealed -> single original attempt -> completed or technical
+terminal/unattempted bounded dependency -> descriptive comparison`. Raw failed,
+null and censored originals remain immutable; no retry or wider deadline is
+inferred from a timeout. Activity, after-cost cash and observed-clock holding
+are separate metrics. Nominal row deadlines, derived entry-context summaries
+and cash-close drawdown supply no independent, broker, agent-skill or promotion
+authority. Old curricula and agent-owned policies remain unchanged.
+
+A separately versioned post-terminal reporting appendix may re-open immutable
+raw products after the exact UTC-CSV projection refusal, never by rerunning the
+engine or changing original process labels. All original source/archive/product
+hashes and prior terminal inspection remain bound; only the named metrics and
+test correction may differ. The manifest must prove the original CSV's UTC
+semantics. `projection_verified` is a new diagnostic assessment, not original
+replay completion, independent evidence, credit or trading authority.
+
 Completed offline curator management/activation originals are retained as
 append-only research observations, not agent-owned outcomes. Their derived
 calendar usage retains missing raw session fields, uses prior candle-open

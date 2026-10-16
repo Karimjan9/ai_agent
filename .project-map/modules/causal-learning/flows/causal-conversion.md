@@ -1,5 +1,14 @@
 # Causal conversion loop
 
+Explicit assistant-curated scalping source study -> actual PHP-prepared/Python-
+validated two-coordinate eight-request question -> before-outcome data/runtime/
+source-byte freeze -> one serial bounded offline original per arm/window ->
+raw response and unchanged full-close witness -> actual clock/cash/holding and
+daily activity comparison -> contextual curator guide and explicit next question.
+This reuses the ordinary engine; it creates no scheduler, production admission,
+agent-owned experience, independent certificate or trading permission. Six-row
+time exits are nominal durations, not wall-clock/broker execution guarantees.
+
 Explicit management source review -> append-only scalar Chandelier exit
 catalog -> existing bounded policy/compiler -> all four frozen entry/risk/cost
 contracts -> one original per arm/window -> retained raw response and offline

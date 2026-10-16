@@ -10,6 +10,17 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - backend-laravel/scripts/prepare-curator-scalp-panel.php
+  - ai-service-python/scripts/curator_scalp_panel.py
+  - ai-service-python/scripts/curator_scalp_metrics.py
+  - ai-service-python/tests/test_curator_scalp_panel.py
+  - ai-service-python/tests/test_curator_scalp_metrics.py
+  - ai-service-python/tests/test_curator_scalp_preparation.py
+  - scripts/research/assess-curator-scalp-products.py
+  - ai-service-python/tests/test_curator_scalp_reporting.py
+  - ai-service-python/tests/test_curator_scalp_observations.py
+  - backend-laravel/resources/research/instrument-operating-skills/curator-scalping-observations-v1.json
+  - docs/operations/curator-scalping-practice-2026-10-16.md
   - .project-map/decisions/ADR-040-separated-instrument-method-and-agent-policy.md
   - docs/operations/instrument-method-learning.md
   - backend-laravel/app/Services/InstrumentMethodSourceService.php
@@ -302,6 +313,10 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - backend-laravel/scripts/prepare-curator-scalp-panel.php --export-draft
+  - ai-service-python/scripts/curator_scalp_panel.py --seal
+  - ai-service-python/scripts/curator_scalp_panel.py --execute
+  - scripts/research/assess-curator-scalp-products.py --original-inspection
   - trading:instrument-methods
   - InstrumentMethodLibraryService::inventory
   - InstrumentMethodLibraryService::registerMethod
@@ -514,6 +529,11 @@ docs:
   - history.md
   - ../../../docs/operations/curator-management-practice-2026-10-15.md
 tests:
+  - ai-service-python/tests/test_curator_scalp_observations.py
+  - ai-service-python/tests/test_curator_scalp_reporting.py
+  - ai-service-python/tests/test_curator_scalp_panel.py
+  - ai-service-python/tests/test_curator_scalp_metrics.py
+  - ai-service-python/tests/test_curator_scalp_preparation.py
   - ai-service-python/tests/test_curator_management_observations.py
   - ai-service-python/tests/test_curator_activation_witness.py
   - backend-laravel/tests/Feature/CuratorManagementPracticeTest.php

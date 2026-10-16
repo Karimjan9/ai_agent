@@ -1,0 +1,1527 @@
+{
+  "protocol": "assistant_curator_scalping_observations_v1",
+  "research_date": "2026-10-16",
+  "origin": "assistant_curated_not_agent_owned_experience",
+  "evidence_level": "observed_reused_archive_know_how_not_independent_skill",
+  "research_only": true,
+  "usable_for_research": true,
+  "own_agent_outcome": false,
+  "independent_validation": false,
+  "credit": false,
+  "mastery": false,
+  "economic_authority": false,
+  "paper_authority": false,
+  "live_authority": false,
+  "automatic_agent_attachment": false,
+  "question_id": "curator-scalp-ema-20261016-v1",
+  "original_spec_sha256": "d6c781a5908e67430c9d62d1f65f86c6a5357f8d6a71e730d2871dda3cefd6c4",
+  "original_summary_sha256": "15341f0609617b83d107463b54d17b60daf8f76cceef373199a80ec22e611a94",
+  "original_source_archive_sha256": "3ddb02013f8faaf069ec8c59e5273ad5ca6485c09969333aa744d73d4c0307f5",
+  "original_artifact_roster_sha256": "034005c6879c6163aca44dae989f920ac1a1cfac419e092c8c5da0811558422f",
+  "reporting_appendix_sha256": "6ec7ba1fe3175530305b925c5ea579d558c9ed12c525bd3b5db7a5d9ec24e39c",
+  "reporting_verification_sha256": "57d4105b4de05ecfce99b740456a739220603a44e0b9baa4a7eb4e0a949fd096",
+  "reporting_corrections": {
+    "ai-service-python/scripts/curator_scalp_metrics.py": {
+      "original_sha256": "7eac3346ed2cafd146efa9994cbaf2c7effbab1d51f94a7da2e69f03c88b1a2e",
+      "corrected_sha256": "a1d264877d6f95a69caf0b15aa52a91eb49bec3db004aa236a77d68890e26216"
+    },
+    "ai-service-python/tests/test_curator_scalp_metrics.py": {
+      "original_sha256": "1815a39de649744cf6e4b65da580aafa6a6e02ce4f0515119ad634dbe406832a",
+      "corrected_sha256": "06a43f8b36aeb7db1356bdf39c0576221fbce0f843e8535ad044e795e9b3ed88"
+    }
+  },
+  "supplemental_receipts": {
+    "external-expired-worker-enforcement.json": {
+      "path": "C:\\x_programs\\xamp\\htdocs\\laravel_projects\\ai_agent\\.runtime\\scalping-research-20261016\\.runtime\\scalp-originals-20261016\\external-expired-worker-enforcement.json",
+      "sha256": "aa2d3c47cbb2b669b3ff9e2d61ccfb4107c7fd565356a9bc689d887dc2824917",
+      "protocol": "curator_original_external_deadline_enforcement_v1",
+      "post_terminal_supplement_only": true,
+      "part_of_original_artifact_roster": false,
+      "authority_granted": false
+    },
+    "post-terminal-publication-priority.json": {
+      "path": "C:\\x_programs\\xamp\\htdocs\\laravel_projects\\ai_agent\\.runtime\\scalping-research-20261016\\.runtime\\scalp-originals-20261016\\post-terminal-publication-priority.json",
+      "sha256": "ed6646355a67da2b392187680bda20b40bb4bd69e230824e2dcf68969cabf9b7",
+      "protocol": "curator_post_terminal_publication_priority_v1",
+      "post_terminal_supplement_only": true,
+      "part_of_original_artifact_roster": false,
+      "authority_granted": false
+    }
+  },
+  "projection_verified_cases": 7,
+  "terminal_original_cases": 8,
+  "cases": {
+    "october_pre_dst__proximity_unbounded": {
+      "window": "october_pre_dst",
+      "arm": "proximity_unbounded",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 84.17761869999958,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55130.7584158,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "357e65fea7b712342cb3f68d087af708b98a877be7ac8c360a6f6c7f0b6c4292",
+        "process_sha256": "2e6c842ab9fbab24b3c731835f97863c36f19af25fdb5d0971f1334a56d293aa",
+        "response_sha256": "d0744db05e86a3689ce2009e0408bb417db2c2f7b5fa6bae8cc4bda253f2937e",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "651ab35325e94fcb2dabb5648402e6a78e203b90166b7be9d8ee4cc6d8352ce7",
+        "launch_sha256": "b9afded69f195e3442fcd70a4773757ed3e6a07084453bafa8b47e37957ddf6b",
+        "worker_attempt_sha256": "66ff644a945d95609488518b802484b2408c9518eefbe10a8ba18be897d3e3c8"
+      },
+      "dataset_sha256": "611dbefd477d36202c769a9e5201b9a571d1ed55c1fbe301c614ac55541b3cad",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 16,
+        "exact_realized_net_cash": 139.57575928266488,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 3.328747030159577,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 16,
+          "median": 52.5,
+          "p90": 120,
+          "max": 210,
+          "cap": 30,
+          "within_cap_fraction": 0.3125,
+          "same_bar_intrabar_duration_unknown_count": 1,
+          "over_cap_count": 11,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 0,
+        "eligible_days_with_multiple_mature_closes": 4,
+        "per_day": [
+          {
+            "utc_date": "2025-10-13",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": 71.0193434232011,
+            "commission_cash": 2.3497313495724743,
+            "carry_cash": 0.03426691551459859
+          },
+          {
+            "utc_date": "2025-10-14",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 4,
+            "mature_full_closes": 4,
+            "same_utc_day_round_trips": 4,
+            "realized_net_cash": 29.53939923258703,
+            "commission_cash": 12.076295322633836,
+            "carry_cash": 0.06664482839108937
+          },
+          {
+            "utc_date": "2025-10-15",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 3,
+            "mature_full_closes": 3,
+            "same_utc_day_round_trips": 3,
+            "realized_net_cash": -113.281825027058,
+            "commission_cash": 3.814938054025834,
+            "carry_cash": 0.029045847428500946
+          },
+          {
+            "utc_date": "2025-10-16",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -49.881419641922704,
+            "commission_cash": 1.9062080020416352,
+            "carry_cash": 0.00747422006438682
+          },
+          {
+            "utc_date": "2025-10-17",
+            "decision_rows": 252,
+            "eligible_execution_rows": 240,
+            "entries": 6,
+            "mature_full_closes": 6,
+            "same_utc_day_round_trips": 6,
+            "realized_net_cash": 202.18026129585803,
+            "commission_cash": 7.424812972104339,
+            "carry_cash": 0.047017808412851116
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 5,
+            "realized_net_cash_by_entry_context": 204.05219971594641
+          },
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_night",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -24.90575312778649
+          },
+          {
+            "session": "london",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -51.27668374166945
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_interfix",
+            "mature_full_closes": 3,
+            "realized_net_cash_by_entry_context": 49.38252371758978
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 19.148047678808183
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 81.56985890841733
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_pre_settlement",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -102.43004143728864
+          },
+          {
+            "session": "overlap",
+            "venue_phase": "london_comex_overlap",
+            "mature_full_closes": 3,
+            "realized_net_cash_by_entry_context": -35.96439243135164
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 209,
+          "composition_strategy_signals_before_tactic": 209,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 103,
+          "instrument_context_gate_acceptances": 103,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 103,
+          "mtf_permission_gate_acceptances": 103,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 103,
+          "risk_governor_approvals": 16,
+          "risk_governor_rejections": 87,
+          "management_policy_evaluations": 218,
+          "flat_signal_opportunities": 103,
+          "accepted_entries": 16,
+          "occupied_or_superseded_signals": 106,
+          "rejected": {
+            "outside_session": 23,
+            "minimum_confidence": 61,
+            "loss_streak_wait": 3
+          },
+          "acceptance_rate_percent": 15.53,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 27.756435320189553,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "october_pre_dst__proximity_6bars": {
+      "window": "october_pre_dst",
+      "arm": "proximity_6bars",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 223.1757299000019,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55230.1671265,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "6e76e43ef4983d1e218f3b2bd78c138d1a314d4dfa57d2933930136394aed887",
+        "process_sha256": "b0c4b60da39c57ac1d5a526ab2e39767900ffd598be86381944cf3b4294bfcc4",
+        "response_sha256": "9bc17b713007e9f758af344b037e51713307ae4828d6be83314abdd39dc00010",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "3c2f13c7b88f16333007f06e09f67a8f0e7e0fb11ffae910721f12ed1955541d",
+        "launch_sha256": "e64cd4fa347a669a58236a38922c77ae6a3e361b6c10a813ff6a84ec0190b744",
+        "worker_attempt_sha256": "bffd404b91af3d694122ed14ccbc4a883bacbb2c4658decf566e652b3b10b67f"
+      },
+      "dataset_sha256": "611dbefd477d36202c769a9e5201b9a571d1ed55c1fbe301c614ac55541b3cad",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 23,
+        "exact_realized_net_cash": 123.5693164291988,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 2.840450816545904,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 23,
+          "median": 30,
+          "p90": 30,
+          "max": 30,
+          "cap": 30,
+          "within_cap_fraction": 1,
+          "same_bar_intrabar_duration_unknown_count": 1,
+          "over_cap_count": 0,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 0,
+        "eligible_days_with_multiple_mature_closes": 4,
+        "per_day": [
+          {
+            "utc_date": "2025-10-13",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": 24.933754335146208,
+            "commission_cash": 2.3497313495724743,
+            "carry_cash": 0.009790547289885309
+          },
+          {
+            "utc_date": "2025-10-14",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 4,
+            "mature_full_closes": 4,
+            "same_utc_day_round_trips": 4,
+            "realized_net_cash": -32.984956477880814,
+            "commission_cash": 11.959935965683663,
+            "carry_cash": 0.04725139223930146
+          },
+          {
+            "utc_date": "2025-10-15",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 4,
+            "mature_full_closes": 4,
+            "same_utc_day_round_trips": 4,
+            "realized_net_cash": -76.04141172885642,
+            "commission_cash": 6.540108684699264,
+            "carry_cash": 0.022433259799310885
+          },
+          {
+            "utc_date": "2025-10-16",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -73.00373258188026,
+            "commission_cash": 3.785426658213118,
+            "carry_cash": 0.007420808950554177
+          },
+          {
+            "utc_date": "2025-10-17",
+            "decision_rows": 252,
+            "eligible_execution_rows": 240,
+            "entries": 12,
+            "mature_full_closes": 12,
+            "same_utc_day_round_trips": 12,
+            "realized_net_cash": 280.6656628826705,
+            "commission_cash": 19.36453163920499,
+            "carry_cash": 0.06856570778292322
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 5,
+            "realized_net_cash_by_entry_context": 79.71087418400955
+          },
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_night",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -49.461827404756434
+          },
+          {
+            "session": "london",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -23.86838588837473
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_interfix",
+            "mature_full_closes": 5,
+            "realized_net_cash_by_entry_context": 78.15041089110235
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 3,
+            "realized_net_cash_by_entry_context": 41.04711137674765
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 3,
+            "realized_net_cash_by_entry_context": 185.75372779386578
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_pre_settlement",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -55.23534878173998
+          },
+          {
+            "session": "overlap",
+            "venue_phase": "london_comex_overlap",
+            "mature_full_closes": 4,
+            "realized_net_cash_by_entry_context": -132.52724574165495
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 209,
+          "composition_strategy_signals_before_tactic": 209,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 136,
+          "instrument_context_gate_acceptances": 136,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 136,
+          "mtf_permission_gate_acceptances": 136,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 136,
+          "risk_governor_approvals": 23,
+          "risk_governor_rejections": 113,
+          "management_policy_evaluations": 143,
+          "flat_signal_opportunities": 136,
+          "accepted_entries": 23,
+          "occupied_or_superseded_signals": 73,
+          "rejected": {
+            "outside_session": 23,
+            "minimum_confidence": 80,
+            "loss_cooldown": 5,
+            "loss_streak_wait": 5
+          },
+          "acceptance_rate_percent": 16.91,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 44.15519601343549,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "october_pre_dst__pretrend_unbounded": {
+      "window": "october_pre_dst",
+      "arm": "pretrend_unbounded",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 107.60500799999863,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55439.621673,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "0303f34907849431197f4eb44a4ff751b72a321511b69657bc3cc56c4e8c31ef",
+        "process_sha256": "27fcd66d2150f1b280c46c0e7ec3edbb9a91e54daee1dcccf148f63af842a8ac",
+        "response_sha256": "8f9b04b8cbea3b65122a358c4b990c34b688e289eaca246284d5e18723981d56",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "63ba17779166e20cc909474ecc5929bfb56863a4b0852c2fc2adccc190d5ba6a",
+        "launch_sha256": "6974a75bba6fd6aea90ce96096e63a9722171ff9f8bf0b40c4d29c6c97d121c5",
+        "worker_attempt_sha256": "4d9ad150d1e7b6e61647d0473c60cadd272c571f1d63873e24c54c21897931fa"
+      },
+      "dataset_sha256": "611dbefd477d36202c769a9e5201b9a571d1ed55c1fbe301c614ac55541b3cad",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 5,
+        "exact_realized_net_cash": 93.95297283772015,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 0.9976165716794457,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 5,
+          "median": 55,
+          "p90": 138,
+          "max": 180,
+          "cap": 30,
+          "within_cap_fraction": 0.2,
+          "same_bar_intrabar_duration_unknown_count": 0,
+          "over_cap_count": 4,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 3,
+        "eligible_days_with_multiple_mature_closes": 1,
+        "per_day": [
+          {
+            "utc_date": "2025-10-13",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-14",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-15",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-16",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": -50.005789320236836,
+            "commission_cash": 2.084155285261444,
+            "carry_cash": 0.005789320236837345
+          },
+          {
+            "utc_date": "2025-10-17",
+            "decision_rows": 252,
+            "eligible_execution_rows": 240,
+            "entries": 4,
+            "mature_full_closes": 4,
+            "same_utc_day_round_trips": 4,
+            "realized_net_cash": 143.9587621579559,
+            "commission_cash": 3.4826070947295604,
+            "carry_cash": 0.04198210176415579
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 2,
+            "realized_net_cash_by_entry_context": -99.76165716794466
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 77.4538120924879
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 77.3677697458636
+          },
+          {
+            "session": "overlap",
+            "venue_phase": "london_comex_overlap",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 38.89304816731223
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 19,
+          "composition_strategy_signals_before_tactic": 19,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 14,
+          "instrument_context_gate_acceptances": 14,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 14,
+          "mtf_permission_gate_acceptances": 14,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 14,
+          "risk_governor_approvals": 5,
+          "risk_governor_rejections": 9,
+          "management_policy_evaluations": 78,
+          "flat_signal_opportunities": 14,
+          "accepted_entries": 5,
+          "occupied_or_superseded_signals": 5,
+          "rejected": {
+            "minimum_confidence": 7,
+            "outside_session": 2
+          },
+          "acceptance_rate_percent": 35.71,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 5.614533801991998,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "october_pre_dst__pretrend_6bars": {
+      "window": "october_pre_dst",
+      "arm": "pretrend_6bars",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 182.2643989000062,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55552.5560298,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "b0f97b21d028c046903d05f10847e2dfeb3309aae93818abe5876ffd10af9376",
+        "process_sha256": "eb64c3b720840b750fe5e919eab2a38695acd330e3c7d5999d8acdde3b44a197",
+        "response_sha256": "6c3a4c300bea54a4ea457fffd5bc2f28dc0f2189d773485dcd60754131cf5d1c",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "1b426736cff89cb168e8f655345224de2edaba8c3a6223a5525ea30bee2a99ba",
+        "launch_sha256": "c4267a06cb088d01ad35aa3d40916ef6fc2735e58f32a8b71c55cd806e13cd5e",
+        "worker_attempt_sha256": "ec63aceefaab92eef010f2a906cafe8c4df6424a83e53485355a9e1823c4a454"
+      },
+      "dataset_sha256": "611dbefd477d36202c769a9e5201b9a571d1ed55c1fbe301c614ac55541b3cad",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 5,
+        "exact_realized_net_cash": -84.11847462454352,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 1.02348919514694,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 5,
+          "median": 30,
+          "p90": 30,
+          "max": 30,
+          "cap": 30,
+          "within_cap_fraction": 1,
+          "same_bar_intrabar_duration_unknown_count": 0,
+          "over_cap_count": 0,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 3,
+        "eligible_days_with_multiple_mature_closes": 1,
+        "per_day": [
+          {
+            "utc_date": "2025-10-13",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-14",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-15",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-10-16",
+            "decision_rows": 276,
+            "eligible_execution_rows": 240,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": -50.005789320236836,
+            "commission_cash": 2.084155285261444,
+            "carry_cash": 0.005789320236837345
+          },
+          {
+            "utc_date": "2025-10-17",
+            "decision_rows": 252,
+            "eligible_execution_rows": 240,
+            "entries": 4,
+            "mature_full_closes": 4,
+            "same_utc_day_round_trips": 4,
+            "realized_net_cash": -34.11268530430635,
+            "commission_cash": 2.878774289028036,
+            "carry_cash": 0.01199489287095015
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 2,
+            "realized_net_cash_by_entry_context": -72.80686392006703
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -16.248315365843712
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 18.2304448901508
+          },
+          {
+            "session": "overlap",
+            "venue_phase": "london_comex_overlap",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -13.293740228783244
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 19,
+          "composition_strategy_signals_before_tactic": 19,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 18,
+          "instrument_context_gate_acceptances": 18,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 18,
+          "mtf_permission_gate_acceptances": 18,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 18,
+          "risk_governor_approvals": 5,
+          "risk_governor_rejections": 13,
+          "management_policy_evaluations": 33,
+          "flat_signal_opportunities": 18,
+          "accepted_entries": 5,
+          "occupied_or_superseded_signals": 1,
+          "rejected": {
+            "minimum_confidence": 11,
+            "outside_session": 2
+          },
+          "acceptance_rate_percent": 27.78,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 4.980713787397267,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "december_standard__proximity_unbounded": {
+      "window": "december_standard",
+      "arm": "proximity_unbounded",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 117.0042925999951,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55732.8586734,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "5c4daa78c4163cc26bf578c9d3940267a93fd41ab38da560024ebe60a7758a71",
+        "process_sha256": "10ac554586a219201bf15bdeaba32e78008bc927bdcf5c17d474df74fdf866bf",
+        "response_sha256": "3e54d27022f50da62cf2972ada3577c5f97ef7e8138b34982886bc0ca3099f09",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "04ef01e99f312abf2927823792817772e40a0b0d4a30b776bc4ec1e402e5a67a",
+        "launch_sha256": "41effa30bfacbdc160a55de6fa6c77f15c9904fad28d41094b1046dec645e161",
+        "worker_attempt_sha256": "d0960dd10461732e650a28533a6c0a444fcb495ae621307d25fe8f2eb141682a"
+      },
+      "dataset_sha256": "770623e118d4a2d8ac29f561bfca8e8e34d26792526f45d12a7e8eab89a6475e",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 13,
+        "exact_realized_net_cash": -275.83386326401524,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 2.9754386614078463,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 13,
+          "median": 30,
+          "p90": 103,
+          "max": 170,
+          "cap": 30,
+          "within_cap_fraction": 0.5384615384615384,
+          "same_bar_intrabar_duration_unknown_count": 1,
+          "over_cap_count": 6,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 0,
+        "eligible_days_with_multiple_mature_closes": 4,
+        "per_day": [
+          {
+            "utc_date": "2025-12-08",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": -63.47014672750658,
+            "commission_cash": 5,
+            "carry_cash": 0.003472222222222222
+          },
+          {
+            "utc_date": "2025-12-09",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -68.96231010936076,
+            "commission_cash": 4.959184715937489,
+            "carry_cash": 0.0912154815222936
+          },
+          {
+            "utc_date": "2025-12-10",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": 33.434340419548434,
+            "commission_cash": 7.416045753383622,
+            "carry_cash": 0.03785940487748443
+          },
+          {
+            "utc_date": "2025-12-11",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 6,
+            "mature_full_closes": 6,
+            "same_utc_day_round_trips": 6,
+            "realized_net_cash": -116.07232530949045,
+            "commission_cash": 29.83084012456916,
+            "carry_cash": 0.14142663889783885
+          },
+          {
+            "utc_date": "2025-12-12",
+            "decision_rows": 264,
+            "eligible_execution_rows": 252,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -60.763421537205325,
+            "commission_cash": 3.0468917317810056,
+            "carry_cash": 0.014363880388567271
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 5,
+            "realized_net_cash_by_entry_context": 20.745108040916463
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_interfix",
+            "mature_full_closes": 4,
+            "realized_net_cash_by_entry_context": -160.5455538038097
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 61.48038404509109
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 2,
+            "realized_net_cash_by_entry_context": -121.08056410846473
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_post_settlement",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -76.43323743774782
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 184,
+          "composition_strategy_signals_before_tactic": 184,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 126,
+          "instrument_context_gate_acceptances": 126,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 126,
+          "mtf_permission_gate_acceptances": 126,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 126,
+          "risk_governor_approvals": 13,
+          "risk_governor_rejections": 113,
+          "management_policy_evaluations": 143,
+          "flat_signal_opportunities": 126,
+          "accepted_entries": 13,
+          "occupied_or_superseded_signals": 58,
+          "rejected": {
+            "outside_session": 2,
+            "minimum_confidence": 110,
+            "loss_cooldown": 1
+          },
+          "acceptance_rate_percent": 10.32,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 50.54129995357969,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "december_standard__proximity_6bars": {
+      "window": "december_standard",
+      "arm": "proximity_6bars",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 260.9926920999933,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 55851.8624621,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "776b20ac3947db1e9973412ecd0a63ba8b0be93fbd9e92ab63d734d2aa2d40fe",
+        "process_sha256": "e64471d0dc24eaedd6ce3c2685e215ae469a3a00af8f2092272706f509be268a",
+        "response_sha256": "8a1bd82a425c2140415aae0389f4be4de571322ae9c783a820277bbcbd7e05b5",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "46ad1cca1aacfdbe75376a3d251d4d48171d7522ded0ea4ac8683f5e114f4ca8",
+        "launch_sha256": "c0f232e7a85eaaad9293fad5174727f16c0e5a29e234b9dcedf0503db9ece6d1",
+        "worker_attempt_sha256": "afa17389f415aeb68e5f069d1413f82a964f9523bb39d45542b25645ab605471"
+      },
+      "dataset_sha256": "770623e118d4a2d8ac29f561bfca8e8e34d26792526f45d12a7e8eab89a6475e",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 17,
+        "exact_realized_net_cash": -143.5010216069113,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 1.6491691133705202,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 17,
+          "median": 30,
+          "p90": 30,
+          "max": 30,
+          "cap": 30,
+          "within_cap_fraction": 1,
+          "same_bar_intrabar_duration_unknown_count": 1,
+          "over_cap_count": 0,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 0,
+        "eligible_days_with_multiple_mature_closes": 4,
+        "per_day": [
+          {
+            "utc_date": "2025-12-08",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 1,
+            "mature_full_closes": 1,
+            "same_utc_day_round_trips": 1,
+            "realized_net_cash": -63.47014672750658,
+            "commission_cash": 5,
+            "carry_cash": 0.003472222222222222
+          },
+          {
+            "utc_date": "2025-12-09",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 3,
+            "mature_full_closes": 3,
+            "same_utc_day_round_trips": 3,
+            "realized_net_cash": -46.071041164235936,
+            "commission_cash": 7.43759985993054,
+            "carry_cash": 0.02926724838396347
+          },
+          {
+            "utc_date": "2025-12-10",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 3,
+            "mature_full_closes": 3,
+            "same_utc_day_round_trips": 3,
+            "realized_net_cash": 19.995082337257724,
+            "commission_cash": 9.912144672198519,
+            "carry_cash": 0.03614932216952077
+          },
+          {
+            "utc_date": "2025-12-11",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 8,
+            "mature_full_closes": 8,
+            "same_utc_day_round_trips": 8,
+            "realized_net_cash": -2.4777348493013207,
+            "commission_cash": 39.87748737301149,
+            "carry_cash": 0.11433226802190612
+          },
+          {
+            "utc_date": "2025-12-12",
+            "decision_rows": 264,
+            "eligible_execution_rows": 252,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -51.47718120312565,
+            "commission_cash": 3.0855202605256875,
+            "carry_cash": 0.012856334418857031
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "asia",
+            "venue_phase": "asia_sge_day",
+            "mature_full_closes": 7,
+            "realized_net_cash_by_entry_context": 90.30581770930304
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_interfix",
+            "mature_full_closes": 5,
+            "realized_net_cash_by_entry_context": -106.40854594789998
+          },
+          {
+            "session": "london",
+            "venue_phase": "london_pre_am_fix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": 30.81150463327102
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 3,
+            "realized_net_cash_by_entry_context": -81.34538283624532
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_post_settlement",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -76.86441516534053
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 184,
+          "composition_strategy_signals_before_tactic": 184,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 139,
+          "instrument_context_gate_acceptances": 139,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 139,
+          "mtf_permission_gate_acceptances": 139,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 139,
+          "risk_governor_approvals": 17,
+          "risk_governor_rejections": 122,
+          "management_policy_evaluations": 95,
+          "flat_signal_opportunities": 139,
+          "accepted_entries": 17,
+          "occupied_or_superseded_signals": 45,
+          "rejected": {
+            "outside_session": 2,
+            "minimum_confidence": 115,
+            "loss_cooldown": 3,
+            "loss_streak_wait": 2
+          },
+          "acceptance_rate_percent": 12.23,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 65.50882956088272,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "december_standard__pretrend_unbounded": {
+      "window": "december_standard",
+      "arm": "pretrend_unbounded",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "projection_verified",
+      "original_budget_eligibility": {
+        "eligible": true,
+        "original_wall_seconds": 202.25293140000576,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "within_original_budgets",
+        "original_worker_started_at_monotonic": 56131.8563173,
+        "original_global_deadline_monotonic": 60524.81838
+      },
+      "artifacts": {
+        "request_sha256": "7b900107668fe129b21bd9b7c4068f711e8905c9cc5f11460f8e420583ab43d7",
+        "process_sha256": "6384db560a4ba27f0c89c61bb5ffdf60fdbc61f9a453a91f059f75297fe7ffd7",
+        "response_sha256": "607efad1e2b5c28f5c7d879d974828ab72895fbe95f20e24097adcd5a990c8ed",
+        "stderr_sha256": "de9ef0daa6a4fbf0941ea64c85fd85d0c2805db82cbd884b4e3d368afed3404e",
+        "witness_sha256": "e80bf9c08689d7fdd9d3382842d5bfb8a01a0e5e0e5531fd7ecaedc4534424ee",
+        "launch_sha256": "e18ea8fbb2d9415602b5572b0b4efda441f8e73a200588a34f5e499d21f71a69",
+        "worker_attempt_sha256": "25cb888f4f9f9098df5d7d0cf0af9ecaaa178fa812daa62a03a38922ade87918"
+      },
+      "dataset_sha256": "770623e118d4a2d8ac29f561bfca8e8e34d26792526f45d12a7e8eab89a6475e",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": {
+        "mature_full_closes": 2,
+        "exact_realized_net_cash": -85.90545990421924,
+        "open_position_count": 0,
+        "closed_cash_drawdown_percent": 0.8590545990421925,
+        "marked_drawdown_percent": null,
+        "holding_minutes": {
+          "count": 2,
+          "median": 25,
+          "p90": 33,
+          "max": 35,
+          "cap": 30,
+          "within_cap_fraction": 0.5,
+          "same_bar_intrabar_duration_unknown_count": 0,
+          "over_cap_count": 1,
+          "over_cap_gap_explained_count": 0
+        },
+        "eligible_observed_utc_days": 5,
+        "zero_close_eligible_days": 4,
+        "eligible_days_with_multiple_mature_closes": 1,
+        "per_day": [
+          {
+            "utc_date": "2025-12-08",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-12-09",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-12-10",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-12-11",
+            "decision_rows": 276,
+            "eligible_execution_rows": 252,
+            "entries": 0,
+            "mature_full_closes": 0,
+            "same_utc_day_round_trips": 0,
+            "realized_net_cash": 0,
+            "commission_cash": 0,
+            "carry_cash": 0
+          },
+          {
+            "utc_date": "2025-12-12",
+            "decision_rows": 264,
+            "eligible_execution_rows": 252,
+            "entries": 2,
+            "mature_full_closes": 2,
+            "same_utc_day_round_trips": 2,
+            "realized_net_cash": -85.90545990421901,
+            "commission_cash": 3.7499511148143356,
+            "carry_cash": 0.011284484585903018
+          }
+        ],
+        "entry_context_groups": [
+          {
+            "session": "london",
+            "venue_phase": "london_interfix",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -36.079782666297945
+          },
+          {
+            "session": "new_york",
+            "venue_phase": "comex_active",
+            "mature_full_closes": 1,
+            "realized_net_cash_by_entry_context": -49.82567723792107
+          }
+        ],
+        "entry_context_semantics": "descriptive_reused_archive_full_account_trade_grouping_not_session_causal_effect",
+        "entry_funnel": {
+          "raw_strategy_signals": 10,
+          "composition_strategy_signals_before_tactic": 10,
+          "composition_tactic_evaluations": 0,
+          "composition_tactic_acceptances": 0,
+          "instrument_context_gate_evaluations": 10,
+          "instrument_context_gate_acceptances": 10,
+          "instrument_context_gate_rejections": 0,
+          "mtf_permission_gate_evaluations": 10,
+          "mtf_permission_gate_acceptances": 10,
+          "mtf_permission_gate_rejections": 0,
+          "risk_governor_evaluations": 10,
+          "risk_governor_approvals": 2,
+          "risk_governor_rejections": 8,
+          "management_policy_evaluations": 12,
+          "flat_signal_opportunities": 10,
+          "accepted_entries": 2,
+          "occupied_or_superseded_signals": 0,
+          "rejected": {
+            "minimum_confidence": 8
+          },
+          "acceptance_rate_percent": 20,
+          "dominant_rejection": "minimum_confidence"
+        },
+        "wait_count": null,
+        "wait_count_status": "unavailable_not_inferred_from_signals_minus_entries_or_occupied_rows",
+        "explicit_commission_carry_cash": 3.761235599400239,
+        "spread_slippage": "already_embedded_in_executable_prices_not_separately_double_charged"
+      }
+    },
+    "december_standard__pretrend_6bars": {
+      "window": "december_standard",
+      "arm": "pretrend_6bars",
+      "source_process_status": "technical_terminal",
+      "appendix_status": "unassessable_unknown",
+      "original_budget_eligibility": {
+        "eligible": false,
+        "original_wall_seconds": 30168.475455099993,
+        "original_timeout_limit_seconds": 600,
+        "declared_arm_cap_seconds": 600,
+        "declared_global_cap_seconds": 5400,
+        "reason": "original_wall_or_timeout_limit_invalid_or_exceeded"
+      },
+      "artifacts": {
+        "request_sha256": "6e73d19c863a09158044fca010c33de0bd0c67b1cd21c53b7e40fcf03ddece9c",
+        "process_sha256": "0ed0e090daef964c134b83ec23dca1ce50e37ced9894ed2634001e6e584ead99",
+        "response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "witness_sha256": null,
+        "launch_sha256": "9a4bccf612339a2e7557a21245b8cec0b42aac671cd3f5d0c3077fd4f060b18b",
+        "worker_attempt_sha256": "c7b1742a5b7f62a21e82e5be66fd9d497e062e90d3eff45c16c8e8c33f843934"
+      },
+      "dataset_sha256": "770623e118d4a2d8ac29f561bfca8e8e34d26792526f45d12a7e8eab89a6475e",
+      "cost_sha256": "04403537588afd0e22efffc3e210b572ca660e8d751ab8d4dbdc7225a8fed7b5",
+      "economics": null
+    }
+  },
+  "comparisons": {
+    "october_pre_dst": {
+      "pairs": {
+        "time_given_proximity": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": -16.00644285346607,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": -16.00644285346607,
+            "mature_full_closes_delta": 7,
+            "closed_cash_drawdown_percent_delta": -0.48829621361367304,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "time_given_pretrend": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": -178.07144746226368,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": -178.07144746226368,
+            "mature_full_closes_delta": 0,
+            "closed_cash_drawdown_percent_delta": 0.025872623467494305,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "topology_given_unbounded": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": -45.62278644494472,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": -45.62278644494472,
+            "mature_full_closes_delta": -11,
+            "closed_cash_drawdown_percent_delta": -2.331130458480131,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "topology_given_6bars": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": -207.68779105374233,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": -207.68779105374233,
+            "mature_full_closes_delta": -18,
+            "closed_cash_drawdown_percent_delta": -1.8169616213989639,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "joint_vs_baseline": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": -223.6942339072084,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": -223.6942339072084,
+            "mature_full_closes_delta": -11,
+            "closed_cash_drawdown_percent_delta": -2.305257835012637,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        }
+      },
+      "reporting_projection_cash_interaction": -162.0650046087976,
+      "independent_validation": false,
+      "successful_original_replay_claim": false,
+      "total_marked_utility_claim": false
+    },
+    "december_standard": {
+      "pairs": {
+        "time_given_proximity": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": 132.33284165710393,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": 132.33284165710393,
+            "mature_full_closes_delta": 4,
+            "closed_cash_drawdown_percent_delta": -1.326269548037326,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "time_given_pretrend": {
+          "projection_pair_status": "unassessable_unknown",
+          "realized_cash_delta": null,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false
+        },
+        "topology_given_unbounded": {
+          "projection_pair_status": "matched_reporting_projections",
+          "realized_cash_delta": 189.928403359796,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false,
+          "account_contrast": {
+            "protocol": "offline_curator_scalp_account_contrast_v1",
+            "research_only": true,
+            "exact_realized_net_cash_delta": 189.928403359796,
+            "mature_full_closes_delta": -11,
+            "closed_cash_drawdown_percent_delta": -2.116384062365654,
+            "control_open_position_count": 0,
+            "candidate_open_position_count": 0,
+            "marked_total_account_contrast": null,
+            "same_entry_isolated_causal_contrast": false,
+            "independent_validation": false,
+            "economic_authority": false
+          },
+          "eof_open_exposure_present": false
+        },
+        "topology_given_6bars": {
+          "projection_pair_status": "unassessable_unknown",
+          "realized_cash_delta": null,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false
+        },
+        "joint_vs_baseline": {
+          "projection_pair_status": "unassessable_unknown",
+          "realized_cash_delta": null,
+          "source_process_statuses": [
+            "technical_terminal",
+            "technical_terminal"
+          ],
+          "independent_validation": false,
+          "successful_original_replay_claim": false,
+          "dominance_claim": false
+        }
+      },
+      "reporting_projection_cash_interaction": null,
+      "independent_validation": false,
+      "successful_original_replay_claim": false,
+      "total_marked_utility_claim": false
+    }
+  },
+  "scope": {
+    "symbol": "XAUUSD",
+    "execution_timeframe": "M5",
+    "data_exposure": "previously_seen_pre2026",
+    "all_2026_and_later": "paper_only",
+    "initial_account": 10000,
+    "risk_percent": 1,
+    "cost_model": "unchanged_modeled_execution_not_broker_calibration",
+    "observed_quote_sidecar_is_not_fill_path": true
+  },
+  "operating_lessons": [
+    {
+      "lesson": "six_row_exit_is_a_measured_short_holding_mechanism_not_a_profit_guarantee",
+      "basis": "40_mature_proximity_trades_across_two_seen_weeks_all_reported_holding_at_most30min",
+      "limit": "row_deadline_still_not_universal_wall_clock_or_intrabar_proof"
+    },
+    {
+      "lesson": "strict_pretrend_pullback_is_a_sparse_selective_setup_not_a_complete_daily_scalp_engine",
+      "basis": "5_and2_mature_trades_with3_and4_zero_close_eligible_days",
+      "limit": "do_not_ban_EMA_or_remove_risk_gates_from_small_sample"
+    },
+    {
+      "lesson": "shortening_a_pretrend_winner_can_reduce_return",
+      "basis": "October_pretrend_93.95_without_time_exit_vs_minus84.12_with_six_rows",
+      "limit": "whole_account_contextual_observation_not_isolated_trade_or_independent_effect"
+    },
+    {
+      "lesson": "session_results_need_repetition_before_a_selector_rule",
+      "basis": "descriptive_entry_context_groups_retained_for_every_verified_case",
+      "limit": "no_London_or_NewYork_ban_or_positive_authority_from_these_samples"
+    }
+  ],
+  "limitations": [
+    "Original eight process labels remain technical_terminal; seven retained calculation products have a separate projection_verified assessment.",
+    "Eighth product is unassessable after an unexplained clock/wait jump and external enforcement of its expired original deadline; no economic zero, replacement, or retry.",
+    "Original snapshot and byte archive remain unchanged; only the named UTC reporting parser/test correction differs in the new assessment.",
+    "The original blocking Windows subprocess wait did not enforce its absolute wall deadline promptly across the observed jump; this runner is not a qualified unattended supervisor. No further originals are launched.",
+    "Derived session/venue grouping is descriptive, not a decision-consumed field or causal session certificate.",
+    "No actual broker demo, independent qualification, learned agent policy, Master or Champion was created."
+  ]
+}

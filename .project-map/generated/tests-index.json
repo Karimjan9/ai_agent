@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-15T17:57:22.459Z",
-  "source_digest": "d8cb9992c1b6cb0c58193e5e18f1e77e1571457ff0e5082d7006216dc2e0a667",
-  "source_file_count": 1730,
-  "git_head": "0aaa7e367ac1272181220440561e69630b01147f",
+  "generated_at": "2026-10-16T04:31:09.205Z",
+  "source_digest": "cb05ba7392ec186d6c280b9c7f776f9063f9e13907d3923de82c6dea837989df",
+  "source_file_count": 1739,
+  "git_head": "4c0c1e17f55dda20843342e25dd9f18f4b015c76",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -319,6 +319,86 @@
         "test_original_producer_exception_restores_exact_callable",
         "test_unavailable_snapshot_without_completed_original_call_refuses",
         "test_metrics_do_not_mislabel_cost_or_unobserved_stop_path"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_scalp_metrics.py",
+      "tests": [
+        "test_trust_pin_and_reporting_version_are_not_caller_selectable",
+        "test_exact_explicit_registered_naive_csv_matches_original_utc_clock",
+        "test_only_exact_registered_adjacent_manifest_is_automatically_resolved",
+        "test_missing_changed_or_sideways_registration_refuses_naive_csv",
+        "test_local_time_or_ambiguous_semantics_is_not_utc_authorization",
+        "test_registered_csv_never_authorizes_naive_witness_or_returned_times",
+        "test_zero_trade_dates_remain_in_denominator_unknown_holdings_not_zero",
+        "test_buy_sell_daily_net_and_costs_reconcile_without_double_spread",
+        "test_original_verifier_technical_or_censor_refusal_is_not_zero_result",
+        "test_eof_open_is_not_mature_zero_or_marked_cash",
+        "test_archive_gap_breach_uses_wall_time_not_just_bar_count",
+        "test_ordinary_over_cap_not_reclassified_as_gap_and_same_bar_unknown",
+        "test_context_is_prior_closed_point_not_signal_open_or_exit_and_preserves_raw",
+        "test_exact_clock_scope_and_physical_request_tampering_refused",
+        "test_daily_original_cash_mismatch_refused",
+        "test_pair_requires_exact_account_clock_and_cost_not_matched_trade_claim",
+        "test_original_synthetic_owner_witness_and_clock_are_consumed_without_mock"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_scalp_observations.py",
+      "tests": [
+        "test_seven_assessed_products_do_not_relabel_eight_original_processes",
+        "test_instruction_is_not_agent_experience_confirmation_or_trading_authority",
+        "test_all_daily_cash_counts_contexts_and_matched_contrasts_reconcile"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_scalp_panel.py",
+      "tests": [
+        "test_only_two_physical_coordinates_change",
+        "test_exact_two_by_four_roster_and_wire_seals",
+        "test_risk_cost_and_undeclared_policy_drift_refused",
+        "test_original_global_and_per_arm_limits",
+        "test_expired_global_and_arm_cannot_renew",
+        "test_changed_deadline_parent_case_or_wire_refused",
+        "test_full_clock_warmup_and_interior_schedule",
+        "test_rehashed_clock_tamper_fails_against_exact_csv",
+        "test_duplicate_times_cannot_be_complete",
+        "test_all_eight_wires_precede_workers_raw_streams_precede_verification_and_no_retry",
+        "test_global_expiry_never_launches_and_is_not_cash_zero",
+        "test_timeout_preserves_partial_raw_streams_without_verification_or_retry",
+        "test_pairs_match_actual_clock_not_request_specific_receipts",
+        "test_technical_case_has_no_economic_delta",
+        "test_archive_entries_and_source_roster_are_exact_not_just_rehashed_zip",
+        "test_read_only_product_hash_rejects_changed_raw_bytes",
+        "test_inspector_rejects_summary_process_disagreement"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_scalp_preparation.py",
+      "tests": [
+        "test_all_eight_actual_wires_have_cross_language_schema_and_identity",
+        "test_all_arms_differ_only_in_predeclared_two_coordinates",
+        "test_no_agent_or_authority_and_bounded_single_attempt",
+        "test_selected_raw_rows_and_pre_paper_warmup_not_synthetic"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_curator_scalp_reporting.py",
+      "tests": [
+        "test_only_exact_reporting_exception_is_eligible",
+        "test_other_exception_or_foreign_stack_is_not_reporting_correction",
+        "test_utc_traceback_after_invalid_or_exceeded_original_budget_stays_unknown",
+        "test_original_worker_start_must_precede_original_global_and_arm_deadlines",
+        "test_supplemental_receipts_are_known_same_folder_hashes_not_original_artifacts",
+        "test_all_originals_terminal_before_any_projection",
+        "test_only_exact_two_correction_files_may_change",
+        "test_original_zip_entries_are_verified_despite_rehashed_container",
+        "test_precorrection_inspection_binds_summary_and_all_artifacts",
+        "test_changed_raw_product_hash_refuses_without_modification",
+        "test_source_checks_do_not_call_old_frozen_owner",
+        "test_projection_comparisons_preserve_original_technical_labels_and_open_unknown",
+        "test_same_count_with_changed_schedule_never_compares",
+        "test_read_only_assessment_uses_mocked_products_and_never_rewrites_originals"
       ]
     },
     {
