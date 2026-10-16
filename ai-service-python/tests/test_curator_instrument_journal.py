@@ -1,7 +1,8 @@
 """Public journal custody and synthetic selected-classifier checks only.
 
-No private original product is opened and no replay is invoked. Presence of a
-review record is not proof that its source claims or a trading method are true.
+No replay is invoked. Optional completed-summary/PDF custody tests reopen their
+explicit retained bytes read-only, never partial worker outputs. A review record
+is not proof that its source claims or a trading method are true.
 The optional ta package is not installed by this test: the actual selected
 classifier path, including the existing fallback when absent, is tested honestly.
 """
@@ -53,8 +54,9 @@ def synthetic_closed_prices():
 class CuratorInstrumentJournalTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Only these three public events are read. Later result events, private
-        # summaries and partial worker products are deliberately not discovered.
+        # Pin the first three original public events for these fixture assertions.
+        # Separate tests explicitly reopen later published events and, if present,
+        # the complete summary/source PDFs. Partial worker products are not read.
         cls.raw = [(JOURNAL / name).read_bytes() for name in EVENT_NAMES]
         cls.events = [json.loads(raw) for raw in cls.raw]
 

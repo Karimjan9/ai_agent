@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T07:28:08.992Z",
-  "source_digest": "fe1dc779b7f7ff0c505da24887716a66484b3c5f99dbd9c01fdfa161815c57ee",
+  "generated_at": "2026-10-16T07:34:23.645Z",
+  "source_digest": "b0b32c816ef827264554072f42940345fd122a0bc1c2d3898711d5d239bb0d3b",
   "source_file_count": 1756,
-  "git_head": "33767fdc523778087b865abeb32dbd4c8016ad6e",
+  "git_head": "7b344c0ff853d1f99f6e90dec8335337666e4073",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "causal-learning",
   "paths": [
@@ -3186,103 +3186,103 @@
       "symbol": "test_subsequent_captures_do_not_claim_to_be_pre_outcome_attestations",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 108
+      "line": 110
     },
     {
       "symbol": "test_retained_actual_pdf_captures_match_the_recorded_bytes",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 120
+      "line": 122
     },
     {
       "symbol": "test_public_terminal_account_table_is_not_a_qualified_skill",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 131
+      "line": 133
     },
     {
       "symbol": "test_private_original_summary_reproduces_each_public_result_without_replay",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 146
+      "line": 148
     },
     {
       "symbol": "test_source_records_have_real_text_and_explicit_unreviewed_boundaries",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 170
+      "line": 172
     },
     {
       "symbol": "test_prospective_question_and_followup_preserve_their_bounded_scope",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 197
+      "line": 199
     },
     {
       "symbol": "SelectedClassifierContextGateTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 220
+      "line": 222
     },
     {
       "symbol": "classify_and_gate",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 221
+      "line": 223
     },
     {
       "symbol": "test_actual_selected_dependency_path_is_explicit_not_claimed_as_optional_ta",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 228
+      "line": 230
     },
     {
       "symbol": "test_actual_classifier_then_registered_gate_is_exact_on_mature_prefixes",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 245
+      "line": 247
     },
     {
       "symbol": "test_optional_ta_binding_when_available",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 272
+      "line": 274
     },
     {
       "symbol": "synthetic_closed_prices",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 41
+      "line": 42
     },
     {
       "symbol": "CuratorInstrumentJournalTest",
       "kind": "python_class",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 53
+      "line": 54
     },
     {
       "symbol": "setUpClass",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 55
+      "line": 56
     },
     {
       "symbol": "test_three_public_events_keep_protocol_instrument_and_no_authority",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 61
+      "line": 63
     },
     {
       "symbol": "test_exact_original_bytes_form_source_question_addendum_sha_chain",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 77
+      "line": 79
     },
     {
       "symbol": "test_every_public_event_extends_one_exact_historical_chain",
       "kind": "python_function",
       "path": "ai-service-python/tests/test_curator_instrument_journal.py",
-      "line": 92
+      "line": 94
     },
     {
       "symbol": "test_real_naive_utc_rows_require_full_native_manifest_rederivation",
