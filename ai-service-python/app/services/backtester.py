@@ -6024,9 +6024,88 @@ def _intrabar_exit(
     return None, None
 
 
+def _closed_setup_geometry(
+    market_price: float, signal_row: pd.Series, payload: SimpleBacktestRequest,
+    *, execution_at: object | None = None,
+) -> dict[str, object]:
+    """Bound the explicit lab recipe to its own completed-price proposal.
+
+    This is not a confirmation-entry passport or a caller-provided stop port.
+    The registered source strategies overwrite the entry_* proof fields. The
+    execution owner adds one point and fixes nominal2R from the actual fill;
+    ordinary stopped-fill/commission sizing still owns the account ceiling.
+    """
+    refused = lambda reason: {'allowed': False, 'reason': reason}
+    p = payload.parameters
+    if p.get('intraday_exit_variant') != 'closed_setup_2r_v1':
+        return refused('closed_setup_variant_invalid')
+    from app.strategies.registry import get_strategy
+    from app.strategies.laboratory import apply_trend_specialist, apply_trend_retest_strategy
+    try:
+        function = get_strategy(payload.strategy, payload.base_strategy)
+    except (KeyError, ValueError):
+        return refused('closed_setup_runtime')
+    topology = p.get('entry_topology_variant')
+    if function is apply_trend_specialist and topology == 'source_ema_pretrend_pullback_v1':
+        source_protocol = 'closed_ema_pretrend_entry_v1'
+    elif function is apply_trend_retest_strategy and topology == 'source_frozen_retest_v1' and p.get('lookback', 20) == 20:
+        source_protocol = 'closed_frozen_retest_entry_v1'
+    else:
+        return refused('closed_setup_runtime')
+    if p.get('ema_fast') != 20 or p.get('ema_slow') != 50 or payload.signal_delay_candles != 0:
+        return refused('closed_setup_runtime')
+    direction = str(signal_row.get('signal', ''))
+    text_proof = {'entry_setup_direction': direction, 'source_entry_rule_direction': direction,
+        'entry_setup_protocol': 'closed_setup_2r_v1', 'source_entry_rule_protocol': source_protocol}
+    if (direction not in {'BUY', 'SELL'}
+            or any(not isinstance(signal_row.get(key), str) or signal_row.get(key) != value
+                for key, value in text_proof.items())
+            or not all(isinstance(signal_row.get(key), (bool, np.bool_)) and bool(signal_row.get(key))
+                for key in ('source_entry_rule_available', 'source_entry_rule_admitted'))):
+        return refused('closed_setup_original_proposal_required')
+    try:
+        source = pd.Timestamp(signal_row.get('entry_setup_source_time'))
+        original = pd.Timestamp(signal_row.get('time'))
+        available = pd.Timestamp(signal_row.get('entry_setup_available_at'))
+        if any(pd.isna(value) or value.tzinfo is None for value in (source, original, available)):
+            return refused('closed_setup_original_clock_required')
+        duration = pd.Timedelta(minutes=_timeframe_duration_minutes(payload.timeframe))
+        if source != original or available != source + duration:
+            return refused('closed_setup_original_clock_required')
+        if execution_at is not None:
+            execution = pd.Timestamp(execution_at)
+            if pd.isna(execution) or execution.tzinfo is None or execution != available:
+                return refused('closed_setup_nonadjacent_execution')
+        anchor = float(signal_row.get('entry_setup_invalidation_price'))
+        point = float(payload.execution.point_size)
+        market = float(market_price)
+        if not all(math.isfinite(value) and value > 0 for value in (anchor, point, market)):
+            return refused('closed_setup_geometry_unavailable')
+        stop = anchor - point if direction == 'BUY' else anchor + point
+        if stop <= 0 or (stop >= market if direction == 'BUY' else stop <= market):
+            return refused('closed_setup_invalidation_crossed')
+        entry = _entry_price(market, direction, payload)
+        risk = entry - stop if direction == 'BUY' else stop - entry
+        target = entry + 2.0 * risk if direction == 'BUY' else entry - 2.0 * risk
+        stop_distance = market - stop if direction == 'BUY' else stop - market
+        target_distance = target - market if direction == 'BUY' else market - target
+        if not all(math.isfinite(value) and value > 0 for value in (entry, risk, stop_distance, target, target_distance)):
+            return refused('closed_setup_geometry_unavailable')
+    except (TypeError, ValueError, OverflowError):
+        return refused('closed_setup_geometry_unavailable')
+    return {'allowed': True, 'reason': None, 'stop_price': stop, 'target_price': target,
+        'entry_price': entry, 'stop_distance': stop_distance, 'target_distance': target_distance,
+        'nominal_reward_r': 2.0, 'net_reward_r_claimed': False}
+
+
 def _exit_distances(
     market_price: float, signal_row: pd.Series, payload: SimpleBacktestRequest
 ) -> tuple[float, float]:
+    if 'intraday_exit_variant' in payload.parameters:
+        geometry = _closed_setup_geometry(market_price, signal_row, payload)
+        if not geometry['allowed']:
+            raise ValueError(str(geometry['reason']))
+        return float(geometry['stop_distance']), float(geometry['target_distance'])
     atr = float(signal_row.get("_management_atr", 0) or 0)
     stop_multiplier = payload.parameters.get("atr_stop_multiplier")
     target_multiplier = payload.parameters.get("atr_target_multiplier")
@@ -6695,6 +6774,10 @@ def _entry_eligibility(
         if float(row.get("volume", 0) or 0) < execution.min_volume:
             return False, "minimum_volume"
     if signal_row is not None:
+        if 'intraday_exit_variant' in payload.parameters:
+            geometry = _closed_setup_geometry(float(row['open']), signal_row, payload, execution_at=row['time'])
+            if not geometry['allowed']:
+                return False, str(geometry['reason'])
         # These columns are supplied only by a time-aligned official calendar
         # or risk controller. Missing data never masquerades as a veto.
         if pd.notna(signal_row.get("news_veto", False)) and bool(
@@ -6776,7 +6859,7 @@ def _entry_eligibility(
         expected_target = atr * float(
             payload.parameters.get("atr_target_multiplier", 0) or 0
         )
-        if str(signal_row.get("entry_contract_protocol", "")) in {
+        if 'intraday_exit_variant' in payload.parameters or str(signal_row.get("entry_contract_protocol", "")) in {
             "confirmation_entry_contract_v1",
             ENTRY_PROTOCOL,
         }:
@@ -7141,6 +7224,10 @@ def _open_shadow_position(
     veto prevented, under otherwise identical costs and exits.
     """
     market_price = float(candle["open"])
+    if 'intraday_exit_variant' in payload.parameters:
+        geometry = _closed_setup_geometry(market_price, signal_row, payload, execution_at=candle['time'])
+        if not geometry['allowed']:
+            return None
     entry_price = _entry_price(market_price, direction, payload)
     stop_distance, target_distance = _exit_distances(market_price, signal_row, payload)
     if direction == "BUY":

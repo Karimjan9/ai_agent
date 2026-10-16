@@ -1,5 +1,24 @@
 # Laboratory lifecycle states
 
+## Explicit source-owned intraday geometry
+
+`source_frozen_retest_v1` and `closed_setup_2r_v1` are explicit research keys,
+not ordinary topology/default/sampling additions. The actual trend-retest
+runtime shares the trend schema without changing its old executable control.
+Only source-owned EMA20/50 pretrend or frozen prior20 retest proposals may
+request this exit. Existing confidence arithmetic, ADX/RSI, session and hard
+risk gates remain unchanged. Retest does not acquire an unowned lookback gene.
+
+The strategy overwrites the completed proposal's direction, availability,
+clock and invalidation fields. EMA uses the three closed setup rows; retest
+uses its closed rejection row. The ordinary executor revalidates exact source
+identity and immediate next-open availability, adds a one-point stop buffer
+and calculates nominal 2R from the actual entry. Missing/forged/crossed or
+nonadjacent geometry yields refusal, not an ATR fallback or forced fill.
+Stopped-fill/account sizing retains the original risk ceiling and costs;
+nominal 2R is not net reward or economic qualification. Old controls and
+models are not rewritten, and no agent-owned learning or authority is created.
+
 ## Explicit Bollinger context treatment
 
 An explicitly supplied `session_context_gate` accepts only `none` or

@@ -1,5 +1,31 @@
 # Integrations and runtime boundaries
 
+## Fixed full-month three-method curator replication
+
+`curator_intraday_month_windows.py` reuses the unchanged native raw-parent and
+calendar owners. Its strict two-month manifest rederives every original cell,
+200 warmup rows, both month edges and the refused Q1 gaps. Raw header/BOM,
+provider volume and missing quote observations are preserved. A changed
+calendar-owner file seal requires a separate prospective data publication,
+not mutation of the original manifest or calendar relaxation.
+
+`prepare-curator-intraday-methods.php` uses actual isolated source classes and
+SQLite memory-only Library/Foundry/ResearchBinding compilation, not application
+bootstrap, dotenv or production DB. Two data-bound Bollinger exit contracts
+and six baseline identities yield twelve original requests. The Python
+`curator_complete_intraday_methods` adapter revalidates actual strategy/schema,
+wire, cost, data and source identities through the existing offline owner.
+
+Explicit EMA/retest strategy producers own closed setup proof; the ordinary
+backtester owns next-open validation, one-point stop buffer, nominal2R and
+existing stopped-fill/account sizing. The full-close witness independently
+reopens the exact CSV, recomputes source signals without trades and reconciles
+actual entry geometry/clock with the original ledger. Generic controls remain
+on their old path. Fixed modeled costs do not fill absent BID/ASK, nominal2R
+does not claim net reward, and closed-cash drawdown is not marked equity.
+No scheduler, agent-owned outcome import, economic/independent authority,
+production change or broker/demo execution is introduced; 2026+ remains paper.
+
 ## Explicit complete-recipe offline comparison
 
 The whole-month producer reuses the unchanged native calendar/raw-parent owner.

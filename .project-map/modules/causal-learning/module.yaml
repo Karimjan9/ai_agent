@@ -10,6 +10,13 @@ aliases:
   - composition
   - research-paper-epoch
 paths:
+  - ai-service-python/scripts/curator_intraday_month_windows.py
+  - ai-service-python/scripts/curator_complete_intraday_methods.py
+  - ai-service-python/tests/test_curator_intraday_month_windows.py
+  - ai-service-python/tests/test_complete_intraday_methods.py
+  - backend-laravel/scripts/prepare-curator-intraday-methods.php
+  - backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php
+  - docs/research/methods/intraday-completion
   - ai-service-python/scripts/curator_bollinger_month_window.py
   - ai-service-python/scripts/curator_bollinger_recipe.py
   - ai-service-python/scripts/curator_bollinger_recipe_evidence.py
@@ -339,6 +346,12 @@ paths:
   - ai-service-python/app/services/instrument_research.py
   - ai-service-python/app/services/prospective_probe_window.py
 entry_points:
+  - ai-service-python/scripts/curator_intraday_month_windows.py --prepare
+  - ai-service-python/scripts/curator_intraday_month_windows.py --validate
+  - backend-laravel/scripts/prepare-curator-intraday-methods.php --windows --windows-sha256
+  - curator_complete_intraday_methods.validate
+  - curator_complete_intraday_methods.verify_response
+  - curator_complete_intraday_methods.comparisons
   - ai-service-python/scripts/curator_instrument_windows.py --prepare
   - ai-service-python/scripts/curator_instrument_windows.py --validate
   - ai-service-python/scripts/curator_instrument_study.py --prepare
@@ -564,6 +577,9 @@ docs:
   - history.md
   - ../../../docs/operations/curator-management-practice-2026-10-15.md
 tests:
+  - ai-service-python/tests/test_curator_intraday_month_windows.py
+  - ai-service-python/tests/test_complete_intraday_methods.py
+  - backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php
   - ai-service-python/tests/test_curator_instrument_journal.py
   - ai-service-python/tests/test_curator_instrument_windows.py
   - ai-service-python/tests/test_curator_instrument_study.py

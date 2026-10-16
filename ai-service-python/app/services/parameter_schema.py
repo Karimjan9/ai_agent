@@ -433,6 +433,27 @@ def validate_strategy_parameters(
         raise ValueError(f"Parameter schema topilmadi: {family}")
 
     values = parameters or {}
+    if values.get('entry_topology_variant') == 'source_frozen_retest_v1':
+        from app.strategies.laboratory import apply_trend_retest_strategy
+        from app.strategies.registry import get_strategy
+        if (strategy_family(strategy) != 'trend' or family != 'trend'
+                or get_strategy(strategy, base_strategy) is not apply_trend_retest_strategy
+                or values.get('ema_fast') != 20 or values.get('ema_slow') != 50
+                or values.get('lookback', 20) != 20):
+            raise ValueError('SOURCE_FROZEN_RETEST_FIXED_ACTUAL_TREND_RETEST_20_50_CHANNEL20_REQUIRED')
+        schema = {**schema, 'entry_topology_variant': {**schema['entry_topology_variant'],
+            'choices': schema['entry_topology_variant']['choices'] | {'source_frozen_retest_v1'}}}
+    if 'intraday_exit_variant' in values:
+        from app.strategies.laboratory import apply_trend_specialist, apply_trend_retest_strategy
+        from app.strategies.registry import get_strategy
+        function = get_strategy(strategy, base_strategy)
+        expected = ('source_ema_pretrend_pullback_v1' if function is apply_trend_specialist
+                    else 'source_frozen_retest_v1' if function is apply_trend_retest_strategy else None)
+        if (strategy_family(strategy) != 'trend' or family != 'trend' or expected is None
+                or values.get('entry_topology_variant') != expected
+                or values.get('ema_fast') != 20 or values.get('ema_slow') != 50):
+            raise ValueError('INTRADAY_EXIT_SOURCE_OWNED_RUNTIME_REQUIRED')
+        schema = {**schema, 'intraday_exit_variant': {'type': str, 'choices': {'closed_setup_2r_v1'}}}
     if "session_context_gate" in values:
         # Keep this key outside ordinary schema/default/sampling rosters.
         # Family aliases alone cannot prove which session function executes:

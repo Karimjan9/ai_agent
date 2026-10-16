@@ -65,12 +65,18 @@ def _apply_source_ema_pretrend_pullback(df: pd.DataFrame, parameters: dict) -> p
     out['source_entry_rule_available'] = [row['method_pullback_pretrend_available'] for row in owner.features]
     out['source_entry_rule_direction'] = direction
     out['source_entry_rule_admitted'] = out.signal.ne('WAIT')
+    if 'intraday_exit_variant' in parameters:
+        if parameters['intraday_exit_variant'] != 'closed_setup_2r_v1':
+            raise ValueError('INTRADAY_EXIT_VARIANT_INVALID')
+        _publish_closed_setup_geometry(out, seconds, window_rows=3)
     return out
 
 
 def apply_trend_retest_strategy(df: pd.DataFrame, parameters: dict | None = None) -> pd.DataFrame:
     """Breakout-retest trend continuation, distinct from EMA pullback logic."""
     p = parameters or {}
+    if p.get('entry_topology_variant') == 'source_frozen_retest_v1':
+        return _apply_source_frozen_retest(df, p)
     out = df.copy()
     lookback = int(p.get("lookback", 20))
     strength = float(p.get("trend_strength_min", 20))
@@ -88,6 +94,83 @@ def apply_trend_retest_strategy(df: pd.DataFrame, parameters: dict | None = None
     out.loc[(fast < slow) & (out.get("adx", 0) >= strength) & bearish_retest, "signal"] = "SELL"
     distance = ((out.close - prior_high).abs().where(out.close >= prior_high, (out.close - prior_low).abs()) / atr).fillna(2)
     out["signal_confidence"] = ((out.get("adx", 0) - strength) / max(1, 50 - strength) * (1 - distance.clip(0, 1))).clip(0, 1)
+    return out
+
+
+def _publish_closed_setup_geometry(out: pd.DataFrame, seconds: int, *, window_rows: int) -> None:
+    """Original completed-price anchors; execution owns its one-point buffer.
+
+    Always overwrite all proof columns, including WAIT rows. Supplied CSV
+    fields cannot become entry geometry. They move with the proposal through
+    the existing entry_* signal-delay projection (the new recipe uses zero).
+    """
+    buy, sell = out.signal.eq('BUY'), out.signal.eq('SELL')
+    active = buy | sell
+    low = out.low.rolling(window_rows, min_periods=window_rows).min()
+    high = out.high.rolling(window_rows, min_periods=window_rows).max()
+    out['entry_setup_invalidation_price'] = float('nan')
+    out.loc[buy, 'entry_setup_invalidation_price'] = low[buy]
+    out.loc[sell, 'entry_setup_invalidation_price'] = high[sell]
+    clock = pd.to_datetime(out.time, utc=True, errors='raise')
+    available = clock + pd.Timedelta(seconds=seconds)
+    out['entry_setup_protocol'] = ''
+    out['entry_setup_direction'] = 'WAIT'
+    out['entry_setup_source_time'] = ''
+    out['entry_setup_available_at'] = ''
+    out.loc[active, 'entry_setup_protocol'] = 'closed_setup_2r_v1'
+    out.loc[active, 'entry_setup_direction'] = out.loc[active, 'signal']
+    out.loc[active, 'entry_setup_source_time'] = clock[active].map(lambda value: value.isoformat())
+    out.loc[active, 'entry_setup_available_at'] = available[active].map(lambda value: value.isoformat())
+
+
+def _apply_source_frozen_retest(df: pd.DataFrame, parameters: dict) -> pd.DataFrame:
+    """Explicit closed rejection of a frozen prior20-channel level.
+
+    Source concepts and lab periods/expiry/confirmation are separate. Preserve
+    the ADX strength and clipped-distance confidence transform, but this new
+    topology measures distance to its own original frozen level. The old
+    moving-channel programme and threshold remain unchanged.
+    """
+    from app.services.instrument_method_features import ClosedInstrumentMethodFeatures
+
+    if parameters.get('ema_fast') != 20 or parameters.get('ema_slow') != 50 or parameters.get('lookback', 20) != 20:
+        raise ValueError('SOURCE_FROZEN_RETEST_FIXED_20_50_CHANNEL20_REQUIRED')
+    seconds = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800, 'H1': 3600,
+               'H4': 14400, 'D1': 86400}.get(df.attrs.get('execution_timeframe'))
+    if seconds is None:
+        raise ValueError('SOURCE_FROZEN_RETEST_ACTUAL_EXECUTION_CLOCK_REQUIRED')
+    if 'adx' not in df:
+        raise ValueError('SOURCE_FROZEN_RETEST_ORIGINAL_ADX_REQUIRED')
+    owner = ClosedInstrumentMethodFeatures(df, bar_duration_seconds=seconds)
+    out = apply_trend_retest_strategy(df, {**parameters, 'entry_topology_variant': 'frozen'})
+    direction = pd.Series([row['_retest_direction'] or 'WAIT' for row in owner.features], index=out.index)
+    levels = pd.Series([row['_retest_level'] for row in owner.features], index=out.index, dtype=float)
+    fast = pd.Series([row['_ema20'] for row in owner.features], index=out.index, dtype=float)
+    slow = pd.Series([row['_ema50'] for row in owner.features], index=out.index, dtype=float)
+    strength = float(parameters.get('trend_strength_min', 20))
+    atr = pd.to_numeric(out.get('atr_regime', (out.high - out.low).rolling(14).mean()), errors='coerce')
+    atr = atr.replace([float('inf'), float('-inf')], float('nan')).where(atr.gt(0))
+    geometry_available = levels.notna() & atr.notna()
+    buy = (direction.eq('BUY') & (out.close > out.open) & (out.low <= levels)
+           & (out.close > levels) & (fast > slow) & (out.adx >= strength) & geometry_available)
+    sell = (direction.eq('SELL') & (out.close < out.open) & (out.high >= levels)
+            & (out.close < levels) & (fast < slow) & (out.adx >= strength) & geometry_available)
+    out['signal'] = 'WAIT'
+    out.loc[buy, 'signal'] = 'BUY'
+    out.loc[sell, 'signal'] = 'SELL'
+    distance = ((out.close - levels).abs() / atr).fillna(2)
+    out['signal_confidence'] = ((out.adx - strength) / max(1, 50 - strength)
+        * (1 - distance.clip(0, 1))).clip(0, 1)
+    out['entry_topology_variant'] = 'source_frozen_retest_v1'
+    out['source_entry_rule_protocol'] = 'closed_frozen_retest_entry_v1'
+    out['source_entry_rule_available'] = [row['method_retest_available'] for row in owner.features]
+    out['source_entry_rule_direction'] = direction
+    out['source_entry_rule_admitted'] = out.signal.ne('WAIT')
+    out['entry_retest_frozen_level'] = levels
+    if 'intraday_exit_variant' in parameters:
+        if parameters['intraday_exit_variant'] != 'closed_setup_2r_v1':
+            raise ValueError('INTRADAY_EXIT_VARIANT_INVALID')
+        _publish_closed_setup_geometry(out, seconds, window_rows=1)
     return out
 
 

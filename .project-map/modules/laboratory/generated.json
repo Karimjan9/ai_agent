@@ -2,13 +2,15 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T09:57:09.888Z",
-  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
-  "source_file_count": 1767,
-  "git_head": "fdb410ac50b18c5785991b38cd5f064e88a38021",
+  "generated_at": "2026-10-16T10:58:48.899Z",
+  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
+  "source_file_count": 1775,
+  "git_head": "5ada46db0581c2c16ca2c5a10206d42f4afce5af",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "laboratory",
   "paths": [
+    "ai-service-python/tests/test_source_intraday_geometry.py",
+    "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
     "ai-service-python/tests/test_bollinger_complete_method.py",
     "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
     "backend-laravel/app/Services/StrategyParameterSchemaService.php",
@@ -137,6 +139,7 @@
     "ai-service-python/tests/test_bollinger_context_gate.py",
     "ai-service-python/tests/test_curator_intraday_strategies.py",
     "ai-service-python/tests/test_source_ema_pretrend_entry.py",
+    "ai-service-python/tests/test_source_intraday_geometry.py",
     "ai-service-python/tests/test_trailing_activation.py",
     "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php",
     "backend-laravel/app/Console/Commands/BuildLabGeneration.php",
@@ -248,6 +251,7 @@
     "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
     "backend-laravel/tests/Unit/NativeReachabilityDepthReceiptValidatorTest.php",
     "backend-laravel/tests/Unit/SessionMeanReversionSchemaParityTest.php",
+    "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
     "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php"
   ],
   "symbols": [
@@ -276,52 +280,52 @@
       "line": 424
     },
     {
+      "symbol": "_publish_closed_setup_geometry",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 100
+    },
+    {
+      "symbol": "_apply_source_frozen_retest",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 126
+    },
+    {
+      "symbol": "apply_volatility_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 177
+    },
+    {
       "symbol": "apply_volatility_breakout_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 125
+      "line": 208
     },
     {
       "symbol": "apply_mean_reversion_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 130
+      "line": 213
     },
     {
       "symbol": "apply_mean_reversion_rsi_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 174
+      "line": 257
     },
     {
       "symbol": "apply_range_reentry_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 179
+      "line": 262
     },
     {
       "symbol": "_rsi",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 224
-    },
-    {
-      "symbol": "apply_session_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 231
-    },
-    {
-      "symbol": "apply_session_mean_reversion_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 246
-    },
-    {
-      "symbol": "apply_momentum_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 283
+      "line": 307
     },
     {
       "symbol": "_apply_source_ema_pretrend_pullback",
@@ -330,22 +334,28 @@
       "line": 31
     },
     {
+      "symbol": "apply_session_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 314
+    },
+    {
+      "symbol": "apply_session_mean_reversion_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 329
+    },
+    {
+      "symbol": "apply_momentum_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 366
+    },
+    {
       "symbol": "apply_momentum_pullback_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 310
-    },
-    {
-      "symbol": "apply_hybrid_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 324
-    },
-    {
-      "symbol": "clipped_confidence",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 398
+      "line": 393
     },
     {
       "symbol": "apply_trend_specialist",
@@ -354,40 +364,46 @@
       "line": 4
     },
     {
+      "symbol": "apply_hybrid_strategy",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 407
+    },
+    {
+      "symbol": "clipped_confidence",
+      "kind": "python_function",
+      "path": "ai-service-python/app/strategies/laboratory.py",
+      "line": 481
+    },
+    {
       "symbol": "apply_hybrid_consensus_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 520
+      "line": 603
     },
     {
       "symbol": "apply_differential_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 554
+      "line": 637
     },
     {
       "symbol": "apply_differential_trend_down_router_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 628
+      "line": 711
     },
     {
       "symbol": "apply_regime_ensemble_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 633
+      "line": 716
     },
     {
       "symbol": "apply_trend_retest_strategy",
       "kind": "python_function",
       "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 71
-    },
-    {
-      "symbol": "apply_volatility_strategy",
-      "kind": "python_function",
-      "path": "ai-service-python/app/strategies/laboratory.py",
-      "line": 94
+      "line": 75
     },
     {
       "symbol": "test_only_original_closed_inputs_can_publish_midline",
@@ -754,6 +770,132 @@
       "kind": "python_function",
       "path": "ai-service-python/tests/test_source_ema_pretrend_entry.py",
       "line": 99
+    },
+    {
+      "symbol": "test_source_retest_gaps_expiry_and_future_bars_cannot_retroactively_confirm",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 111
+    },
+    {
+      "symbol": "test_new_retest_confidence_uses_own_frozen_level_and_missing_inputs_wait",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 127
+    },
+    {
+      "symbol": "test_supplied_csv_proof_is_overwritten_and_legacy_paths_ignore_it",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 143
+    },
+    {
+      "symbol": "test_schema_is_explicit_fixed_and_actual_runtime_owned",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 154
+    },
+    {
+      "symbol": "ClosedSetupExecutionGeometryTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 170
+    },
+    {
+      "symbol": "row",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 171
+    },
+    {
+      "symbol": "test_actual_fill_one_point_stop_and_nominal_two_r_use_existing_cost_aware_sizing",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 177
+    },
+    {
+      "symbol": "legacy_retest",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 20
+    },
+    {
+      "symbol": "test_missing_wrong_side_future_direction_base_and_gap_are_vetoed_without_shadow_fallback",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 200
+    },
+    {
+      "symbol": "test_real_structural_target_not_unrelated_atr_controls_cost_guard",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 220
+    },
+    {
+      "symbol": "test_structural_orders_keep_existing_conservative_and_gap_stop_execution",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 232
+    },
+    {
+      "symbol": "OriginalSourceIntradayReplayTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 250
+    },
+    {
+      "symbol": "setUpClass",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 254
+    },
+    {
+      "symbol": "test_both_actual_programmes_fill_with_own_structural_stop_and_no_larger_risk",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 269
+    },
+    {
+      "symbol": "retest_source",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 38
+    },
+    {
+      "symbol": "retest_parameters",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 47
+    },
+    {
+      "symbol": "request",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 52
+    },
+    {
+      "symbol": "SourceIntradayProposalTest",
+      "kind": "python_class",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 63
+    },
+    {
+      "symbol": "test_existing_retest_default_and_frozen_values_remain_byte_exact",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 64
+    },
+    {
+      "symbol": "test_optional_ema_management_preserves_all_old_columns_confidence_and_inputs",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 73
+    },
+    {
+      "symbol": "test_retest_freezes_original_level_and_requires_directional_closed_rejection",
+      "kind": "python_function",
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "line": 87
     },
     {
       "symbol": "test_activation_latches_and_ratchet_never_loosens_after_unfavorable_close",
@@ -8229,49 +8371,49 @@
       "symbol": "runtimeBaseStrategy",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 276
+      "line": 277
     },
     {
       "symbol": "schema",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 303
+      "line": 304
     },
     {
       "symbol": "canonicalizeForIdentity",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 331
+      "line": 336
     },
     {
       "symbol": "defaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 353
+      "line": 358
     },
     {
       "symbol": "validate",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 435
+      "line": 440
     },
     {
       "symbol": "normalizeForGeneration",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 500
+      "line": 519
     },
     {
       "symbol": "clamp",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 540
+      "line": 559
     },
     {
       "symbol": "executionDefaults",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/StrategyParameterSchemaService.php",
-      "line": 562
+      "line": 581
     },
     {
       "symbol": "StrategyParameterSchemaService",
@@ -11052,6 +11194,24 @@
       "line": 63
     },
     {
+      "symbol": "SourceIntradayGeometrySchemaTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
+      "line": 12
+    },
+    {
+      "symbol": "test_new_variants_do_not_enter_ordinary_default_or_sampling_rosters",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
+      "line": 14
+    },
+    {
+      "symbol": "test_exact_source_runtime_and_fixed_periods_match_python_and_refuse_spoofed_bases",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
+      "line": 28
+    },
+    {
       "symbol": "test_composite_runtime_keeps_its_identity_when_parent_metadata_is_stale",
       "kind": "php_method",
       "path": "backend-laravel/tests/Unit/StrategyParameterSchemaServiceTest.php",
@@ -11096,6 +11256,23 @@
         "test_schema_preserves_explicit_vector_and_effective_registered_recross_precedence",
         "test_schema_rejects_gate_for_wrong_family_or_effective_breakout_runtime",
         "test_schema_rejects_non_enum_values_instead_of_silently_disabling_gate"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "tests": [
+        "test_existing_retest_default_and_frozen_values_remain_byte_exact",
+        "test_optional_ema_management_preserves_all_old_columns_confidence_and_inputs",
+        "test_retest_freezes_original_level_and_requires_directional_closed_rejection",
+        "test_source_retest_gaps_expiry_and_future_bars_cannot_retroactively_confirm",
+        "test_new_retest_confidence_uses_own_frozen_level_and_missing_inputs_wait",
+        "test_supplied_csv_proof_is_overwritten_and_legacy_paths_ignore_it",
+        "test_schema_is_explicit_fixed_and_actual_runtime_owned",
+        "test_actual_fill_one_point_stop_and_nominal_two_r_use_existing_cost_aware_sizing",
+        "test_missing_wrong_side_future_direction_base_and_gap_are_vetoed_without_shadow_fallback",
+        "test_real_structural_target_not_unrelated_atr_controls_cost_guard",
+        "test_structural_orders_keep_existing_conservative_and_gap_stop_execution",
+        "test_both_actual_programmes_fill_with_own_structural_stop_and_no_larger_risk"
       ]
     },
     {
@@ -12194,6 +12371,13 @@
         "fakeAiIdle",
         "errorLogExists",
         "cleanLogDir"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
+      "tests": [
+        "test_new_variants_do_not_enter_ordinary_default_or_sampling_rosters",
+        "test_exact_source_runtime_and_fixed_periods_match_python_and_refuse_spoofed_bases"
       ]
     }
   ]

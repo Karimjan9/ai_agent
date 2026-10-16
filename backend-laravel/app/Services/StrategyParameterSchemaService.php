@@ -259,6 +259,7 @@ class StrategyParameterSchemaService
         $family = preg_replace('/_v\d+$/', '', $family) ?: $family;
 
         return match ($family) {
+            'trend_retest' => 'trend',
             'session_mean_reversion' => 'session',
             'mtf_research_control' => 'mtf_research_control',
             'mtf_research_playbook' => 'mtf_research_playbook',
@@ -309,6 +310,10 @@ class StrategyParameterSchemaService
         // programme, and validate() additionally pins its family/EMA vector.
         if ($includeExplicitResearch && isset($schema['entry_topology_variant'])) {
             $schema['entry_topology_variant'][1][] = 'source_ema_pretrend_pullback_v1';
+            $schema['entry_topology_variant'][1][] = 'source_frozen_retest_v1';
+        }
+        if ($includeExplicitResearch && $this->family($strategy) === 'trend') {
+            $schema['intraday_exit_variant'] = ['string', ['closed_setup_2r_v1']];
         }
         // This prospective management treatment must not enter ordinary
         // random construction, mutation or historical novelty rosters.
@@ -438,6 +443,20 @@ class StrategyParameterSchemaService
         $schema = $this->schema($strategy, true);
         if (! $schema) {
             throw new InvalidArgumentException("Parameter schema topilmadi: {$family}");
+        }
+
+        if (($parameters['entry_topology_variant'] ?? null) === 'source_frozen_retest_v1'
+            || array_key_exists('intraday_exit_variant', $parameters)) {
+            $effective = strtolower($baseStrategy !== null && $baseStrategy !== '' ? $baseStrategy : $strategy);
+            $version = strrpos($effective, '_v');
+            if ($version !== false) $effective = substr($effective, 0, $version);
+            $topology = $parameters['entry_topology_variant'] ?? null;
+            $owned = ($effective === 'trend' && $topology === 'source_ema_pretrend_pullback_v1')
+                || ($effective === 'trend_retest' && $topology === 'source_frozen_retest_v1');
+            if ($family !== 'trend' || ! $owned || ($parameters['ema_fast'] ?? null) !== 20
+                || ($parameters['ema_slow'] ?? null) !== 50 || ($parameters['lookback'] ?? 20) !== 20) {
+                throw new InvalidArgumentException('INTRADAY_EXIT_SOURCE_OWNED_RUNTIME_REQUIRED');
+            }
         }
 
         if (array_key_exists('session_context_gate', $parameters)) {

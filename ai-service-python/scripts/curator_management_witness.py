@@ -11,8 +11,10 @@ import copy
 from datetime import datetime
 import hashlib
 import importlib
+import io
 import json
 import math
+from pathlib import Path
 import threading
 
 import numpy as np
@@ -22,6 +24,10 @@ PROTOCOL = 'offline_curator_full_close_witness_v1'
 MAX_SCOPE_ROWS = 20000
 _CAPTURE_LOCK = threading.Lock()
 _CENSOR_MARKERS = ('end_of_replay', 'end_of_data', 'forced_close', 'forced_end', 'censored', 'unrealized')
+_SETUP_VARIANT = 'closed_setup_2r_v1'
+_SETUP_PROTOCOL = 'offline_curator_closed_setup_geometry_v1'
+_SETUP_FIELDS = ('entry_setup_protocol', 'entry_setup_direction', 'entry_setup_invalidation_price',
+                 'entry_setup_available_at', 'entry_setup_source_time')
 _PUBLIC_CLOSED_FIELDS = (
     'direction', 'entry_price', 'exit_price', 'stop_loss', 'take_profit', 'profit_percent',
     'gross_profit_percent', 'execution_cost_percent', 'market_profit_percent',
@@ -167,6 +173,14 @@ def capture_management_witness():
                 'public_trades': _json_safe(copied_trades), 'entry_observations': observations,
                 'native_ratchet_observation_available': False,
             }
+            if payload.parameters.get('intraday_exit_variant') == _SETUP_VARIANT:
+                # Only original strategy-produced rows are observed. The
+                # independent verifier must separately reopen the exact CSV.
+                capture['closed_setup_geometry'] = {'protocol': _SETUP_PROTOCOL,
+                    'request': payload.model_dump(mode='json'),
+                    'entry_observations': {str(index): {
+                        field: _json_safe(frame.loc[index].get(field)) for field in _SETUP_FIELDS}
+                        for index in entry_indices}}
             observer._capture = _json_safe(capture)
             receipt = original(payload, frame, trades, entry_indices, entry_events, closed_events)
             observer._capture['original_receipt'] = copy.deepcopy(receipt)
@@ -237,7 +251,138 @@ def _stage_identities(witness):
                               'semantic_schema': 'entry_linked_close_v2'}}, by_signal)
 
 
-def verify_management_witness(response, witness):
+def _verify_closed_setup_geometry(body, witness, entries, request, csv_path):
+    """Reprepare signals, not trades; never call the execution geometry helper."""
+    enabled = witness['request']['parameters'].get('intraday_exit_variant') == _SETUP_VARIANT
+    declared = _body(request) if request is not None else None
+    requested = isinstance(declared, dict) and declared.get('parameters', {}).get('intraday_exit_variant') == _SETUP_VARIANT
+    if not enabled and not requested and 'closed_setup_geometry' not in witness:
+        return None
+    from app.schemas import SimpleBacktestRequest
+    from app.services.backtester import prepare_signal_snapshot
+    from app.strategies.laboratory import apply_trend_specialist, apply_trend_retest_strategy
+    from app.strategies.registry import get_strategy
+
+    _need(enabled and requested and csv_path is not None, 'STRUCTURAL_ORIGINAL_REQUEST_AND_CSV_REQUIRED')
+    payload = SimpleBacktestRequest.model_validate(declared)
+    captured = witness.get('closed_setup_geometry', {})
+    _need(captured.get('protocol') == _SETUP_PROTOCOL
+          and captured.get('request') == payload.model_dump(mode='json'), 'STRUCTURAL_EXACT_ORIGINAL_REQUEST_REQUIRED')
+    actual_request = payload.model_dump(mode='json')
+    _need(all(witness['request'].get(field) == actual_request[field] for field in (
+        'symbol', 'timeframe', 'initial_balance', 'risk_per_trade', 'execution', 'parameters')),
+        'STRUCTURAL_PHYSICAL_REQUEST_PARITY_REQUIRED')
+    seconds = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800, 'H1': 3600,
+               'H4': 14400, 'D1': 86400}.get(payload.timeframe)
+    _need(seconds is not None and witness['request']['duration_seconds'] == seconds,
+          'STRUCTURAL_ACTUAL_EXECUTION_DURATION_REQUIRED')
+    params = payload.parameters
+    functions = {
+        ('trend_v1', 'trend', 'source_ema_pretrend_pullback_v1'): (apply_trend_specialist, 3),
+        ('trend_retest_v1', 'trend_retest', 'source_frozen_retest_v1'): (apply_trend_retest_strategy, 1),
+    }
+    binding = (payload.strategy, payload.base_strategy, params.get('entry_topology_variant'))
+    _need(binding in functions and get_strategy(payload.strategy, payload.base_strategy) is functions[binding][0]
+          and params.get('ema_fast') == 20 and params.get('ema_slow') == 50
+          and (binding[0] != 'trend_retest_v1' or params.get('lookback', 20) == 20),
+          'STRUCTURAL_ACTUAL_SOURCE_ENTRY_RUNTIME_REQUIRED')
+    _need(not payload.candles and payload.dataset_path is not None and payload.dataset_tail_rows is None
+          and not payload.strategies and not payload.portfolio_members and not payload.specialist_council_contract
+          and not payload.composition_runtime_contract and payload.signal_delay_candles == 0
+          and float(params.get('trailing_atr_multiplier', 0)) == 0
+          and float(params.get('trailing_activation_r', 0)) == 0
+          and float(params.get('partial_take_profit_fraction', 0)) == 0,
+          'STRUCTURAL_UNDELAYED_ORDINARY_FIXED_FULL_CLOSE_REQUIRED')
+    _need(0 < payload.risk_per_trade <= 1 and 0 < payload.execution.max_leverage <= 5,
+          'STRUCTURAL_UNCHANGED_HARD_RISK_AND_LEVERAGE_REQUIRED')
+    path = Path(csv_path).resolve(strict=True)
+    _need(path == Path(payload.dataset_path).resolve(strict=True), 'STRUCTURAL_EXACT_ORIGINAL_CSV_PATH_REQUIRED')
+    contents = path.read_bytes()
+    csv_sha = hashlib.sha256(contents).hexdigest()
+    _need(csv_sha == payload.replay_dataset_hash, 'STRUCTURAL_ORIGINAL_CSV_SHA_REQUIRED')
+    raw_frame = pd.read_csv(io.BytesIO(contents), low_memory=False)
+    _need(200 < len(raw_frame) <= MAX_SCOPE_ROWS + 200
+          and not any(field in raw_frame for field in _SETUP_FIELDS), 'STRUCTURAL_UNFORGED_BOUNDED_SOURCE_CSV_REQUIRED')
+    snapshot = prepare_signal_snapshot(payload, raw_frame)
+    frame = snapshot.frame
+    _need(len(frame) == len(raw_frame) and frame.index.is_unique,
+          'STRUCTURAL_UNCHANGED_ORIGINAL_SOURCE_ROWS_REQUIRED')
+    scope = [{'index': int(index), 'time': _semantic(value)}
+             for index, value in frame.iloc[199:max(199, len(frame) - 1)]['time'].items()]
+    _need(scope == witness['scope_rows'], 'STRUCTURAL_ORIGINAL_SCOPE_ROWS_REQUIRED')
+    captured_rows = captured.get('entry_observations')
+    _need(isinstance(captured_rows, dict) and set(captured_rows) == {str(index) for index, _ in entries.values()},
+          'STRUCTURAL_EXACT_ENTRY_PROOF_ROSTER_REQUIRED')
+    trace = body.get('decision_trace')
+    quality = body.get('data_quality', {}).get('decision_trace', {})
+    _need(isinstance(trace, list) and quality.get('complete') is True
+          and quality.get('event_count') == len(trace), 'STRUCTURAL_COMPLETE_ORIGINAL_TRACE_REQUIRED')
+    accepted = {}
+    for event in trace:
+        if event.get('event_type') != 'signal_evaluation' or event.get('accepted') is not True \
+                or event.get('action') not in ('BUY', 'SELL'):
+            continue
+        index = event.get('candle_index')
+        _need(type(index) is int and index not in accepted, 'STRUCTURAL_UNIQUE_FILLED_TRACE_ENTRY_REQUIRED')
+        accepted[index] = event
+    _need(set(accepted) == {index + 1 for index, _ in entries.values()}, 'STRUCTURAL_FILLED_TRACE_ROSTER_REQUIRED')
+    point = _number(payload.execution.point_size, 'STRUCTURAL_POSITIVE_POINT_REQUIRED', positive=True)
+    cost = (payload.execution.spread_points / 2 + payload.execution.slippage_points) * point
+    duration = pd.Timedelta(seconds=witness['request']['duration_seconds'])
+    proofs = {}
+    for signal, (index, entry) in entries.items():
+        location = frame.index.get_loc(index)
+        _need(type(location) is int and location >= functions[binding][1] - 1 and location + 1 < len(frame),
+              'STRUCTURAL_ORIGINAL_ENTRY_ROW_REQUIRED')
+        row, execution = frame.iloc[location], frame.iloc[location + 1]
+        direction = entry['direction']
+        _need(row.get('signal') == direction, 'STRUCTURAL_ORIGINAL_ADMITTED_DIRECTION_REQUIRED')
+        original = {field: _json_safe(row.get(field)) for field in _SETUP_FIELDS}
+        _need(captured_rows[str(index)] == original and original['entry_setup_protocol'] == _SETUP_VARIANT
+              and original['entry_setup_direction'] == direction, 'STRUCTURAL_SOURCE_ROW_PROOF_REQUIRED')
+        source_time = _stamp(row['time'])
+        _need(_stamp(original['entry_setup_source_time']) == source_time == _stamp(signal)
+              and _stamp(original['entry_setup_available_at']) == source_time + duration == _stamp(execution['time'])
+              and _stamp(entry['entry_time']) == _stamp(execution['time']), 'STRUCTURAL_CLOSED_ASOF_NEXT_OPEN_REQUIRED')
+        observed = witness['entry_observations'][str(index)]
+        _need(_stamp(observed['signal_time']) == source_time
+              and _stamp(observed['execution_time']) == _stamp(execution['time']), 'STRUCTURAL_OBSERVED_SOURCE_CLOCK_REQUIRED')
+        _same(observed['execution_open'], float(execution['open']), 'STRUCTURAL_ORIGINAL_NEXT_OPEN_REQUIRED')
+        window = frame.iloc[location - functions[binding][1] + 1:location + 1]
+        anchor = float(window['low'].min() if direction == 'BUY' else window['high'].max())
+        _same(original['entry_setup_invalidation_price'], anchor, 'STRUCTURAL_EXACT_CLOSED_PRICE_EXTREME_REQUIRED')
+        sign = 1 if direction == 'BUY' else -1
+        stop = anchor - sign * point
+        fill = float(execution['open']) + sign * cost
+        _need(stop > 0 and sign * (fill - stop) > 0, 'STRUCTURAL_ADVERSE_FIXED_INVALIDATION_REQUIRED')
+        target = fill + sign * 2 * abs(fill - stop)
+        _need(target > 0, 'STRUCTURAL_POSITIVE_EXECUTABLE_TARGET_REQUIRED')
+        _same(entry['entry_price'], fill, 'STRUCTURAL_ACTUAL_EXECUTABLE_FILL_REQUIRED')
+        _same(entry['initial_stop_loss'], stop, 'STRUCTURAL_ONE_POINT_BUFFERED_STOP_REQUIRED')
+        event = accepted[index + 1]
+        state, features = event.get('state', {}), event.get('features', {})
+        _need(event['action'] == direction and state.get('position_open') is True
+              and _stamp(event['candle_time']) == _stamp(execution['time']), 'STRUCTURAL_ORIGINAL_FILLED_TRACE_REQUIRED')
+        for field in _SETUP_FIELDS:
+            _need(features.get(field) == original[field], 'STRUCTURAL_ORIGINAL_TRACE_SOURCE_PROOF_REQUIRED:' + field)
+        for field, expected in (('entry_price', fill), ('stop_loss', stop), ('take_profit', target),
+                                ('position_size_multiple', float(entry['position_size_multiple']))):
+            _same(state.get(field), expected, 'STRUCTURAL_INITIAL_EXECUTION_GEOMETRY_REQUIRED:' + field)
+        proofs[signal] = {'signal_time': source_time.isoformat(), 'direction': direction,
+            'source_invalidation_price': anchor, 'buffered_stop_price': stop, 'actual_entry_price': fill,
+            'initial_target_price': target, 'nominal_price_r_multiple': 2.0,
+            'source_window_closed_rows': functions[binding][1], 'available_at': (source_time + duration).isoformat()}
+    for trade in witness['public_trades']:
+        proof = proofs[_semantic(_stamp(trade['signal_time']))]
+        _same(trade['take_profit'], round(proof['initial_target_price'], 2), 'STRUCTURAL_PUBLIC_FIXED_TARGET_REQUIRED')
+        _same(trade['stop_loss'], round(proof['buffered_stop_price'], 2), 'STRUCTURAL_PUBLIC_FIXED_STOP_REQUIRED')
+    return {'protocol': _SETUP_PROTOCOL, 'source_csv_sha256': csv_sha, 'accepted_entry_count': len(proofs),
+            'actual_entry_runtime': binding[0], 'entry_topology_variant': binding[2], 'per_entry': proofs,
+            'nominal_price_2r_not_cost_adjusted_net_2r': True, 'own_agent_outcome': False,
+            'independent_validation': False, 'economic_authority': False}
+
+
+def verify_management_witness(response, witness, *, request=None, csv_path=None):
     """Verify original full closes and closed-cash accounting without producer calls."""
     body = _body(response)
     _need(witness.get('protocol') == PROTOCOL and witness.get('research_only') is True
@@ -254,6 +399,7 @@ def verify_management_witness(response, witness):
     stages, entries = _stage_identities(witness)
     for name, stage in stages.items():
         _need(receipt['stage_identities'][name] == stage, 'INDEPENDENT_ORIGINAL_STAGE_RECONSTRUCTION_REQUIRED:' + name)
+    setup_geometry = _verify_closed_setup_geometry(body, witness, entries, request, csv_path)
     request = witness['request']
     execution = request['execution']
     _need(body['execution_assumptions'] == execution and body['parameters'] == request['parameters'],
@@ -402,7 +548,7 @@ def verify_management_witness(response, witness):
         public_drawdown = max(public_drawdown, percent)
     displayed_drawdown = round(public_drawdown, 2)
     _same(body['max_drawdown_percent'], displayed_drawdown, 'CLOSED_CASH_DRAWDOWN_RECONCILIATION_REQUIRED')
-    return {'protocol': 'offline_curator_full_close_verified_v1', 'research_only': True,
+    result = {'protocol': 'offline_curator_full_close_verified_v1', 'research_only': True,
             'initial_balance': initial, 'exact_final_balance': balance, 'exact_net_cash': balance - initial,
             'explicit_commission_carry_cash': explicit_cash, 'commission_cash': commission_cash, 'carry_cash': carry_cash,
             'closed_cash_drawdown_percent': drawdown, 'closed_trade_count': len(metrics),
@@ -417,3 +563,6 @@ def verify_management_witness(response, witness):
             'explicit_cost_excludes_spread_and_slippage_already_in_executable_prices': True,
             'own_agent_outcome': False, 'independent_validation': False, 'economic_authority': False,
             'paper_authority': False, 'live_authority': False}
+    if setup_geometry is not None:
+        result['closed_setup_geometry'] = setup_geometry
+    return result

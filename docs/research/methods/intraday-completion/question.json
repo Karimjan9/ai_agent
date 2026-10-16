@@ -1,0 +1,42 @@
+{
+  "protocol": "curator_complete_intraday_question_v1",
+  "question_id": "complete-intraday-methods-20261016-v1",
+  "declared_before_outcomes": true,
+  "scope": "Three complete scalp-style method questions on two fixed reused native months, not a claim about every instrument or independent economic skill.",
+  "windows": {
+    "manifest_sha256": "d8aa2d60c3cc4fbcb0bb3f2768dd7cc6b66e54d03e16f41056c7fae174b7fd9a",
+    "june2025": {"loaded": 5989, "warmup": 200, "evaluated": 5789, "csv_sha256": "494cd01a799905f85fcc864c6b75904898aaf0326283a137f7f255ba18a08a02"},
+    "september2025": {"loaded": 6241, "warmup": 200, "evaluated": 6041, "csv_sha256": "bef23cd40a5faab063dd337ea2218db3c192af9a3c44c18534f46d494591d7f8"},
+    "selection": "Exactly the two clean full months fixed before market outcomes. March, January and February refusals remain data history, not negative strategy results. No further month fallback.",
+    "quotes": "Both months lack observed BID/ASK; unchanged modeled costs only. Provider BID candle volume is not exchange order flow."
+  },
+  "arms_per_window": ["bb_control", "bb_recipe", "ema_control", "ema_structural", "retest_control", "retest_structural"],
+  "method_questions": {
+    "bb": "Does the retained population-band/closed-SMA20 exit bundle behave better than sample-band/native ATR control in these two other full months? This is not a full reproduction of author Methods I-IV.",
+    "ema": "For identical registered closed EMA20/50 pretrend pullback entry/confidence, compare native ATR protection with the actual three-closed-setup-bar extreme plus one execution point and nominal 2R target from actual fill.",
+    "retest": "Compare original rolling-level/ATR method with a frozen prior-20-bar breakout level, later closed directional rejection within three contiguous bars, level-relative confidence and structural protection plus nominal 2R. This is one bundled method contrast, not individual component credit."
+  },
+  "common_contract": {
+    "symbol": "XAUUSD", "timeframe": "M5", "initial_account_per_arm": 10000.0,
+    "entry_session_UTC": "07:00 inclusive to 14:00 exclusive", "observed_row_time_stop": 6,
+    "maximum_executable_stop_risk_percent": 1.0, "leverage_ceiling": 5,
+    "minimum_confidence": 0.35, "partial_exit": false, "trailing": false,
+    "cost_sha256": "d39b48f79f6cea4d3e93f8885e5d5c9fffe8bb5f7b287dabb04372d1a51c4b1f",
+    "geometry": "Stop is buffered one execution point beyond the actual source invalidation, not a clamped ATR fallback. Next-open fill determines nominal price-distance 2R. Stop-fill costs/commission determine position size under the unchanged risk/leverage ceiling; net reward/risk is not 2R.",
+    "unknown_geometry": "Missing, future, nonadjacent, crossed or wrong-direction setup is an entry veto and no structural shadow fallback.",
+    "confidence": "The new retest topology measures existing clipped distance/ATR confidence against its own frozen level, with the same ADX strength transform and threshold; missing level is WAIT. Old rolling-level control is unchanged.",
+    "scope_limitations": "Single M5 candle clock, modeled costs and conservative native gap/intrabar handling. A six-observed-row cap is not a universal session-flat or broker-fill guarantee."
+  },
+  "execution": {"originals": 12, "serial": true, "hidden": true, "threads": 1, "priority": "below_normal", "max_attempts_per_arm": 1, "per_original_seconds": 1500, "global_seconds": 10800, "on_timeout": "Retain technical unknown. No automatic cap extension, restart, retry or replacement after outcomes."},
+  "assessment": {
+    "primary": "Matched complete-account realized cash delta per method and month. Also retain absolute cash, mature trades, closed-cash drawdown, holding, opportunity/context and EOF exposure. Relative improvement while losing money is not useful economic skill.",
+    "continuation_priority": ["ema", "retest", "bb"],
+    "research_agent_practice_prerequisites_each_month": ["Both original accounts completed and comparable", "Treatment net cash positive and above its own control", "Each control and treatment has at least 20 mature trades; diagnostic sample prerequisite, not statistical power", "Both accounts have no EOF-open position", "Treatment closed-cash drawdown no greater than control", "No holding beyond declared scalp cap"],
+    "if_eligible": "Select the first eligible method in fixed priority, not maximum PnL. Prepare a separately sealed provisional agent-practice question through existing owners; do not import curator products as agent-owned experience.",
+    "if_none": "Retain measured negative/unknown/context know-how. No automatic agent handoff or fake useful skill. Record the next discriminating question rather than force a positive result.",
+    "multiple_testing": "All three families, controls and both months are retained. No after-outcome settings, best-month filter or unchanged-data independence claim."
+  },
+  "research_only": true, "own_agent_outcome": false, "independent_validation": false,
+  "credit": false, "mastery": false, "economic_authority": false, "paper_authority": false, "live_authority": false,
+  "policy": "All 2026 and later market data remain paper-only. These 2025 reused archives do not create an untouched window. No broker demo, production release, population or public order is created."
+}

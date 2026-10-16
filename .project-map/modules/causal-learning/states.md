@@ -1,5 +1,26 @@
 # Causal learning states
 
+The explicit three-method replication adapter uses exactly the full June and
+September 2025 native months, each with 200 real warmup rows and complete
+loaded/month-edge audits. January/February/March refusals retain their exact
+2/3/8 missing timestamps; no failed-month export, calendar repair or date
+fallback is authorized. Full rederivation binds the parent raw cells and
+current calendar-owner source. A later source revision requires a new
+prospective immutable publication; it does not rewrite preparation history.
+
+Memory-only actual PHP/Library/Foundry compilation declares twelve original
+cases before outcomes: existing Bollinger bundle replication, EMA-source
+control versus structural exit, and legacy retest versus source-frozen retest
+plus structural exit, across both months. One serial attempt per case retains
+absolute UTC/monotonic caps. Original request, response, process and full-close
+witnesses precede read-only per-family comparisons. Missing, late or technical
+products remain unknown. The structural witness reopens the exact original
+CSV and recomputes only source signals to verify actual entry-linked geometry;
+it neither reruns trades nor trusts caller-supplied setup fields. Quote absence,
+closed-cash rather than marked-equity drawdown and reused-history exposure
+stay explicit. Two periods are temporal discovery coverage, not independent
+validation, agent-owned experience, credit, Master, broker or production proof.
+
 The explicit complete-recipe adapter follows the existing sealed single-attempt
 offline lifecycle. Its fixed October scope has 6,524 loaded / 200 warmup / 6,324
 decision rows. Calendar acceptance never fills missing quotes or certifies

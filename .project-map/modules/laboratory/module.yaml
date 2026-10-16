@@ -10,6 +10,8 @@ aliases:
   - native-depth-audit
   - qualified-solo
 paths:
+  - ai-service-python/tests/test_source_intraday_geometry.py
+  - backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php
   - ai-service-python/tests/test_bollinger_complete_method.py
   - backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php
   - backend-laravel/app/Services/StrategyParameterSchemaService.php
@@ -131,6 +133,8 @@ paths:
   - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
 entry_points:
+  - _apply_source_frozen_retest
+  - _publish_closed_setup_geometry
   - trading:prepare-unused-price-discovery
   - UnusedDraftPriceDiscoveryPreparationService::registerIntent
   - UnusedDraftPriceDiscoveryPreparationService::prepareFromDecision
@@ -258,6 +262,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - ai-service-python/tests/test_source_intraday_geometry.py
+  - backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php
   - backend-laravel/tests/Unit/BollingerContextGateParityTest.php
   - ai-service-python/tests/test_bollinger_context_gate.py
   - ai-service-python/tests/test_trailing_activation.py

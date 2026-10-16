@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T09:57:09.888Z",
-  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
-  "source_file_count": 1767,
-  "git_head": "fdb410ac50b18c5785991b38cd5f064e88a38021",
+  "generated_at": "2026-10-16T10:58:48.899Z",
+  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
+  "source_file_count": 1775,
+  "git_head": "5ada46db0581c2c16ca2c5a10206d42f4afce5af",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "configs": [
     {
@@ -532,10 +532,16 @@
       "path": "ai-service-python/scripts/curator_bollinger_study.py"
     },
     {
+      "path": "ai-service-python/scripts/curator_complete_intraday_methods.py"
+    },
+    {
       "path": "ai-service-python/scripts/curator_instrument_study.py"
     },
     {
       "path": "ai-service-python/scripts/curator_instrument_windows.py"
+    },
+    {
+      "path": "ai-service-python/scripts/curator_intraday_month_windows.py"
     },
     {
       "path": "ai-service-python/scripts/curator_intraday_panel.py"
@@ -632,6 +638,9 @@
     },
     {
       "path": "backend-laravel/scripts/prepare-curator-bollinger-study.php"
+    },
+    {
+      "path": "backend-laravel/scripts/prepare-curator-intraday-methods.php"
     },
     {
       "path": "backend-laravel/scripts/prepare-curator-intraday-panel.php"

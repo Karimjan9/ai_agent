@@ -84,6 +84,7 @@ paths:
   - backend-laravel/app/Services/ProspectiveRepairProbeWindowService.php
   - docs/ai-service-contract.md
 entry_points:
+  - _closed_setup_geometry
   - InstrumentMethodResearchBindingService::compilePolicy
   - InstrumentMethodResearchBindingService::bindRequests
   - InstrumentMethodLearning::evaluate
@@ -107,6 +108,7 @@ data_tables:
   - paper_signals
 dependencies:
 invariants:
+  - Explicit closed_setup_2r_v1 is admitted only for the actual EMA pretrend or frozen-level retest source strategy at EMA20/50. Original completed proposal fields and immediate next-open clock determine a one-point invalidation buffer and nominal 2R from actual entry; existing stopped-fill cost/account sizing remains the risk owner. Missing, forged, nonadjacent or crossed geometry refuses entry. Ordinary/default and legacy controls remain unchanged.
   - Simple replay market-coordinate memoization is invocation-local, bounded and cleared on exit; it reuses only the canonical calendar result for the same UTC timestamp. No persistent cross-arm cache, calendar change or economic permission is introduced, and complete cached/unwrapped response parity is tested.
   - Optional instrument_method_learning_v1 binds intrinsic method/recipe library and independent agent policy revisions to exact parameters, data, execution and observed closed context. Per-candidate cache retains its exact binding and cannot reuse missing/stale method receipts; explicit empty declarations fail closed. Actual decision events measure target reach/use separately. Unsigned diagnostic caps only reduce ordinary deadlines; privately signed original-deadline v2 admits only future exact-source bounded simple arms above 300 and at most 600 seconds, never old attempts or full/independent/paper authority.
   - authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.

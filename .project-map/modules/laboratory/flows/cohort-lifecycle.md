@@ -1,5 +1,18 @@
 # Laboratory cohort lifecycle
 
+## Explicit offline source-owned intraday proposals
+
+Fresh declared EMA20/50 source or frozen-level retest vector -> actual
+PHP/Python runtime/schema identity -> original completed setup proof ->
+immediate next-open source/clock/geometry validation -> one-point buffered
+invalidation and nominal2R -> ordinary cost/account/stopped-fill risk sizing ->
+unchanged owned full-close lifecycle. Refused/missing/nonadjacent setup cannot
+fall back to a different entry rule. The offline curator inspector later
+reprepares original signals, not trades, from the exact CSV and verifies the
+entry-linked proof independently of the execution geometry helper. Ordinary
+defaults and controls, generation scheduling, agent outcomes and authority do
+not change.
+
 ## Spent original method projection
 
 Terminal technical method work -> existing expected-generation settle-only

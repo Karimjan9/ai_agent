@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T09:57:09.888Z",
-  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
-  "source_file_count": 1767,
-  "git_head": "fdb410ac50b18c5785991b38cd5f064e88a38021",
+  "generated_at": "2026-10-16T10:58:48.899Z",
+  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
+  "source_file_count": 1775,
+  "git_head": "5ada46db0581c2c16ca2c5a10206d42f4afce5af",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -22,6 +22,13 @@
         "research-paper-epoch"
       ],
       "paths": [
+        "ai-service-python/scripts/curator_intraday_month_windows.py",
+        "ai-service-python/scripts/curator_complete_intraday_methods.py",
+        "ai-service-python/tests/test_curator_intraday_month_windows.py",
+        "ai-service-python/tests/test_complete_intraday_methods.py",
+        "backend-laravel/scripts/prepare-curator-intraday-methods.php",
+        "backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php",
+        "docs/research/methods/intraday-completion",
         "ai-service-python/scripts/curator_bollinger_month_window.py",
         "ai-service-python/scripts/curator_bollinger_recipe.py",
         "ai-service-python/scripts/curator_bollinger_recipe_evidence.py",
@@ -352,6 +359,12 @@
         "ai-service-python/app/services/prospective_probe_window.py"
       ],
       "entry_points": [
+        "ai-service-python/scripts/curator_intraday_month_windows.py --prepare",
+        "ai-service-python/scripts/curator_intraday_month_windows.py --validate",
+        "backend-laravel/scripts/prepare-curator-intraday-methods.php --windows --windows-sha256",
+        "curator_complete_intraday_methods.validate",
+        "curator_complete_intraday_methods.verify_response",
+        "curator_complete_intraday_methods.comparisons",
         "ai-service-python/scripts/curator_instrument_windows.py --prepare",
         "ai-service-python/scripts/curator_instrument_windows.py --validate",
         "ai-service-python/scripts/curator_instrument_study.py --prepare",
@@ -574,6 +587,9 @@
         "A four-arm activation result is a behavioral hypothesis, never component/economic credit. Immutable trace, paired opportunity universe and MTF identity must agree before a conversion receipt. A future post-paper research interval is preregistered with the intervention, but remains non-executable until a distinct authorized research dataset exists; the 2026 paper epoch is never silently reused."
       ],
       "tests": [
+        "ai-service-python/tests/test_curator_intraday_month_windows.py",
+        "ai-service-python/tests/test_complete_intraday_methods.py",
+        "backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php",
         "ai-service-python/tests/test_curator_instrument_journal.py",
         "ai-service-python/tests/test_curator_instrument_windows.py",
         "ai-service-python/tests/test_curator_instrument_study.py",
@@ -697,7 +713,7 @@
       "flows": [
         ".project-map/modules/causal-learning/flows/causal-conversion.md"
       ],
-      "source_file_count": 255,
+      "source_file_count": 261,
       "map": ".project-map/modules/causal-learning/module.yaml"
     },
     {
@@ -770,6 +786,8 @@
         "qualified-solo"
       ],
       "paths": [
+        "ai-service-python/tests/test_source_intraday_geometry.py",
+        "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
         "ai-service-python/tests/test_bollinger_complete_method.py",
         "backend-laravel/tests/Unit/BollingerBandVarianceParityTest.php",
         "backend-laravel/app/Services/StrategyParameterSchemaService.php",
@@ -892,6 +910,8 @@
         "backend-laravel/app/Console/Commands/AuditAutonomyStreak.php"
       ],
       "entry_points": [
+        "_apply_source_frozen_retest",
+        "_publish_closed_setup_geometry",
         "trading:prepare-unused-price-discovery",
         "UnusedDraftPriceDiscoveryPreparationService::registerIntent",
         "UnusedDraftPriceDiscoveryPreparationService::prepareFromDecision",
@@ -1014,6 +1034,8 @@
         "Every ordinary 20-seat allocation receives the already-reserved generation number and seals one owner per seat. The immediate terminal predecessor's cooperative settlement IDs and content hashes form a feedback digest; at most one cold-start pair is reassigned by valid negative, underpowered or technical-invalid evidence, while three causal-proof seats and one uncertainty-abstain seat remain protected. Prequeue admission rejects source-receipt, owner or manifest drift. A positive research signal cannot unlock replication, factorial, descendant or credit authority."
       ],
       "tests": [
+        "ai-service-python/tests/test_source_intraday_geometry.py",
+        "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
         "backend-laravel/tests/Unit/BollingerContextGateParityTest.php",
         "ai-service-python/tests/test_bollinger_context_gate.py",
         "ai-service-python/tests/test_trailing_activation.py",
@@ -1064,7 +1086,7 @@
       "flows": [
         ".project-map/modules/laboratory/flows/cohort-lifecycle.md"
       ],
-      "source_file_count": 118,
+      "source_file_count": 120,
       "map": ".project-map/modules/laboratory/module.yaml"
     },
     {
@@ -1156,6 +1178,7 @@
         "docs/ai-service-contract.md"
       ],
       "entry_points": [
+        "_closed_setup_geometry",
         "InstrumentMethodResearchBindingService::compilePolicy",
         "InstrumentMethodResearchBindingService::bindRequests",
         "InstrumentMethodLearning::evaluate",
@@ -1181,6 +1204,7 @@
       ],
       "dependencies": [],
       "invariants": [
+        "Explicit closed_setup_2r_v1 is admitted only for the actual EMA pretrend or frozen-level retest source strategy at EMA20/50. Original completed proposal fields and immediate next-open clock determine a one-point invalidation buffer and nominal 2R from actual entry; existing stopped-fill cost/account sizing remains the risk owner. Missing, forged, nonadjacent or crossed geometry refuses entry. Ordinary/default and legacy controls remain unchanged.",
         "Simple replay market-coordinate memoization is invocation-local, bounded and cleared on exit; it reuses only the canonical calendar result for the same UTC timestamp. No persistent cross-arm cache, calendar change or economic permission is introduced, and complete cached/unwrapped response parity is tested.",
         "Optional instrument_method_learning_v1 binds intrinsic method/recipe library and independent agent policy revisions to exact parameters, data, execution and observed closed context. Per-candidate cache retains its exact binding and cannot reuse missing/stale method receipts; explicit empty declarations fail closed. Actual decision events measure target reach/use separately. Unsigned diagnostic caps only reduce ordinary deadlines; privately signed original-deadline v2 admits only future exact-source bounded simple arms above 300 and at most 600 seconds, never old attempts or full/independent/paper authority.",
         "authorized_scoped_original_window_bundle_v1 retains the physical closed-four-stream manifest; authenticated scoped_original_window_v1 binds actual programme, account, MTF pilot, volume, holding fence, resource caps and exact full-source policy. Its internal nonserialized witness permits the original historical closed-context and quote route only within pre-2026 source bounds. Copied flags, wire-reconstructed derived fences, altered programmes and changed source bytes fail closed.",

@@ -100,6 +100,12 @@ def _registered_csv_binding(path, source_hash, request, rows, provenance):
         from scripts.curator_bollinger_month_window import validate_manifest
         manifest = validate_manifest(manifest_path, manifest_identity)
         registration = 'rederived_original_complete_month_csv_utc_registration_v1'
+    elif manifest.get('protocol') == 'curator_intraday_replication_windows_v1':
+        # Reconstruct both exact parent month slices through the code-owned
+        # producer, including native custody/calendar and the F-tree boundary.
+        from scripts.curator_intraday_month_windows import validate_manifest
+        manifest = validate_manifest(manifest_path, manifest_identity)
+        registration = 'rederived_original_intraday_replication_csv_utc_registration_v1'
     else:
         _need(manifest.get('protocol') == 'curator_instrument_calendar_windows_v1',
               'SCALP_TRUSTED_CSV_MANIFEST_REQUIRED')
@@ -212,7 +218,9 @@ def summarize_scalp_metrics(request, response, witness, *, csv_path, max_holding
     _need(isinstance(request, dict) and isinstance(body, dict), "SCALP_ORIGINAL_REQUEST_RESPONSE_REQUIRED")
     cap = _number(max_holding_minutes)
     _need(cap > 0, "SCALP_POSITIVE_HOLDING_CAP_REQUIRED")
-    verified = verify_management_witness(body, witness)
+    setup_inputs = {'request': request, 'csv_path': csv_path} \
+        if request['parameters'].get('intraday_exit_variant') == 'closed_setup_2r_v1' else {}
+    verified = verify_management_witness(body, witness, **setup_inputs)
     for field in ("symbol", "timeframe", "initial_balance", "risk_per_trade", "parameters", "execution"):
         _need(request[field] == witness["request"][field], "SCALP_EXACT_ORIGINAL_REQUEST_REQUIRED:" + field)
     times, clock, source_hash, duration, csv_binding = _original_clock(request, body, witness, csv_path, csv_provenance)

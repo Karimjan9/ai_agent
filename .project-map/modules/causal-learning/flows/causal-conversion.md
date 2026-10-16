@@ -1,5 +1,19 @@
 # Causal conversion loop
 
+Source review with explicit author/lab boundary -> fixed complete June and
+September native months plus 200 real warmup and retained Q1 gap refusals ->
+full parent/source/calendar rederivation -> actual memory-only PHP canonical
+compilation -> twelve exact method/control/window requests and source/data/
+runtime/resource seal -> one hidden serial ordinary original per case ->
+immutable process/response/clock/account/full-close/setup witnesses -> read-only
+per-family account contrasts and append-only curator research history.
+The existing Bollinger bundle is temporal replication; EMA structural exits
+and frozen-level retest plus structural exits are separate declared recipes.
+The entire question remains reused-history modeled-cost discovery, not a
+chronological holdout. Missing or technical originals stay unknown; no retry,
+agent-consumption claim, independent certificate, credit, production or broker
+permission follows from a complete software path or a positive account delta.
+
 The complete Bollinger lab-recipe question selects only the fixed whole October
 2025 native month plus 200 original warmup rows, rejecting loaded/month-edge
 calendar gaps. Disposable SQLite-only canonical PHP registration/compilation

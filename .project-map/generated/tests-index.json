@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-16T09:57:09.888Z",
-  "source_digest": "62c66313f4e8d2cff7f598ac6d2b0017f9928fce4d6b492b91322f6ea877407e",
-  "source_file_count": 1767,
-  "git_head": "fdb410ac50b18c5785991b38cd5f064e88a38021",
+  "generated_at": "2026-10-16T10:58:48.899Z",
+  "source_digest": "50400ff6f6776addf50e2732719e45ef7ca9ec11ff352bd489715313a0db9ad2",
+  "source_file_count": 1775,
+  "git_head": "5ada46db0581c2c16ca2c5a10206d42f4afce5af",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -230,6 +230,19 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_complete_intraday_methods.py",
+      "tests": [
+        "test_negative_relative_improvement_cannot_auto_become_a_skill",
+        "test_missing_arms_are_unknown_not_zero_and_cannot_create_handoff",
+        "test_control_eof_exposure_is_visible_and_blocks_continuation",
+        "test_fixed_priority_is_not_an_outcome_ranking_or_authority",
+        "test_one_period_low_sample_open_position_or_higher_risk_blocks_continuation",
+        "test_all_twelve_original_wires_have_identical_declared_physical_accounts",
+        "test_authority_compute_or_an_undeclared_gene_cannot_drift",
+        "test_the_actual_other_month_cannot_borrow_a_bollinger_contract"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_composition_runtime.py",
       "tests": [
         "test_complete_bound_program_returns_consumption_receipt",
@@ -411,6 +424,20 @@
       ]
     },
     {
+      "path": "ai-service-python/tests/test_curator_intraday_month_windows.py",
+      "tests": [
+        "test_fixed_native_roster_and_trust_pins",
+        "test_full_month_rows_cells_bom_and_actual200_warmup_are_preserved",
+        "test_q1_refusal_counts_and_exact_missing_times_rederive_without_exports",
+        "test_gapped_selected_month_never_chooses_another_period_or_creates_output",
+        "test_selected_warmup_or_final_month_edge_gap_is_not_hidden",
+        "test_insufficient_200_actual_warmup_refuses_even_if_month_complete",
+        "test_publication_reinspection_only_two_csv_and_no_authority",
+        "test_forged_clean_refusal_or_authority_updated_manifest_hash_still_refuses",
+        "test_export_tamper_and_undeclared_failed_month_export_refuse"
+      ]
+    },
+    {
       "path": "ai-service-python/tests/test_curator_intraday_observations.py",
       "tests": [
         "test_curator_know_how_never_becomes_agent_or_trading_authority",
@@ -485,7 +512,17 @@
         "test_nested_capture_refused_and_exception_restores_original",
         "test_original_producer_exception_restores_exact_callable",
         "test_unavailable_snapshot_without_completed_original_call_refuses",
-        "test_metrics_do_not_mislabel_cost_or_unobserved_stop_path"
+        "test_metrics_do_not_mislabel_cost_or_unobserved_stop_path",
+        "test_legacy_request_keywords_preserve_exact_output_and_capture_shape",
+        "test_both_actual_source_functions_and_directions_have_independent_closed_geometry",
+        "test_eof_open_entry_keeps_unclosed_exposure_and_initial_target_proof",
+        "test_structural_opt_in_requires_exact_request_and_reopened_original_csv",
+        "test_wrong_actual_runtime_topology_delay_or_physical_controls_cannot_claim_setup",
+        "test_source_anchor_asof_direction_or_roster_tamper_refuses",
+        "test_resealed_sidecar_cannot_change_original_risk_or_duration",
+        "test_coherent_trace_target_or_stop_tamper_refuses_before_cash_math",
+        "test_original_csv_bytes_and_injected_csv_geometry_cannot_authorize_proof",
+        "test_new_protocol_delegates_owner_and_retains_exact_path_sha_and_row_guards"
       ]
     },
     {
@@ -1327,6 +1364,23 @@
         "test_chandelier_owned_exit_is_prior_closed_next_open_and_never_rewrites_stop",
         "test_risk_multiplier_reduces_actual_cost_inclusive_exposure_not_hard_risk_limit",
         "test_chandelier_exit_cannot_bypass_existing_gap_stop_execution_price"
+      ]
+    },
+    {
+      "path": "ai-service-python/tests/test_source_intraday_geometry.py",
+      "tests": [
+        "test_existing_retest_default_and_frozen_values_remain_byte_exact",
+        "test_optional_ema_management_preserves_all_old_columns_confidence_and_inputs",
+        "test_retest_freezes_original_level_and_requires_directional_closed_rejection",
+        "test_source_retest_gaps_expiry_and_future_bars_cannot_retroactively_confirm",
+        "test_new_retest_confidence_uses_own_frozen_level_and_missing_inputs_wait",
+        "test_supplied_csv_proof_is_overwritten_and_legacy_paths_ignore_it",
+        "test_schema_is_explicit_fixed_and_actual_runtime_owned",
+        "test_actual_fill_one_point_stop_and_nominal_two_r_use_existing_cost_aware_sizing",
+        "test_missing_wrong_side_future_direction_base_and_gap_are_vetoed_without_shadow_fallback",
+        "test_real_structural_target_not_unrelated_atr_controls_cost_guard",
+        "test_structural_orders_keep_existing_conservative_and_gap_stop_execution",
+        "test_both_actual_programmes_fill_with_own_structural_stop_and_no_larger_risk"
       ]
     },
     {
@@ -6076,6 +6130,18 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php",
+      "tests": [
+        "setUpBeforeClass",
+        "test_actual_memory_only_compile_and_finite_context_owner_proof",
+        "test_exact_twelve_carrier_wire_identities_and_unchanged_account_costs",
+        "test_bollinger_retains_exact_control_and_actual_canonical_bundle_per_data_scope",
+        "test_new_methods_have_exact_only_declared_programme_differences",
+        "test_actual_python_request_and_bollinger_contract_owners_accept_all_originals_without_replay",
+        "test_unregistered_window_identity_refuses_before_bootstrap_or_memory_compilation"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Unit/DescendantScopedProofServiceTest.php",
       "tests": [
         "test_matched_four_arm_vectors_derive_disjoint_exact_t_and_u",
@@ -6277,6 +6343,13 @@
         "test_registered_reentry_uses_the_unchanged_session_schema_and_defaults",
         "test_actual_python_registry_and_parameter_owner_preserve_the_selected_function",
         "test_alias_does_not_admit_unowned_range_topology_parameters"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php",
+      "tests": [
+        "test_new_variants_do_not_enter_ordinary_default_or_sampling_rosters",
+        "test_exact_source_runtime_and_fixed_periods_match_python_and_refuse_spoofed_bases"
       ]
     },
     {

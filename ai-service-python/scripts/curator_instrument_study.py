@@ -23,9 +23,11 @@ from scripts.curator_research_deadline import AbsoluteResearchDeadline, run_hidd
 need, sha, write_new = previous.need, previous.sha, previous.write_new
 FLAGS = previous.FLAGS
 ADAPTERS = {'bollinger_context_v1': 'scripts.curator_bollinger_study',
-    'bollinger_recipe_v1': 'scripts.curator_bollinger_recipe'}
+    'bollinger_recipe_v1': 'scripts.curator_bollinger_recipe',
+    'intraday_methods_v1': 'scripts.curator_complete_intraday_methods'}
 PREPARERS = {'bollinger_context_v1': 'prepare-curator-bollinger-study.php',
-    'bollinger_recipe_v1': 'prepare-curator-bollinger-recipe-study.php'}
+    'bollinger_recipe_v1': 'prepare-curator-bollinger-recipe-study.php',
+    'intraday_methods_v1': 'prepare-curator-intraday-methods.php'}
 EXTRA = ('backend-laravel/scripts/prepare-curator-bollinger-study.php',
     'backend-laravel/tests/Unit/BollingerContextGateParityTest.php',
     'ai-service-python/tests/test_bollinger_context_gate.py',
@@ -52,7 +54,16 @@ EXTRA = ('backend-laravel/scripts/prepare-curator-bollinger-study.php',
     'ai-service-python/tests/test_curator_bollinger_recipe.py',
     'ai-service-python/tests/test_curator_bollinger_recipe_evidence.py',
     'docs/research/instruments/range_reentry/events/2026-10-16-complete-recipe-question.json',
-    'docs/research/instruments/range_reentry/events/2026-10-16-article-review.json')
+    'docs/research/instruments/range_reentry/events/2026-10-16-article-review.json',
+    'backend-laravel/scripts/prepare-curator-intraday-methods.php',
+    'backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php',
+    'ai-service-python/tests/test_curator_intraday_month_windows.py',
+    'ai-service-python/tests/test_complete_intraday_methods.py',
+    'ai-service-python/tests/test_source_intraday_geometry.py',
+    'backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php',
+    'ai-service-python/tests/test_curator_management_witness.py',
+    'docs/research/methods/intraday-completion/sources.json',
+    'docs/research/methods/intraday-completion/question.json')
 
 
 def owner(spec):

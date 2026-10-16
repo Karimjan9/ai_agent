@@ -308,7 +308,10 @@ def verify_physical_response(body, declaration, window, envelope, spec, response
         and quality['complete'] is True and quality['event_count'] == len(trace)
         and quality['evaluated_candle_count'] == window['evaluated_rows']
         and sum(body['event_ledger_categories'].values()) == body['event_ledger_count'], 'ORIGINAL_LEDGER_AND_TRACE_REQUIRED')
-    witness = envelope['full_close_witness']; cash = verify_management_witness(body, witness)
+    witness = envelope['full_close_witness']
+    setup_inputs = {'request': request, 'csv_path': window['path']} \
+        if request['parameters'].get('intraday_exit_variant') == 'closed_setup_2r_v1' else {}
+    cash = verify_management_witness(body, witness, **setup_inputs)
     scalp = summarize_scalp_metrics(request, body, witness, csv_path=window['path'], max_holding_minutes=30.0)
     clock = body['data_quality']['replay_executed_clock']
     return {'net_cash': cash['exact_net_cash'], 'mature': cash['mature_trade_count'], 'trades': cash['closed_trade_count'],
