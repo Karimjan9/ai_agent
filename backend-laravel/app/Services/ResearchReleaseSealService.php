@@ -90,6 +90,19 @@ class ResearchReleaseSealService
         'backend-laravel/tests/Feature/CuratorContextObservedKnowHowTest.php',
         'ai-service-python/tests/test_closed_dmi_adx_method.py',
         'ai-service-python/tests/test_replay_market_coordinate_cache.py',
+        // Exact public curator designs/observations and their consumers. These
+        // are research instruction bytes, never private market-product globs
+        // or authority to attach a method to an agent automatically.
+        'backend-laravel/resources/research/instrument-methods/management-exit-practice-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-management-observations-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-activation-observations-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-activation-session-usage-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-scalping-observations-v1.json',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-scalp-day-observations-v1.json',
+        'backend-laravel/tests/Feature/CuratorManagementPracticeTest.php',
+        'ai-service-python/tests/test_curator_management_observations.py',
+        'ai-service-python/tests/test_curator_scalp_observations.py',
+        'ai-service-python/tests/test_curator_intraday_observations.py',
         'backend-laravel/tests/Feature/ClosedBandwidthSqueezeMethodTest.php',
         'ai-service-python/tests/test_closed_bandwidth_squeeze.py',
         'ai-service-python/tests/test_method_native_score_binding.py',

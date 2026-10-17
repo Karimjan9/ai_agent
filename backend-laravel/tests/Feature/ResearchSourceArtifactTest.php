@@ -155,6 +155,20 @@ class ResearchSourceArtifactTest extends TestCase
         'ai-service-python/tests/test_instrument_operating_skill_exercises.py',
         'ai-service-python/tests/test_temporal_closed_observation.py',
     ];
+    private const CURATOR_RESEARCH_RESOURCE_HASHES = [
+        'backend-laravel/resources/research/instrument-methods/management-exit-practice-v1.json' => '9ebc74e2240a19541ef60fb734e3586f85c571ecdd9261877e8b17eaf5e5b504',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-management-observations-v1.json' => 'e2f93af1bfa7a82effe0b6caf0f6fd87eb20dfc078bc93c72f7ffc0982a0856f',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-activation-observations-v1.json' => 'cd7e00d0c31d1cc35990434660f1f5de3bf8b46103dc7579bfba63027cf95594',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-activation-session-usage-v1.json' => 'f8bd8c81e1bc0e7064d99f2ddebd9bdd1eccf72129c0664575603b7aadf71c95',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-scalping-observations-v1.json' => 'fc6907afa17313eeb3d74e0c0d2cec464a9e760f1c8fe6dd8fc18cbd6c94e1b7',
+        'backend-laravel/resources/research/instrument-operating-skills/curator-scalp-day-observations-v1.json' => '86fad9edc5ce550d11e9978bcf2d563d8f357592a4108631fff98b512237ca33',
+    ];
+    private const CURATOR_RESEARCH_CONSUMER_FILES = [
+        'backend-laravel/tests/Feature/CuratorManagementPracticeTest.php',
+        'ai-service-python/tests/test_curator_management_observations.py',
+        'ai-service-python/tests/test_curator_scalp_observations.py',
+        'ai-service-python/tests/test_curator_intraday_observations.py',
+    ];
     private string $root;
     private FixtureResearchSourceArtifactOwner $owner;
 
@@ -192,7 +206,9 @@ class ResearchSourceArtifactTest extends TestCase
             File::put($this->root.'/'.$path, 'synthetic source-artifact test bytes: '.$path);
         }
         $projectRoot = dirname(base_path());
-        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::SOURCE_PRACTICE_FILES, ...self::CURATOR_PRACTICE_FILES, ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
+        foreach ([...self::OPERATING_CURRICULUM_SOURCE_FILES, ...self::SOURCE_PRACTICE_FILES, ...self::CURATOR_PRACTICE_FILES,
+            ...array_keys(self::CURATOR_RESEARCH_RESOURCE_HASHES), ...self::CURATOR_RESEARCH_CONSUMER_FILES,
+            ...self::REPLAY_IDLE_SOURCE_FILES, ...self::NATIVE_META_SOURCE_FILES] as $path) {
             if (! is_file($projectRoot.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_MISSING');
             File::ensureDirectoryExists(dirname($this->root.'/'.$path));
             if (! File::copy($projectRoot.'/'.$path, $this->root.'/'.$path)) throw new RuntimeException('OPERATING_CURRICULUM_TEST_FIXTURE_COPY_FAILED');
@@ -278,6 +294,62 @@ class ResearchSourceArtifactTest extends TestCase
         catch (RuntimeException $error) { $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $error->getMessage()); }
         $this->assertSame('verified', $this->owner->verifySourceArtifact($reference, false)['status']);
         $this->assertFalse($artifact['scientific_evidence']); $this->assertFalse($artifact['promotion_evidence']);
+    }
+
+    public function test_exact_curator_research_resources_and_consumers_are_sealed_and_each_drift_preserves_original_archive(): void
+    {
+        $this->assertSame('testing', config('app.env'));
+        $this->assertSame('sqlite', config('database.default'));
+        $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        $this->assertCount(6, self::CURATOR_RESEARCH_RESOURCE_HASHES);
+        $projectRoot = dirname(base_path());
+        $artifact = $this->owner->buildSourceArtifact();
+        $reference = $artifact['reference'];
+        $this->assertSame('verified', $artifact['status']);
+        $zipPath = $this->zipPath($reference);
+        $zipHash = hash_file('sha256', $zipPath);
+        $pointerPath = $this->root.'/.runtime/research-source-artifacts/current.json';
+        $pointer = File::get($pointerPath);
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($zipPath));
+        try {
+            foreach ([...array_keys(self::CURATOR_RESEARCH_RESOURCE_HASHES), ...self::CURATOR_RESEARCH_CONSUMER_FILES] as $path) {
+                $sha = hash_file('sha256', $projectRoot.'/'.$path);
+                if (isset(self::CURATOR_RESEARCH_RESOURCE_HASHES[$path])) {
+                    $this->assertSame(self::CURATOR_RESEARCH_RESOURCE_HASHES[$path], $sha, $path);
+                }
+                $bytes = $zip->getFromName($path);
+                $this->assertIsString($bytes, $path);
+                $this->assertSame($sha, hash('sha256', $bytes), $path);
+                $this->assertSame($sha, $artifact['manifest']['files'][$path]['sha256'], $path);
+            }
+            foreach (self::EXCLUDED_METHOD_SOURCE_FILES as $path) {
+                $this->assertFalse($zip->getFromName($path), $path);
+            }
+        } finally { $zip->close(); }
+
+        foreach (self::CURATOR_RESEARCH_RESOURCE_HASHES as $path => $sha) {
+            $original = File::get($this->root.'/'.$path);
+            try {
+                File::append($this->root.'/'.$path, "\n changed isolated resource fixture only");
+                $this->assertNull($this->owner->currentSourceArtifact(), $path);
+                try {
+                    $this->owner->verifySourceArtifact($reference, true);
+                    $this->fail('Current-source verification must reject changed '.$path);
+                } catch (RuntimeException $error) {
+                    $this->assertSame('SOURCE_ARTIFACT_SOURCE_DRIFT', $error->getMessage(), $path);
+                }
+                $old = $this->owner->verifySourceArtifact($reference, false);
+                $this->assertSame('verified', $old['status']);
+                $this->assertSame($sha, $old['manifest']['files'][$path]['sha256']);
+                $this->assertSame($zipHash, hash_file('sha256', $zipPath));
+                $this->assertSame($pointer, File::get($pointerPath));
+            } finally { File::put($this->root.'/'.$path, $original); }
+            $this->assertSame($reference, $this->owner->currentSourceArtifact());
+        }
+        $this->assertFalse($artifact['scientific_evidence']);
+        $this->assertFalse($artifact['promotion_evidence']);
+        $this->assertFalse($artifact['manifest']['worker_loaded_code_attested']);
     }
 
     protected function tearDown(): void
