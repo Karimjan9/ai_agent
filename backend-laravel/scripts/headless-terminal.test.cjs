@@ -60,3 +60,37 @@ test('the fallback supplies dimensions before its first PHP gate call', () => {
     assert.ok(assignment >= 0 && assignment < gate, name);
   }
 });
+
+test('actual singleton identity probe uses the verified GUI shell without an attached console',
+  { skip: process.platform !== 'win32' }, () => {
+    const originalBackend = path.dirname(path.dirname(fs.realpathSync(vendor)));
+    const quiet = path.resolve(originalBackend, '..', '.runtime', 'headless-shell');
+    const build = JSON.parse(fs.readFileSync(path.join(quiet, 'build.json'), 'utf8').replace(/^\uFEFF/, ''));
+    const code = [
+      '$GLOBALS["identityBackend"]=$argv[3];',
+      'function base_path($path="") { return $GLOBALS["identityBackend"].($path!=="" ? DIRECTORY_SEPARATOR.$path : ""); }',
+      'require $argv[1]; require $argv[2];',
+      'class QuietIdentityFixture extends App\\Console\\Commands\\RunHeadlessScheduler {',
+      ' public function probe($pid) { return $this->localProcessIdentity($pid); }',
+      ' protected function windowsIdentityScript(int $pid): string {',
+      '  $proof=\'Add-Type -TypeDefinition \\\'using System; using System.Runtime.InteropServices; public static class SchedulerConsoleProof {[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();}\\\'; \';',
+      '  return $proof.str_replace("[ordered]@{", "[ordered]@{console_attached=([SchedulerConsoleProof]::GetConsoleWindow() -ne [IntPtr]::Zero);", parent::windowsIdentityScript($pid));',
+      ' }',
+      '}',
+      'echo json_encode((new QuietIdentityFixture)->probe(getmypid()), JSON_THROW_ON_ERROR);',
+    ].join('\n');
+    const result = spawnSync(path.join(quiet, 'php-win.exe'), ['-r', code, vendor,
+      path.join(backend, 'app', 'Console', 'Commands', 'RunHeadlessScheduler.php'), backend], {
+      cwd: backend, shell: false, windowsHide: true, encoding: 'utf8', timeout: 12000,
+      env: { ...process.env, PHPRC: build.original_ini, COLUMNS: '120', LINES: '30' },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    const identity = JSON.parse(result.stdout);
+    assert.ok(identity, 'The bounded original transport must return an actual identity.');
+    assert.equal(identity.running, true);
+    assert.ok(Number.isSafeInteger(identity.pid) && identity.pid > 0);
+    assert.equal(identity.console_attached, false);
+    assert.ok(Date.parse(identity.created_at));
+    assert.match(identity.executable_path, /php-win\.exe$/i);
+  });

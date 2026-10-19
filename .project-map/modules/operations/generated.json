@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T12:54:33.909Z",
-  "source_digest": "d483dd157386cc82b90c955583ad96052bd5502cc4e8ed5d7a9365e9a1544481",
-  "source_file_count": 1788,
-  "git_head": "59c98db5b39ec2f030eda1cc9d27b6dca8276bf6",
+  "generated_at": "2026-10-19T13:18:42.457Z",
+  "source_digest": "d834d67c0777d9eeeb8ed65181eb0dc165fd37d8e8bac9054a5c2726c29d8b48",
+  "source_file_count": 1789,
+  "git_head": "4feb5eed9d7db395cbcac28fa1e9c8b06b105424",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -443,55 +443,73 @@
       "symbol": "RunHeadlessScheduler",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 13
-    },
-    {
-      "symbol": "handle",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 19
+      "line": 15
     },
     {
       "symbol": "refreshLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 202
+      "line": 204
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 21
     },
     {
       "symbol": "scheduleProcess",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 243
+      "line": 245
     },
     {
       "symbol": "runScheduleTickInProcess",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 252
+      "line": 254
     },
     {
       "symbol": "recoverStaleLocalLease",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 261
+      "line": 263
     },
     {
       "symbol": "hostname",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 298
+      "line": 311
     },
     {
       "symbol": "localProcessIsRunning",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 306
+      "line": 319
+    },
+    {
+      "symbol": "currentLeaseToken",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 341
+    },
+    {
+      "symbol": "localProcessIdentity",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 350
+    },
+    {
+      "symbol": "windowsIdentityScript",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
+      "line": 400
     },
     {
       "symbol": "claimMinute",
       "kind": "php_method",
       "path": "backend-laravel/app/Console/Commands/RunHeadlessScheduler.php",
-      "line": 338
+      "line": 408
     },
     {
       "symbol": "handle",
@@ -3101,6 +3119,20 @@
         "test_data_readiness_does_not_turn_future_or_paper_windows_into_available_data",
         "test_prospective_equal_budget_runner_settles_once_without_minting_compounding_authority",
         "settlement"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Feature/HeadlessSchedulerIdentityRecoveryTest.php",
+      "tests": [
+        "setUp",
+        "test_only_proven_stale_local_owner_identity_is_recoverable",
+        "ownerIdentities",
+        "test_metadata_changed_during_identity_probe_is_never_released_or_erased",
+        "test_replacement_lock_token_is_never_force_released_even_before_its_metadata_publication",
+        "test_simultaneous_recovery_owner_keeps_duplicate_recoverer_passive",
+        "metadata",
+        "identity",
+        "recover"
       ]
     },
     {

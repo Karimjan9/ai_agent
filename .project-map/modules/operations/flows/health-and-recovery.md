@@ -13,6 +13,14 @@ prerequisite failure.
 
 ## Sequence
 
+The headless cadence owner may wait behind an aged same-host lease. PID
+existence alone is not ownership: Windows can reuse a former scheduler PID
+for a queue worker. The existing owner uses a bounded quiet identity probe;
+only proved absence or a complete newer non-scheduler identity permits recovery.
+A short recovery mutex, unchanged metadata and atomic captured-token release
+protect a replacement owner. Live/unknown identity or changed ownership waits;
+recovery does not delete heartbeat metadata, alter queues or dispatch research.
+
 Daily database backup dispatch uses the dedicated serial `scheduler-backup`
 queue with a one-hour job lease below Redis visibility. A shared lock owns the
 native dump, streamed gzip and complete CRC/raw/compressed SHA verification.

@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\RedisStore;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -255,7 +257,7 @@ class RunHeadlessScheduler extends Command
     }
 
     /**
-     * Recover only a provably stale lease from a dead process on this host.
+     * Recover only a provably stale lease from a dead/reused process on this host.
      * A live process may be inside a long callback and is never pre-empted.
      */
     private function recoverStaleLocalLease(mixed $lease, string $leaseKey, int $heartbeatSeconds): bool
@@ -278,21 +280,32 @@ class RunHeadlessScheduler extends Command
             return false;
         }
 
-        if ($ageSeconds < max(60, $heartbeatSeconds * 3) || $this->localProcessIsRunning($ownerPid) !== false) {
+        if ($ageSeconds < max(60, $heartbeatSeconds * 3)) {
             return false;
         }
-
-        $lease->forceRelease();
-        Cache::forget('system:scheduler-lease');
-        Cache::forget('system:scheduler-heartbeat');
-        Log::warning('Recovered a stale headless scheduler lease from a dead local process.', [
-            'lease_key' => $leaseKey,
-            'stale_pid' => $ownerPid,
-            'stale_age_seconds' => $ageSeconds,
-            'replacement_pid' => getmypid(),
-        ]);
-
-        return true;
+        // Serialize competing recoverers, then release only the captured lock
+        // token. A delayed probe can never force-release a replacement owner.
+        $recovery = Cache::lock($leaseKey.':stale-recovery', 15);
+        if (! $recovery->get()) return false;
+        try {
+            $token = $this->currentLeaseToken($leaseKey);
+            if (! is_string($token) || $token === '' || Cache::get('system:scheduler-lease') !== $metadata
+                || $this->localProcessIsRunning($ownerPid, $metadata) !== false
+                || Cache::get('system:scheduler-lease') !== $metadata
+                || ! $lease->isOwnedBy($token)
+                || ! Cache::restoreLock($leaseKey, $token)->release()) return false;
+            // Do not erase read-model keys after releasing the lock: another
+            // genuine owner may already have published its new heartbeat.
+            Log::warning('Recovered a stale headless scheduler lease from a dead or reused local process.', [
+                'lease_key' => $leaseKey, 'stale_pid' => $ownerPid,
+                'stale_age_seconds' => $ageSeconds, 'replacement_pid' => getmypid(),
+            ]);
+            return true;
+        } catch (Throwable) {
+            return false;
+        } finally {
+            $recovery->release();
+        }
     }
 
     private function hostname(): string
@@ -303,36 +316,93 @@ class RunHeadlessScheduler extends Command
     /**
      * Null means that the platform could not prove either state.
      */
-    private function localProcessIsRunning(int $pid): ?bool
+    private function localProcessIsRunning(int $pid, array $metadata = []): ?bool
     {
-        if ($pid <= 0) {
-            return false;
-        }
+        $identity = $this->localProcessIdentity($pid);
+        if (($identity['running'] ?? null) === false) return false;
+        if (($identity['running'] ?? null) !== true || ($identity['pid'] ?? null) !== $pid) return null;
+        $command = strtolower(str_replace('\\', '/', (string) ($identity['command_line'] ?? '')));
+        $artisan = strtolower(str_replace('\\', '/', base_path('artisan')));
+        $binary = strtolower(basename(str_replace('\\', '/', (string) ($identity['executable_path'] ?? ''))));
+        if (! in_array($binary, ['php.exe', 'php-win.exe'], true)
+            || ! preg_match('~(?:^|\s)"?'.preg_quote($artisan, '~').'"?\s+"?([a-z][a-z0-9_-]*:[a-z0-9_-]+)"?(?:\s|$)~', $command, $match)) return null;
+        // Even a stale heartbeat can belong to a legitimate long callback.
+        if ($match[1] === 'schedule:headless-work') return true;
+        try {
+            if (! is_string($metadata['started_at'] ?? null) || ! is_string($identity['created_at'] ?? null)) return null;
+            $ownerStart = CarbonImmutable::parse($metadata['started_at']);
+            $processStart = CarbonImmutable::parse($identity['created_at']);
+            // Both a different canonical Artisan role and a later OS process
+            // birth are required; absent/ambiguous identity is never death.
+            return $processStart->greaterThan($ownerStart->addSecond()) ? false : null;
+        } catch (Throwable) { return null; }
+    }
 
+    private function currentLeaseToken(string $leaseKey): ?string
+    {
+        $store = Cache::store()->getStore();
+        $owner = $store instanceof RedisStore ? $store->lockConnection()->get($store->getPrefix().$leaseKey)
+            : ($store instanceof ArrayStore ? ($store->locks[$leaseKey]['owner'] ?? null) : null);
+        return is_string($owner) && $owner !== '' ? $owner : null;
+    }
+
+    /** Null is an unknown identity, not permission to steal a scheduler lease. */
+    protected function localProcessIdentity(int $pid): ?array
+    {
+        if ($pid <= 0) return null;
         if (PHP_OS_FAMILY !== 'Windows') {
-            if (function_exists('posix_kill')) {
-                return @posix_kill($pid, 0);
-            }
-
-            return is_dir('/proc/'.$pid) ? true : null;
-        }
-
-        // exec() invokes cmd.exe on Windows, which causes a visible console
-        // flash from the long-running scheduler. Symfony Process starts the
-        // executable directly with bypass_shell enabled.
-        $process = new Process(['tasklist', '/FI', 'PID eq '.$pid, '/FO', 'CSV', '/NH']);
-        $process->run();
-        if (! $process->isSuccessful()) {
+            if (function_exists('posix_kill') && ! @posix_kill($pid, 0)
+                && function_exists('posix_get_last_error') && posix_get_last_error() === 3) return ['running' => false];
             return null;
         }
-
-        foreach (preg_split('/\R/', $process->getOutput()) ?: [] as $line) {
-            if (preg_match('/^"[^"]+","'.preg_quote((string) $pid, '/').'",/i', trim((string) $line)) === 1) {
-                return true;
+        try {
+            // Only the already-built GUI shell is permitted. A bare console
+            // PowerShell/proc_open launch can flash before -WindowStyle acts.
+            $directory = dirname(PHP_BINARY);
+            $shell = $directory.DIRECTORY_SEPARATOR.'cmd.exe';
+            $buildBytes = (string) @file_get_contents($directory.DIRECTORY_SEPARATOR.'build.json');
+            $build = json_decode((string) preg_replace('/^\xEF\xBB\xBF/', '', $buildBytes), true);
+            $source = base_path('scripts/windows-hidden-shell.cs');
+            if (! is_array($build) || ! is_file($shell) || ! is_file($source)
+                || strtolower((string) ($build['shell_sha256'] ?? '')) !== hash_file('sha256', $shell)
+                || strtolower((string) ($build['shell_source_sha256'] ?? '')) !== hash_file('sha256', $source)) return null;
+            $powershell = rtrim((string) getenv('SystemRoot'), '\\/').'/System32/WindowsPowerShell/v1.0/powershell.exe';
+            if (! is_file($powershell) || ! function_exists('iconv')) return null;
+            $encoded = base64_encode(iconv('UTF-8', 'UTF-16LE', $this->windowsIdentityScript($pid)));
+            $stdout = tmpfile(); $stderr = tmpfile();
+            if ($stdout === false || $stderr === false) return null;
+            $process = null;
+            try {
+                $pipes = [];
+                $process = @proc_open([$shell, '/D', '/C', $powershell, '-NoLogo', '-NoProfile', '-NonInteractive',
+                    '-WindowStyle', 'Hidden', '-EncodedCommand', $encoded],
+                    [0 => ['file', 'NUL', 'r'], 1 => $stdout, 2 => $stderr], $pipes, base_path(), null,
+                    ['bypass_shell' => true, 'create_new_console' => false, 'create_process_group' => false]);
+                if (! is_resource($process)) return null;
+                $deadline = microtime(true) + 5;
+                do {
+                    $status = proc_get_status($process);
+                    if (! $status['running']) break;
+                    if (microtime(true) >= $deadline) { proc_terminate($process); return null; }
+                    usleep(20_000);
+                } while (true);
+                if (($status['exitcode'] ?? -1) !== 0 || (int) (fstat($stdout)['size'] ?? 0) > 16384) return null;
+                rewind($stdout);
+                $decoded = json_decode((string) stream_get_contents($stdout), true, 16, JSON_THROW_ON_ERROR);
+                return is_array($decoded) ? $decoded : null;
+            } finally {
+                if (is_resource($process)) proc_close($process);
+                fclose($stdout); fclose($stderr);
             }
-        }
+        } catch (Throwable) { return null; }
+    }
 
-        return false;
+    protected function windowsIdentityScript(int $pid): string
+    {
+        return '$ErrorActionPreference="Stop"; $p=Get-CimInstance Win32_Process -Filter "ProcessId = '.(int) $pid.'"; '
+            .'if($null -eq $p){[ordered]@{running=$false}|ConvertTo-Json -Compress}else{'
+            .'[ordered]@{running=$true;pid=[int]$p.ProcessId;created_at=$p.CreationDate.ToUniversalTime().ToString("o");'
+            .'executable_path=[string]$p.ExecutablePath;command_line=[string]$p.CommandLine}|ConvertTo-Json -Compress}';
     }
 
     private function claimMinute(string $minute): bool

@@ -65,10 +65,12 @@ class RunHeadlessSchedulerTest extends TestCase
             $method->setAccessible(true);
             $contender = Cache::lock($leaseKey, 900);
 
-            $this->assertTrue($method->invoke(app(RunHeadlessScheduler::class), $contender, $leaseKey, 30));
+            $command = \Mockery::mock(RunHeadlessScheduler::class)->makePartial()->shouldAllowMockingProtectedMethods();
+            $command->shouldReceive('localProcessIdentity')->once()->with(99999999)->andReturn(['running' => false]);
+            $this->assertTrue($method->invoke($command, $contender, $leaseKey, 30));
             $this->assertTrue($contender->get());
             Log::shouldHaveReceived('warning')->once()->withArgs(
-                fn (string $message, array $context): bool => $message === 'Recovered a stale headless scheduler lease from a dead local process.'
+                fn (string $message, array $context): bool => $message === 'Recovered a stale headless scheduler lease from a dead or reused local process.'
                     && $context['lease_key'] === $leaseKey
                     && $context['stale_pid'] === 99999999,
             );

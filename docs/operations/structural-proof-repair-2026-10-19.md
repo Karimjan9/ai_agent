@@ -162,3 +162,37 @@ existing arbiter suite passed 55 / 321, including the explicit projected
 recovery call. All four affected PHP files linted; no risk/data/authority gate
 or scientific threshold changed. Production requires another naturally drained
 boundary; this candidate must not be hot-fixed into the running selector.
+
+## Actual scheduler identity boundary
+
+The delivered follow-up `4feb5ee` passed fresh worker/source and idle probes.
+Its public 13:03:02 UTC RESUME did not prove cadence: the replacement headless
+scheduler waited behind stale metadata for PID 11120. Read-only process evidence
+showed Windows had reused that PID for a new `queue:work --queue=scheduler-ops`
+worker, not the former scheduler. The old liveness check established only PID
+existence and therefore could not distinguish that unrelated process.
+
+An own public PAUSE at 13:05:27 UTC and ordinary IDLE preflight preserved all
+business state; cadence stopped hidden. No lock/queue reset, manual tick or
+new replay occurred. The next narrow correction must let the existing owner
+recover only a proved stale local scheduler identity, protecting a genuine
+live scheduler, another host and an unknown/failed process probe. Its tests,
+safe release and actual cadence acceptance are recorded separately below.
+
+The final correction passed **20 tests / 106 assertions** for exact identity,
+same-host/age, unknown/live-owner protection and metadata/token replacement
+races. All **four headless-terminal Node tests** passed, including an actual
+known-self-PID PowerShell/CIM probe through the existing SHA-verified GUI shell;
+`GetConsoleWindow()` returned false (2.08 seconds). Three PHP lints and Node
+syntax passed. No production cache, lock, heartbeat or process was changed by
+these tests. Original build metadata's UTF-8 BOM and uppercase digests are
+normalized locally before the same exact byte-hash comparisons; the refused
+pre-normalization transport attempts did not launch a process.
+
+The existing cadence loop now releases only the captured old lock token,
+atomically, under a short recovery mutex after unchanged metadata and process
+proof. It never force-releases an observed replacement owner or deletes that
+owner's heartbeat. Missing quiet proxy, unknown identity/cache, another host,
+another project and genuine headless scheduler all remain protected. PID reuse
+by a newer canonical-project PHP worker and a proved absent original PID are
+the bounded recoverable cases. No research or scientific gate is relaxed.
