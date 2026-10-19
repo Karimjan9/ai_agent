@@ -144,6 +144,7 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ConstructorPreparationStageTest.php
   - backend-laravel/scripts/test_create_database_backup.py
   - backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php
   - backend-laravel/tests/Feature/PhaseTwoFoundationTest.php

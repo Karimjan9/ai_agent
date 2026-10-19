@@ -92,13 +92,21 @@ class EvolutionaryAuthorityFoundryService
         if (($topology['status'] ?? null) !== 'topology_valid') return $topology;
         $parentEnd = \Carbon\CarbonImmutable::parse($certificate['design']['validation_end'])->utc();
         $holding = (int) data_get($certificate, 'design.exposure_policy.holding_fence_seconds', 0);
-        $earliest = $parentEnd->addSeconds($holding)->max(\Carbon\CarbonImmutable::now('UTC'));
+        $historicalFirstExposure = data_get($certificate, 'design.registration_time_policy')
+            === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+        $earliest = $parentEnd->addSeconds($holding);
+        if (! $historicalFirstExposure) $earliest = $earliest->max(\Carbon\CarbonImmutable::now('UTC'));
         $first = $earliest->startOfMonth()->addMonth();
         $count = max(6, (int) config('services.learning_lane.causal_minimum_powered_windows', 6));
         $periods = [];
         for ($index = 0; $index < $count; $index++) $periods[] = [
             'start_inclusive' => $first->addMonths($index)->toIso8601String(),
             'end_exclusive' => $first->addMonths($index + 1)->toIso8601String()];
+        if (! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+            $periods[0]['start_inclusive'], $periods[count($periods) - 1]['end_exclusive'])) {
+            return ['status' => 'blocked_dependency', 'reason_code' => 'SCOPED_DESCENDANT_LATER_PRE_2026_WINDOWS_UNAVAILABLE',
+                'actual_data_available' => false, 'execution_authorized' => false, 'promotion_evidence' => false];
+        }
         $proposal = ['protocol' => 'scoped_descendant_single_proposal_v1', 'status' => 'prospective_hypothesis_dependency',
             'source_component_certificate_id' => $certificateId, 'source_design_hash' => $certificate['design_hash'],
             'source_cartridge_id' => (int) $cartridge->id, 'source_cartridge_revision' => (int) $cartridge->revision,
@@ -108,8 +116,12 @@ class EvolutionaryAuthorityFoundryService
             'selection' => $selection, 'parameter_vectors' => $vectors, 'trait_delta' => $topology['trait_delta'], 'other_delta' => $topology['other_delta'],
             'window_draft' => $periods, 'parent_validation_windows_reusable' => false,
             'current_source_hash' => app(LabImmutableEvidenceService::class)->codeHash(), 'max_proposals' => 1,
-            'native_original_registration_required_before_first_event' => true, 'actual_data_available' => false,
+            'native_original_registration_required_before_first_event' => ! $historicalFirstExposure, 'actual_data_available' => false,
             'execution_authorized' => false, 'inheritance_credit' => false, 'promotion_evidence' => false];
+        if ($historicalFirstExposure) {
+            $proposal['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+            $proposal['native_original_registration_required_before_first_exposure'] = true;
+        }
         return [...$proposal, 'proposal_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($proposal)];
     }
 

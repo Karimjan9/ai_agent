@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-17T07:26:06.045Z",
-  "source_digest": "0437fceaffec52597f55c72020d8f9021f27364bd2aec20c78859aee8a7b0867",
-  "source_file_count": 1777,
-  "git_head": "6d22b32463292e9993ca5def92dd029a3ee3ee59",
+  "generated_at": "2026-10-19T12:21:50.040Z",
+  "source_digest": "8cc5fe885615692f05909d7749e548d3fbff3ebd990d3c13562962fb25dc82f4",
+  "source_file_count": 1787,
+  "git_head": "d7c2b18c82b406b1f1119c67e4d7dace0027412c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tables": [
     {
@@ -2069,6 +2069,11 @@
       "line": 15
     },
     {
+      "table": "research_original_model_origins",
+      "migration": "backend-laravel/database/migrations/2026_10_19_120000_create_research_original_model_origins.php",
+      "line": 11
+    },
+    {
       "table": "research_skill_portfolio_entries",
       "migration": "backend-laravel/database/migrations/2026_09_07_150000_create_neurotrader_lab_expansion_tables.php",
       "line": 35
@@ -3477,6 +3482,10 @@
     {
       "model": "ResearchLoopDecision",
       "path": "backend-laravel/app/Models/ResearchLoopDecision.php"
+    },
+    {
+      "model": "ResearchOriginalModelOrigin",
+      "path": "backend-laravel/app/Models/ResearchOriginalModelOrigin.php"
     },
     {
       "model": "RiskHysteresisState",

@@ -48,6 +48,16 @@ class CausalFoldExecutionService
     public function run(int $experimentId, int $foldIndex): array
     {
         $experiment = AgentLearningCausalExperiment::query()->with('generation.agents.modelVersion')->findOrFail($experimentId);
+        $finiteSource = app(FiniteOriginalComponentPreparationService::class)->isOriginalSourceReference($experiment);
+        $reservedSource = $experiment->status === 'scoped_source_reference'
+            || data_get($experiment->evidence, 'experiment_kind') === ResearchWindowExposureInventoryService::ORIGINAL_ORIGIN_PROTOCOL
+            || data_get($experiment->generation?->trigger_context, FiniteOriginalComponentPreparationService::MARKER.'.protocol')
+                === FiniteOriginalComponentPreparationService::PROTOCOL;
+        if ($finiteSource || $reservedSource) {
+            return ['status' => 'terminal_without_replay', 'experiment_id' => $experimentId, 'fold_index' => $foldIndex,
+                'reason_code' => $finiteSource ? 'FINITE_COMPONENT_SOURCE_REFERENCE_REPLAY_WITHHELD'
+                    : 'FINITE_COMPONENT_SOURCE_REFERENCE_PROOF_INVALID', 'promotion_evidence' => false];
+        }
         $selectorReady = app(ScopedSelectorPanelService::class)->executionReadiness($experiment);
         if (($selectorReady['ready'] ?? false) !== true) {
             return ['status' => 'awaiting_original_selector_data',

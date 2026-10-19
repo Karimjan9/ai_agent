@@ -228,6 +228,12 @@ class ResearchExperimentConversionKernelService
                             $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED');
                             if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
                         }
+                        if ($item->work_type === FiniteOriginalComponentPreparationService::WORK_TYPE) {
+                            $proof = app(FiniteOriginalComponentPreparationService::class)->inspectWork($item);
+                            $payload['executable'] = ($proof['executable'] ?? false) === true;
+                            $payload['retry_condition']['code'] = (string) ($proof['reason_code'] ?? 'FINITE_COMPONENT_ORIGINAL_SERVER_DATA_REQUIRED');
+                            if ((array) $item->payload !== $payload) $item->update(['payload' => $payload]);
+                        }
                         if (in_array($item->work_type, DescendantScopedExecutionService::WORK_TYPES, true)) {
                             $proof = app(DescendantScopedExecutionService::class)->inspectWork($item);
                             $payload['executable'] = ($proof['executable'] ?? false) === true;
@@ -346,6 +352,13 @@ class ResearchExperimentConversionKernelService
                     $proof = app(ScopedDescendantCandidatePreparationService::class)->inspectWork($item);
                     if (($proof['executable'] ?? false) !== true) {
                         $item->update(['status' => 'blocked', 'last_error' => $proof['reason_code'] ?? 'SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED']);
+                        continue;
+                    }
+                }
+                if ($item->work_type === FiniteOriginalComponentPreparationService::WORK_TYPE) {
+                    $proof = app(FiniteOriginalComponentPreparationService::class)->inspectWork($item);
+                    if (($proof['executable'] ?? false) !== true) {
+                        $item->update(['status' => 'blocked', 'last_error' => $proof['reason_code'] ?? 'FINITE_COMPONENT_ORIGINAL_SERVER_DATA_REQUIRED']);
                         continue;
                     }
                 }
@@ -530,6 +543,7 @@ class ResearchExperimentConversionKernelService
     {
         $type = (string) ($nextWork['type'] ?? '');
         $profiles = [
+            FiniteOriginalComponentPreparationService::WORK_TYPE => [false, 'FINITE_COMPONENT_ORIGINAL_SERVER_DATA_REQUIRED', 1],
             InstrumentMethodStudyExecutionService::WORK_TYPE => [false, 'METHOD_STUDY_FRESH_ORIGINAL_READINESS_REQUIRED', 1],
             'cartridge_confirmation' => [true, 'CANONICAL_CARTRIDGE_AND_BASELINE_READY', 3],
             DescendantScopedExecutionService::WORK_TYPE => [false, 'DESCENDANT_ACTUAL_AUTHORIZED_ORIGINAL_WINDOW_REQUIRED', 1],
@@ -596,6 +610,9 @@ class ResearchExperimentConversionKernelService
 
     private function dependencyReady(ResearchExperimentWorkItem $item, array $payload, ?array $lockedCouncilProof = null, ?array $lockedMethodProof = null): bool
     {
+        if ($item->work_type === FiniteOriginalComponentPreparationService::WORK_TYPE) {
+            return (app(FiniteOriginalComponentPreparationService::class)->inspectWork($item)['executable'] ?? false) === true;
+        }
         if ($item->work_type === InstrumentMethodStudyExecutionService::WORK_TYPE) {
             // The same locked work was just inspected above. This local proof
             // expires with reconciliation; claim and admission remain fresh.

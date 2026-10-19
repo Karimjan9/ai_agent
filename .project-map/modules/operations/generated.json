@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-17T07:26:06.045Z",
-  "source_digest": "0437fceaffec52597f55c72020d8f9021f27364bd2aec20c78859aee8a7b0867",
-  "source_file_count": 1777,
-  "git_head": "6d22b32463292e9993ca5def92dd029a3ee3ee59",
+  "generated_at": "2026-10-19T12:21:50.040Z",
+  "source_digest": "8cc5fe885615692f05909d7749e548d3fbff3ebd990d3c13562962fb25dc82f4",
+  "source_file_count": 1787,
+  "git_head": "d7c2b18c82b406b1f1119c67e4d7dace0027412c",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -3009,6 +3009,18 @@
       ]
     },
     {
+      "path": "backend-laravel/tests/Feature/ConstructorPreparationStageTest.php",
+      "tests": [
+        "setUp",
+        "test_diagnostic_keeps_original_expiry_heartbeat_and_attempt_identity",
+        "test_missing_or_replaced_attempt_cannot_publish_or_manufacture_ownership",
+        "test_public_constructor_records_phase_before_first_heavy_call_and_exception_cleanup_preserves_log",
+        "test_pause_guard_stays_before_owner_diagnostics_and_any_heavy_dependency",
+        "publish",
+        "attempt"
+      ]
+    },
+    {
       "path": "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
       "tests": [
         "setUp",
@@ -3049,10 +3061,20 @@
         "test_real_compound_source_recipe_binds_original_two_and_four_arm_requests_without_model_mutation",
         "test_missing_actual_volume_provenance_cannot_silently_disable_a_required_original_lane",
         "test_existing_foundry_freezes_one_other_gene_hypothesis_then_waits_for_future_server_slots",
+        "test_explicit_historical_four_arm_registration_uses_first_exposure_clock_not_future_market_time",
+        "currentHistoricalRegistrationClocks",
+        "test_historical_time_policy_never_reopens_observed_arms_or_component_events",
+        "test_first_exposure_requires_matching_native_policy_and_never_accepts_paper_years",
+        "test_legacy_component_does_not_invent_future_paper_windows_at_current_clock",
+        "test_historical_candidate_readiness_cannot_replace_original_parent_prefix_with_a_mocked_status",
+        "test_original_descendant_factory_cannot_borrow_a_newer_work_lease",
+        "test_original_birth_rejects_current_stop_or_parent_exit_drift_without_partial_models",
+        "originalBirthCommitStops",
         "test_registered_future_slots_create_pristine_four_arm_question_with_parent_guards_before_any_data",
         "test_real_native_clock_is_rederived_from_original_bytes_and_a_resealed_wrong_schedule_is_refused",
         "nativeWire",
-        "fixture"
+        "fixture",
+        "historicalDescendantScope"
       ]
     },
     {

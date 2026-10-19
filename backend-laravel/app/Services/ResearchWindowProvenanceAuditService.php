@@ -85,6 +85,32 @@ class ResearchWindowProvenanceAuditService
         return [...$identity, 'audit_hash' => $this->hash($identity), 'observed_at' => now()->utc()->toIso8601String()];
     }
 
+    /**
+     * Named original producer only. This never upgrades the global reference audit
+     * or authorizes data; a copied caller report is not consumed by this path.
+     */
+    public function auditForCertificate(int $certificateId, ?string $candidateStart, ?string $candidateEnd,
+        array $originalRunIds = [], array $originalFoldIds = []): array
+    {
+        $candidate = $this->candidate($candidateStart, $candidateEnd);
+        if ($candidate === null) throw new InvalidArgumentException('CANDIDATE_REQUIRES_VALID_EXPLICIT_UTC_INTERVAL');
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation($certificateId,
+            $candidate['start']->toIso8601String(), $candidate['end']->toIso8601String(), $originalRunIds, $originalFoldIds);
+        $ready = ($proof['ready'] ?? false) === true;
+        $identity = ['protocol' => self::PROTOCOL, 'certificate_id' => $certificateId,
+            'candidate_interval' => ['start_inclusive' => $candidate['start']->toIso8601String(),
+                'end_exclusive' => $candidate['end']->toIso8601String()],
+            'original_history_attestation' => $proof, 'candidate_unused_demonstrated' => $ready,
+            'candidate_unused_windows' => $ready ? [['start_inclusive' => $candidate['start']->toIso8601String(),
+                'end_exclusive' => $candidate['end']->toIso8601String()]] : [],
+            'unresolved_provenance' => $ready ? [] : [$proof['reason_code']],
+            'dependency_status' => $ready ? 'READY' : 'BLOCKED_DEPENDENCY', 'reason_code' => $proof['reason_code'],
+            'scope' => 'named_finite_original_candidate_history_not_global_archive_independence',
+            'paper_2026_research_eligible' => false, 'independent_evidence' => false,
+            'promotion_evidence' => false, 'server_authorization_created' => false, 'data_writes' => false];
+        return [...$identity, 'audit_hash' => $this->hash($identity), 'observed_at' => now()->utc()->toIso8601String()];
+    }
+
     public function preregistration(array $proposal, array $audit): array
     {
         $auditIdentity = $audit;

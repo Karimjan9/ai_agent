@@ -1,5 +1,15 @@
 # Integrations and runtime boundaries
 
+## Original historical exposure and descendant preparation
+
+The existing Laravel exposure owner binds an original server-created source
+roster before its first request/fold ingress. Assessment reopens compressed
+original request manifests, their wire-payload seals and physical four-stream
+CSV custody; the safe artifact manifest is not the original raw wire JSON and
+must not be rehashed as though it were. Failed/partial and unidentified inputs
+remain dependencies. No Python evaluator, statistical guard, legacy authority
+or paper epoch is changed by this preparation route (ADR-041).
+
 ## Fixed full-month three-method curator replication
 
 `curator_intraday_month_windows.py` reuses the unchanged native raw-parent and

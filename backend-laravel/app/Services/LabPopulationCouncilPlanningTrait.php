@@ -674,7 +674,7 @@ trait LabPopulationCouncilPlanningTrait
     /** Recent full-replay failures become G98 context contracts, not month genes. */
     private function robustnessMatrixFrontier(AiLaboratory $lab): array
     {
-        $rowsQuery = ModelMarketPerformance::query()->with('modelVersion')
+        $rowsQuery = ModelMarketPerformance::query()
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')->latest('updated_at');
         $sourceLimit = (int) config('services.lab_selection.robustness_matrix_source_limit', 0);
@@ -923,7 +923,7 @@ trait LabPopulationCouncilPlanningTrait
             return $this->forwardFailureCouncilCurriculum($lab);
         }
 
-        $candidateQuery = ModelMarketPerformance::with('modelVersion')
+        $candidateQuery = ModelMarketPerformance::query()
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')
             ->whereHas('modelVersion', fn ($query) => $query->whereJsonContains('metadata->portfolio_research_contract->protocol', 'portfolio_member_research_v1'))
@@ -1319,7 +1319,6 @@ trait LabPopulationCouncilPlanningTrait
     private function forwardFailureCouncilCurriculum(AiLaboratory $lab): array
     {
         $performanceQuery = ModelMarketPerformance::query()
-            ->with('modelVersion')
             ->where('symbol', $lab->symbol)->where('timeframe', $lab->timeframe)
             ->where('evidence_status', 'valid')
             // Overfit members are still valid failure evidence for research
@@ -1346,68 +1345,87 @@ trait LabPopulationCouncilPlanningTrait
             return [];
         }
 
+        return [
+            'protocol' => 'portfolio_council_curriculum_v1',
+            'source_portfolio_id' => null,
+            'activation' => 'forward_failure_deadlock_breaker_v1',
+            'niches' => $this->withTransitionRiskRouter($this->forwardFailureCouncilNiches($failed, $decisions)),
+            'rule' => 'Individual forward failures seed explicit regime owners; no member or combined portfolio receives promotion evidence from this curriculum.',
+        ];
+    }
+
+    /**
+     * Keep each regime's original candidate/tie order, without decoding every
+     * full replay document once per regime and once per candidate field.
+     * There is no process/persistent cache: fresh original rows are selected
+     * above on every call. Only the three winning contexts need state clusters.
+     */
+    private function forwardFailureCouncilNiches(\Illuminate\Support\Collection $failed, \Illuminate\Support\Collection $decisions): array
+    {
         $defaults = [
             'trend_up' => 'normal_volatility',
             'trend_down' => 'normal_volatility',
             'range' => 'low_volatility',
         ];
-        $niches = [];
-
-        foreach ($defaults as $regime => $defaultVolatility) {
-            $best = null;
-            foreach ($failed as $performance) {
-                $contexts = (array) data_get($performance->metrics, 'pf_attribution.breakdown.by_regime_volatility', []);
-                foreach ($contexts as $key => $row) {
-                    [$contextRegime, $volatility] = array_pad(explode('|', (string) $key, 2), 2, null);
-                    if ($contextRegime !== $regime || ! in_array($volatility, ['low_volatility', 'normal_volatility', 'high_volatility'], true)) {
-                        continue;
-                    }
-                    $trades = (int) data_get($row, 'trades', 0);
-                    if ($trades < 3) {
-                        continue;
-                    }
-                    $pf = (float) data_get($row, 'net_pf', data_get($row, 'profit_factor', 0));
-                    $candidate = [
-                        'regime' => $regime, 'volatility' => $volatility,
-                        'profit_factor' => $pf, 'trades' => $trades,
-                        'source_performance_id' => $performance->id,
-                        'failed_gate_reasons' => array_values(array_unique((array) data_get($decisions->get($performance->id)->first(), 'reason_codes', []))),
-                    ];
-                    $dominantRejection = (string) data_get($performance->metrics, 'entry_funnel.dominant_rejection', '');
-                    $transitionWaitRejections = (int) data_get($performance->metrics, 'entry_funnel.rejected.regime_transition_wait', 0);
-                    // A transition-dominant child is a more informative
-                    // research parent for the transition/recall lane than a
-                    // higher-trade child whose bottleneck is unrelated. This
-                    // is only source selection for bounded experiments; it
-                    // does not grant the source or its child any gate pass.
-                    $candidate['_transition_priority'] = $dominantRejection === 'regime_transition_wait';
-                    $candidate['_transition_wait_rejections'] = $transitionWaitRejections;
-                    $candidate['dominant_entry_rejection'] = $dominantRejection ?: null;
-                    $candidate['state_cluster'] = $this->stateClusterForPerformance(
-                        $performance,
-                        $contextRegime,
-                        $volatility,
-                    );
-                    $isPreferredFamily = in_array($performance->strategy_family, ['hybrid', 'differential_router'], true);
-                    $bestPreferred = $best && in_array($best['_family'] ?? null, ['hybrid', 'differential_router'], true);
-                    $bestTransitionPriority = (bool) ($best['_transition_priority'] ?? false);
-                    $transitionWins = $candidate['_transition_priority'] && ! $bestTransitionPriority;
-                    $sameTransitionPriorityMoreEvidence = $candidate['_transition_priority'] === $bestTransitionPriority
-                        && $transitionWaitRejections > (int) ($best['_transition_wait_rejections'] ?? 0);
-                    if ($best === null
-                        || ($isPreferredFamily && ! $bestPreferred)
-                        || (($isPreferredFamily === $bestPreferred)
-                            && ($transitionWins
-                                || $sameTransitionPriorityMoreEvidence
-                                || (! $candidate['_transition_priority']
-                                    && ! $bestTransitionPriority
-                                    && $trades > (int) ($best['trades'] ?? 0))))) {
-                        $candidate['_family'] = $performance->strategy_family;
-                        $best = $candidate;
-                    }
+        $bestByRegime = [];
+        foreach ($failed as $performance) {
+            $metrics = (array) $performance->metrics;
+            $contexts = (array) data_get($metrics, 'pf_attribution.breakdown.by_regime_volatility', []);
+            $dominantRejection = (string) data_get($metrics, 'entry_funnel.dominant_rejection', '');
+            $transitionWaitRejections = (int) data_get($metrics, 'entry_funnel.rejected.regime_transition_wait', 0);
+            foreach ($contexts as $key => $row) {
+                [$contextRegime, $volatility] = array_pad(explode('|', (string) $key, 2), 2, null);
+                if (! array_key_exists((string) $contextRegime, $defaults) || ! in_array($volatility, ['low_volatility', 'normal_volatility', 'high_volatility'], true)) {
+                    continue;
+                }
+                $regime = $contextRegime;
+                $best = $bestByRegime[$regime] ?? null;
+                $trades = (int) data_get($row, 'trades', 0);
+                if ($trades < 3) {
+                    continue;
+                }
+                $pf = (float) data_get($row, 'net_pf', data_get($row, 'profit_factor', 0));
+                $candidate = [
+                    'regime' => $regime, 'volatility' => $volatility,
+                    'profit_factor' => $pf, 'trades' => $trades,
+                    'source_performance_id' => $performance->id,
+                    'failed_gate_reasons' => array_values(array_unique((array) data_get($decisions->get($performance->id)->first(), 'reason_codes', []))),
+                ];
+                // A transition-dominant child is a more informative
+                // research parent for the transition/recall lane than a
+                // higher-trade child whose bottleneck is unrelated. This
+                // is only source selection for bounded experiments; it
+                // does not grant the source or its child any gate pass.
+                $candidate['_transition_priority'] = $dominantRejection === 'regime_transition_wait';
+                $candidate['_transition_wait_rejections'] = $transitionWaitRejections;
+                $candidate['dominant_entry_rejection'] = $dominantRejection ?: null;
+                $isPreferredFamily = in_array($performance->strategy_family, ['hybrid', 'differential_router'], true);
+                $bestPreferred = $best && in_array($best['_family'] ?? null, ['hybrid', 'differential_router'], true);
+                $bestTransitionPriority = (bool) ($best['_transition_priority'] ?? false);
+                $transitionWins = $candidate['_transition_priority'] && ! $bestTransitionPriority;
+                $sameTransitionPriorityMoreEvidence = $candidate['_transition_priority'] === $bestTransitionPriority
+                    && $transitionWaitRejections > (int) ($best['_transition_wait_rejections'] ?? 0);
+                if ($best === null
+                    || ($isPreferredFamily && ! $bestPreferred)
+                    || (($isPreferredFamily === $bestPreferred)
+                        && ($transitionWins
+                            || $sameTransitionPriorityMoreEvidence
+                            || (! $candidate['_transition_priority']
+                                && ! $bestTransitionPriority
+                                && $trades > (int) ($best['trades'] ?? 0))))) {
+                    $candidate['_family'] = $performance->strategy_family;
+                    $candidate['_performance'] = $performance;
+                    $bestByRegime[$regime] = $candidate;
                 }
             }
+        }
 
+        $niches = [];
+        foreach ($defaults as $regime => $defaultVolatility) {
+            $best = $bestByRegime[$regime] ?? null;
+            $cluster = $best === null ? null : $this->stateClusterForPerformance(
+                $best['_performance'], $regime, $best['volatility'],
+            );
             $niches[] = [
                 'protocol' => 'portfolio_council_v1',
                 'role' => $regime.'_specialist',
@@ -1421,7 +1439,7 @@ trait LabPopulationCouncilPlanningTrait
                 'failed_gate_reasons' => $best['failed_gate_reasons'] ?? [],
                 'dominant_entry_rejection' => $best['dominant_entry_rejection'] ?? null,
                 'transition_wait_rejections' => (int) ($best['_transition_wait_rejections'] ?? 0),
-                'state_cluster' => $best['state_cluster'] ?? null,
+                'state_cluster' => $cluster,
                 'recall_variant' => (bool) ($best['_transition_priority'] ?? false)
                     ? 'transition_wait_shortening' : null,
                 'recall_source_performance_id' => (bool) ($best['_transition_priority'] ?? false)
@@ -1432,15 +1450,7 @@ trait LabPopulationCouncilPlanningTrait
             ];
         }
 
-        $niches = $this->withTransitionRiskRouter($niches);
-
-        return [
-            'protocol' => 'portfolio_council_curriculum_v1',
-            'source_portfolio_id' => null,
-            'activation' => 'forward_failure_deadlock_breaker_v1',
-            'niches' => $niches,
-            'rule' => 'Individual forward failures seed explicit regime owners; no member or combined portfolio receives promotion evidence from this curriculum.',
-        ];
+        return $niches;
     }
 
     /**

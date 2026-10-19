@@ -122,6 +122,84 @@ class ScopedResearchAuthorityTest extends TestCase
         $this->assertSame('SCOPED_ORIGINAL_CERTIFICATE_REQUIRED_NOT_LEGACY_CREDIT', $bridge->settle($fixture['source']->fresh())['reason_code']);
     }
 
+    /** Fabricated measurements test the real issuer/credit wiring, not a market edge. */
+    public function test_original_historical_birth_capture_completed_products_and_scoped_credit_at_real_registration_clock(): void
+    {
+        $fixture = $this->question('guided', originalHistory: true);
+        $this->assertSame('2026-10-19', now()->utc()->toDateString());
+        $products = $this->originalProducts($fixture, .3);
+        $registry = app(ScopedResearchCertificateService::class);
+        $readiness = $registry->independentWindowReadiness($fixture['certificate_id']);
+        $this->assertTrue($readiness['ready'], json_encode($readiness));
+        $original = new \ReflectionMethod(\App\Services\ScopedResearchAuthorityService::class, 'original');
+        $witness = $original->invoke(app(\App\Services\ScopedResearchAuthorityService::class),
+            $registry->verifiedRegistration($fixture['certificate_id']), $products[0]['run_ids']['candidate'],
+            ['model_id' => (int) $fixture['agents']['guided']->model_version_id], $readiness['windows'][0]);
+        $this->assertTrue($witness['safety']['hard_risk_passed']);
+        $result = $registry->issueIndependent($fixture['certificate_id'], $products);
+
+        $this->assertSame('independently_confirmed_component', $result['status'], json_encode($result));
+        $this->assertTrue($result['confirmed_component']);
+        $this->assertFalse($result['confirmed_selector']);
+        $this->assertFalse($result['original_authority']['component']['paper_or_live_authority']);
+        $bridge = app(CausalSkillCreditBridgeService::class);
+        $credit = $bridge->settleScopedCertificate($fixture['certificate_id']);
+        $this->assertSame('credited', $credit['status'], json_encode($credit));
+        $this->assertDatabaseCount('lab_evolution_credit_events', 1);
+        $this->assertDatabaseCount('research_original_model_origins', 1);
+        $this->assertDatabaseCount('paper_orders', 0);
+        $parentAuthorizations = config('services.instrument_policy.authorized_research_windows');
+        $preparation = app(\App\Services\ScopedDescendantCandidatePreparationService::class);
+        $next = $preparation->register($fixture['certificate_id']);
+        $this->assertContains($next['status'], ['recorded', 'already_registered'], json_encode($next));
+        $work = ResearchExperimentWorkItem::where('work_type', $preparation::WORK_TYPE)->sole();
+        $proposal = $work->payload['frozen_proposal'];
+        $childInputs = $this->inputs(['year' => 2012, 'source' => (object) ['id' => 'historical-descendant-'.$work->id],
+            'periods' => $proposal['window_draft'], 'original_history' => true]);
+        config()->set('services.instrument_policy.authorized_research_windows', [...$parentAuthorizations,
+            ...config('services.instrument_policy.authorized_research_windows')]);
+        // Test-only durable lease; no runtime scheduler or production mutation.
+        $work->update(['status' => 'leased', 'attempts' => 1, 'lease_token' => 'original-descendant-software-lease',
+            'fence_version' => 1, 'lease_expires_at' => now()->addSeconds(2700)]);
+        $controlOwner = app(AutonomousModeService::class);
+        $this->mock(AutonomousModeService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('enabled')->andReturnTrue();
+            $mock->shouldReceive('enabledForCommit')->once()->andReturnFalse();
+        });
+        try {
+            app(\App\Services\ResearchWindowExposureInventoryService::class)->createOriginalScopedDescendantModels($work->fresh('receipt'));
+            $this->fail('A stale ordinary enabled read bypassed the commit-mode fence.');
+        } catch (\LogicException $error) {
+            $this->assertSame('AUTONOMOUS_MODE_STOPPED', $error->getMessage());
+        } finally {
+            $this->app->instance(AutonomousModeService::class, $controlOwner);
+        }
+        $this->assertDatabaseCount('model_versions', 3);
+        $this->assertSame(0, ResearchExposureCaptureRecord::where('record_type', 'descendant_birth')->count());
+        $this->assertSame('leased', $work->fresh()->status);
+        $birth = $preparation->execute($work->fresh('receipt'));
+        $this->assertSame('completed', $birth['status'], json_encode($birth));
+        $childCertificate = $birth['registration']['certificate']['certificate_id'];
+        $childHistory = app(\App\Services\ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $childCertificate, $childInputs[0]['window']['start_inclusive'], $childInputs[0]['window']['end_exclusive']);
+        $this->assertTrue($childHistory['ready'], json_encode($childHistory));
+        $this->assertDatabaseCount('model_versions', 7);
+        $this->assertDatabaseCount('research_exposure_capture_records', 15); // Two captures, twelve inputs and one derived birth.
+        $this->assertDatabaseCount('lab_evolution_credit_events', 1); // Birth is not inherited value.
+        $this->assertNull($registry->verifiedIndependentAssessment($childCertificate));
+        // A later unrelated attempt cannot rewrite the frozen source's prior
+        // history or silently revoke an already issued original certificate.
+        LabEvaluationRun::create(['run_id' => 'later-unrelated-'.bin2hex(random_bytes(8)),
+            'phase' => 'screening', 'mode' => 'diagnostic', 'status' => 'technical_error',
+            'attempt' => 1, 'started_at' => now()->addSecond()]);
+        $stable = $registry->inspect($fixture['certificate_id']);
+        $this->assertSame($result['authority_record_id'], $stable['authority_record_id'], json_encode($stable));
+        $this->assertTrue($stable['confirmed_component']);
+        $this->assertSame($credit['event_id'], $bridge->settleScopedCertificate($fixture['certificate_id'])['event_id']);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 1);
+        $this->assertSame('2026-10-19', now()->utc()->toDateString());
+    }
+
     public function test_blinded_role_has_its_own_positive_component_products(): void
     {
         $fixture = $this->question('blinded');
@@ -510,15 +588,27 @@ class ScopedResearchAuthorityTest extends TestCase
             'context' => $parent['context'], 'periods' => $periods, 'year' => 2014];
     }
 
-    private function question(string $candidateRole, int $year = 2012): array
+    private function question(string $candidateRole, int $year = 2012, bool $originalHistory = false): array
     {
-        $this->travelTo(CarbonImmutable::parse('2011-10-09T00:00:00Z'));
+        $this->travelTo(CarbonImmutable::parse($originalHistory ? '2026-10-19T10:00:00Z' : '2011-10-09T00:00:00Z'));
         $lab = AiLaboratory::firstOrCreate(['symbol' => 'XAUUSD', 'timeframe' => 'M5'],
             ['name' => 'Synthetic scoped issuer', 'strategy_families' => ['hybrid'], 'is_active' => false]);
         $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => LabGeneration::count() + 1,
             'trigger_type' => 'synthetic_software_fixture', 'population_size' => 3, 'status' => 'draft']);
         $agents = [];
         $models = [];
+        if ($originalHistory) {
+            app(AutonomousModeService::class)->start('XAUUSD', 'M5', 'synthetic-original-issuer-test', 'isolated-test-only');
+            $birth = app(\App\Services\ResearchWindowExposureInventoryService::class)
+                ->createOriginalUntrainedTriplet((int) $generation->id);
+            foreach ($birth['agent_ids'] as $role => $id) {
+                $agents[$role] = LabAgent::findOrFail($id);
+                $model = $agents[$role]->modelVersion;
+                $models[$role] = ['model_version_id' => (int) $model->id,
+                    'parameter_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($model->parameters)];
+            }
+            $source = AgentLearningCausalExperiment::findOrFail($birth['experiment_id']);
+        } else {
         foreach (['guided', 'blinded', 'control'] as $role) {
             $parameters = ['minimum_confidence' => $role === 'control' ? .55 : .6];
             $model = ModelVersion::create(['name' => 'synthetic-'.$generation->id.'-'.$role, 'strategy' => 'hybrid',
@@ -536,6 +626,7 @@ class ScopedResearchAuthorityTest extends TestCase
             'target' => 'profit_factor', 'gene_key' => 'minimum_confidence', 'status' => 'ready_for_replay',
             'guided_agent_id' => $agents['guided']->id, 'blinded_agent_id' => $agents['blinded']->id,
             'control_agent_id' => $agents['control']->id, 'evidence' => ['experiment_kind' => 'memory_confirmation']]);
+        }
         $context = ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london', 'venue_phase' => 'london_interfix', 'direction' => 'BUY'];
         $periods = [];
         foreach (range(1, 6) as $month) {
@@ -555,17 +646,34 @@ class ScopedResearchAuthorityTest extends TestCase
             'exposure_policy' => ['protocol' => 'prospective_scoped_exposure_policy_v1', 'holding_fence_seconds' => 600,
                 'execution_timeframe' => 'M5', 'context_timeframes' => ['H4', 'H1', 'M15'],
                 'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window', 'selection_policy' => 'frozen_before_first_event']];
+        if ($originalHistory) {
+            $design['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+            $design['exposure_policy']['selection_policy'] = 'frozen_before_first_exposure';
+            $design['subject']['trait_delta'] = ['gene' => 'max_loss_streak_before_wait', 'old' => 4, 'new' => 3];
+            $design['execution_hash'] = app(ExecutionContractService::class)->for('XAUUSD', 'M5')['execution_hash'];
+            $design['native_execution'] = ['authorization_ids' => array_map(
+                fn ($index) => 'synthetic-scoped-'.$source->id.'-'.$index, range(0, 5)),
+                'execution_timeframe' => 'M5', 'initial_capital' => 10000,
+                'risk_policy' => ['risk_per_trade_percent' => .5],
+                'full_replay_runtime_policy' => ['protocol' => 'scoped_original_full_source_v1', 'evaluation_mode' => 'full',
+                    'selection' => 'entire_authorized_source', 'maximum_source_rows' => 4096,
+                    'maximum_runtime_seconds' => 300, 'warmup_rows' => 0,
+                    'no_walk_forward_selection' => true, 'promotion_evidence' => false]];
+        }
         $registered = app(ScopedResearchCertificateService::class)->register('component', $source, $design);
         $this->assertTrue($registered['valid'], json_encode($registered));
         $this->assertFalse($registered['scope_authority_confirmed']);
 
         return ['certificate_id' => $registered['certificate_id'], 'source' => $source, 'agents' => $agents, 'design' => $design,
-            'context' => $context, 'periods' => $periods, 'candidate_role' => $candidateRole, 'year' => $year];
+            'context' => $context, 'periods' => $periods, 'candidate_role' => $candidateRole, 'year' => $year,
+            'original_history' => $originalHistory];
     }
 
     private function inputs(array $fixture): array
     {
-        $this->travelTo(CarbonImmutable::create($fixture['year'] + 1, 1, 1, 0, 0, 0, 'UTC'));
+        if (! ($fixture['original_history'] ?? false)) {
+            $this->travelTo(CarbonImmutable::create($fixture['year'] + 1, 1, 1, 0, 0, 0, 'UTC'));
+        }
         $windows = [];
         $authorized = [];
         foreach ($fixture['periods'] as $index => $period) {
@@ -604,6 +712,7 @@ class ScopedResearchAuthorityTest extends TestCase
     private function originalProducts(array $fixture, float $effect, float $candidateDrawdown = 5, int $contextTrades = 8): array
     {
         $windows = $this->inputs($fixture);
+        if ($fixture['original_history'] ?? false) $this->travelTo(now()->utc()->addSecond());
         $products = [];
         $immutable = app(LabImmutableEvidenceService::class);
         foreach ($windows as $window) {
@@ -616,6 +725,15 @@ class ScopedResearchAuthorityTest extends TestCase
                     'maximum_holding_bars' => 1, 'execution_contract' => ['execution_hash' => $fixture['design']['execution_hash']],
                     'strategies' => [['lab_agent_id' => (int) $agent->id, 'strategy' => $agent->modelVersion->strategy,
                         'parameters' => $agent->modelVersion->parameters]]];
+                if (isset($fixture['design']['native_execution'])) {
+                    $request['mtf_snapshot_manifest'] = app(InstrumentResearchWindowService::class)
+                        ->canonicalScopedManifest($window['window'], $window['manifest']);
+                    $end = CarbonImmutable::parse($window['window']['end_exclusive'])->utc();
+                    $holding = $fixture['design']['exposure_policy']['holding_fence_seconds'];
+                    $request['policy_context']['scoped_position_maturity_fence'] = ['protocol' => 'scoped_original_maturity_fence_v1',
+                        'entry_end_exclusive' => $end->subSeconds($holding)->toIso8601String(),
+                        'end_exclusive' => $end->toIso8601String(), 'holding_fence_seconds' => $holding];
+                }
                 $run = $immutable->beginRun($agent, 'full_validation', 'full', ['code_hash' => $fixture['design']['evaluator_hash']]);
                 $immutable->attachRequest($run, $request, ['data_hash' => $window['manifest']['bundle_hash']]);
                 $result = $this->nativeFixtureResult($fixture, $window, $arm === 'candidate' ? 1.1 + $effect : 1.1,

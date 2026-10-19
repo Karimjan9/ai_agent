@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AiLaboratory;
 use App\Models\LabGeneration;
 use App\Services\AutonomousModeService;
+use App\Services\GenerationAdmissionDecisionService;
 use App\Services\LabDatasetExportService;
 use App\Services\LabPopulationService;
 use App\Services\LearningVelocityGateService;
@@ -179,6 +180,10 @@ class NativeSpecialistCouncilConstructorTest extends TestCase
     public function test_ordinary_bounded_constructor_still_uses_its_existing_pair_owner(): void
     {
         $this->ready();
+        // Sparse preparation telemetry cannot call admission again, reuse an
+        // unlocked verdict, or replace either of the two original guards.
+        $this->partialMock(GenerationAdmissionDecisionService::class,
+            fn ($mock) => $mock->shouldReceive('decide')->twice()->passthru());
         $population = app(LabPopulationService::class);
         $generation = $population->build('XAUUSD', 'historical_research', false, 'H1', [], false, false, 2);
         $this->assertNotNull($generation, json_encode($population->lastBuildOutcome()));

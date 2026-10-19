@@ -106,17 +106,43 @@ class DescendantScopedProofService
         if ($context['status'] !== 'valid' || ! ($capsule['valid'] ?? false)) {
             return $this->blocked('DESCENDANT_EXACT_SOURCE_CONTEXT_REQUIRED');
         }
+        $historicalFirstExposure = ($scope['registration_time_policy'] ?? null)
+            === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+        if (array_key_exists('registration_time_policy', $scope)
+            && (! $historicalFirstExposure || ! isset($scope['native_execution'])
+                || ($scope['authority_policy'] ?? ScopedResearchCertificateService::AUTHORITY_POLICY)
+                    !== ScopedResearchCertificateService::AUTHORITY_POLICY)) {
+            return $this->blocked('DESCENDANT_FIRST_EXPOSURE_ORIGINAL_NATIVE_POLICY_REQUIRED');
+        }
         try {
             $start = CarbonImmutable::parse((string) ($scope['validation_start'] ?? ''), 'UTC')->utc();
             $end = CarbonImmutable::parse((string) ($scope['validation_end'] ?? ''), 'UTC')->utc();
         } catch (\Throwable) {
             return $this->blocked('DESCENDANT_PROSPECTIVE_VALIDATION_INTERVAL_REQUIRED');
         }
-        if (empty($scope['validation_start']) || empty($scope['validation_end']) || ! $start->greaterThan(now())
+        if (empty($scope['validation_start']) || empty($scope['validation_end'])
+            || (! $historicalFirstExposure && ! $start->greaterThan(now()))
             || ! $end->greaterThan($start)
             || ! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
                 $start->toIso8601String(), $end->toIso8601String())) {
             return $this->blocked('DESCENDANT_PRE_2026_PREREGISTERED_PAPER_DISJOINT_INTERVAL_REQUIRED');
+        }
+        if ($historicalFirstExposure) {
+            // A first-exposure clock is not permission to reuse the component's
+            // already assessed events. Preserve chronology and its holding fence.
+            $parent = app(ResearchWindowExposureInventoryService::class)->inspectOriginalDescendantParent(
+                (int) data_get($scope, 'native_execution.source_component_certificate_id'));
+            try {
+                $parentEnd = CarbonImmutable::parse((string) data_get($parent, 'design.validation_end'), 'UTC')->utc();
+                $holding = data_get($parent, 'design.exposure_policy.holding_fence_seconds');
+                if (($parent['valid'] ?? false) !== true || ! is_int($holding) || $holding < 0
+                    || ! is_string(data_get($parent, 'design.validation_end'))
+                    || $start->lessThan($parentEnd->addSeconds($holding))) {
+                    return $this->blocked('DESCENDANT_NEW_POST_COMPONENT_HOLDING_WINDOW_REQUIRED');
+                }
+            } catch (\Throwable) {
+                return $this->blocked('DESCENDANT_NEW_POST_COMPONENT_HOLDING_WINDOW_REQUIRED');
+            }
         }
         foreach (['evaluator_hash', 'execution_hash'] as $field) {
             if (! preg_match('/^[a-f0-9]{64}$/', (string) ($scope[$field] ?? ''))) {
@@ -146,6 +172,9 @@ class DescendantScopedProofService
                 'context' => $context['extended_axes']],
             'research_only' => true, 'component_credit' => false, 'inheritance_credit' => false, 'promotion_evidence' => false,
         ];
+        if ($historicalFirstExposure) {
+            $design['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+        }
         // Native execution is a separately declared prospective purpose. A
         // legacy cartridge's confirmed label does not supply this authority.
         if (array_key_exists('native_execution', $scope)) {

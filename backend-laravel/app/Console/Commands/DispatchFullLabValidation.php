@@ -12,6 +12,7 @@ use App\Services\CandidateGateDecisionService;
 use App\Services\CandidateHandoffService;
 use App\Services\CausalFoldExecutionService;
 use App\Services\CausalLearningCohortService;
+use App\Services\FiniteOriginalComponentPreparationService;
 use App\Services\GateContractService;
 use App\Services\LabAgentPreflightService;
 use App\Services\LabCandidateSelectionService;
@@ -76,6 +77,21 @@ class DispatchFullLabValidation extends Command
                 $this->warn("{$symbol}: requested causal experiment {$causalExperimentId} was not found in scope.");
 
                 continue;
+            }
+            if ($targetedCausalExperiment) {
+                $finiteSource = app(FiniteOriginalComponentPreparationService::class)->isOriginalSourceReference($targetedCausalExperiment);
+                $reservedSource = $targetedCausalExperiment->status === 'scoped_source_reference'
+                    || data_get($targetedCausalExperiment->evidence, 'experiment_kind')
+                        === \App\Services\ResearchWindowExposureInventoryService::ORIGINAL_ORIGIN_PROTOCOL
+                    || data_get($targetedCausalExperiment->generation?->trigger_context,
+                        FiniteOriginalComponentPreparationService::MARKER.'.protocol') === FiniteOriginalComponentPreparationService::PROTOCOL;
+                // A reserved purpose's broken seal is not ordinary replay permission.
+                if ($finiteSource || $reservedSource) {
+                    $reason = $finiteSource ? 'FINITE_COMPONENT_SOURCE_REFERENCE_REPLAY_WITHHELD' : 'FINITE_COMPONENT_SOURCE_REFERENCE_PROOF_INVALID';
+                    $this->warn("{$symbol}: {$reason}; the native scoped owner alone may consume this source.");
+
+                    continue;
+                }
             }
             $generation = $targetedCausalExperiment?->generation;
             $roleCandidate = $lab?->generations()

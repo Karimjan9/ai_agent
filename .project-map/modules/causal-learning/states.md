@@ -1,5 +1,26 @@
 # Causal learning states
 
+Explicit original-history preparation is distinct from registration and
+authority: server-owned cold birth -> immutable original origin -> actual
+wall-clock registration/capture -> original input custody and physical overlap
+assessment -> independently assessed terminal products -> separately scoped
+credit. The global reference audit remains exclusion-only. Old, tuned or
+ancestral models cannot acquire a cold birth retrospectively (ADR-041).
+
+An explicit historical-first-exposure descendant carries that time policy
+through the Foundry proposal and native registration. Its windows begin after
+the parent validation plus holding fence and end before 2026. A missing later
+pre-2026 roster is a dependency, not a request for 2027 data. Actual four-arm
+birth and parent ancestry are separate from the date guard and from a measured
+benefit; no legacy seal or authority is rewritten.
+
+Historical child readiness/preparation reuses parent verification only inside
+one lexical owner operation, with full fresh entry/exit proofs. Exit drift
+refuses readiness or rolls back the birth. The operation restores its prior
+container binding in `finally`; independent calls and locked preparation do
+not borrow an earlier readiness proof. Current lease/control is checked again
+after successful exit, before the transaction may commit.
+
 The post-outcome EMA source/opportunity audit is a separate read-only
 diagnostic: original-hash validation -> original feature/signal reconstruction
 -> observed gate/trace reconciliation -> append-only curator findings.

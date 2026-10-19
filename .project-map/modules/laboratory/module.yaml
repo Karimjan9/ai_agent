@@ -133,6 +133,7 @@ paths:
   - backend-laravel/app/Jobs/SealGenerationAutonomyReceiptJob.php
   - backend-laravel/app/Console/Commands/AuditAutonomyStreak.php
 entry_points:
+  - LabPopulationService::buildFiniteOriginalComponent
   - _apply_source_frozen_retest
   - _publish_closed_setup_geometry
   - trading:prepare-unused-price-discovery
@@ -262,6 +263,8 @@ docs:
   - states.md
   - history.md
 tests:
+  - backend-laravel/tests/Feature/ConstructorCouncilReadAmplificationTest.php
+  - backend-laravel/tests/Feature/ConstructorPreparationStageTest.php
   - ai-service-python/tests/test_source_intraday_geometry.py
   - backend-laravel/tests/Unit/SourceIntradayGeometrySchemaTest.php
   - backend-laravel/tests/Unit/BollingerContextGateParityTest.php

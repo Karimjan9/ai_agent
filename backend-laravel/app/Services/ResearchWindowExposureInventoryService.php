@@ -19,6 +19,8 @@ use Throwable;
 /** Prospective candidate-scoped capture. Historical absence is never global unused proof. */
 class ResearchWindowExposureInventoryService
 {
+    use ResearchOriginalExposureHistoryTrait;
+    use ResearchDescendantExposureHistoryTrait;
     public const PROTOCOL = 'prospective_scoped_exposure_capture_v1';
 
     public const AUTHORITY_POLICY = 'independent_scoped_research_authority_v1';
@@ -86,6 +88,9 @@ class ResearchWindowExposureInventoryService
                 'historical_training_selection_inventory_complete' => false,
                 'absence_of_legacy_records_proves_unused' => false,
                 ...($firstExposure ? ['registration_time_policy' => ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY,
+                    'capture_record_high_water' => (int) ResearchExposureCaptureRecord::max('id'),
+                    'history_run_roster' => $this->originalBirthRunRoster((int) LabEvaluationRun::max('id')),
+                    'history_fold_roster' => $this->originalBirthFoldRoster((int) CausalFoldReceipt::max('id')),
                     'historical_event_time_is_not_first_exposure_time' => true] : [])];
             $this->append($certificateId, 'capture_start', null, $key, $payload);
 
@@ -320,8 +325,9 @@ class ResearchWindowExposureInventoryService
                 // New ingress cannot retroactively attest all historical training,
                 // selection, MTF, warmup and holding exposure. The diagnostic
                 // inventory is exclusion evidence and must never become authority.
-                $history = app(ResearchWindowProvenanceAuditService::class)->audit(
-                    $window['start_inclusive'] ?? null, $window['end_exclusive'] ?? null);
+                $history = app(ResearchWindowProvenanceAuditService::class)->auditForCertificate(
+                    $certificateId, $window['start_inclusive'] ?? null, $window['end_exclusive'] ?? null,
+                    $runIds, $foldReceiptIds);
                 if (($history['candidate_unused_demonstrated'] ?? false) !== true) {
                     throw new LogicException('HISTORICAL_FIRST_EXPOSURE_PROVENANCE_NOT_ATTESTED');
                 }
@@ -369,7 +375,11 @@ class ResearchWindowExposureInventoryService
                 throw new LogicException('CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE');
             }
             $models = $capture->payload['model_ids'];
-            $runs = LabEvaluationRun::whereIn('model_version_id', $models)->orderBy('id')->limit(257)->get();
+            $runPrefix = data_get($history ?? [], 'original_history_attestation.run_high_water');
+            $foldPrefix = data_get($history ?? [], 'original_history_attestation.fold_high_water');
+            $runs = LabEvaluationRun::whereIn('model_version_id', $models)
+                ->when(is_int($runPrefix), fn ($query) => $query->where('id', '<=', $runPrefix))
+                ->orderBy('id')->limit(257)->get();
             if ($runs->count() > 256) {
                 throw new LogicException('EXPOSURE_ORIGINAL_INGRESS_INVENTORY_BOUND_EXCEEDED');
             }
@@ -377,7 +387,9 @@ class ResearchWindowExposureInventoryService
                 throw new LogicException('EXPOSURE_ORIGINAL_INGRESS_CAPTURE_INCOMPLETE');
             }
             $records = ResearchExposureCaptureRecord::where('certificate_id', $certificateId)
-                ->where('record_type', 'request_ingress')->orderBy('id')->limit(257)->get();
+                ->where('record_type', 'request_ingress')
+                ->when(is_int($runPrefix), fn ($query) => $query->where('evaluation_run_id', '<=', $runPrefix))
+                ->orderBy('id')->limit(257)->get();
             if ($records->count() !== $runs->count()) {
                 throw new LogicException('EXPOSURE_ORIGINAL_INGRESS_CAPTURE_INCOMPLETE');
             }
@@ -448,7 +460,7 @@ class ResearchWindowExposureInventoryService
             if ($found !== $expected) {
                 throw new LogicException('EXPOSURE_ORIGINAL_INGRESS_CAPTURE_INCOMPLETE');
             }
-            $foldProof = $this->foldProof($capture, $from, $until, $manifest, $foldReceiptIds);
+            $foldProof = $this->foldProof($capture, $from, $until, $manifest, $foldReceiptIds, $foldPrefix);
             $identity = ['protocol' => self::PROTOCOL, 'certificate_id' => $certificateId,
                 'capture_record_id' => (int) $capture->id, 'capture_started_at' => $capture->payload['capture_started_at'],
                 'coverage_start_inclusive' => $capture->payload['coverage_start_inclusive'],
@@ -462,6 +474,8 @@ class ResearchWindowExposureInventoryService
                 'original_fold_receipt_ids' => $foldProof['original_fold_receipt_ids'],
                 'original_training_selection_inventory_attested' => true,
                 'historical_training_selection_inventory_complete' => false,
+                ...(isset($history['original_history_attestation'])
+                    ? ['original_history_attestation' => $history['original_history_attestation']] : []),
                 'completeness_scope' => $capture->payload['completeness_scope'],
                 'absence_of_recorded_use_proves_unused' => false, 'candidate_unused_demonstrated' => true,
                 'known_shared_training_selection_overlap_checked' => true,
@@ -485,18 +499,21 @@ class ResearchWindowExposureInventoryService
     }
 
     private function foldProof(ResearchExposureCaptureRecord $capture, CarbonImmutable $from,
-        CarbonImmutable $until, array $manifest, array $originalIds): array
+        CarbonImmutable $until, array $manifest, array $originalIds, ?int $foldPrefix = null): array
     {
         if ($this->modelExperiments($capture->payload['model_ids']) !== $capture->payload['source_experiment_ids']) {
             throw new LogicException('EXPOSURE_FROZEN_SOURCE_EXPERIMENT_ROSTER_DRIFT');
         }
         $folds = CausalFoldReceipt::whereIn('agent_learning_causal_experiment_id', $capture->payload['source_experiment_ids'])
+            ->when($foldPrefix !== null, fn ($query) => $query->where('id', '<=', $foldPrefix))
             ->orderBy('id')->limit(257)->get();
         if ($folds->count() > 256 || array_diff($originalIds, $folds->pluck('id')->map(fn ($id) => (int) $id)->all()) !== []) {
             throw new LogicException('EXPOSURE_ORIGINAL_FOLD_CAPTURE_INCOMPLETE');
         }
         $records = ResearchExposureCaptureRecord::where('certificate_id', $capture->certificate_id)
-            ->where('record_type', 'causal_fold_ingress')->orderBy('id')->limit(1025)->get();
+            ->where('record_type', 'causal_fold_ingress')
+            ->when($foldPrefix !== null, fn ($query) => $query->where('payload->causal_fold_receipt_id', '<=', $foldPrefix))
+            ->orderBy('id')->limit(1025)->get();
         if ($records->count() > 1024) {
             throw new LogicException('EXPOSURE_ORIGINAL_FOLD_CAPTURE_BOUND_EXCEEDED');
         }
@@ -711,6 +728,7 @@ class ResearchWindowExposureInventoryService
             'evaluation_run_id', 'payload_hash', 'recorded_at']));
         $body['certificate_id'] = (int) $row->certificate_id;
         $body['evaluation_run_id'] = $row->evaluation_run_id === null ? null : (int) $row->evaluation_run_id;
+        $body['recorded_at'] = $this->originalWholeSecondTimestampRepresentation($body['recorded_at']);
         $body['payload'] = $row->payload;
         if ($this->hash($row->payload) !== $row->payload_hash || ! hash_equals($row->server_seal, $this->seal($body))) {
             throw new LogicException('EXPOSURE_CAPTURE_SEAL_OR_PAYLOAD_DRIFT');
@@ -720,6 +738,13 @@ class ResearchWindowExposureInventoryService
     private function hash(array $value): string
     {
         return $this->epochs->parameterHash($value);
+    }
+
+    /** DATETIME(6) may add zero precision, never erase changed fractional time. */
+    private function originalWholeSecondTimestampRepresentation(mixed $value): string
+    {
+        $text = (string) $value;
+        return preg_replace('/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.0{1,6}$/D', '$1', $text) ?? $text;
     }
 
     private function seal(array $value): string

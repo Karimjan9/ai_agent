@@ -19,6 +19,11 @@ Lane-owned data readiness (validated historical archive or live continuity)
 ```
 
 Typed research diagnostics do not traverse the ordinary economic/paper chain.
+Explicit finite original preparation uses the same arbiter, conversion owner
+and constructor lock: a source-only three-reference birth closes neutrally,
+then the existing native two-arm component route owns actual validation work.
+Source-only construction cannot count as completed replay or bypass original
+history, authorized data, power, risk or paper admission (ADR-041).
 An already-terminal unassessable method study may reconcile a stale arm projection
 only through its original owner after immutable original-subset/receipt/four-carrier
 proof and STOP/idle/queue/mutex guards. The expected-generation settle-only

@@ -1,5 +1,15 @@
 # Causal-learning history
 
+## 2026-10-19 - Original birth and historical descendant preparation
+
+ADR-041 separates a finite server-owned original birth from retrospective
+history declarations, source-only construction from replay, and exposure
+attestation from authority. The descendant owner carries the existing explicit
+historical-first-exposure policy with later pre-2026 holding-disjoint windows.
+Old observations, absent custody and paper events cannot be relabelled as
+independent evidence. See the dated structural-repair delivery report for
+bounded verification and production status.
+
 ## 2026-10-15 - Source-practice v2 and phase-target selection
 
 Exact new methods select append-only teaching v2 with separately pinned actual

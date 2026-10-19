@@ -10,6 +10,8 @@ use App\Models\LabEvaluationRun;
 use App\Models\LabGeneration;
 use App\Models\ModelVersion;
 use App\Models\ResearchExposureCaptureRecord;
+use App\Models\ResearchOriginalModelOrigin;
+use App\Services\AutonomousModeService;
 use App\Services\InstrumentResearchWindowService;
 use App\Services\CausalFoldExecutionService;
 use App\Services\LabAgentEvaluationService;
@@ -17,6 +19,7 @@ use App\Services\LabGenerationReportService;
 use App\Services\LabImmutableEvidenceService;
 use App\Services\ResearchPaperEpochContractService;
 use App\Services\ResearchWindowExposureInventoryService;
+use App\Services\ResearchWindowProvenanceAuditService;
 use App\Services\ResearchKnowledgePortfolioService;
 use App\Services\ResearchReleaseSealService;
 use App\Services\ScopedResearchCertificateService;
@@ -283,6 +286,290 @@ class ResearchWindowExposureInventoryTest extends TestCase
         $this->assertFalse(app(ResearchWindowExposureInventoryService::class)->assessForCertificate($certificate, $window, $manifest, [], [(int) $fold->id])['ready']);
     }
 
+    public function test_finite_server_origin_and_real_immutable_ingress_complete_scoped_historical_history_only(): void
+    {
+        [$window, $manifest, $request] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate, $agents] = $this->question(firstExposure: true, original: true);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $runIds = [];
+        foreach ($agents as $agent) {
+            $run = $evidence->beginRun($agent, 'full_validation', 'replay');
+            $evidence->attachRequest($run, $request, ['data_hash' => $manifest['bundle_hash']]);
+            $runIds[] = (int) $run->id;
+        }
+        $history = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'], $runIds);
+        $this->assertTrue($history['ready'], json_encode($history));
+        $ready = app(ResearchWindowExposureInventoryService::class)->assessForCertificate(
+            $certificate, $window, $manifest, $runIds);
+        $this->assertTrue($ready['ready'], json_encode($ready));
+        $this->assertSame('FINITE_ORIGINAL_HISTORY_AND_INPUT_BYTES_ATTESTED',
+            $ready['original_history_attestation']['reason_code']);
+        $this->assertCount(3, $ready['complete_original_ingress_receipts']);
+        $this->assertTrue($ready['original_history_attestation']['historical_training_selection_inventory_complete']);
+        $this->assertFalse($ready['independent_evidence']);
+        $this->assertFalse(app(ResearchWindowProvenanceAuditService::class)->audit(
+            $window['start_inclusive'], $window['end_exclusive'])['candidate_unused_demonstrated']);
+        $this->assertDatabaseCount('research_original_model_origins', 1);
+        $this->assertDatabaseCount('research_exposure_capture_records', 4);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->travelTo(now()->addSecond());
+        LabEvaluationRun::create(['run_id' => (string) \Illuminate\Support\Str::uuid(), 'phase' => 'screening',
+            'mode' => 'diagnostic', 'status' => 'technical_error', 'attempt' => 1, 'started_at' => now(),
+            'request_meta' => ['dataset_manifest' => ['first_candle_at' => '2015-01-01T00:00:00Z',
+                'last_candle_at' => '2015-02-01T00:00:00Z']]]);
+        $later = app(ResearchWindowExposureInventoryService::class)->assessForCertificate(
+            $certificate, $window, $manifest, $runIds);
+        $this->assertSame($ready['readiness_hash'], $later['readiness_hash'], json_encode($later));
+        // Existing source-owned terminal projection must not rewrite the frozen
+        // parameter choice or make its original input history unverifiable.
+        $source = AgentLearningCausalExperiment::sole();
+        app(CausalFoldExecutionService::class)->terminalFailure((int) $source->id, 0,
+            new LogicException('SYNTHETIC_OWNER_TERMINAL_PROJECTION'));
+        $agents['guided']->update(['lifecycle_status' => 'technical_quarantine']);
+        $after = app(ResearchWindowExposureInventoryService::class)->assessForCertificate(
+            $certificate, $window, $manifest, $runIds);
+        $this->assertTrue($after['ready'], json_encode($after));
+        $this->assertFalse($after['independent_evidence']);
+    }
+
+    public function test_finite_origin_does_not_turn_an_unknown_global_legacy_run_into_unused_proof(): void
+    {
+        [$window, $manifest] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        LabEvaluationRun::create(['run_id' => (string) \Illuminate\Support\Str::uuid(), 'phase' => 'screening',
+            'mode' => 'diagnostic', 'status' => 'technical_error', 'attempt' => 1, 'started_at' => now()]);
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        $audit = app(ResearchWindowProvenanceAuditService::class)->auditForCertificate($certificate,
+            $window['start_inclusive'], $window['end_exclusive']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+        $this->assertSame('ORIGINAL_GLOBAL_RUN_INPUT_HISTORY_UNATTESTED', $audit['reason_code']);
+    }
+
+    public function test_original_birth_does_not_hide_a_new_failed_or_partial_attempt_without_bytes(): void
+    {
+        [$window, $manifest] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate, $agents] = $this->question(firstExposure: true, original: true);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $evidence->beginRun($agents['guided'], 'screening', 'screen');
+        $audit = app(ResearchWindowProvenanceAuditService::class)->auditForCertificate($certificate,
+            $window['start_inclusive'], $window['end_exclusive']);
+        $this->assertFalse($audit['candidate_unused_demonstrated']);
+        $this->assertSame('ORIGINAL_GLOBAL_RUN_INPUT_HISTORY_UNATTESTED', $audit['reason_code']);
+    }
+
+    public function test_late_owned_attempt_after_named_products_is_not_omitted_before_first_issuance(): void
+    {
+        [$window, $manifest, $request] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate, $agents] = $this->question(firstExposure: true, original: true);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $original = $evidence->beginRun($agents['guided'], 'full_validation', 'replay');
+        $evidence->attachRequest($original, $request, ['data_hash' => $manifest['bundle_hash']]);
+        $late = $evidence->beginRun($agents['guided'], 'screening', 'screen');
+        $this->assertGreaterThan($original->id, $late->id);
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'], [(int) $original->id]);
+        $this->assertFalse($proof['ready']);
+        $this->assertSame('ORIGINAL_GLOBAL_RUN_INPUT_HISTORY_UNATTESTED', $proof['reason_code']);
+    }
+
+    public function test_finite_origin_rejects_parent_binding_and_new_tuned_metadata(): void
+    {
+        [$window] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate, $agents] = $this->question(firstExposure: true, original: true);
+        DB::table('lab_agents')->where('id', $agents['guided']->id)
+            ->update(['parent_a_model_version_id' => $agents['control']->model_version_id]);
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive']);
+        $this->assertFalse($proof['ready']);
+        $this->assertSame('ORIGINAL_ORIGIN_ANCESTRAL_SELECTION_FORBIDDEN', $proof['reason_code']);
+        DB::table('lab_agents')->where('id', $agents['guided']->id)->update(['parent_a_model_version_id' => null]);
+        $model = $agents['guided']->modelVersion;
+        $model->update(['metadata' => [...(array) $model->metadata, 'learned_policy' => ['arbitrary_source' => 9]]]);
+        $this->assertFalse(app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['ready']);
+    }
+
+    public function test_origin_cannot_be_rewritten_and_pause_denies_a_new_triplet_atomically(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        try {
+            ResearchOriginalModelOrigin::sole()->update(['payload_hash' => str_repeat('a', 64)]);
+            $this->fail('Original origin was mutable.');
+        } catch (LogicException $error) {
+            $this->assertSame('ORIGINAL_MODEL_ORIGIN_APPEND_ONLY', $error->getMessage());
+        }
+        $generation = LabGeneration::sole();
+        $fresh = LabGeneration::create(['ai_laboratory_id' => $generation->ai_laboratory_id,
+            'generation' => 2, 'trigger_type' => 'test', 'population_size' => 3, 'status' => 'draft']);
+        app(AutonomousModeService::class)->pause('XAUUSD', 'M15', 'synthetic-test', 'test-pause');
+        $before = ModelVersion::count();
+        try {
+            app(ResearchWindowExposureInventoryService::class)->createOriginalUntrainedTriplet((int) $fresh->id);
+            $this->fail('PAUSE admitted new original agents.');
+        } catch (LogicException $error) {
+            $this->assertSame('ORIGINAL_COMPONENT_AUTONOMY_COMMIT_DENIED', $error->getMessage());
+        }
+        $this->assertSame($before, ModelVersion::count());
+        $this->assertSame(0, $fresh->agents()->count());
+    }
+
+    public function test_origin_source_byte_and_same_physical_time_relabel_are_not_unused_data(): void
+    {
+        [$window, $manifest, $request] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate, $agents] = $this->question(firstExposure: true, original: true);
+        $evidence = app(LabImmutableEvidenceService::class);
+        $run = $evidence->beginRun($agents['guided'], 'screening', 'screen');
+        $evidence->attachRequest($run, $request, ['data_hash' => $manifest['bundle_hash']]);
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive']);
+        $this->assertSame('CANDIDATE_INTERSECTS_ORIGINAL_PHYSICAL_EXPOSURE', $proof['reason_code']);
+        File::append($manifest['streams']['H4']['path'], 'source-mutated');
+        $this->assertFalse(app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['ready']);
+    }
+
+    public function test_caller_product_ids_and_window_relabels_cannot_manufacture_unused_history(): void
+    {
+        [$window] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        $owner = app(ResearchWindowExposureInventoryService::class);
+        $bad = $owner->originalHistoryAttestation($certificate, $window['start_inclusive'], $window['end_exclusive'], [999]);
+        $this->assertSame('ORIGINAL_HISTORY_PRODUCT_ROSTER_NOT_ORIGINAL', $bad['reason_code']);
+        $different = $owner->originalHistoryAttestation($certificate, '2013-01-01T00:00:00Z', '2013-02-01T00:00:00Z');
+        $this->assertSame('ORIGINAL_HISTORY_EXACT_REGISTERED_WINDOW_REQUIRED', $different['reason_code']);
+        $paper = $owner->originalHistoryAttestation($certificate, '2026-01-01T00:00:00Z', '2026-02-01T00:00:00Z');
+        $this->assertSame('ORIGINAL_HISTORY_RESEARCH_INTERVAL_REQUIRED', $paper['reason_code']);
+        $origin = ResearchOriginalModelOrigin::sole();
+        $payload = $origin->payload;
+        $payload['historical_training_selection_inventory_complete'] = true;
+        DB::table('research_original_model_origins')->where('id', $origin->id)->update(['payload' => json_encode($payload)]);
+        $this->assertSame('ORIGINAL_MODEL_ORIGIN_SEAL_DRIFT', $owner->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['reason_code']);
+    }
+
+    public function test_unproven_market_alias_never_excludes_shared_physical_bytes(): void
+    {
+        $owner = app(ResearchWindowExposureInventoryService::class);
+        $guard = new \ReflectionMethod($owner, 'assertOriginalHistoryDisjoint');
+        $this->expectExceptionMessage('ORIGINAL_GLOBAL_PHYSICAL_MARKET_IDENTITY_UNATTESTED');
+        $guard->invoke($owner, ['intervals' => [['symbol' => 'EURUSD',
+            'start_inclusive' => '2012-01-01T00:00:00Z', 'end_exclusive' => '2012-01-02T00:00:00Z']]],
+            CarbonImmutable::parse('2012-01-01T00:00:00Z'), CarbonImmutable::parse('2012-02-01T00:00:00Z'), false);
+    }
+
+    public function test_birth_prefix_streams_beyond_256_rows_without_asserting_unknown_history_complete(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        $rows = [];
+        for ($index = 0; $index < 300; $index++) {
+            $rows[] = ['run_id' => (string) \Illuminate\Support\Str::uuid(), 'phase' => 'screening',
+                'mode' => 'diagnostic', 'status' => 'technical_error', 'attempt' => 1, 'started_at' => now()];
+        }
+        LabEvaluationRun::insert($rows);
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        $origin = ResearchOriginalModelOrigin::sole();
+        $this->assertSame(300, $origin->payload['prior_run_roster']['count']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $origin->payload['prior_run_roster']['sha256']);
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, '2012-01-01T00:00:00Z', '2012-02-01T00:00:00Z');
+        $this->assertFalse($proof['ready']);
+        $this->assertSame('ORIGINAL_GLOBAL_RUN_INPUT_HISTORY_UNATTESTED', $proof['reason_code']);
+    }
+
+    public function test_mysql_zero_fraction_timestamp_representation_preserves_original_seals_but_changed_fraction_is_refused(): void
+    {
+        [$window, $manifest] = $this->inputs();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        $stamp = '2026-10-19 10:00:00';
+        DB::table('research_original_model_origins')->update(['recorded_at' => $stamp.'.000000']);
+        DB::table('research_exposure_capture_records')->update(['recorded_at' => $stamp.'.000000']);
+        DB::table('scoped_research_certificates')->update(['recorded_at' => $stamp.'.000000', 'preregistered_at' => $stamp.'.000000']);
+        $owner = app(ResearchWindowExposureInventoryService::class);
+        $this->assertTrue($owner->assessForCertificate($certificate, $window, $manifest, [])['ready']);
+        DB::table('research_original_model_origins')->update(['recorded_at' => $stamp.'.000001']);
+        $this->assertSame('ORIGINAL_MODEL_ORIGIN_SEAL_DRIFT', $owner->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['reason_code']);
+        DB::table('research_original_model_origins')->update(['recorded_at' => $stamp.'.000000']);
+        DB::table('research_exposure_capture_records')->update(['recorded_at' => $stamp.'.000001']);
+        $this->assertSame('EXPOSURE_CAPTURE_SEAL_OR_PAYLOAD_DRIFT', $owner->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['reason_code']);
+        DB::table('research_exposure_capture_records')->update(['recorded_at' => $stamp.'.000000']);
+        DB::table('scoped_research_certificates')->update(['preregistered_at' => $stamp.'.000001']);
+        $this->assertSame('SCOPED_CERTIFICATE_SEAL_OR_PAYLOAD_DRIFT', $owner->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive'])['reason_code']);
+    }
+
+    public function test_signed_other_scope_ingress_with_deleted_owner_before_birth_remains_an_unknown_global_exposure(): void
+    {
+        [$olderCertificate, $olderAgents] = $this->question();
+        [$window, $manifest, $request] = $this->inputs();
+        $evidence = app(LabImmutableEvidenceService::class);
+        $older = $evidence->beginRun($olderAgents['guided'], 'screening', 'screen');
+        $evidence->attachRequest($older, $request, ['data_hash' => $manifest['bundle_hash']]);
+        $signed = ResearchExposureCaptureRecord::where('record_type', 'request_ingress')->sole();
+        $this->assertSame($olderCertificate, (int) $signed->certificate_id);
+        DB::table('lab_evaluation_runs')->where('id', $older->id)->delete();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        [$certificate] = $this->question(firstExposure: true, original: true);
+        $proof = app(ResearchWindowExposureInventoryService::class)->originalHistoryAttestation(
+            $certificate, $window['start_inclusive'], $window['end_exclusive']);
+        $this->assertFalse($proof['ready']);
+        $this->assertSame('ORIGINAL_GLOBAL_INGRESS_ORPHANED', $proof['reason_code']);
+    }
+
+    public function test_two_distinct_cold_births_have_unique_model_names_and_separate_original_rosters_without_dispatch(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-19T10:00:00Z'));
+        $lab = AiLaboratory::create(['name' => 'Synthetic two-origin uniqueness', 'symbol' => 'XAUUSD',
+            'timeframe' => 'H1', 'strategy_families' => ['hybrid'], 'is_active' => true]);
+        app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'synthetic-test', 'isolated-two-origin-fixture');
+        $firstGeneration = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
+            'trigger_type' => 'test', 'population_size' => 3, 'status' => 'draft']);
+        $owner = app(ResearchWindowExposureInventoryService::class);
+        $first = $owner->createOriginalUntrainedTriplet((int) $firstGeneration->id);
+        $firstGeneration->agents()->update(['lifecycle_status' => 'abandoned',
+            'decision_reason' => 'Synthetic source-only reference; no replay or scientific outcome.']);
+        $firstGeneration->update(['status' => 'abandoned', 'completed_at' => now()]);
+        $secondGeneration = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 2,
+            'trigger_type' => 'test', 'population_size' => 3, 'status' => 'draft']);
+        $second = $owner->createOriginalUntrainedTriplet((int) $secondGeneration->id);
+
+        $this->assertDatabaseCount('research_original_model_origins', 2);
+        $this->assertDatabaseCount('model_versions', 6);
+        $this->assertSame(6, ModelVersion::query()->distinct()->count('name'));
+        $this->assertNotSame($first['origin_id'], $second['origin_id']);
+        $this->assertSame([], array_intersect($first['model_ids'], $second['model_ids']));
+        $this->assertSame([], array_intersect($first['agent_ids'], $second['agent_ids']));
+        foreach ([[$firstGeneration, $first], [$secondGeneration, $second]] as [$generation, $birth]) {
+            $identity = $owner->originalFiniteOriginIdentity((int) $generation->id, $birth['experiment_id']);
+            $actual = $identity['model_ids']; sort($actual);
+            $expected = array_values($birth['model_ids']); sort($expected);
+            $this->assertSame($expected, $actual);
+            $this->assertSame($birth['origin_id'], $identity['origin_id']);
+            $this->assertFalse($birth['authority']);
+            $this->assertFalse($birth['dispatched']);
+        }
+        foreach (ModelVersion::all() as $model) $this->assertLessThanOrEqual(96, strlen($model->name));
+        foreach (LabAgent::all() as $agent) $this->assertLessThanOrEqual(24, strlen($agent->origin));
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('scoped_research_certificates', 0);
+        $this->assertDatabaseCount('research_experiment_work_items', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertDatabaseCount('paper_orders', 0);
+        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+    }
+
     private function foldTransport(int $certificate, array $agents, array $manifest, array $request): array
     {
         $registration = app(ScopedResearchCertificateService::class)->verifiedRegistration($certificate);
@@ -309,13 +596,25 @@ class ResearchWindowExposureInventoryTest extends TestCase
         return [$experiment, $request, $response];
     }
 
-    private function question(int $holding = 600, bool $firstExposure = false): array
+    private function question(int $holding = 600, bool $firstExposure = false, bool $original = false): array
     {
-        $lab = AiLaboratory::create(['name' => 'Synthetic exposure fixture', 'symbol' => 'XAUUSD',
+        $lab = AiLaboratory::firstOrCreate(['symbol' => 'XAUUSD'], ['name' => 'Synthetic exposure fixture',
             'timeframe' => 'M15', 'strategy_families' => ['hybrid'], 'is_active' => true]);
-        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id, 'generation' => 1,
-            'trigger_type' => 'test', 'population_size' => 3, 'status' => 'queued']);
+        $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+            'generation' => (int) $lab->generations()->max('generation') + 1,
+            'trigger_type' => 'test', 'population_size' => 3, 'status' => $original ? 'draft' : 'queued']);
         $agents = []; $arms = [];
+        if ($original) {
+            app(AutonomousModeService::class)->start('XAUUSD', 'M15', 'synthetic-test', 'isolated-original-fixture');
+            $birth = app(ResearchWindowExposureInventoryService::class)->createOriginalUntrainedTriplet((int) $generation->id);
+            foreach ($birth['agent_ids'] as $role => $id) {
+                $agents[$role] = LabAgent::findOrFail($id);
+                $model = $agents[$role]->modelVersion;
+                $arms[$role] = ['model_version_id' => (int) $model->id,
+                    'parameter_hash' => app(ResearchPaperEpochContractService::class)->parameterHash($model->parameters)];
+            }
+            $source = AgentLearningCausalExperiment::findOrFail($birth['experiment_id']);
+        } else {
         foreach (['guided', 'blinded', 'control'] as $index => $role) {
             $model = ModelVersion::create(['name' => $role, 'strategy' => 'hybrid', 'version' => 'exposure-'.$role,
                 'status' => 'testing', 'parameters' => ['threshold' => $index + 1]]);
@@ -334,6 +633,7 @@ class ResearchWindowExposureInventoryTest extends TestCase
             'guided_agent_id' => $agents['guided']->id, 'blinded_agent_id' => $agents['blinded']->id,
             'control_agent_id' => $agents['control']->id, 'evidence' => ['experiment_kind' => 'memory_confirmation'],
         ]);
+        }
         $design = ['authority_policy' => ResearchWindowExposureInventoryService::AUTHORITY_POLICY,
             'validation_start' => '2012-01-01T00:00:00+00:00', 'validation_end' => '2012-02-01T00:00:00+00:00',
             'validation_windows' => [['start_inclusive' => '2012-01-01T00:00:00+00:00',

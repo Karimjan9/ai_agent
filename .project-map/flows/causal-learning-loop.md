@@ -98,3 +98,9 @@ Registration then capture precede any admitted run. The original provenance
 audit remains a separate issuance guard; a new registration or capture never
 proves that historical data was untouched. Legacy seals retain their contract
 (ADR-038). All events from 2026 onward remain paper-only (ADR-037).
+
+The finite original-birth owner and canonical preparation route in ADR-041
+provide a separately bounded source-history path. They do not upgrade the
+global reference audit or retrofit old agents. Historical descendant proposals
+preserve that explicit policy, original ancestry and later pre-2026 windows;
+registration, completed measurements and independent authority stay distinct.

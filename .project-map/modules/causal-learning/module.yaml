@@ -222,6 +222,13 @@ paths:
   - backend-laravel/app/Services/ScopedSelectorPanelService.php
   - backend-laravel/tests/Fixtures/scoped_selector_python_admission.py
   - backend-laravel/app/Services/ResearchWindowExposureInventoryService.php
+  - backend-laravel/app/Services/ResearchOriginalExposureHistoryTrait.php
+  - backend-laravel/app/Services/ResearchDescendantExposureHistoryTrait.php
+  - backend-laravel/app/Services/FiniteOriginalComponentPreparationService.php
+  - backend-laravel/app/Console/Commands/RegisterFiniteOriginalComponent.php
+  - backend-laravel/app/Models/ResearchOriginalModelOrigin.php
+  - backend-laravel/database/migrations/2026_10_19_120000_create_research_original_model_origins.php
+  - .project-map/decisions/ADR-041-original-birth-and-historical-descendant-provenance.md
   - backend-laravel/app/Services/DescendantScopedExecutionService.php
   - backend-laravel/app/Services/ScopedDescendantCandidatePreparationService.php
   - backend-laravel/app/Models/ResearchExposureCaptureRecord.php
@@ -408,12 +415,21 @@ entry_points:
   - ScopedResearchCertificateService::recordAssessment
   - ScopedResearchCertificateService::normalizeProspectiveDesign
   - ScopedResearchCertificateService::verifiedRegistration
+  - ScopedResearchCertificateService::verifiedIndependentAssessment
   - ScopedResearchCertificateService::issueIndependent
   - ScopedResearchCertificateService::independentWindowReadiness
   - ResearchWindowExposureInventoryService::registerCapture
   - ResearchWindowExposureInventoryService::captureAttachedRequest
   - ResearchWindowExposureInventoryService::recordCausalFoldRequest
   - ResearchWindowExposureInventoryService::assessForCertificate
+  - ResearchWindowExposureInventoryService::createOriginalUntrainedTriplet
+  - ResearchWindowExposureInventoryService::originalHistoryAttestation
+  - ResearchWindowExposureInventoryService::createOriginalScopedDescendantModels
+  - ResearchWindowProvenanceAuditService::auditForCertificate
+  - FiniteOriginalComponentPreparationService::register
+  - FiniteOriginalComponentPreparationService::inspectWork
+  - FiniteOriginalComponentPreparationService::execute
+  - trading:register-original-component
   - ScopedResearchAuthorityService::verifyOriginalSafety
   - ScopedSelectorPanelService::preregister
   - ScopedSelectorPanelService::preregisterFuturePanel
@@ -517,6 +533,8 @@ dependencies:
   - confirmation-entry
   - laravel-python-contract
 invariants:
+  - Finite original-component preparation is an explicit source-only arbiter work item. Its three original source references receive a neutral abandoned disposition and immutable construction receipt; the existing native two-arm owner alone dispatches later validation. No source-only construction is counted as replay, failed science, screening success or authority.
+  - A historical-first-exposure origin is server-created before input and cannot be retrofitted to old models. Frozen global history prefixes and exact owned original products are fully streamed and revalidated; bounded displayed proof details never truncate the acceptance scan. Missing original custody and unproven physical market identity remain dependencies. New descendant origins prove derived ancestry rather than claiming cold, untrained history (ADR-041).
   - Explicit offline instrument windows rederive exact pinned native parent/manifest bytes, the unchanged canonical missing-times function and native calendar source, all 200 actual warmup rows and complete UTC week edges. Calendar-only April/May/June-first-clean and August selection retains refusals; it cannot fabricate candles, source volume, quotes, unused validation or whole-archive continuity.
   - The code-owned Bollinger context adapter fixes the current May/August eight-case roster before outcomes. The ordinary replay, actual account/clock/full-close witness and dual absolute deadlines own original execution; technical/late products remain unknown. Exclusive artifacts and read-only reinspection do not create a scheduler, database/agent-learning write, skill credit, broker execution or production permission.
   - Owned-outcome v2 reopens exact original ordinary single-position entry, method, mature close and cost-inclusive account evidence. Five unique mature episodes per exact context are an observational selection floor, not causal power; WAIT/veto utility remains unknown and multi-recipe positions are bundle observations. Existing v1 history is immutable, and explicitly v2-owned parents cannot downgrade invalid proof to invocation-ranked advice (ADR-040).
@@ -581,6 +599,8 @@ docs:
   - history.md
   - ../../../docs/operations/curator-management-practice-2026-10-15.md
 tests:
+  - backend-laravel/tests/Feature/FiniteOriginalComponentPreparationTest.php
+  - backend-laravel/tests/Feature/FiniteOriginalLeaseBoundaryTest.php
   - ai-service-python/tests/test_curator_ema_opportunity_audit.py
   - ai-service-python/tests/test_curator_intraday_month_windows.py
   - ai-service-python/tests/test_complete_intraday_methods.py

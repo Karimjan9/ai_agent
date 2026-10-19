@@ -196,6 +196,50 @@ trait LabPopulationConstructionTrait
         } finally { $lock->release(); }
     }
 
+    /** Three unused source references, not a replay cohort or an ordinary twenty-seat successor. */
+    public function buildFiniteOriginalComponent(\App\Models\ResearchExperimentWorkItem $work, array $proof): LabGeneration
+    {
+        $owner = app(FiniteOriginalComponentPreparationService::class);
+        $owner->assertLease($work);
+        $original = $owner->inspectWork($work->fresh('receipt'));
+        if (($original['executable'] ?? false) !== true || ($original['spec_hash'] ?? null) !== ($proof['spec_hash'] ?? null)) {
+            throw new \LogicException($original['reason_code'] ?? 'FINITE_COMPONENT_FRESH_CONSTRUCTOR_PROOF_REQUIRED');
+        }
+        $originalLabId = $original['spec']['lab_id'];
+        $expectedSpecHash = $original['spec_hash'];
+        $lock = Cache::lock($this->constructorLockKey($work->symbol, $work->timeframe), self::CONSTRUCTOR_LOCK_TTL_SECONDS);
+        if (! $lock->get()) throw new \LogicException('FINITE_COMPONENT_CANONICAL_CONSTRUCTOR_BUSY');
+        try {
+            return DB::transaction(function () use ($work, $originalLabId, $expectedSpecHash, $owner): LabGeneration {
+                $owner->assertLease($work);
+                $lab = AiLaboratory::whereKey($originalLabId)->lockForUpdate()->firstOrFail();
+                $fresh = $owner->inspectWork($work->fresh('receipt'));
+                if (($fresh['executable'] ?? false) !== true || ($fresh['spec_hash'] ?? null) !== $expectedSpecHash
+                    || ($fresh['spec']['lab_id'] ?? null) !== (int) $lab->id) {
+                    throw new \LogicException($fresh['reason_code'] ?? 'FINITE_COMPONENT_FRESH_CONSTRUCTOR_PROOF_REQUIRED');
+                }
+                if ($lab->generations()->where('trigger_context->'.FiniteOriginalComponentPreparationService::MARKER.'->work_id', $work->id)->exists()) {
+                    throw new \LogicException('FINITE_COMPONENT_ORIGINAL_BIRTH_ALREADY_EXISTS');
+                }
+                $latest = $lab->generations()->latest('generation')->lockForUpdate()->first();
+                $admission = app(GenerationAdmissionDecisionService::class)->decide($lab, $latest,
+                    ['trigger' => GenerationAdmissionDecisionService::HISTORICAL_TRIGGER, 'historical_research' => true, 'force' => false]);
+                if (($admission['allowed'] ?? false) !== true) throw new \LogicException('FINITE_COMPONENT_CANONICAL_ADMISSION_WITHHELD');
+                $generation = LabGeneration::create(['ai_laboratory_id' => $lab->id,
+                    'generation' => ((int) ($latest?->generation ?? 0)) + 1,
+                    'trigger_type' => FiniteOriginalComponentPreparationService::WORK_TYPE,
+                    'status' => 'draft', 'population_size' => 3, 'started_at' => null, 'data_fingerprint' => null,
+                    'trigger_context' => [FiniteOriginalComponentPreparationService::MARKER => [
+                        'protocol' => FiniteOriginalComponentPreparationService::PROTOCOL,
+                        'work_id' => (int) $work->id, 'spec_hash' => $fresh['spec_hash'],
+                        'source_only' => true, 'replay_dispatched' => false, 'promotion_evidence' => false],
+                        'generation_admission_decision' => $admission]]);
+                $owner->completeBirth($work, $generation, $fresh);
+                return $generation->fresh('agents.modelVersion');
+            });
+        } finally { $lock->release(); }
+    }
+
     public function build(string $symbol, string $trigger = 'new_data', bool $force = false, string $timeframe = 'H1', array $coverageRescue = [], bool $roleComplete = false, bool $refreshHistoricalLearning = true, ?int $populationLimit = null, ?array $targetedFailureProfile = null, bool $allowControlledRescue = false, ?array $prospectiveExpectation = null, ?array $nativeCouncilIntent = null, ?array $authorizedCouncilPanelIntent = null): ?LabGeneration
     {
         $this->parentPerformanceSnapshots = [];
@@ -276,7 +320,8 @@ trait LabPopulationConstructionTrait
                 $this->nativeFollowupFeedbackOwner = app(SpecialistCouncilResearchFeedbackService::class);
                 $this->nativeFollowupSourceFenceScope = $this->nativeFollowupFeedbackOwner->beginConstructorSourceFenceScope();
             }
-            Cache::put($this->constructorOwnerKey($symbol, $timeframe), $this->constructorOwner('build', $trigger), now()->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS));
+            $constructorPreparationOwner = $this->constructorOwner('build', $trigger);
+            Cache::put($this->constructorOwnerKey($symbol, $timeframe), $constructorPreparationOwner, now()->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS));
             // Existing queued jobs stay intact.  This only prevents creation of a
             // new population while an execution-contract rollout is being audited.
             $controlledRescue = $allowControlledRescue
@@ -284,6 +329,7 @@ trait LabPopulationConstructionTrait
             if ($allowControlledRescue && ! $controlledRescue) {
                 return $this->blocked('CONTROLLED_RESCUE_NOT_ADMITTED');
             }
+            $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'laboratory_identity');
             $this->ensureLaboratories();
             $lab = AiLaboratory::where('symbol', $symbol)->where('timeframe', $timeframe)->firstOrFail();
             if ($authorizedCouncilPanelIntent !== null) {
@@ -403,6 +449,7 @@ trait LabPopulationConstructionTrait
             // The normal scheduler and sync-agent-knowledge command continue to
             // refresh historical learning independently.
             if (! $roleComplete && $refreshHistoricalLearning) {
+                $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'historical_learning');
                 $this->historicalLearning->refreshForLab($lab->symbol, $lab->timeframe);
             }
             $provider = (string) config('services.market_data.provider', 'csv');
@@ -419,6 +466,7 @@ trait LabPopulationConstructionTrait
                 // Replace live readiness with actual archive validation, not
                 // with --force. Missing/corrupt research data still blocks.
                 try {
+                    $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'historical_archive');
                     $archive = app(LabDatasetExportService::class)->ensureFoundationDataset($symbol, $timeframe);
                     $historicalAdmission = [...$historicalPolicy,
                         'archive_sha256' => (string) $archive['sha256'],
@@ -436,6 +484,7 @@ trait LabPopulationConstructionTrait
                     return $this->blocked('CANONICAL_DATA_CONTRACT_NOT_READY', true);
                 }
             }
+            $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'snapshot_and_rescue');
             $snapshot = $authorizedCouncilPanelIntent === null ? $this->dataSnapshot($lab) : [
                 'fingerprint' => $authorizedCouncilPanelIntent['authorized_window']['dataset_sha256'],
                 'count' => 0, 'latest' => $authorizedCouncilPanelIntent['authorized_window']['end_exclusive'],
@@ -500,6 +549,7 @@ trait LabPopulationConstructionTrait
                 ->where('consecutive_no_improvement', '>=', 3)->exists()) {
                 $trigger = 'degradation';
             }
+            $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'generation_admission');
             $generationAdmission = app(GenerationAdmissionDecisionService::class)->decide($lab, $latest, [
                 'trigger' => $trigger,
                 'historical_research' => $historicalResearch,
@@ -614,7 +664,8 @@ trait LabPopulationConstructionTrait
                 static fn (mixed $target): string => (string) $target,
                 (array) data_get($targetedFailureProfile, 'targets', []),
             ))));
-            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission, $nativeCouncilIntent, $authorizedCouncilPanelIntent): ?array {
+            $this->publishConstructorPreparationStage($symbol, $timeframe, $constructorPreparationOwner, 'reservation_transaction');
+            $buildState = DB::transaction(function () use ($lab, $trigger, $fingerprint, $snapshot, $newCandles, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureProfile, $targetedFailureTargets, $controlledRescue, $operatorSuccessor, $learningConfirmation, $qualityEvolutionSynthesis, $confirmationLesson, $causalRepairFrontier, $prospectiveRepair, $learningVelocity, $generationAdmission, $shadowResearch, $shadowResearchPosture, $rescueAdmission, $independentEvidenceAdmission, $targetedRescueBlocked, $historicalResearch, $historicalAdmission, $nativeCouncilIntent, $authorizedCouncilPanelIntent, $constructorPreparationOwner): ?array {
                 // Scheduler and manual/operator requests may arrive together. Lock
                 // the laboratory row before assigning the next generation number;
                 // otherwise two workers can build the same G and one can leave a
@@ -650,6 +701,7 @@ trait LabPopulationConstructionTrait
                     && ! $this->sameReservedCouncilPanel($latestInTransaction, $authorizedCouncilPanelIntent)) {
                     return $this->blocked('LATEST_GENERATION_ACTIVE', true);
                 }
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'locked_admission');
                 $lockedGenerationAdmission = app(GenerationAdmissionDecisionService::class)->decide($lockedLab, $latestInTransaction, [
                     'trigger' => $trigger,
                     'historical_research' => $historicalResearch,
@@ -721,6 +773,7 @@ trait LabPopulationConstructionTrait
                 if (isset($nativeCouncilIntent['followup_work_item_id'])) {
                     $this->nativeCouncilFollowupResolution($nativeCouncilIntent, true);
                 }
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'curriculum_capture');
                 $generation = $lockedLab->generations()->create([
                     'generation' => $number, 'trigger_type' => $trigger,
                     'trigger_context' => ['previous_generation' => $latestInTransaction?->generation, 'created_by' => 'learning_trigger',
@@ -773,6 +826,7 @@ trait LabPopulationConstructionTrait
                 // Fixed, auditable experiment budget.  A slot is assigned for the
                 // gate it is meant to move; it is not an undifferentiated "more
                 // agents" budget.
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'generation_plan');
                 $plan = $authorizedCouncilPanelIntent !== null ? $this->authorizedCouncilPanelSeedPlan($authorizedCouncilPanelIntent) : ($nativeCouncilIntent !== null
                     ? $this->nativeCouncilSeedPlan($lockedLab, $nativeCouncilIntent)
                     : $this->generationPlan($lockedLab, $coverageRescue, $roleComplete, $populationLimit, $targetedFailureTargets, $targetedFailureProfile));
@@ -829,6 +883,7 @@ trait LabPopulationConstructionTrait
                     $plan = array_slice($plan, 0, $limit);
                 }
                 $baseGenerationPlan = $plan;
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'adaptive_governor');
                 $preAdaptivePolicy = $this->evolutionGovernor->generationSnapshot($lockedLab, $plan);
                 if ($populationLimit === null && ! $roleComplete && ! data_get($coverageRescue, 'eligible')) {
                     $plan = $this->evolutionGovernor->adaptPlan($plan, $preAdaptivePolicy);
@@ -928,6 +983,7 @@ trait LabPopulationConstructionTrait
                     $adaptiveEvolutionPolicy['root_experiment_portfolio'] = data_get($rootExperimentPortfolio, 'contract');
                 }
                 $normalStructuralResearch = null;
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'composition_plan');
                 if (! $shadowResearch
                     && ! $controlledRescue
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
@@ -993,6 +1049,7 @@ trait LabPopulationConstructionTrait
                     $adaptiveEvolutionPolicy['learning_driven_evolution'] = $learningDirected['contract'];
                 }
                 $causalLearningCohort = null;
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'causal_plan');
                 if ($learningConfirmation && $prospectiveRepair) {
                     // Generic portfolio/governor transforms may discover new
                     // lanes, but cannot own the three preregistered treatments.
@@ -1032,6 +1089,7 @@ trait LabPopulationConstructionTrait
                         ]);
                     }
                 }
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'contextual_plan');
                 if ($contextualCouncilAllocation === null
                     && ! $controlledRescue
                     && $rootExperimentPortfolio === null
@@ -1070,6 +1128,7 @@ trait LabPopulationConstructionTrait
                     ]);
                 }
                 $normalControlPairing = null;
+                $this->publishConstructorPreparationStage($lab->symbol, $lab->timeframe, $constructorPreparationOwner, 'control_pairing');
                 if (! ($learningConfirmation && $prospectiveRepair)
                     && (! $controlledRescue || $cooperativeExperimentPlan)
                     && ! (bool) data_get($coverageRescue, 'eligible', false)
@@ -2092,6 +2151,44 @@ trait LabPopulationConstructionTrait
             'current_slot' => $currentSlot,
             'heartbeat_at' => now()->utc()->toIso8601String(),
         ], now()->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS));
+    }
+
+    /**
+     * Diagnostic phases before the generation transaction commits. They are
+     * not progress watermarks, readiness evidence, heartbeats or a new lease.
+     * The exact attempt retains its original expiry; sparse logs survive both
+     * transaction rollback and the existing owner cleanup on an exception.
+     */
+    private function publishConstructorPreparationStage(string $symbol, string $timeframe, array $attempt, string $stage): void
+    {
+        if (! in_array($stage, ['laboratory_identity', 'historical_learning', 'historical_archive',
+            'snapshot_and_rescue', 'generation_admission', 'reservation_transaction', 'locked_admission',
+            'curriculum_capture', 'generation_plan', 'adaptive_governor', 'composition_plan', 'causal_plan',
+            'contextual_plan', 'control_pairing'], true)) {
+            throw new \InvalidArgumentException('UNKNOWN_CONSTRUCTOR_PREPARATION_STAGE');
+        }
+        $key = $this->constructorOwnerKey($symbol, $timeframe);
+        $owner = Cache::get($key);
+        if (! is_array($owner) || ($attempt['protocol'] ?? null) !== 'lab_population_constructor_owner_v1'
+            || (int) ($attempt['pid'] ?? 0) !== getmypid()) return;
+        $identity = [];
+        foreach (['protocol', 'operation', 'trigger', 'command', 'pid', 'hostname', 'acquired_at'] as $field) {
+            if (! array_key_exists($field, $attempt) || ($owner[$field] ?? null) !== $attempt[$field]) return;
+            $identity[$field] = $attempt[$field];
+        }
+        try {
+            $expiresAt = CarbonImmutable::parse((string) $attempt['acquired_at'])->addSeconds(self::CONSTRUCTOR_LOCK_TTL_SECONDS);
+        } catch (\Throwable) {
+            return;
+        }
+        if ($expiresAt->lessThanOrEqualTo(now())) return;
+        $diagnostic = ['protocol' => 'constructor_preparation_stage_v1',
+            'attempt_key' => hash('sha256', json_encode($identity, JSON_THROW_ON_ERROR)),
+            'stage' => $stage, 'recorded_at' => now()->utc()->toIso8601String(),
+            'acquired_at' => $attempt['acquired_at'], 'promotion_evidence' => false];
+        Cache::put($key, [...$owner, 'preparation' => $diagnostic], $expiresAt);
+        Log::info('Population constructor preparation stage.', ['symbol' => strtoupper($symbol),
+            'timeframe' => strtoupper($timeframe), ...$diagnostic]);
     }
 
     private function publishConstructorStage(LabGeneration $generation, int $slot, string $stage): void

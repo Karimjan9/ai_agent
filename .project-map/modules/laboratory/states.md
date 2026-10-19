@@ -1,5 +1,21 @@
 # Laboratory lifecycle states
 
+## Explicit finite original source preparation
+
+The existing arbiter may claim an explicitly registered finite component
+preparation item only when its sealed source/schema/cost/question and real
+server-owned pre-2026 windows are ready. The canonical constructor mutex and
+fresh locked admission own a three-slot source birth. Those unused source
+references receive an explicit neutral `abandoned` construction disposition,
+not screening, replay failure or scientific success. The existing two-arm
+native component work owns the later original replay cohorts. No ordinary
+twenty-seat generation is resized and no parallel scheduler is created.
+
+Original provenance refusal rolls the entire new birth/capture back. Retry,
+stale lease, changed question or PAUSE cannot create a second birth. Source-only
+references remain excluded from generic full-validation and fold mutation;
+their original recipe and certificate are not ordinary failed-triplet advice.
+
 ## Explicit source-owned intraday geometry
 
 `source_frozen_retest_v1` and `closed_setup_2r_v1` are explicit research keys,

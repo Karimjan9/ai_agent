@@ -114,7 +114,8 @@ class ScopedResearchAuthorityService
                     // invented into a strategy failure or a new replay debt.
                     $windowProofs[] = ['window' => $window['window'], 'classification' => 'underpowered',
                         'original_arm_witnesses' => $witnesses,
-                        'exposure_proof_hash' => $window['original_readiness']['readiness_hash']];
+                        'exposure_proof_hash' => $window['original_readiness']['readiness_hash'],
+                        ...$this->originalHistoryPrefix($window)];
 
                     continue;
                 }
@@ -144,7 +145,8 @@ class ScopedResearchAuthorityService
                 $effects[] = $delta;
                 $windowProofs[] = ['window' => $window['window'], 'delta' => $delta,
                     'comparison' => $comparison, 'original_arm_witnesses' => $witnesses,
-                    'exposure_proof_hash' => $window['original_readiness']['readiness_hash']];
+                    'exposure_proof_hash' => $window['original_readiness']['readiness_hash'],
+                    ...$this->originalHistoryPrefix($window)];
             }
             if ($refusals !== []) {
                 return $this->terminal($registration, false, $refusals[0]['reason_code'],
@@ -175,6 +177,21 @@ class ScopedResearchAuthorityService
                 'reason_code' => $error instanceof LogicException ? $error->getMessage() : 'ORIGINAL_SCOPED_PRODUCER_UNAVAILABLE',
                 'paper_or_live_authority' => false, 'promotion_evidence' => false];
         }
+    }
+
+    private function originalHistoryPrefix(array $window): array
+    {
+        $history = data_get($window, 'original_readiness.original_history_attestation');
+        if (! is_array($history)) return []; // Preserve the exact legacy proof shape.
+        if (($history['ready'] ?? false) !== true || ($history['candidate_unused_demonstrated'] ?? false) !== true
+            || ($history['protocol'] ?? null) !== ResearchWindowExposureInventoryService::ORIGINAL_ORIGIN_PROTOCOL) {
+            throw new LogicException('ORIGINAL_HISTORY_PREFIX_NOT_ATTESTED');
+        }
+        return ['original_history_prefix' => array_intersect_key($history, array_flip([
+            'certificate_id', 'source_hash', 'design_hash', 'candidate_start', 'candidate_end',
+            'run_high_water', 'fold_high_water', 'global_prior_run_high_water', 'global_prior_fold_high_water',
+            'capture_artifact_high_water', 'capture_record_high_water', 'completeness_scope',
+        ]))];
     }
 
     private function subjects(array $registration): array
@@ -248,7 +265,7 @@ class ScopedResearchAuthorityService
         $response = $immutable->latestArtifactPayload($run, 'evaluation_response');
         $strategy = array_values((array) ($request['strategies'] ?? []));
         $expectedManifest = isset($registration['design']['native_execution'])
-            ? app(InstrumentResearchWindowService::class)->canonicalScopedManifest($window, $window['manifest'])
+            ? app(InstrumentResearchWindowService::class)->canonicalScopedManifest($window['window'], $window['manifest'])
             : $window['manifest'];
         if (count($strategy) !== 1 || (int) ($strategy[0]['lab_agent_id'] ?? 0) !== (int) $run->lab_agent_id
             || data_get($request, 'execution_contract.execution_hash', data_get($request, 'execution_hash'))

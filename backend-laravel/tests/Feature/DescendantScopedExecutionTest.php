@@ -692,6 +692,233 @@ class DescendantScopedExecutionTest extends TestCase
         $this->assertDatabaseCount('lab_evolution_credit_events', 0);
     }
 
+    #[DataProvider('currentHistoricalRegistrationClocks')]
+    public function test_explicit_historical_four_arm_registration_uses_first_exposure_clock_not_future_market_time(string $clock): void
+    {
+        CarbonImmutable::setTestNow($clock);
+        [$cartridge, $models, $scope] = $this->fixture(true, 'profit_factor', true);
+        $scope = $this->historicalDescendantScope($scope);
+        $result = app(DescendantScopedProofService::class)->preregister($cartridge, $models, $scope);
+
+        $this->assertSame('scoped_preregistered', $result['status'], json_encode($result));
+        $certificate = $result['certificate'];
+        $this->assertSame(ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY,
+            $certificate['design']['registration_time_policy']);
+        $this->assertFalse($certificate['authority']);
+        $this->assertFalse($result['inheritance_credit']);
+        $capture = DB::table('research_exposure_capture_records')->where('record_type', 'capture_start')->sole();
+        $payload = json_decode($capture->payload, true);
+        $this->assertSame(CarbonImmutable::parse($clock)->toIso8601String(), $payload['capture_started_at']);
+        $this->assertFalse($payload['historical_training_selection_inventory_complete']);
+        $this->assertSame(ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY, $payload['registration_time_policy']);
+        $this->assertDatabaseCount('descendant_value_trials', 1);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('lab_generations', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertNothingSent();
+    }
+
+    public static function currentHistoricalRegistrationClocks(): array
+    {
+        return [['2026-10-19T09:00:00Z'], ['2027-08-11T09:00:00Z']];
+    }
+
+    public function test_historical_time_policy_never_reopens_observed_arms_or_component_events(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-19T09:00:00Z');
+        [$cartridge, $models, $scope] = $this->fixture(true, 'profit_factor', true);
+        $owner = app(DescendantScopedProofService::class);
+        $historical = $this->historicalDescendantScope($scope);
+        $sameEvents = [...$historical, 'validation_start' => $scope['validation_start'],
+            'validation_end' => $scope['validation_end'], 'validation_windows' => $scope['validation_windows']];
+        $this->assertSame('DESCENDANT_NEW_POST_COMPONENT_HOLDING_WINDOW_REQUIRED',
+            $owner->preregister($cartridge, $models, $sameEvents)['reason_code']);
+
+        LabEvaluationRun::create(['run_id' => 'synthetic-historical-arm-already-consumed',
+            'model_version_id' => $models['P']->id, 'phase' => 'full_validation',
+            'mode' => 'synthetic_test', 'attempt' => 1, 'status' => 'technical_error']);
+        $this->assertSame('DESCENDANT_OBSERVED_ARM_CANNOT_BE_PREREGISTERED',
+            $owner->preregister($cartridge, $models, $historical)['reason_code']);
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+    }
+
+    public function test_first_exposure_requires_matching_native_policy_and_never_accepts_paper_years(): void
+    {
+        CarbonImmutable::setTestNow('2027-08-11T09:00:00Z');
+        [$cartridge, $models, $scope] = $this->fixture(true, 'profit_factor', true);
+        $owner = app(DescendantScopedProofService::class);
+        $historical = $this->historicalDescendantScope($scope);
+        $legacy = $historical;
+        unset($legacy['registration_time_policy']);
+        $this->assertSame('DESCENDANT_PRE_2026_PREREGISTERED_PAPER_DISJOINT_INTERVAL_REQUIRED',
+            $owner->preregister($cartridge, $models, $legacy)['reason_code']);
+        $badSelection = $historical;
+        $badSelection['exposure_policy']['selection_policy'] = 'frozen_before_first_event';
+        $this->assertSame('SCOPED_CERTIFICATE_COMPLETE_EXPOSURE_POLICY_REQUIRED',
+            $owner->preregister($cartridge, $models, $badSelection)['reason_code']);
+        $noNative = $historical;
+        unset($noNative['native_execution']);
+        $this->assertSame('DESCENDANT_SOURCE_CARTRIDGE_EXACT_TRAIT_REQUIRED',
+            $owner->preregister($cartridge, $models, $noNative)['reason_code']);
+        $unknownPolicy = [...$historical, 'registration_time_policy' => 'caller_declared_unused'];
+        $this->assertSame('DESCENDANT_FIRST_EXPOSURE_ORIGINAL_NATIVE_POLICY_REQUIRED',
+            $owner->preregister($cartridge, $models, $unknownPolicy)['reason_code']);
+        foreach ([2026, 2027] as $paperYear) {
+            $paper = [...$historical, 'validation_start' => $paperYear.'-01-01T00:00:00Z',
+                'validation_end' => $paperYear.'-07-01T00:00:00Z'];
+            $this->assertSame('DESCENDANT_PRE_2026_PREREGISTERED_PAPER_DISJOINT_INTERVAL_REQUIRED',
+                $owner->preregister($cartridge, $models, $paper)['reason_code']);
+        }
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertNothingSent();
+    }
+
+    #[DataProvider('currentHistoricalRegistrationClocks')]
+    public function test_legacy_component_does_not_invent_future_paper_windows_at_current_clock(string $clock): void
+    {
+        CarbonImmutable::setTestNow($clock);
+        $this->fixture();
+        $proposal = app(EvolutionaryAuthorityFoundryService::class)->proposeScopedDescendant(999);
+        $this->assertSame('blocked_dependency', $proposal['status']);
+        $this->assertSame('SCOPED_DESCENDANT_LATER_PRE_2026_WINDOWS_UNAVAILABLE', $proposal['reason_code']);
+        $this->assertFalse($proposal['actual_data_available']);
+        $this->assertFalse($proposal['execution_authorized']);
+        $this->assertDatabaseCount('model_versions', 4);
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertNothingSent();
+    }
+
+    #[DataProvider('currentHistoricalRegistrationClocks')]
+    public function test_historical_candidate_readiness_cannot_replace_original_parent_prefix_with_a_mocked_status(string $clock): void
+    {
+        CarbonImmutable::setTestNow($clock);
+        [, $models] = $this->fixture(true, 'profit_factor', true);
+        $owner = app(ScopedDescendantCandidatePreparationService::class);
+        $registered = $owner->register(999);
+        $this->assertSame('recorded', $registered['status'], json_encode($registered));
+        $work = ResearchExperimentWorkItem::findOrFail($registered['work_id']);
+        $proposal = data_get($work->payload, 'frozen_proposal');
+        $this->assertSame('2012-08-01T00:00:00+00:00', $proposal['window_draft'][0]['start_inclusive']);
+        $this->assertSame('2013-02-01T00:00:00+00:00', $proposal['window_draft'][5]['end_exclusive']);
+        $this->assertFalse($proposal['native_original_registration_required_before_first_event']);
+        $this->assertTrue($proposal['native_original_registration_required_before_first_exposure']);
+        $this->assertFalse($proposal['actual_data_available']);
+        $this->assertFalse($proposal['execution_authorized']);
+        $this->assertSame('SCOPED_DESCENDANT_FUTURE_SERVER_ROSTER_REQUIRED', $owner->inspectWork($work)['reason_code']);
+        config(['services.instrument_policy.authorized_research_windows' => array_map(
+            fn ($period, $index): array => [...$period, 'authorization_id' => 'synthetic-historical-slot-'.$index,
+                'research_epoch_id' => 'synthetic-historical-child-epoch', 'purpose' => 'instrument_independent_validation'],
+            $proposal['window_draft'], array_keys($proposal['window_draft']))]);
+        $this->mock(AutonomousModeService::class, fn (MockInterface $mock) => $mock->shouldReceive('enabled')->andReturnTrue());
+        $this->assertTrue($owner->inspectWork($work)['executable']);
+        $work->update(['status' => 'leased', 'attempts' => 1, 'lease_token' => 'synthetic-historical-constructor',
+            'fence_version' => 1, 'lease_expires_at' => now()->addSeconds(900)]);
+        $result = $owner->execute($work->fresh());
+        $this->assertSame('blocked', $result['status'], json_encode($result));
+        $this->assertSame('SCOPED_CERTIFICATE_PREREGISTRATION_REQUIRED', $result['reason_code']);
+        $this->assertDatabaseCount('model_versions', count($models));
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('lab_generations', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_original_descendant_factory_cannot_borrow_a_newer_work_lease(): void
+    {
+        $this->fixture();
+        $registered = app(ScopedDescendantCandidatePreparationService::class)->register(999);
+        $work = ResearchExperimentWorkItem::findOrFail($registered['work_id']);
+        $work->update(['status' => 'leased', 'attempts' => 1, 'lease_token' => 'original-birth-fence-one',
+            'fence_version' => 1, 'lease_expires_at' => now()->addSeconds(900)]);
+        $stale = $work->fresh();
+        $work->update(['lease_token' => 'original-birth-fence-two', 'fence_version' => 2]);
+        try {
+            app(ResearchWindowExposureInventoryService::class)->createOriginalScopedDescendantModels($stale);
+            $this->fail('A stale caller borrowed the current locked work lease.');
+        } catch (\LogicException $error) {
+            $this->assertSame('DESCENDANT_WORK_LEASE_NOT_CURRENT', $error->getMessage());
+        }
+        $this->assertDatabaseCount('model_versions', 4);
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        Http::assertNothingSent();
+    }
+
+    #[DataProvider('originalBirthCommitStops')]
+    public function test_original_birth_rejects_current_stop_or_parent_exit_drift_without_partial_models(string $stage): void
+    {
+        // The parent producer is an explicit test seam here. The real parent
+        // issuer/products/ancestry path is covered by ScopedResearchAuthorityTest.
+        $this->fixture();
+        $registered = app(ScopedDescendantCandidatePreparationService::class)->register(999);
+        $work = ResearchExperimentWorkItem::findOrFail($registered['work_id']);
+        $proposal = $work->payload['frozen_proposal'];
+        $work->update(['status' => 'leased', 'attempts' => 1, 'lease_token' => 'original-birth-stop-fixture',
+            'fence_version' => 1, 'lease_expires_at' => now()->addSeconds(900)]);
+        // FK anchor only: deliberately not a valid registration or authority.
+        DB::table('scoped_research_certificates')->insert(['id' => 999,
+            'certificate_key' => hash('sha256', 'conditional original-birth transaction fence'),
+            'protocol' => 'conditional_transaction_fence_fixture', 'scope' => 'component',
+            'record_type' => 'test_only_fk_anchor', 'source_type' => ModelVersion::class, 'source_id' => 1,
+            'source_hash' => str_repeat('0', 64), 'design_hash' => str_repeat('0', 64),
+            'payload_hash' => str_repeat('0', 64), 'server_seal' => str_repeat('0', 64),
+            'payload' => json_encode(['conditional_fk_anchor_only' => true, 'authority' => false]),
+            'preregistered_at' => now(), 'recorded_at' => now()]);
+        $stopAtEntry = $stage === 'entry_stop';
+        $owner = \Mockery::mock(ResearchWindowExposureInventoryService::class,
+            [app(ResearchPaperEpochContractService::class)])->makePartial()->shouldAllowMockingProtectedMethods();
+        if ($stopAtEntry) {
+            $owner->shouldNotReceive('rederiveOriginalDescendantParent');
+        } else {
+            $prefix = [
+                'certificate' => ['certificate_id' => 999],
+                'prefix' => ['certificate_id' => 999, 'source_hash' => hash('sha256', 'synthetic original parent'),
+                    'design_hash' => hash('sha256', 'synthetic original design'), 'authority_record_id' => 7]];
+            $fresh = $prefix;
+            if ($stage === 'parent_exit_drift') $fresh['prefix']['source_hash'] = hash('sha256', 'damaged synthetic original parent');
+            $owner->shouldReceive('rederiveOriginalDescendantParent')->twice()->with(999)->andReturn($prefix, $fresh);
+        }
+        $this->mock(ScopedDescendantCandidatePreparationService::class,
+            function (MockInterface $mock) use ($stopAtEntry, $proposal): void {
+                if ($stopAtEntry) $mock->shouldNotReceive('inspectWork');
+                else $mock->shouldReceive('inspectWork')->once()->andReturn(['executable' => true, 'proposal' => $proposal]);
+            });
+        $this->mock(AutonomousModeService::class, function (MockInterface $mock) use ($stopAtEntry, $stage): void {
+            $mock->shouldReceive('enabled')->andReturnTrue();
+            if ($stopAtEntry) $mock->shouldReceive('enabledForCommit')->once()->andReturnFalse();
+            elseif ($stage === 'parent_exit_drift') $mock->shouldReceive('enabledForCommit')->once()->andReturnTrue();
+            else $mock->shouldReceive('enabledForCommit')->twice()->andReturn(true, false);
+        });
+        try {
+            $owner->createOriginalScopedDescendantModels($work->fresh('receipt'));
+            $this->fail('A current STOP escaped an original-birth transaction fence.');
+        } catch (\LogicException $error) {
+            $this->assertSame($stage === 'parent_exit_drift'
+                ? 'DESCENDANT_ORIGINAL_OPERATION_PARENT_DRIFT' : 'AUTONOMOUS_MODE_STOPPED', $error->getMessage());
+        }
+        $this->assertDatabaseCount('model_versions', 4);
+        $this->assertDatabaseCount('research_exposure_capture_records', 0);
+        $this->assertDatabaseCount('descendant_value_trials', 0);
+        $this->assertDatabaseCount('lab_evaluation_runs', 0);
+        $this->assertDatabaseCount('lab_evolution_credit_events', 0);
+        $this->assertSame('leased', $work->fresh()->status);
+        Http::assertNothingSent();
+    }
+
+    public static function originalBirthCommitStops(): array
+    {
+        return ['before_expensive_parent_proof' => ['entry_stop'], 'after_fresh_exit_before_commit' => ['commit_stop'],
+            'fresh_exit_parent_proof_drift' => ['parent_exit_drift']];
+    }
+
     public function test_registered_future_slots_create_pristine_four_arm_question_with_parent_guards_before_any_data(): void
     {
         [$cartridge, $models] = $this->fixture();
@@ -706,7 +933,10 @@ class DescendantScopedExecutionTest extends TestCase
                 'research_epoch_id' => 'synthetic-future-child-epoch', 'purpose' => 'instrument_independent_validation'];
         }
         config(['services.instrument_policy.authorized_research_windows' => $slots]);
-        $this->mock(AutonomousModeService::class, fn (MockInterface $mock) => $mock->shouldReceive('enabled')->andReturnTrue());
+        $this->mock(AutonomousModeService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('enabled')->andReturnTrue();
+            $mock->shouldReceive('enabledForCommit')->andReturnTrue();
+        });
         $this->assertTrue($owner->inspectWork($work)['executable']);
         $work->update(['status' => 'leased', 'attempts' => 1, 'lease_token' => 'synthetic-future-constructor',
             'fence_version' => 1, 'lease_expires_at' => now()->addSeconds(900)]);
@@ -1043,7 +1273,7 @@ PY;
         }
     }
 
-    private function fixture(bool $confirmSource = true, string $metric = 'profit_factor'): array
+    private function fixture(bool $confirmSource = true, string $metric = 'profit_factor', bool $historical = false): array
     {
         $schema = app(StrategyParameterSchemaService::class);
         $base = $schema->validate('ema_rsi_v1', array_intersect_key($schema->defaults('ema_rsi'), $schema->schema('ema_rsi')));
@@ -1073,7 +1303,7 @@ PY;
         $context = ['regime' => 'trend_up', 'volatility' => 'normal', 'session' => 'london', 'direction' => 'BUY'];
         $contextHash = app(ContextContractV2Service::class)->project($context)['identity_hash'];
         $registry = \Mockery::mock(ScopedResearchCertificateService::class, [app(ResearchPaperEpochContractService::class)])->makePartial();
-        (function (MockInterface $mock) use ($confirmSource, $contextHash, $context, $execution, $models, $gene, $old, $new, $metric): void {
+        (function (MockInterface $mock) use ($confirmSource, $contextHash, $context, $execution, $models, $gene, $old, $new, $metric, $historical): void {
             $mock->shouldReceive('inspect')->with(999)->andReturn(['valid' => true, 'scope' => 'component',
                 'source_id' => 999, 'certificate_id' => 999, 'design_hash' => hash('sha256', 'synthetic source design'),
                 'design' => ['context_hash' => $contextHash, 'validation_start' => '2012-01-01T00:00:00Z',
@@ -1084,12 +1314,14 @@ PY;
                     'risk_guard' => ['max_drawdown_percent' => 9.0, 'max_risk_of_ruin_percent' => 4.0],
                     'exposure_policy' => ['protocol' => 'prospective_scoped_exposure_policy_v1', 'holding_fence_seconds' => 259200,
                         'execution_timeframe' => 'M5', 'context_timeframes' => ['H4', 'H1', 'M15'],
-                        'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window', 'selection_policy' => 'frozen_before_first_event'],
+                        'warmup_policy' => 'all_original_closed_source_rows_inside_registered_window',
+                        'selection_policy' => $historical ? 'frozen_before_first_exposure' : 'frozen_before_first_event'],
                     'native_execution' => ['execution_timeframe' => 'M5', 'initial_capital' => 10000,
                         'risk_policy' => ['risk_per_trade_percent' => .5], 'full_replay_runtime_policy' => [
                             'protocol' => 'scoped_original_full_source_v1', 'evaluation_mode' => 'full',
                             'selection' => 'entire_authorized_source', 'maximum_source_rows' => 200000,
-                            'maximum_runtime_seconds' => 1620, 'warmup_rows' => 0, 'no_walk_forward_selection' => true, 'promotion_evidence' => false]]],
+                            'maximum_runtime_seconds' => 1620, 'warmup_rows' => 0, 'no_walk_forward_selection' => true, 'promotion_evidence' => false]],
+                    ...($historical ? ['registration_time_policy' => ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY] : [])],
                 'original_authority' => ['component' => ['confirmed' => $confirmSource,
                     'authority_type' => 'context_bound_research_component', 'candidate_model_version_id' => (int) $models['P+T']->id,
                     'control_model_version_id' => (int) $models['P']->id, 'context_hash' => $contextHash, 'context' => $context,
@@ -1118,5 +1350,18 @@ PY;
                     'no_walk_forward_selection' => true, 'promotion_evidence' => false]]];
 
         return [$cartridge, $models, $scope];
+    }
+
+    private function historicalDescendantScope(array $scope): array
+    {
+        $scope['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+        $scope['exposure_policy']['selection_policy'] = 'frozen_before_first_exposure';
+        $scope['validation_start'] = '2013-01-01T00:00:00Z';
+        $scope['validation_end'] = '2013-07-01T00:00:00Z';
+        $scope['validation_windows'] = array_map(fn (int $month): array => [
+            'start_inclusive' => sprintf('2013-%02d-01T00:00:00Z', $month),
+            'end_exclusive' => sprintf('2013-%02d-01T00:00:00Z', $month + 1)], range(1, 6));
+
+        return $scope;
     }
 }

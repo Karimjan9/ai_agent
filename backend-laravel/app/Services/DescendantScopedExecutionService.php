@@ -1086,7 +1086,9 @@ class DescendantScopedExecutionService
 
     private function assertSourceComponent(int $certificateId, array $design, LabSkillZooEntry $cartridge): void
     {
-        $proof = $this->certificates->inspect($certificateId);
+        $proof = ($design['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY
+            ? app(ResearchWindowExposureInventoryService::class)->inspectOriginalDescendantParent($certificateId)
+            : $this->certificates->inspect($certificateId);
         $authority = $proof['original_authority']['component'] ?? $proof;
         if (($proof['valid'] ?? false) !== true || ($proof['scope'] ?? null) !== 'component'
             || ($authority['confirmed'] ?? false) !== true

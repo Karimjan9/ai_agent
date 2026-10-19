@@ -1,5 +1,13 @@
 # Operations states
 
+Pre-reservation constructor preparation publishes sparse named diagnostic
+stages on the exact existing owner attempt. The original expiry and heartbeat
+are unchanged; expired or replaced owners cannot be overwritten. Sanitized
+logs survive a transaction rollback and normal owner cleanup. A stage label
+cannot extend a lease, satisfy readiness, count as scientific progress or
+authorize a successor. Measured dependency speed is not acceptance of a full
+production constructor.
+
 The read-only Laravel/Python liveness contract accepts only true nonnegative
 integer active counters. Optional lane counters may be absent (legacy zero),
 but present malformed counters yield unknown. A successful malformed

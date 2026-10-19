@@ -139,10 +139,48 @@ class ScopedResearchCertificateService
         });
     }
 
+    /** Read the sealed original assessment without recursive inspection or caller flags. */
+    public function verifiedIndependentAssessment(int $certificateId): ?array
+    {
+        $registration = $this->verifiedRegistration($certificateId);
+        $row = ScopedResearchCertificate::where('parent_certificate_id', $certificateId)
+            ->where('record_type', 'independent_assessment')->first();
+        if (! $row) return null;
+        $this->assertRecord($row);
+        if ($row->scope !== $registration['scope'] || $row->source_type !== $registration['source_type']
+            || (int) $row->source_id !== (int) $registration['source_id']
+            || $row->source_hash !== $registration['source_hash'] || $row->design_hash !== $registration['design_hash']
+            || data_get($row->payload, 'certificate_id') !== $certificateId
+            || data_get($row->payload, 'protocol') !== self::AUTHORITY_POLICY) {
+            throw new LogicException('SCOPED_ORIGINAL_ASSESSMENT_REGISTRATION_DRIFT');
+        }
+        return ['record_id' => (int) $row->id, 'original_products' => $row->payload['original_products'],
+            'original_assessment' => $row->payload['original_assessment']];
+    }
+
     /** Whole prospective window roster, derived from original server registries. */
     public function independentWindowReadiness(int $id): array
     {
         $registration = $this->verifiedRegistration($id);
+        if ($registration['scope'] === 'inheritance'
+            && data_get($registration, 'design.registration_time_policy') === self::FIRST_EXPOSURE_TIME_POLICY) {
+            try {
+                return app(ResearchWindowExposureInventoryService::class)->withOriginalDescendantParentProof(
+                    (int) data_get($registration, 'design.subject.source_component_certificate_id'),
+                    fn (): array => $this->independentWindowReadinessForRegistration($registration));
+            } catch (Throwable $error) {
+                return ['ready' => false, 'status' => 'blocked_dependency', 'windows' => [],
+                    'reason_codes' => [$error instanceof LogicException ? $error->getMessage()
+                        : 'DESCENDANT_ORIGINAL_OPERATION_PARENT_UNAVAILABLE']];
+            }
+        }
+
+        return $this->independentWindowReadinessForRegistration($registration);
+    }
+
+    private function independentWindowReadinessForRegistration(array $registration): array
+    {
+        $id = (int) $registration['certificate_id'];
         $design = $registration['design'];
         $expected = (array) ($design['validation_windows'] ?? []);
         $windows = []; $reasons = [];
@@ -167,6 +205,11 @@ class ScopedResearchCertificateService
             $models = array_keys((array) $registration['source_snapshot']['models']);
             $runs = LabEvaluationRun::whereIn('model_version_id', $models)
                 ->where('data_hash', $window['dataset_sha256'])->orderBy('id')->limit(201)->pluck('id')->map('intval')->all();
+            if (($design['registration_time_policy'] ?? null) === self::FIRST_EXPOSURE_TIME_POLICY
+                && ($sealed = $this->verifiedIndependentAssessment($id)) !== null) {
+                $original = collect($sealed['original_products'])->firstWhere('window_key', $window['window_key']);
+                $runs = array_values((array) ($original['run_ids'] ?? []));
+            }
             if (count($runs) > 200) { $reasons[] = 'SCOPED_ORIGINAL_PRODUCT_BOUND_EXCEEDED'; continue; }
             $manifest = (array) ($record['mtf_bundle_manifest'] ?? []);
             $proof = app(ResearchWindowExposureInventoryService::class)->assessForCertificate($id, $window, $manifest, $runs);
@@ -660,6 +703,12 @@ class ScopedResearchCertificateService
 
     private function assertRecord(ScopedResearchCertificate $row): void
     {
+        foreach (['preregistered_at', 'recorded_at'] as $field) {
+            if (preg_match('/\.(\d+)(?:Z|[+-]\d{2}:\d{2})?$/D', (string) $row->getRawOriginal($field), $fraction)
+                && trim($fraction[1], '0') !== '') {
+                throw new LogicException('SCOPED_CERTIFICATE_SEAL_OR_PAYLOAD_DRIFT');
+            }
+        }
         $body = $row->only([
             'certificate_key', 'protocol', 'scope', 'record_type', 'parent_certificate_id',
             'source_type', 'source_id', 'source_hash', 'design_hash', 'payload_hash', 'payload',

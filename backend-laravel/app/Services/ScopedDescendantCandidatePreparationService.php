@@ -60,7 +60,8 @@ class ScopedDescendantCandidatePreparationService
                 || ($proposal['source_component_certificate_id'] ?? null) !== data_get($work->payload, 'source_component_certificate_id')) {
                 throw new LogicException('SCOPED_DESCENDANT_FROZEN_PROPOSAL_OWNER_DRIFT');
             }
-            $certificate = app(ScopedResearchCertificateService::class)->inspect($proposal['source_component_certificate_id']);
+            $certificate = app(ResearchWindowExposureInventoryService::class)
+                ->inspectOriginalDescendantParent($proposal['source_component_certificate_id']);
             if (data_get($certificate, 'original_authority.component.confirmed') !== true
                 || ($certificate['design_hash'] ?? null) !== $proposal['source_design_hash']
                 || data_get($certificate, 'original_authority.component.context_hash') !== $proposal['context_hash']) {
@@ -75,11 +76,26 @@ class ScopedDescendantCandidatePreparationService
                     !== $proposal['source_revision_payload_hash']) {
                 throw new LogicException('SCOPED_DESCENDANT_ORIGINAL_COMPONENT_REVISION_DRIFT');
             }
-            if (CarbonImmutable::parse($proposal['window_draft'][0]['start_inclusive'])->lte(now()->utc())) {
+            $historicalFirstExposure = ($proposal['registration_time_policy'] ?? null)
+                === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+            if (array_key_exists('registration_time_policy', $proposal)
+                && (! $historicalFirstExposure || data_get($certificate, 'design.registration_time_policy')
+                    !== ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY)) {
+                throw new LogicException('SCOPED_DESCENDANT_FIRST_EXPOSURE_SOURCE_POLICY_REQUIRED');
+            }
+            if (! $historicalFirstExposure
+                && CarbonImmutable::parse($proposal['window_draft'][0]['start_inclusive'])->lte(now()->utc())) {
                 throw new LogicException('SCOPED_DESCENDANT_PROSPECTIVE_CAPTURE_DEADLINE_PASSED');
             }
+            $parentEnd = CarbonImmutable::parse($certificate['design']['validation_end'])->utc()
+                ->addSeconds((int) data_get($certificate, 'design.exposure_policy.holding_fence_seconds', 0));
             $ids = [];
             foreach ($proposal['window_draft'] as $period) {
+                if (! app(ResearchPaperEpochContractService::class)->researchIntervalDisjointFromPaper(
+                    $period['start_inclusive'], $period['end_exclusive'])
+                    || ($historicalFirstExposure && CarbonImmutable::parse($period['start_inclusive'])->lt($parentEnd))) {
+                    throw new LogicException('SCOPED_DESCENDANT_NEW_PRE_2026_POST_COMPONENT_WINDOW_REQUIRED');
+                }
                 $records = array_values(array_filter((array) config('services.instrument_policy.authorized_research_windows', []),
                     fn ($row): bool => is_array($row) && ($row['purpose'] ?? null) === 'instrument_independent_validation'
                         && is_string($row['authorization_id'] ?? null) && $row['authorization_id'] !== ''
@@ -116,13 +132,26 @@ class ScopedDescendantCandidatePreparationService
             return DB::transaction(function () use ($work, $native, $proof): array {
                 $current = ResearchExperimentWorkItem::whereKey($work->id)->lockForUpdate()->firstOrFail();
                 $native->assertLease($work);
+                if (! app(AutonomousModeService::class)->enabledForCommit($work->symbol, $work->timeframe)) {
+                    throw new LogicException('AUTONOMOUS_MODE_STOPPED');
+                }
                 if (data_get($current->result, 'registered_descendant') !== null) {
                     throw new LogicException('SCOPED_DESCENDANT_ORIGINAL_CHILD_ALREADY_REGISTERED');
+                }
+                $prepare = function () use ($current, $work, $native): array {
+                // This is a new locked invocation, not the pre-lock readiness proof.
+                $proof = $this->inspectWork($current);
+                if (($proof['executable'] ?? false) !== true) {
+                    throw new LogicException($proof['reason_code'] ?? 'SCOPED_DESCENDANT_ORIGINAL_PROPOSAL_DEPENDENCY');
                 }
                 $proposal = $proof['proposal'];
                 $parent = $proof['parent_certificate']['design'];
                 $cartridge = LabSkillZooEntry::findOrFail($proposal['source_cartridge_id']);
                 $models = [];
+                if (($proposal['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY) {
+                    $birth = app(ResearchWindowExposureInventoryService::class)->createOriginalScopedDescendantModels($current);
+                    $models = $birth['models'];
+                } else {
                 foreach (DescendantScopedProofService::ARMS as $arm) {
                     $native->assertLease($work);
                     $source = ModelVersion::findOrFail($proposal['source_model_ids'][in_array($arm, ['P', 'P+U'], true) ? 'P' : 'P+T']);
@@ -135,10 +164,11 @@ class ScopedDescendantCandidatePreparationService
                         'strategy' => $source->strategy, 'version' => $source->version.'-scoped-'.$work->id,
                         'status' => 'testing', 'parameters' => $proposal['parameter_vectors'][$arm], 'metadata' => $metadata]);
                 }
+                }
                 $input = $parent['native_execution'];
                 $nativeInput = Arr::only($input, ['execution_timeframe', 'initial_capital', 'risk_policy', 'full_replay_runtime_policy']);
                 $native->assertLease($work);
-                $registration = app(CanonicalSkillCartridgeService::class)->preregisterDescendantProof($cartridge, $models, [
+                $registrationScope = [
                     'validation_start' => $proposal['window_draft'][0]['start_inclusive'],
                     'validation_end' => $proposal['window_draft'][count($proposal['window_draft']) - 1]['end_exclusive'],
                     'validation_windows' => $proposal['window_draft'], 'context' => $proposal['context'],
@@ -147,14 +177,28 @@ class ScopedDescendantCandidatePreparationService
                     'evaluator_hash' => app(LabImmutableEvidenceService::class)->codeHash(), 'metric' => $parent['metric'],
                     'stopping_rule' => $parent['stopping_rule'], 'native_execution' => [...$nativeInput,
                         'source_component_certificate_id' => $proposal['source_component_certificate_id'],
-                        'authorization_ids' => $proof['authorization_ids']]]);
+                        'authorization_ids' => $proof['authorization_ids']]];
+                if (($proposal['registration_time_policy'] ?? null) === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY) {
+                    $registrationScope['registration_time_policy'] = ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY;
+                }
+                $registration = app(CanonicalSkillCartridgeService::class)->preregisterDescendantProof($cartridge, $models, $registrationScope);
                 if (($registration['status'] ?? null) !== 'scoped_preregistered') {
                     throw new LogicException($registration['reason_code'] ?? 'SCOPED_DESCENDANT_ORIGINAL_REGISTRATION_REFUSED');
                 }
+
+                return $registration;
+                };
+                $registration = data_get($proof, 'proposal.registration_time_policy') === ScopedResearchCertificateService::FIRST_EXPOSURE_TIME_POLICY
+                    ? app(ResearchWindowExposureInventoryService::class)->withOriginalDescendantParentProof(
+                        (int) data_get($proof, 'proposal.source_component_certificate_id'), $prepare)
+                    : $prepare();
                 $native->assertLease($work);
+                if (! app(AutonomousModeService::class)->enabledForCommit($work->symbol, $work->timeframe)) {
+                    throw new LogicException('AUTONOMOUS_MODE_STOPPED');
+                }
                 $completed = app(ResearchExperimentConversionKernelService::class)->complete($work, [
                     'status' => 'prospective_descendant_registered', 'registered_descendant' => $registration,
-                    'original_component_certificate_id' => $proposal['source_component_certificate_id'],
+                    'original_component_certificate_id' => data_get($proof, 'proposal.source_component_certificate_id'),
                     'actual_data_available' => false, 'promotion_evidence' => false]);
                 if (! $completed) {
                     throw new LogicException('DESCENDANT_WORK_LEASE_NOT_CURRENT');
