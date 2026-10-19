@@ -554,7 +554,9 @@ class ResearchLoopArbiterTest extends TestCase
         app(AutonomousModeService::class)->start('XAUUSD', 'H1', 'test', 'running');
         config()->set('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', true);
         $velocity = Mockery::mock(LearningVelocityGateService::class);
-        $velocity->shouldReceive('inspect')->once()->andReturn([
+        $velocity->shouldReceive('inspect')->once()->withArgs(fn ($scope, $timeframe, $includeTruth): bool =>
+            $scope instanceof AiLaboratory && (int) $scope->id === (int) $lab->id
+                && $timeframe === null && $includeTruth === false)->andReturn([
             'status' => 'blocked_technical_recovery', 'technical_recovery_agents' => 1,
         ]);
         $this->app->instance(LearningVelocityGateService::class, $velocity);

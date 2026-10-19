@@ -127,6 +127,7 @@ paths:
   - backend-laravel/app/Services/MarketChampionService.php
   - backend-laravel/app/Services/LabAgentPreflightService.php
   - backend-laravel/app/Services/LearningVelocityGateService.php
+  - backend-laravel/tests/Feature/LearningVelocityDiagnosticProjectionTest.php
   - backend-laravel/app/Jobs/EvaluateLabAgentJob.php
   - backend-laravel/app/Jobs/EvaluateLabScreeningBatchJob.php
   - backend-laravel/app/Models/GenerationAutonomyReceipt.php

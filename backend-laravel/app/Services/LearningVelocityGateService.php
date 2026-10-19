@@ -145,8 +145,13 @@ class LearningVelocityGateService
         });
     }
 
-    /** @return array<string, mixed> */
-    public function inspect(string|AiLaboratory $labOrSymbol, ?string $timeframe = null): array
+    /**
+     * The optional projection omits only the historical truth scoreboard.
+     * Every fresh classification/recovery check remains mandatory; existing
+     * callers retain the complete diagnostic response by default.
+     * @return array<string, mixed>
+     */
+    public function inspect(string|AiLaboratory $labOrSymbol, ?string $timeframe = null, bool $includeLearningTruth = true): array
     {
         $lab = $labOrSymbol instanceof AiLaboratory
             ? $labOrSymbol
@@ -335,7 +340,7 @@ class LearningVelocityGateService
             'active_learning_agents' => $activeLearning,
             'learning_starvation' => $starvation,
             'health_layers' => $layers,
-            'learning_truth' => $this->truthScoreboard($symbol, $tf),
+            ...($includeLearningTruth ? ['learning_truth' => $this->truthScoreboard($symbol, $tf)] : []),
             'observations' => $observations,
         ];
     }

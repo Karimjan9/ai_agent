@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T12:21:50.040Z",
-  "source_digest": "8cc5fe885615692f05909d7749e548d3fbff3ebd990d3c13562962fb25dc82f4",
-  "source_file_count": 1787,
-  "git_head": "d7c2b18c82b406b1f1119c67e4d7dace0027412c",
+  "generated_at": "2026-10-19T12:54:33.909Z",
+  "source_digest": "d483dd157386cc82b90c955583ad96052bd5502cc4e8ed5d7a9365e9a1544481",
+  "source_file_count": 1788,
+  "git_head": "59c98db5b39ec2f030eda1cc9d27b6dca8276bf6",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -1331,49 +1331,49 @@
       "symbol": "fidelityPlanForAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1177
+      "line": 1179
     },
     {
       "symbol": "hasLiveScheduledCommandLock",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1210
+      "line": 1212
     },
     {
       "symbol": "canonicalArguments",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1236
+      "line": 1238
     },
     {
       "symbol": "operationalStateSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1251
+      "line": 1253
     },
     {
       "symbol": "generationLabQueueSnapshot",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1422
+      "line": 1424
     },
     {
       "symbol": "generationQueueWatermark",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1443
+      "line": 1445
     },
     {
       "symbol": "admittedGenerationReservation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1463
+      "line": 1465
     },
     {
       "symbol": "mtfAllocation",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1512
+      "line": 1514
     },
     {
       "symbol": "tickLocked",
@@ -1385,67 +1385,67 @@
       "symbol": "driftAlreadyConsumed",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1557
+      "line": 1559
     },
     {
       "symbol": "latestHasZeroPassScreening",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1570
+      "line": 1572
     },
     {
       "symbol": "latestCanAutonomouslyRecordDataEdgeAudit",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1588
+      "line": 1590
     },
     {
       "symbol": "directorPriority",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1601
+      "line": 1603
     },
     {
       "symbol": "recentAction",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1613
+      "line": 1615
     },
     {
       "symbol": "learningCurriculum",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1622
+      "line": 1624
     },
     {
       "symbol": "compactClosure",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1644
+      "line": 1646
     },
     {
       "symbol": "compactDirector",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1654
+      "line": 1656
     },
     {
       "symbol": "blocked",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1668
+      "line": 1670
     },
     {
       "symbol": "hash",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1674
+      "line": 1676
     },
     {
       "symbol": "canonicalize",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 1679
+      "line": 1681
     },
     {
       "symbol": "ResearchLoopArbiterService",
@@ -1457,7 +1457,7 @@
       "symbol": "nativeDepthContinuationDecision",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 784
+      "line": 786
     },
     {
       "symbol": "__construct",
@@ -1469,19 +1469,19 @@
       "symbol": "researchPolicyEvidence",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 828
+      "line": 830
     },
     {
       "symbol": "openCausalReplay",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 836
+      "line": 838
     },
     {
       "symbol": "unadmittedHistoricalDraftContinuityReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 861
+      "line": 863
     },
     {
       "symbol": "tick",
@@ -1493,13 +1493,13 @@
       "symbol": "freshDatasetContinuityReadiness",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 921
+      "line": 923
     },
     {
       "symbol": "decide",
       "kind": "php_method",
       "path": "backend-laravel/app/Services/ResearchLoopArbiterService.php",
-      "line": 985
+      "line": 987
     },
     {
       "symbol": "ResearchReleaseSealService",

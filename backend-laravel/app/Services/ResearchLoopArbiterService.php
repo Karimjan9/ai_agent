@@ -389,7 +389,9 @@ class ResearchLoopArbiterService
         // The actionable debt can belong to an older terminal generation; the
         // already-reconciled lineage head must not receive endless no-op repairs.
         if ($latest && in_array((string) $latest->status, ['screened', 'completed', 'technical_quarantine', 'abandoned', 'failed'], true)) {
-            $velocity = app(LearningVelocityGateService::class)->inspect($latest->laboratory);
+            // Selection needs the same fresh recovery gate, not the all-history
+            // diagnostic scoreboard. Admission/reporting defaults stay full.
+            $velocity = app(LearningVelocityGateService::class)->inspect($latest->laboratory, null, false);
             if ((string) data_get($velocity, 'status') === 'blocked_technical_recovery') {
                 $recoveryEnabled = (bool) config('services.lifecycle_orchestrator.autonomous_technical_recovery_enabled', false);
 

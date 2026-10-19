@@ -140,3 +140,25 @@ read-only preflight found one reserved and 24 pending old scheduler-research
 commands, with no active generation. Their existing PAUSE guard returns before
 child execution; they must drain naturally through the original owner. No queue
 deletion, forced reservation change or replay is implied by this release plan.
+
+## Post-resume selector diagnostic follow-up
+
+The first delivered source was `59c98db`, with real boot proofs and public
+RESUME recorded in the operational log. Its ordinary selector still ran a
+large pre-decision computation. Source inspection proved that the arbiter does
+not consume `inspect().learning_truth`, although that diagnostic eagerly
+reopens all historical pairs/maps, lessons and dispatches. This is an identified
+unnecessary cost, not attribution of the entire observed delay to one function.
+
+The isolated follow-up adds only `includeLearningTruth=true` to the existing
+fresh inspector and lets the arbiter explicitly request `false`. Classification,
+health, starvation, recovery targets and every other fresh check still run.
+Other callers retain the full default output. Cached `summary()` is not used:
+its classification semantics differ and cannot replace the fresh inspector.
+
+Ten-state full/projected parity, retained default scoreboard and actual
+scoreboard-query exclusion passed 11 tests / 79 assertions. The complete
+existing arbiter suite passed 55 / 321, including the explicit projected
+recovery call. All four affected PHP files linted; no risk/data/authority gate
+or scientific threshold changed. Production requires another naturally drained
+boundary; this candidate must not be hot-fixed into the running selector.
