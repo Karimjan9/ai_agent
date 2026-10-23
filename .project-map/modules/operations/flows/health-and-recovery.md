@@ -29,6 +29,19 @@ pruning; one newest snapshot is retained. SQL/gzip restore and backup health
 consume that same pair. Reload preflight checks the backup queue, and Windows
 PM2/fallback consumers remain hidden (ADR-039).
 
+An explicitly requested offline project archive is separate from daily G:
+retention: PAUSED control, absent project owners, disabled Windows recovery
+task and HTTP maintenance precede a new private D: gzip. The optional native
+per_table_v1 layout permits full table-by-table restore/count/checksum/DDL
+verification through a restricted scratch-only account without duplicating
+the entire database on C:. Original source data remains until successful
+verification and a fresh unchanged-source inventory check. Only explicit
+operator authority permits dropping the exact backed-up project schema;
+shared MySQL, source files, datasets, evidence and old backups remain intact.
+Recovery creates the empty original schema before verified streaming import,
+checks data and filesystem/queue custody, and requires a new resume decision.
+See docs/operations/project-archive-restore-2026-10-23.md.
+
 A signed native depth owner can select `RESUME_NATIVE_DEPTH_AUDIT` only after
 the actual original cheap receipt and sample are sealed. The existing arbiter
 requires known-empty generation queues, running control and one original draft

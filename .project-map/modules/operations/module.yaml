@@ -16,8 +16,11 @@ paths:
   - backend-laravel/app/Services/PhaseTwoFoundationService.php
   - backend-laravel/scripts/create-database-backup.py
   - backend-laravel/scripts/test_create_database_backup.py
+  - backend-laravel/scripts/verify-database-backup-tables.py
+  - backend-laravel/scripts/test_verify_database_backup_tables.py
   - backend-laravel/tests/Feature/PhaseTwoFoundationTest.php
   - backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php
+  - backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php
   - backend-laravel/scripts/benchmark-research-provenance.php
   - backend-laravel/scripts/restore-backup-drill.php
   - backend-laravel/scripts/restore-backup-stream.py
@@ -86,6 +89,9 @@ paths:
   - scripts/restart_mt5.sh
   - docs/operations
 entry_points:
+  - ops:backup-database
+  - "ops:restore-database BACKUP --confirm=RESTORE"
+  - "python backend-laravel/scripts/verify-database-backup-tables.py (JSON stdin; restricted scratch only)"
   - trading:prepare-unused-price-discovery --register-intent
   - "trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID"
   - LabLifecycleWatchdogService::reconcileSupersededRuns
@@ -140,6 +146,7 @@ invariants:
 flows:
   - flows/health-and-recovery.md
 docs:
+  - ../../../docs/operations/project-archive-restore-2026-10-23.md
   - idea.md
   - states.md
   - history.md
@@ -147,7 +154,9 @@ tests:
   - backend-laravel/tests/Feature/HeadlessSchedulerIdentityRecoveryTest.php
   - backend-laravel/tests/Feature/ConstructorPreparationStageTest.php
   - backend-laravel/scripts/test_create_database_backup.py
+  - backend-laravel/scripts/test_verify_database_backup_tables.py
   - backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php
+  - backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php
   - backend-laravel/tests/Feature/PhaseTwoFoundationTest.php
   - backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php
   - backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php

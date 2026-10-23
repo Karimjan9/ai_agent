@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import re
+import shutil
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -15,17 +16,22 @@ from datetime import datetime, timezone
 def main():
     configuration = json.load(sys.stdin)
     directory = Path(configuration['directory']).resolve(strict=True)
-    if os.name == 'nt' and directory.drive.upper() != 'G:':
-        raise RuntimeError('BACKUP_G_DRIVE_REQUIRED')
+    if os.name == 'nt' and directory.drive.upper() not in ('D:', 'G:'):
+        raise RuntimeError('BACKUP_D_OR_G_DRIVE_REQUIRED')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     final = directory / f'neurotrader_{stamp}.sql.gz'
     temporary = Path(str(final) + '.partial')
     if final.exists() or temporary.exists():
         raise RuntimeError('NEW_BACKUP_PATH_REQUIRED')
-    command = [configuration['mysqldump_binary'], '--single-transaction', '--quick', '--routines', '--triggers',
+    command = [configuration['mysqldump_binary'], '--single-transaction', '--quick', '--routines', '--triggers', '--events',
                '--max-allowed-packet=1G',
                '--host=' + configuration['host'], '--port=' + str(configuration['port']),
                '--user=' + configuration['username'], '--default-character-set=utf8mb4', configuration['database']]
+    layout = configuration.get('verification_layout')
+    if layout is not None and layout != 'per_table_v1':
+        raise RuntimeError('UNKNOWN_BACKUP_VERIFICATION_LAYOUT')
+    if layout == 'per_table_v1':
+        command[1:1] = ['--skip-extended-insert', '--order-by-primary', '--hex-blob']
     environment = {**os.environ, 'MYSQL_PWD': configuration['password']}
     digest = hashlib.sha256()
     size = 0
@@ -42,6 +48,8 @@ def main():
         try:
             with gzip.open(temporary, 'xb', compresslevel=1) as output:
                 while block := process.stdout.read(1024 * 1024):
+                    if shutil.disk_usage(directory).free < int(configuration.get('reserve_bytes', 2 * 1024 ** 3)):
+                        raise RuntimeError('BACKUP_DISK_RESERVE_REQUIRED')
                     output.write(block)
                     digest.update(block)
                     size += len(block)
@@ -79,6 +87,8 @@ def main():
                 'bytes': temporary.stat().st_size, 'sha256': compressed_digest, 'compression': 'gzip',
                 'uncompressed_bytes': size, 'uncompressed_sha256': digest.hexdigest(), 'backup_path': str(final),
                 'gzip_crc_and_stream_hash_verified': True}
+    if layout is not None:
+        manifest['verification_layout'] = layout
     manifest_final = Path(str(final) + '.manifest.json')
     manifest_temporary = Path(str(manifest_final) + '.partial')
     manifest_temporary.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')

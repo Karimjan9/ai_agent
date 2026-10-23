@@ -61,8 +61,17 @@ the directory itself and all other files are preserved.
 
 1. Confirm G: is mounted and the SQL/manifest pair exists.
 2. Verify the manifest and restore SQL or gzip only to an approved MySQL target:
-   `php artisan ops:restore-database <backup-file>`.
+   `php artisan ops:restore-database <backup-file> --confirm=RESTORE`.
+   This imports into an existing configured database; it does not create a
+   dropped schema. Refuse an occupied target until separately backed up.
 3. Keep the newest verified pair. Exercise restoration on a separate scratch
    server/account and compare native table inventory plus original scientific
    records; a later live schema may differ from an older snapshot.
 4. If G: is unavailable, fix the volume/mount first; do not change the path to C:.
+
+The explicitly requested 2026-10-23 offline D: archive is separate from this
+scheduled G: retention policy. See
+[project archive/restore](project-archive-restore-2026-10-23.md). Its native
+helper accepts D: explicitly; the daily Artisan owner still requires G: and
+does not prune the D: archive. Per-table restoration checks use a restricted
+scratch-only account; CRC/hash verification alone is not called a restore test.

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T13:18:42.457Z",
-  "source_digest": "d834d67c0777d9eeeb8ed65181eb0dc165fd37d8e8bac9054a5c2726c29d8b48",
-  "source_file_count": 1789,
-  "git_head": "4feb5eed9d7db395cbcac28fa1e9c8b06b105424",
+  "generated_at": "2026-10-23T18:42:43.442Z",
+  "source_digest": "6262329019dfb8e01b35fa4fbd55f8ee6dcf50e757319d8b85bd238c1207ecbf",
+  "source_file_count": 1792,
+  "git_head": "afb312c5440de89b6a13f4de8c30349afc685b4a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "scope": "Global type navigation. Module generated.json files include functions/methods for their owned source anchors.",
   "symbols": [
@@ -1831,7 +1831,7 @@
       "symbol": "RestoreDatabase",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
-      "line": 8
+      "line": 11
     },
     {
       "symbol": "ResumeAutonomousMode",
@@ -8158,10 +8158,16 @@
       "line": 4
     },
     {
+      "symbol": "BlockingOutput",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 120
+    },
+    {
       "symbol": "BlockingNative",
       "kind": "python_class",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 106
+      "line": 129
     },
     {
       "symbol": "NativeProcess",
@@ -8176,10 +8182,88 @@
       "line": 32
     },
     {
-      "symbol": "BlockingOutput",
+      "symbol": "FakeClient",
       "kind": "python_class",
-      "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 97
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 31
+    },
+    {
+      "symbol": "MetadataAndNativeClientTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 331
+    },
+    {
+      "symbol": "MetadataClient",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 336
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 361
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 374
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 401
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 417
+    },
+    {
+      "symbol": "ByteBoundDiskGuardTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 455
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 487
+    },
+    {
+      "symbol": "BackupVerificationTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 51
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 200
+    },
+    {
+      "symbol": "Client",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 243
+    },
+    {
+      "symbol": "VerificationError",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 33
+    },
+    {
+      "symbol": "TableVerifier",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 434
     },
     {
       "symbol": "AcademyCanonicalHandoffTest",
@@ -10154,6 +10238,18 @@
       "kind": "php_type",
       "path": "backend-laravel/tests/Unit/CuratorIntradayMethodsPreparationTest.php",
       "line": 11
+    },
+    {
+      "symbol": "DatabaseRestoreStreamTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 12
+    },
+    {
+      "symbol": "DatabaseRestoreFailureStream",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 186
     },
     {
       "symbol": "DescendantScopedProofServiceTest",

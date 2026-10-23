@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T13:18:42.457Z",
-  "source_digest": "d834d67c0777d9eeeb8ed65181eb0dc165fd37d8e8bac9054a5c2726c29d8b48",
-  "source_file_count": 1789,
-  "git_head": "4feb5eed9d7db395cbcac28fa1e9c8b06b105424",
+  "generated_at": "2026-10-23T18:42:43.442Z",
+  "source_digest": "6262329019dfb8e01b35fa4fbd55f8ee6dcf50e757319d8b85bd238c1207ecbf",
+  "source_file_count": 1792,
+  "git_head": "afb312c5440de89b6a13f4de8c30349afc685b4a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "module": "operations",
   "paths": [
@@ -16,8 +16,11 @@
     "backend-laravel/app/Services/PhaseTwoFoundationService.php",
     "backend-laravel/scripts/create-database-backup.py",
     "backend-laravel/scripts/test_create_database_backup.py",
+    "backend-laravel/scripts/verify-database-backup-tables.py",
+    "backend-laravel/scripts/test_verify_database_backup_tables.py",
     "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
     "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+    "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
     "backend-laravel/scripts/benchmark-research-provenance.php",
     "backend-laravel/scripts/restore-backup-drill.php",
     "backend-laravel/scripts/restore-backup-stream.py",
@@ -150,6 +153,8 @@
     "backend-laravel/scripts/start-redis.ps1",
     "backend-laravel/scripts/supervise-laravel-runtime.ps1",
     "backend-laravel/scripts/test_create_database_backup.py",
+    "backend-laravel/scripts/test_verify_database_backup_tables.py",
+    "backend-laravel/scripts/verify-database-backup-tables.py",
     "backend-laravel/scripts/windows-hidden-shell.test.cjs",
     "backend-laravel/tests/Feature/AcademyPreparationContainmentTest.php",
     "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
@@ -158,6 +163,7 @@
     "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
     "backend-laravel/tests/Feature/RuntimeReloadPreflightTest.php",
     "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
+    "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
     "backend-laravel/tests/Unit/Lifecycle/LabLifecycleOrchestratorTest.php",
     "backend-laravel/tests/Unit/TechnicalFailureClassifierServiceTest.php",
     "scripts/restart_mt5.sh"
@@ -416,16 +422,46 @@
       "line": 603
     },
     {
-      "symbol": "handle",
-      "kind": "php_method",
-      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
-      "line": 13
-    },
-    {
       "symbol": "RestoreDatabase",
       "kind": "php_type",
       "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
-      "line": 8
+      "line": 11
+    },
+    {
+      "symbol": "boundedInsert",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 145
+    },
+    {
+      "symbol": "sqlLines",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 162
+    },
+    {
+      "symbol": "literalInsert",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 198
+    },
+    {
+      "symbol": "handle",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 20
+    },
+    {
+      "symbol": "restoreInput",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 83
+    },
+    {
+      "symbol": "perTableInput",
+      "kind": "php_method",
+      "path": "backend-laravel/app/Console/Commands/RestoreDatabase.php",
+      "line": 95
     },
     {
       "symbol": "handle",
@@ -1889,13 +1925,13 @@
       "symbol": "main",
       "kind": "python_function",
       "path": "backend-laravel/scripts/create-database-backup.py",
-      "line": 15
+      "line": 16
     },
     {
       "symbol": "stop_native_dump",
       "kind": "python_function",
       "path": "backend-laravel/scripts/create-database-backup.py",
-      "line": 35
+      "line": 41
     },
     {
       "symbol": "main",
@@ -1916,34 +1952,58 @@
       "line": 59
     },
     {
+      "symbol": "corrupted_open",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 102
+    },
+    {
+      "symbol": "test_native_timeout_stops_owned_dump_and_preserves_the_previous_backup",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 117
+    },
+    {
+      "symbol": "BlockingOutput",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 120
+    },
+    {
+      "symbol": "read",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 121
+    },
+    {
       "symbol": "close",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 103
+      "line": 126
     },
     {
       "symbol": "BlockingNative",
       "kind": "python_class",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 106
+      "line": 129
     },
     {
       "symbol": "poll",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 109
+      "line": 132
     },
     {
       "symbol": "kill",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 112
+      "line": 135
     },
     {
       "symbol": "wait",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 115
+      "line": 138
     },
     {
       "symbol": "NativeProcess",
@@ -1994,40 +2054,676 @@
       "line": 54
     },
     {
+      "symbol": "test_explicit_table_verification_layout_uses_native_one_row_inserts",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 70
+    },
+    {
+      "symbol": "test_d_drive_is_supported_without_relocating_or_pruning_old_backups",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 77
+    },
+    {
+      "symbol": "test_low_space_refuses_without_publishing_or_pruning",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_create_database_backup.py",
+      "line": 86
+    },
+    {
       "symbol": "test_failed_native_dump_never_publishes_or_deletes_old_backup",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 69
+      "line": 92
     },
     {
       "symbol": "test_truncated_gzip_is_refused_before_atomic_publication",
       "kind": "python_function",
       "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 75
-    },
-    {
-      "symbol": "corrupted_open",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 79
-    },
-    {
-      "symbol": "test_native_timeout_stops_owned_dump_and_preserves_the_previous_backup",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 94
-    },
-    {
-      "symbol": "BlockingOutput",
-      "kind": "python_class",
-      "path": "backend-laravel/scripts/test_create_database_backup.py",
-      "line": 97
-    },
-    {
-      "symbol": "read",
-      "kind": "python_function",
-      "path": "backend-laravel/scripts/test_create_database_backup.py",
       "line": 98
+    },
+    {
+      "symbol": "test_table_is_verified_and_dropped_before_next_table_import",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 101
+    },
+    {
+      "symbol": "test_big_single_row_commits_only_after_complete_insert",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 111
+    },
+    {
+      "symbol": "test_optional_batch_preserves_exact_literals_and_flushes_before_directives",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 120
+    },
+    {
+      "symbol": "test_batches_obey_total_byte_cap_and_oversized_original_row_passes_unchanged",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 134
+    },
+    {
+      "symbol": "test_batch_flush_precedes_transaction_commit",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 147
+    },
+    {
+      "symbol": "test_default_zero_keeps_original_single_row_statements",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 160
+    },
+    {
+      "symbol": "test_batch_flushes_at_eof_and_never_crosses_tables",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 167
+    },
+    {
+      "symbol": "test_batch_rejects_unsafe_original_insert_before_flushing_pending_values",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 182
+    },
+    {
+      "symbol": "test_batch_cap_rejects_invalid_or_unbounded_configuration",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 191
+    },
+    {
+      "symbol": "test_low_space_at_input_boundary_aborts_without_flushing_pending_batch",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 199
+    },
+    {
+      "symbol": "dump",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 21
+    },
+    {
+      "symbol": "test_missing_unknown_and_duplicate_dump_tables_fail_closed",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 225
+    },
+    {
+      "symbol": "test_unsafe_directives_and_source_qualified_statements_are_rejected",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 235
+    },
+    {
+      "symbol": "test_multiple_insert_statements_and_real_embedded_newline_fail",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 245
+    },
+    {
+      "symbol": "test_malformed_inventory_and_source_target_never_launch_client",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 254
+    },
+    {
+      "symbol": "test_duplicate_inventory_and_identical_source_scratch_are_rejected",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 266
+    },
+    {
+      "symbol": "test_wrong_hash_and_corrupt_gzip_fail_and_append_receipts",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 275
+    },
+    {
+      "symbol": "test_disk_reserve_fails_before_import",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 296
+    },
+    {
+      "symbol": "test_receipt_path_cannot_append_to_backup_on_invalid_configuration",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 303
+    },
+    {
+      "symbol": "FakeClient",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 31
+    },
+    {
+      "symbol": "test_literal_escapes_hex_null_and_negative_exponent_numbers_are_allowed",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 311
+    },
+    {
+      "symbol": "test_wrong_uncompressed_manifest_hash_never_reports_complete",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 318
+    },
+    {
+      "symbol": "test_create_normalization_preserves_quoted_whitespace_and_columns",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 324
+    },
+    {
+      "symbol": "MetadataAndNativeClientTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 331
+    },
+    {
+      "symbol": "test_metadata_checks_precede_drop_and_reject_count_checksum_or_schema_drift",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 332
+    },
+    {
+      "symbol": "MetadataClient",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 336
+    },
+    {
+      "symbol": "until",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 339
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 34
+    },
+    {
+      "symbol": "test_native_command_uses_scratch_only_no_shell_and_environment_secret",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 357
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 361
+    },
+    {
+      "symbol": "check",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 362
+    },
+    {
+      "symbol": "check_disk",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 365
+    },
+    {
+      "symbol": "register",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 368
+    },
+    {
+      "symbol": "release",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 371
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 374
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 378
+    },
+    {
+      "symbol": "wait",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 381
+    },
+    {
+      "symbol": "test_timed_out_native_child_is_killed_and_reaped",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 397
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 401
+    },
+    {
+      "symbol": "check",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 402
+    },
+    {
+      "symbol": "check_disk",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 405
+    },
+    {
+      "symbol": "register",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 408
+    },
+    {
+      "symbol": "write",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 41
+    },
+    {
+      "symbol": "release",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 411
+    },
+    {
+      "symbol": "remaining",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 414
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 417
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 423
+    },
+    {
+      "symbol": "kill",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 426
+    },
+    {
+      "symbol": "wait",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 429
+    },
+    {
+      "symbol": "finish",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 44
+    },
+    {
+      "symbol": "test_whole_verification_deadline_refuses_work",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 444
+    },
+    {
+      "symbol": "ByteBoundDiskGuardTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 455
+    },
+    {
+      "symbol": "setUp",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 456
+    },
+    {
+      "symbol": "test_deadline_checks_do_not_probe_disk_per_sql_line",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 463
+    },
+    {
+      "symbol": "abort",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 47
+    },
+    {
+      "symbol": "test_low_space_at_next_one_mib_boundary_refuses_further_input",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 473
+    },
+    {
+      "symbol": "test_later_low_space_refuses_before_next_native_import",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 483
+    },
+    {
+      "symbol": "Process",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 487
+    },
+    {
+      "symbol": "poll",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 491
+    },
+    {
+      "symbol": "wait",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 494
+    },
+    {
+      "symbol": "BackupVerificationTest",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 51
+    },
+    {
+      "symbol": "setUp",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 52
+    },
+    {
+      "symbol": "inspection",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 77
+    },
+    {
+      "symbol": "fixtures",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 80
+    },
+    {
+      "symbol": "test_complete_dump_restores_one_table_and_accepts_sql_words_inside_escaped_data",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/test_verify_database_backup_tables.py",
+      "line": 91
+    },
+    {
+      "symbol": "normalize_create",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 145
+    },
+    {
+      "symbol": "validate_configuration",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 154
+    },
+    {
+      "symbol": "Guard",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 200
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 201
+    },
+    {
+      "symbol": "remaining",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 211
+    },
+    {
+      "symbol": "check",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 214
+    },
+    {
+      "symbol": "check_disk",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 217
+    },
+    {
+      "symbol": "register",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 224
+    },
+    {
+      "symbol": "release",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 229
+    },
+    {
+      "symbol": "expire",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 234
+    },
+    {
+      "symbol": "close",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 239
+    },
+    {
+      "symbol": "Client",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 243
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 244
+    },
+    {
+      "symbol": "read_output",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 267
+    },
+    {
+      "symbol": "write",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 280
+    },
+    {
+      "symbol": "until",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 290
+    },
+    {
+      "symbol": "finish",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 306
+    },
+    {
+      "symbol": "abort",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 317
+    },
+    {
+      "symbol": "VerificationError",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 33
+    },
+    {
+      "symbol": "unescape_mysql",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 342
+    },
+    {
+      "symbol": "inspect_and_drop",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 356
+    },
+    {
+      "symbol": "require",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 37
+    },
+    {
+      "symbol": "validate_insert",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 388
+    },
+    {
+      "symbol": "identifier",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 42
+    },
+    {
+      "symbol": "validate_statement",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 425
+    },
+    {
+      "symbol": "TableVerifier",
+      "kind": "python_class",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 434
+    },
+    {
+      "symbol": "__init__",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 435
+    },
+    {
+      "symbol": "write_insert",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 448
+    },
+    {
+      "symbol": "flush_inserts",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 455
+    },
+    {
+      "symbol": "quoted",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 46
+    },
+    {
+      "symbol": "accept_insert",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 462
+    },
+    {
+      "symbol": "consume",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 483
+    },
+    {
+      "symbol": "statement",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 505
+    },
+    {
+      "symbol": "append_json",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 51
+    },
+    {
+      "symbol": "finish_table",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 540
+    },
+    {
+      "symbol": "finish",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 557
+    },
+    {
+      "symbol": "abort",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 562
+    },
+    {
+      "symbol": "raw_lines",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 570
+    },
+    {
+      "symbol": "safe_receipt_paths",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 58
+    },
+    {
+      "symbol": "verify",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 601
+    },
+    {
+      "symbol": "main",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 656
+    },
+    {
+      "symbol": "sql_tokens",
+      "kind": "python_function",
+      "path": "backend-laravel/scripts/verify-database-backup-tables.py",
+      "line": 70
     },
     {
       "symbol": "approve",
@@ -2700,6 +3396,120 @@
       "kind": "php_method",
       "path": "backend-laravel/tests/Feature/UnusedDraftPriceDiscoveryTest.php",
       "line": 89
+    },
+    {
+      "symbol": "test_zero_batch_preserves_single_insert_bytes_with_transaction_bounds",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 108
+    },
+    {
+      "symbol": "test_legacy_manifests_keep_the_original_resource_and_symfony_accepts_generator_input",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 115
+    },
+    {
+      "symbol": "DatabaseRestoreStreamTest",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 12
+    },
+    {
+      "symbol": "test_nonliteral_or_incomplete_inserts_refuse_streaming",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 129
+    },
+    {
+      "symbol": "test_empty_or_incorrect_raw_hash_never_completes_successfully",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 142
+    },
+    {
+      "symbol": "test_closed_input_is_a_read_failure_and_batch_limit_is_bounded",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 155
+    },
+    {
+      "symbol": "tearDown",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 17
+    },
+    {
+      "symbol": "test_stream_read_warning_is_a_failure_instead_of_an_empty_success",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 170
+    },
+    {
+      "symbol": "DatabaseRestoreFailureStream",
+      "kind": "php_type",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 186
+    },
+    {
+      "symbol": "stream_open",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 190
+    },
+    {
+      "symbol": "stream_read",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 195
+    },
+    {
+      "symbol": "stream_eof",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 201
+    },
+    {
+      "symbol": "stream_stat",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 206
+    },
+    {
+      "symbol": "input",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 28
+    },
+    {
+      "symbol": "test_gzip_and_plain_streams_group_exact_literal_values_and_preserve_directives",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 45
+    },
+    {
+      "symbol": "test_batches_never_cross_tables_and_flush_at_eof",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 61
+    },
+    {
+      "symbol": "test_total_statement_cap_includes_prefix_separators_and_terminator",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 69
+    },
+    {
+      "symbol": "test_oversized_original_row_is_unchanged_and_committed_alone",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 79
+    },
+    {
+      "symbol": "test_transaction_bytes_never_exceed_eight_mib_for_bounded_batches",
+      "kind": "php_method",
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "line": 88
     },
     {
       "symbol": "test_terminal_close_exhausts_the_cycle_without_admitting_a_successor",
@@ -3469,6 +4279,28 @@
         "test_single_agent_failed_callback_does_not_manufacture_an_attempt_and_original_failure_avoids_ordinary_fanout",
         "test_twenty_known_terminal_technical_and_pre_execution_dispositions_close_only_after_owned_queue_drain",
         "test_terminal_price_question_waits_on_fresh_native_dependency_without_replay_or_ordinary_recovery"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "tests": [
+        "tearDown",
+        "input",
+        "test_gzip_and_plain_streams_group_exact_literal_values_and_preserve_directives",
+        "test_batches_never_cross_tables_and_flush_at_eof",
+        "test_total_statement_cap_includes_prefix_separators_and_terminator",
+        "test_oversized_original_row_is_unchanged_and_committed_alone",
+        "test_transaction_bytes_never_exceed_eight_mib_for_bounded_batches",
+        "test_zero_batch_preserves_single_insert_bytes_with_transaction_bounds",
+        "test_legacy_manifests_keep_the_original_resource_and_symfony_accepts_generator_input",
+        "test_nonliteral_or_incomplete_inserts_refuse_streaming",
+        "test_empty_or_incorrect_raw_hash_never_completes_successfully",
+        "test_closed_input_is_a_read_failure_and_batch_limit_is_bounded",
+        "test_stream_read_warning_is_a_failure_instead_of_an_empty_success",
+        "stream_open",
+        "stream_read",
+        "stream_eof",
+        "stream_stat"
       ]
     },
     {

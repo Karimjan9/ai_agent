@@ -1157,3 +1157,25 @@ Windows dump children use `CREATE_NO_WINDOW`. Streamed gzip/CRC/raw SHA and
 compressed SHA verification precede publication and retention pruning. The
 dedicated backup queue uses the existing Redis connection/visibility, and
 reload preflight sees that queue. This boundary creates no scientific authority.
+
+Explicit offline archives may select D: and per_table_v1 native row statements;
+daily G: Artisan retention remains unchanged. verify-database-backup-tables.py
+accepts JSON stdin, an original inventory and a pre-created restricted scratch
+account. It reaps hidden native mysql children, verifies exact row counts,
+extended checksums and normalized SHOW CREATE per table, then drops only that
+verified scratch table. Full compressed/raw hash, gzip CRC and table inventory
+are required in its append-only receipt; the helper cannot drop a database or
+access the source. Original-database deletion needs separate operator authority
+and a new unchanged-source check, never merely this helper's exit status.
+Optional at-most-1MiB INSERT batches join only individually validated same-table
+literal VALUES, flush before directives/boundaries and retain the original
+row/hash checks; oversized single rows pass unchanged. Deadline checks remain
+per SQL operation, while reserve checks precede every at-most-1MiB input block,
+each native child and each verified-table DROP.
+RestoreDatabase's explicit RESTORE operator path applies equivalent lazy
+at-most-1MiB same-table literal batches and 8MiB transaction boundaries only
+when the manifest names per_table_v1. Original oversized rows remain intact;
+legacy manifests keep resource passthrough. Gzip/plain reading, original raw
+bytes/hash and full generator consumption must complete before success.
+Compressed hash and explicit confirmation remain mandatory; an interrupted
+import is partial history, never a successful recovery or runtime-start grant.

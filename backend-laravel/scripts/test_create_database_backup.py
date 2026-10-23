@@ -62,9 +62,32 @@ class BackupStreamTest(unittest.TestCase):
         self.assertEqual(b'original retained backup', self.old.read_bytes())
         self.assertFalse(list(self.root.glob('*.partial')))
         self.assertIn('--max-allowed-packet=1G', native.call_args.args[0])
+        self.assertIn('--events', native.call_args.args[0])
         self.assertNotIn(self.configuration['password'], ' '.join(native.call_args.args[0]))
         if os.name == 'nt':
             self.assertEqual(backup_stream.subprocess.CREATE_NO_WINDOW, native.call_args.kwargs['creationflags'])
+
+    def test_explicit_table_verification_layout_uses_native_one_row_inserts(self):
+        self.configuration['verification_layout'] = 'per_table_v1'
+        manifest, native = self.run_backup()
+        self.assertEqual(manifest['verification_layout'], 'per_table_v1')
+        for argument in ('--skip-extended-insert', '--order-by-primary', '--hex-blob'):
+            self.assertIn(argument, native.call_args.args[0])
+
+    def test_d_drive_is_supported_without_relocating_or_pruning_old_backups(self):
+        if os.name != 'nt' or not Path('D:/').is_dir():
+            self.skipTest('Requires the explicit Windows D: archive volume.')
+        with tempfile.TemporaryDirectory(prefix='backup-d-archive-test-', dir='D:/') as directory:
+            self.configuration['directory'] = directory
+            manifest, _ = self.run_backup()
+            self.assertEqual(Path(manifest['backup_path']).parent, Path(directory))
+            self.assertTrue(self.old.is_file())
+
+    def test_low_space_refuses_without_publishing_or_pruning(self):
+        with patch.object(backup_stream.shutil, 'disk_usage', return_value=type('Usage', (), {'free': 0})()):
+            with self.assertRaisesRegex(RuntimeError, 'BACKUP_DISK_RESERVE_REQUIRED'):
+                self.run_backup()
+        self.assertEqual([self.old], list(self.root.iterdir()))
 
     def test_failed_native_dump_never_publishes_or_deletes_old_backup(self):
         with self.assertRaisesRegex(RuntimeError, 'BACKUP_NATIVE_DUMP_FAILED'):

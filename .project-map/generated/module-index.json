@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T13:18:42.457Z",
-  "source_digest": "d834d67c0777d9eeeb8ed65181eb0dc165fd37d8e8bac9054a5c2726c29d8b48",
-  "source_file_count": 1789,
-  "git_head": "4feb5eed9d7db395cbcac28fa1e9c8b06b105424",
+  "generated_at": "2026-10-23T18:42:43.442Z",
+  "source_digest": "6262329019dfb8e01b35fa4fbd55f8ee6dcf50e757319d8b85bd238c1207ecbf",
+  "source_file_count": 1792,
+  "git_head": "afb312c5440de89b6a13f4de8c30349afc685b4a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "modules": [
     {
@@ -1465,8 +1465,11 @@
         "backend-laravel/app/Services/PhaseTwoFoundationService.php",
         "backend-laravel/scripts/create-database-backup.py",
         "backend-laravel/scripts/test_create_database_backup.py",
+        "backend-laravel/scripts/verify-database-backup-tables.py",
+        "backend-laravel/scripts/test_verify_database_backup_tables.py",
         "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
         "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+        "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
         "backend-laravel/scripts/benchmark-research-provenance.php",
         "backend-laravel/scripts/restore-backup-drill.php",
         "backend-laravel/scripts/restore-backup-stream.py",
@@ -1536,6 +1539,9 @@
         "docs/operations"
       ],
       "entry_points": [
+        "ops:backup-database",
+        "ops:restore-database BACKUP --confirm=RESTORE",
+        "python backend-laravel/scripts/verify-database-backup-tables.py (JSON stdin; restricted scratch only)",
         "trading:prepare-unused-price-discovery --register-intent",
         "trading:recover-lab-replay-mutex --reconcile-superseded --superseded-run-id=ID",
         "LabLifecycleWatchdogService::reconcileSupersededRuns",
@@ -1595,7 +1601,9 @@
         "backend-laravel/tests/Feature/HeadlessSchedulerIdentityRecoveryTest.php",
         "backend-laravel/tests/Feature/ConstructorPreparationStageTest.php",
         "backend-laravel/scripts/test_create_database_backup.py",
+        "backend-laravel/scripts/test_verify_database_backup_tables.py",
         "backend-laravel/tests/Feature/DatabaseBackupRetentionTest.php",
+        "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
         "backend-laravel/tests/Feature/PhaseTwoFoundationTest.php",
         "backend-laravel/tests/Feature/ScheduledCommandIsolationTest.php",
         "backend-laravel/tests/Feature/LighthouseVerticalLoopMonitoringTest.php",
@@ -1630,7 +1638,7 @@
       "flows": [
         ".project-map/modules/operations/flows/health-and-recovery.md"
       ],
-      "source_file_count": 74,
+      "source_file_count": 77,
       "map": ".project-map/modules/operations/module.yaml"
     },
     {

@@ -219,3 +219,14 @@ pruning. Failed/timeout/interrupted dumps cannot authorize pruning. A current
 published pair retains one snapshot; a pending/reserved `scheduler-backup` job
 refuses source reload. Its one-hour job/3700-second worker leases stay below
 the existing 4500-second Redis visibility (ADR-039).
+
+An operator-authorized offline D: archive does not reuse daily retention or
+add a public autonomy state. PAUSED plus HTTP maintenance, disabled autostart
+and absent runtime owners fence writes. A new optional per_table_v1 native
+layout is published only after full gzip/CRC/raw/compressed hashes; all source
+tables must then restore with matching count/checksum/DDL in a restricted
+codex_archive_verify_* scratch schema. A failed or prefix-only drill never
+authorizes source deletion. Exact database deletion is a separate explicit
+operator action after a fresh unchanged-source check. Intentionally absent
+SQL is an archived/offline condition, not an automatic recovery opportunity;
+restore and filesystem/queue verification precede a new resume decision.

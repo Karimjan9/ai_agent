@@ -2,10 +2,10 @@
   "schema_version": 1,
   "generator": "scripts/project-map/project-map.mjs",
   "generator_digest": "0caebdd81393b4b7a41c369ff3c9e688497dc90c68bcfad6a4baf2fbe28e916f",
-  "generated_at": "2026-10-19T13:18:42.457Z",
-  "source_digest": "d834d67c0777d9eeeb8ed65181eb0dc165fd37d8e8bac9054a5c2726c29d8b48",
-  "source_file_count": 1789,
-  "git_head": "4feb5eed9d7db395cbcac28fa1e9c8b06b105424",
+  "generated_at": "2026-10-23T18:42:43.442Z",
+  "source_digest": "6262329019dfb8e01b35fa4fbd55f8ee6dcf50e757319d8b85bd238c1207ecbf",
+  "source_file_count": 1792,
+  "git_head": "afb312c5440de89b6a13f4de8c30349afc685b4a",
   "authority": "Navigation facts only. Real source code and tests remain authoritative.",
   "tests": [
     {
@@ -6256,6 +6256,28 @@
         "test_new_methods_have_exact_only_declared_programme_differences",
         "test_actual_python_request_and_bollinger_contract_owners_accept_all_originals_without_replay",
         "test_unregistered_window_identity_refuses_before_bootstrap_or_memory_compilation"
+      ]
+    },
+    {
+      "path": "backend-laravel/tests/Unit/DatabaseRestoreStreamTest.php",
+      "tests": [
+        "tearDown",
+        "input",
+        "test_gzip_and_plain_streams_group_exact_literal_values_and_preserve_directives",
+        "test_batches_never_cross_tables_and_flush_at_eof",
+        "test_total_statement_cap_includes_prefix_separators_and_terminator",
+        "test_oversized_original_row_is_unchanged_and_committed_alone",
+        "test_transaction_bytes_never_exceed_eight_mib_for_bounded_batches",
+        "test_zero_batch_preserves_single_insert_bytes_with_transaction_bounds",
+        "test_legacy_manifests_keep_the_original_resource_and_symfony_accepts_generator_input",
+        "test_nonliteral_or_incomplete_inserts_refuse_streaming",
+        "test_empty_or_incorrect_raw_hash_never_completes_successfully",
+        "test_closed_input_is_a_read_failure_and_batch_limit_is_bounded",
+        "test_stream_read_warning_is_a_failure_instead_of_an_empty_success",
+        "stream_open",
+        "stream_read",
+        "stream_eof",
+        "stream_stat"
       ]
     },
     {
